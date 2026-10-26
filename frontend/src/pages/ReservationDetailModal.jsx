@@ -34,6 +34,8 @@ import { useTranslation } from 'react-i18next';
 import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import { bookingSourceLabel } from '@/utils/bookingSource';
+import { reservationPaymentSummary } from './reservation-detail/paymentSummary';
+import { UnpostedRoomBreakdown } from './reservation-detail/UnpostedRoomBreakdown';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
 const STATUS_PILL = {
@@ -351,11 +353,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const pricingReconciliationRequired = Boolean(summary?.pricing_reconciliation_required);
   const pricingReconciliationDifference = Number(summary?.pricing_reconciliation_difference) || 0;
   const hasOpenBalance = balance > 0.01 && !pricingReconciliationRequired;
-  const reservationTotalDue = Number(summary?.reservation_total_due ?? rawBalance) || 0;
-  const hasReservationAmountDue = reservationTotalDue > 0.01 && !pricingReconciliationRequired;
-  const unpostedRoomAmount = Number(summary?.unposted_room_amount) || 0;
-  const hasAllocatedPrepayment = unpostedRoomAmount > 0.01 && !hasReservationAmountDue && balance < -0.01;
-  const displayedFolioBalance = hasAllocatedPrepayment ? 0 : balance;
+  const paymentOverview = reservationPaymentSummary(summary);
+  const hasReservationAmountDue = paymentOverview.kind === 'due';
+  const paymentNeedsReview = ['reconciliation', 'unknown'].includes(paymentOverview.kind);
+  const paymentAmountText = paymentOverview.displayAmount == null ? '—' : fmtCurrency(paymentOverview.displayAmount, currency);
   const accommodationTotal = Number(summary?.accommodation_total ?? summary?.total_amount) || 0;
   const additionalChargeTotal = Number(summary?.additional_charge_total ?? summary?.total_extra) || 0;
   const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
@@ -603,7 +604,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               </Badge>
             ) : hasReservationAmountDue && (
               <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
-                <AlertTriangle className="w-3 h-3 mr-1" /> Kalan tahsilat: {fmtCurrency(reservationTotalDue, currency)}
+                <AlertTriangle className="w-3 h-3 mr-1" /> Toplam kalan ödeme: {paymentAmountText}
               </Badge>
             )}
             {readOnly && (
@@ -649,12 +650,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
               {/* Fiyat & Bakiye — bakiye vurgulu */}
               <div className={`rounded-xl p-4 space-y-3 shadow-sm ${
-                pricingReconciliationRequired ? 'bg-amber-50 border-2 border-amber-300' : hasReservationAmountDue ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
+                paymentNeedsReview ? 'bg-amber-50 border-2 border-amber-300' : hasReservationAmountDue ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
               }`} data-testid="financial-summary-card">
                 <div>
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{pricingReconciliationRequired ? 'Fiyat / tahakkuk farkı' : 'Kalan tahsilat'}</p>
-                  <div className={`text-2xl font-bold leading-tight ${pricingReconciliationRequired ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtCurrency(pricingReconciliationRequired ? pricingReconciliationDifference : reservationTotalDue, currency)}</div>
-                  <p className="text-[11px] text-slate-500">{pricingReconciliationRequired ? 'Tahsilat alınmamalı; fiyat ve tahakkuk düzeltilmeli' : hasReservationAmountDue ? 'Rezervasyon toplamından kalan' : 'Tahsilat tamamlandı'}</p>
+                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{paymentOverview.label}</p>
+                  <div className={`text-2xl font-bold leading-tight ${paymentNeedsReview ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`} data-testid="reservation-total-due">{paymentAmountText}</div>
+                  <p className="text-[11px] text-slate-500">{paymentOverview.description}</p>
                 </div>
                 <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
                   <div className="flex justify-between text-xs">
@@ -687,28 +688,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.total_payments, currency)}</span>
                   </div>
                   {prepaymentTotal > 0 && (
-                    <div className="flex justify-between rounded bg-emerald-100/70 px-1.5 py-1 text-xs" data-testid="prepayment-total">
-                      <span className="font-medium text-emerald-800">Ön ödeme</span>
-                      <span className="font-semibold text-emerald-700">{fmtCurrency(prepaymentTotal, currency)}</span>
+                    <div className="rounded bg-emerald-100/70 px-1.5 py-1 text-xs" data-testid="prepayment-total">
+                      <div className="flex items-start justify-between gap-3"><span className="font-medium text-emerald-800">Ön ödeme</span><span className="shrink-0 whitespace-nowrap font-semibold text-emerald-700">{fmtCurrency(prepaymentTotal, currency)}</span></div>
+                      <p className="mt-1 text-[11px] leading-4 text-emerald-800">Toplam tahsilatın içinde; yeniden düşülmez.</p>
                     </div>
                   )}
-                  {unpostedRoomAmount > 0.01 && (
-                    <>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Folyo bakiyesi</span>
-                        <span className="font-semibold text-amber-700">{fmtCurrency(displayedFolioBalance, currency)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs" data-testid="unposted-room-amount">
-                        <span className="text-slate-500">Tahakkuk bekleyen konaklama</span>
-                        <span className="font-semibold text-slate-700">{fmtCurrency(unpostedRoomAmount, currency)}</span>
-                      </div>
-                      {hasAllocatedPrepayment && (
-                        <div className="text-[11px] leading-4 text-emerald-700">
-                          Peşin tahsilat, bekleyen konaklama bedeline ayrıldı.
-                        </div>
-                      )}
-                    </>
-                  )}
+                  <UnpostedRoomBreakdown payment={paymentOverview} currency={currency} />
                   {(summary?.total_deposits || 0) > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Depozito</span>
@@ -879,15 +864,19 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               {/* Operasyonel Durum — yalnızca anlamlı olanlar */}
               <div className="space-y-1.5" data-testid="reservation-ops-panel">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.operasyonel_durum')}</p>
-                {hasOpenBalance ? (
+                {paymentNeedsReview ? (
+                  <div className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5" data-testid="ops-payment-review">
+                    <AlertTriangle className="w-3 h-3 shrink-0 text-amber-600" /><span className="text-[11px] font-medium text-amber-800">{paymentOverview.label}</span>
+                  </div>
+                ) : hasReservationAmountDue ? (
                   <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
                     <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0" />
-                    <span className="text-[11px] text-rose-700 font-medium">{t('cm.pages_ReservationDetailModal.odeme_bekleniyor')} {fmtCurrency(balance, currency)}</span>
+                    <span className="text-[11px] text-rose-700 font-medium">Toplam kalan ödeme: {paymentAmountText}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                    <span className="text-[11px] text-emerald-700">{t('cm.pages_ReservationDetailModal.odeme_tamam')}</span>
+                    <span className="text-[11px] text-emerald-700">{paymentOverview.kind === 'credit' ? `Misafir alacağı: ${paymentAmountText}` : 'Kalan ödeme yok'}</span>
                   </div>
                 )}
                 {room && (room.status === 'dirty' || room.status === 'cleaning') && (
@@ -1085,9 +1074,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><CheckCircle2 className="h-4 w-4" /></span>
                       <div className="min-w-0"><p className="text-xs font-bold text-emerald-900">{booking?.status === 'checked_out' ? 'Konaklama tamamlandı' : booking?.status === 'checked_in' ? 'Konaklama devam ediyor' : 'Giriş bekleniyor'}</p><p className="truncate text-[11px] text-emerald-700">{stayNights} gece · {guestCount} misafir · Oda {room?.room_number || 'atanmadı'}</p></div>
                     </div>
-                    <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${hasOpenBalance ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
-                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${hasOpenBalance ? 'bg-rose-600' : 'bg-emerald-600'}`}>{hasOpenBalance ? <CreditCard className="h-4 w-4" /> : <Shield className="h-4 w-4" />}</span>
-                      <div className="min-w-0"><p className={`text-xs font-bold ${hasOpenBalance ? 'text-rose-900' : 'text-emerald-900'}`}>{hasOpenBalance ? `Kalan tahsilat ${fmtCurrency(balance, currency)}` : 'Ödeme tamamlandı'}</p><p className={`truncate text-[11px] ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-700'}`}>{hasOpenBalance ? 'Çıkıştan önce folyo bakiyesini kapatın' : 'Rezervasyonun tahsilat bakiyesi kapalı'}</p></div>
+                    <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${paymentNeedsReview ? 'border-amber-200 bg-amber-50/70' : hasReservationAmountDue ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`} data-testid="workspace-payment-overview">
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${paymentNeedsReview ? 'bg-amber-600' : hasReservationAmountDue ? 'bg-rose-600' : 'bg-emerald-600'}`}>{paymentNeedsReview ? <AlertTriangle className="h-4 w-4" /> : hasReservationAmountDue ? <CreditCard className="h-4 w-4" /> : <Shield className="h-4 w-4" />}</span>
+                      <div className="min-w-0"><p className={`text-xs font-bold ${paymentNeedsReview ? 'text-amber-900' : hasReservationAmountDue ? 'text-rose-900' : 'text-emerald-900'}`}>{paymentOverview.label}{paymentOverview.displayAmount != null ? `: ${paymentAmountText}` : ''}</p><p className={`text-[11px] ${paymentNeedsReview ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-700'}`}>{paymentOverview.description}</p></div>
                     </div>
                   </div>
                   {!readOnly && (
