@@ -52,6 +52,17 @@ export const formatRoomAttribute = value => {
   return ROOM_ATTRIBUTE_LABELS[normalized] || String(value);
 };
 
+// Only explicitly identified folio data may be labelled as posted folio debt.
+// Legacy booking-only estimates retain their separate reservation scope.
+export const roomBalanceScope = booking => booking?.folio_balance != null
+  && ['number', 'string'].includes(typeof booking.folio_balance)
+  && String(booking.folio_balance).trim() !== '' && Number.isFinite(Number(booking.folio_balance))
+  ? 'folio' : 'reservation';
+const roomBalanceLabel = guest => guest.balance_scope === 'folio' ? 'Folyo borcu' : 'Rezervasyon bakiyesi';
+const roomBalanceExplanation = guest => guest.balance_scope === 'folio'
+  ? 'Yalnız folyoya işlenmiş borç. Henüz işlenmemiş oda bedeli dahil toplam kalan ödeme için rezervasyon detayını açın.'
+  : 'Rezervasyon listesindeki hesaplanan bakiye. Güncel toplam kalan ödeme için rezervasyon detayını açın.';
+
 const RoomsTab = ({
   rooms,
   bookings = [],
@@ -209,6 +220,7 @@ const RoomsTab = ({
           total_amount: financials.total,
           paid_amount: financials.paid,
           balance: financials.balance,
+          balance_scope: roomBalanceScope(b),
           currency: financials.currency,
           isCheckInToday: ci === today,
           isCheckOutToday: co === today,
@@ -228,6 +240,7 @@ const RoomsTab = ({
           total_amount: financials.total,
           paid_amount: financials.paid,
           balance: financials.balance,
+          balance_scope: roomBalanceScope(b),
           currency: financials.currency,
           isCheckInToday: ci === today,
           isCheckOutToday: true,
@@ -800,11 +813,16 @@ const RoomsTab = ({
 
                     {/* Balance display */}
                     {hasBalance && (
-                      <div className="flex items-center gap-1 mt-1" data-testid={`room-balance-${room.room_number}`}>
-                        <AlertTriangle className="w-3 h-3 text-amber-600" />
-                        <span className="text-[11px] font-semibold text-amber-700">
-                          Bakiye: {formatCurrency(guestInfo.balance, guestInfo.currency, { decimals: 2 })}
-                        </span>
+                      <div className="mt-1" data-testid={`room-balance-${room.room_number}`}>
+                        <div className="flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-600" />
+                          <span className="text-[11px] font-semibold text-amber-700">
+                            {roomBalanceLabel(guestInfo)}: {formatCurrency(guestInfo.balance, guestInfo.currency, { decimals: 2 })}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] leading-4 text-amber-800">
+                          {guestInfo.balance_scope === 'folio' ? 'İşlenmemiş oda bedeli hariç.' : 'Güncel toplam için rezervasyonu açın.'}
+                        </p>
                       </div>
                     )}
 
@@ -978,7 +996,7 @@ const RoomsTab = ({
                 <p className="text-sm font-medium text-amber-900">{checkoutBooking.guest_name}</p>
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Toplam Tutar:</span>
+                    <span className="text-gray-600">Listelenen hesap tutarı:</span>
                     <span className="font-medium">{formatCurrency(checkoutBooking.total_amount, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
@@ -986,10 +1004,11 @@ const RoomsTab = ({
                     <span className="font-medium text-green-700">{formatCurrency(checkoutBooking.paid_amount, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
-                    <span className="text-amber-800 font-semibold">Kalan Bakiye:</span>
+                    <span className="text-amber-800 font-semibold">{roomBalanceLabel(checkoutBooking)}:</span>
                     <span className="font-bold text-amber-800">{formatCurrency(checkoutBooking.balance, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-amber-800">{roomBalanceExplanation(checkoutBooking)}</p>
               </div>
               <p className="text-sm text-gray-600">
                 Bakiye sıfırlanmadan çıkış yapılamaz. Lütfen önce ödeme alınız.
@@ -1071,7 +1090,7 @@ const RoomsTab = ({
                 <p className="text-sm font-medium text-sky-900">{paymentTarget.guest_name}</p>
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Toplam Tutar:</span>
+                    <span className="text-gray-600">Listelenen hesap tutarı:</span>
                     <span className="font-medium">{formatCurrency(paymentTarget.total_amount, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
@@ -1079,10 +1098,11 @@ const RoomsTab = ({
                     <span className="font-medium text-green-700">{formatCurrency(paymentTarget.paid_amount, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
-                    <span className="text-sky-800 font-semibold">Kalan Bakiye:</span>
+                    <span className="text-sky-800 font-semibold">{roomBalanceLabel(paymentTarget)}:</span>
                     <span className="font-bold text-sky-800">{formatCurrency(paymentTarget.balance, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-sky-800">{roomBalanceExplanation(paymentTarget)}</p>
               </div>
 
               {/* Payment amount */}
