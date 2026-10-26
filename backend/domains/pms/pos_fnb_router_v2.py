@@ -402,7 +402,6 @@ async def pos_operations_summary(
         amount = float(transaction.get("total_amount") or transaction.get("amount") or 0)
         if transaction.get("status") == "refunded" or transaction.get("payment_type") == "refund":
             refunds += abs(amount)
-            continue
         breakdown = transaction.get("payment_breakdown") or [{"method": transaction.get("payment_method") or "unknown", "amount": amount}]
         for part in breakdown:
             method = str(part.get("method") or "unknown")
@@ -418,7 +417,10 @@ async def pos_operations_summary(
         "kitchen_overdue_count": overdue_kitchen,
         "payment_methods": payments,
         "refund_total": round(refunds, 2),
-        "net_collected": round(sum(payments.values()) - refunds, 2),
+        'payment_basis': 'İade düşülmüş; oda hesabı nakit/kart tahsilatı değildir.',
+        'room_charge_total': round(payments.get('room_charge', 0), 2),
+        'net_settled_including_room': round(sum(payments.values()), 2),
+        "net_collected": round(sum(value for method, value in payments.items() if method != 'room_charge'), 2),
     }
 
 

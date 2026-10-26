@@ -10,7 +10,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -680,159 +680,8 @@ async def _build_menu_engineering(
     end_iso: str,
     outlet_id: str | None,
 ) -> dict[str, Any]:
-    """Sprint 33 R9: Kasavana-Smith menu engineering matrisi.
-
-    Popülerlik eşiği = (1 / N) × %70 (klasik menu-mix ortalaması).
-    Karlılık eşiği = ağırlıklı ortalama katkı payı (CM/birim).
-    """
-    # 1) Menü kataloğu — fiyat + maliyet için
-    catalog_raw = await db.pos_menu_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
-    catalog: dict[str, dict[str, Any]] = {}
-    for it in catalog_raw:
-        nm = it.get("name") or it.get("item_name")
-        if not nm:
-            continue
-        catalog[nm] = {
-            "price": float(it.get("price", 0) or 0),
-            "cost": float(it.get("cost", 0) or 0),
-            "menu_category": it.get("category") or "Diğer",
-        }
-
-    # 2) Sipariş satırlarını topla
-    order_filter: dict[str, Any] = {
-        "tenant_id": tenant_id,
-        "created_at": {"$gte": start_iso, "$lte": end_iso},
-    }
-    if outlet_id:
-        order_filter["outlet_id"] = outlet_id
-
-    orders = await db.pos_orders.find(order_filter, {"_id": 0, "items": 1}).to_list(20000)
-
-    agg: dict[str, dict[str, float]] = {}
-    for order in orders:
-        for line in order.get("items", []) or []:
-            nm = line.get("item_name") or line.get("name") or "Bilinmiyor"
-            qty = float(line.get("quantity", 1) or 1)
-            line_price = float(line.get("price", 0) or 0)
-            row = agg.setdefault(nm, {"qty": 0.0, "revenue": 0.0})
-            row["qty"] += qty
-            row["revenue"] += qty * line_price
-
-    if not agg:
-        return {
-            "period": {"start_date": start_iso[:10], "end_date": end_iso[:10]},
-            "outlet_id": outlet_id,
-            "stars": 0,
-            "plowhorses": 0,
-            "puzzles": 0,
-            "dogs": 0,
-            "menu_items": [],
-            "thresholds": {"popularity_pct": 0, "avg_cm_per_unit": 0},
-            "totals": {"items": 0, "units_sold": 0, "revenue": 0.0, "contribution_margin": 0.0},
-            "cost_estimation_used": False,
-            "cost_estimated_items": 0,
-        }
-
-    # 3) Birim ekonomisi — gerçek katalog maliyeti varsa onu kullan; yoksa %35
-    # food-cost varsayımına düş ve item'i `cost_estimated=True` ile dürüstçe işaretle
-    # (sahte kesin maliyet sunma; rapor tahmini olduğunu açıkça bildirir).
-    enriched = []
-    total_qty = 0.0
-    total_cm = 0.0
-    for nm, row in agg.items():
-        cat = catalog.get(nm, {})
-        unit_price = cat.get("price") or (row["revenue"] / row["qty"] if row["qty"] else 0)
-        _real_cost = cat.get("cost")
-        cost_estimated = not (isinstance(_real_cost, (int, float)) and not isinstance(_real_cost, bool) and _real_cost > 0)
-        unit_cost = (unit_price * 0.35) if cost_estimated else float(_real_cost)
-        cost_total = unit_cost * row["qty"]
-        cm_total = row["revenue"] - cost_total
-        cm_per_unit = cm_total / row["qty"] if row["qty"] else 0
-        margin_pct = (cm_total / row["revenue"] * 100) if row["revenue"] else 0
-        enriched.append(
-            {
-                "_name": nm,
-                "_menu_cat": cat.get("menu_category", "Diğer"),
-                "_qty": row["qty"],
-                "_revenue": row["revenue"],
-                "_cost": cost_total,
-                "_cm_total": cm_total,
-                "_cm_unit": cm_per_unit,
-                "_margin_pct": margin_pct,
-                "_unit_price": unit_price,
-                "_unit_cost": unit_cost,
-                "_cost_estimated": cost_estimated,
-            }
-        )
-        total_qty += row["qty"]
-        total_cm += cm_total
-
-    # 4) Eşikler
-    n_items = len(enriched)
-    pop_threshold_pct = (1.0 / n_items) * 70.0  # menu-mix klasik %70
-    cm_threshold = (total_cm / total_qty) if total_qty else 0
-
-    # 5) Sınıflandırma
-    out_items = []
-    counts = {"Stars": 0, "Plowhorses": 0, "Puzzles": 0, "Dogs": 0}
-    for e in enriched:
-        pop_pct = (e["_qty"] / total_qty * 100) if total_qty else 0
-        high_pop = pop_pct >= pop_threshold_pct
-        high_cm = e["_cm_unit"] >= cm_threshold
-        if high_pop and high_cm:
-            cls = "Stars"
-        elif high_pop and not high_cm:
-            cls = "Plowhorses"
-        elif not high_pop and high_cm:
-            cls = "Puzzles"
-        else:
-            cls = "Dogs"
-        counts[cls] += 1
-        out_items.append(
-            {
-                "item_name": e["_name"],
-                "menu_category": e["_menu_cat"],
-                "category": cls,  # frontend bunu rozet için kullanıyor
-                "classification": cls,
-                "quantity_sold": int(e["_qty"]),
-                "revenue": round(e["_revenue"], 2),
-                "unit_price": round(e["_unit_price"], 2),
-                "unit_cost": round(e["_unit_cost"], 2),
-                "cost_estimated": e["_cost_estimated"],
-                "contribution_margin": round(e["_cm_total"], 2),
-                "cm_per_unit": round(e["_cm_unit"], 2),
-                "profit_margin": round(e["_margin_pct"], 1),
-                "popularity_pct": round(pop_pct, 2),
-                "recommendation": _ME_RECOMMENDATIONS[cls],
-            }
-        )
-
-    # Yıldızlar önce, köpekler sonra
-    rank = {"Stars": 0, "Puzzles": 1, "Plowhorses": 2, "Dogs": 3}
-    out_items.sort(key=lambda x: (rank[x["classification"]], -x["revenue"]))
-
-    return {
-        "period": {"start_date": start_iso[:10], "end_date": end_iso[:10]},
-        "outlet_id": outlet_id,
-        "stars": counts["Stars"],
-        "plowhorses": counts["Plowhorses"],
-        "puzzles": counts["Puzzles"],
-        "dogs": counts["Dogs"],
-        "menu_items": out_items,
-        "cost_estimation_used": any(e["_cost_estimated"] for e in enriched),
-        "cost_estimated_items": sum(1 for e in enriched if e["_cost_estimated"]),
-        "thresholds": {
-            "popularity_pct": round(pop_threshold_pct, 2),
-            "avg_cm_per_unit": round(cm_threshold, 2),
-            "method": "Kasavana-Smith (1/N × 70% popülerlik, ağırlıklı CM ortalaması)",
-        },
-        "totals": {
-            "items": n_items,
-            "units_sold": int(total_qty),
-            "revenue": round(sum(e["_revenue"] for e in enriched), 2),
-            "contribution_margin": round(total_cm, 2),
-        },
-    }
+    from domains.pms.pos_fnb.report_adapters import report
+    return await report(db, tenant_id, 'engineering', start_iso, end_iso, outlet_id)
 
 
 router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"])
@@ -878,138 +727,14 @@ async def split_check(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
-    """
-    Split restaurant check
-    - Equal split (N ways)
-    - By item
-    - Custom amounts
-    """
-    transaction = await db.pos_transactions.find_one({"id": transaction_id, "tenant_id": current_user.tenant_id})
-
+    from domains.pms.pos_fnb.check_split import preview
+    transaction = await db.pos_transactions.find_one({'id': transaction_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
     if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    total_amount = transaction.get("total_amount", 0)
-    # Item field is stored as 'order_items' on POS orders; older transactions used 'items'.
-    items = transaction.get("order_items") or transaction.get("items", [])
-    # Legacy fallback: transactions closed before the v2 close handler
-    # snapshotted order_items into the txn doc may have no items field.
-    # Fetch from pos_orders via order_id (tenant-scoped) so split_check
-    # still works for old data. This is the safety net for the same-class
-    # bug fixed in pos_fnb_service_v2.complete_order (CI 2026-05-25).
-    if not items:
-        order_id = transaction.get("order_id")
-        if order_id:
-            parent_order = await db.pos_orders.find_one(
-                {"id": order_id, "tenant_id": current_user.tenant_id},
-                {"order_items": 1, "_id": 0},
-            )
-            if parent_order:
-                items = parent_order.get("order_items", []) or []
-
-    split_transactions = []
-
-    if split_type == "equal":
-        # Equal split
-        amount_per_split = total_amount / split_count
-        for i in range(split_count):
-            split_transactions.append({"split_number": i + 1, "amount": round(amount_per_split, 2), "items": "All items (split equally)"})
-
-    elif split_type == "by_item":
-        # By item (from split_details)
-        if not split_details:
-            raise HTTPException(status_code=400, detail="split_details required for by_item split")
-
-        # Schema-agnostic field resolution: v2 close writes
-        # `{item_name, unit_price, quantity, total}`; legacy POS rows used
-        # `{name, price}`. split_check must read BOTH (CI 2026-05-25 D —
-        # without this, valid indices produced 0.0 splits silently).
-        def _line_amount(it):
-            for key in ("total", "price"):
-                v = it.get(key)
-                if v is not None:
-                    try:
-                        return float(v)
-                    except (TypeError, ValueError):
-                        pass
-            unit = it.get("unit_price")
-            qty = it.get("quantity", 1)
-            if unit is not None:
-                try:
-                    return float(unit) * float(qty or 1)
-                except (TypeError, ValueError):
-                    pass
-            return 0.0
-
-        def _line_label(it):
-            return it.get("item_name") or it.get("name")
-
-        total_raw_indices = 0
-        total_valid_indices = 0
-        for split_num, item_indices in split_details.items():
-            safe_indices = []
-            for raw_idx in item_indices or []:
-                total_raw_indices += 1
-                try:
-                    idx_int = int(raw_idx)
-                except (TypeError, ValueError):
-                    continue
-                if 0 <= idx_int < len(items):
-                    safe_indices.append(idx_int)
-                    total_valid_indices += 1
-            split_amount = sum(_line_amount(items[i]) for i in safe_indices)
-            split_items = [_line_label(items[i]) for i in safe_indices]
-            try:
-                split_number = int(split_num)
-            except (TypeError, ValueError):
-                split_number = len(split_transactions) + 1
-            split_transactions.append({"split_number": split_number, "amount": round(split_amount, 2), "items": split_items})
-
-        if total_raw_indices > 0 and total_valid_indices == 0:
-            raise HTTPException(status_code=400, detail="by_item split: no valid item indices in split_details (all out of range or non-numeric)")
-
-    elif split_type == "custom":
-        # Custom amounts
-        if not split_details:
-            raise HTTPException(status_code=400, detail="split_details required for custom split")
-
-        for split_num, amount in split_details.items():
-            try:
-                amount_f = float(amount)
-            except (TypeError, ValueError):
-                amount_f = 0.0
-            try:
-                split_number = int(split_num)
-            except (TypeError, ValueError):
-                split_number = len(split_transactions) + 1
-            split_transactions.append({"split_number": split_number, "amount": round(amount_f, 2), "items": "Custom split"})
-
-    # Update original transaction.
-    # SECURITY: tenant_id filter required (same bug class as KDS IDOR fixed
-    # earlier in this batch). The earlier find_one above already enforces
-    # tenant scope, so this update logically cannot cross tenants — but
-    # leaving the filter open invites regressions if a future caller skips
-    # the find_one. Keep both call-sites tenant-scoped.
-    await db.pos_transactions.update_one({"id": transaction_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "split", "split_type": split_type, "split_count": len(split_transactions)}})
-
-    splits_total = round(sum(float(s.get("amount", 0) or 0) for s in split_transactions), 2)
-    expected_total = round(float(total_amount or 0), 2)
-    total_validation = {
-        "expected": expected_total,
-        "actual": splits_total,
-        "delta": round(splits_total - expected_total, 2),
-        "match": abs(splits_total - expected_total) < 0.01,
-    }
-
-    return {
-        "success": True,
-        "original_transaction_id": transaction_id,
-        "original_amount": expected_total,
-        "split_type": split_type,
-        "split_count": len(split_transactions),
-        "splits": split_transactions,
-        "total_validation": total_validation,
-    }
+        raise HTTPException(404, 'Transaction not found')
+    if not (transaction.get('order_items') or transaction.get('items')) and transaction.get('order_id'):
+        order = await db.pos_orders.find_one({'tenant_id': current_user.tenant_id, 'id': transaction['order_id']}, {'order_items': 1}) or {}
+        transaction['order_items'] = order.get('order_items', [])
+    return preview(transaction, split_type, split_count, split_details)
 
 
 # ── POST /pos/transfer-table ──
@@ -1702,6 +1427,9 @@ async def create_pos_order(
     # so charges can't be orphaned onto a non-existent / cross-tenant folio.
     guest_id = None
     booking_id = data.booking_id
+    booking = None
+    settings = await db.hotel_settings.find_one({'tenant_id': tenant_id}, {'currency': 1}) or {}
+    currency = str(settings.get('currency') or 'TRY').upper()
     if data.booking_id:
         booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tenant_id})
         if booking:
@@ -1750,6 +1478,11 @@ async def create_pos_order(
                 detail="Kapalı/çıkışı yapılmış folyoya POS hesabı kesilemez",
             )
         folio_booking_id = folio.get("booking_id") or booking_id or ""
+        if not booking and folio_booking_id:
+            booking = await db.bookings.find_one({'id': folio_booking_id, 'tenant_id': tenant_id})
+        folio_currency = folio.get('currency') or (booking or {}).get('currency') or currency
+        if str(folio_currency).upper() != currency:
+            raise HTTPException(422, 'POS ve folyo para birimi farklı; tutar kur çevrimi olmadan odaya aktarılamaz.')
         if guest_id is None and folio.get("guest_id"):
             guest_id = folio.get("guest_id")
 
@@ -1780,6 +1513,8 @@ async def create_pos_order(
 
         if not menu_item:
             raise HTTPException(status_code=400, detail="Menü ürünü bu satış noktasında bulunamadı")
+        if str(menu_item.get('currency') or currency).upper() != currency:
+            raise HTTPException(422, 'Menü ürünü para birimi tesisin POS para birimiyle uyuşmuyor.')
         if menu_item.get("available", menu_item.get("status", "active") == "active") is False:
             raise HTTPException(status_code=400, detail="Menü ürünü satışta değil")
 
@@ -1846,6 +1581,7 @@ async def create_pos_order(
         idempotency_key=idempotency_key,
     )
     order_doc = order.model_dump()
+    order_doc['currency'] = currency
 
     # Build folio charge docs, each stamped with (source_pos_order_id, line_no)
     # so the unique partial index can dedup any partial-failure re-post. These
@@ -1863,13 +1599,18 @@ async def create_pos_order(
                 quantity=order_item.quantity,
                 unit_price=order_item.unit_price,
                 amount=order_item.total_price,
-                tax_amount=round(order_item.total_price * order_item.tax_rate, 2),
+                subtotal=order_item.total_price,
+                vat_amount=round(order_item.total_price * order_item.tax_rate, 2),
+                vat_rate=order_item.tax_rate * 100,
+                tax_amount=0,
                 total=round(order_item.total_price * (1 + order_item.tax_rate), 2),
                 voided=False,
             )
             cdoc = charge.model_dump()
             cdoc["source_pos_order_id"] = order.id
             cdoc["line_no"] = line_no
+            cdoc.update(currency=currency, business_date=business_date, outlet_id=data.outlet_id,
+                        pos_financial_version=2, posted_by=current_user.id)
             charge_docs.append(cdoc)
 
     # Ensure the unique partial indexes exist (fail-closed). Without them the
@@ -1937,16 +1678,9 @@ async def get_menu_engineering(
     katalog maliyetleriyle birleştirir. Eşikler hardcoded değil; popülerlik
     eşiği (1/N)×%70, karlılık eşiği ağırlıklı ortalama katkı payı.
     """
-    if start_date and end_date:
-        start = datetime.fromisoformat(start_date)
-        end = datetime.fromisoformat(end_date)
-    else:
-        end = datetime.now(UTC)
-        start = end - timedelta(days=30)
-
     return await _build_menu_engineering(
         current_user.tenant_id,
-        start.isoformat(),
-        end.isoformat(),
+        start_date,
+        end_date,
         outlet_id,
     )

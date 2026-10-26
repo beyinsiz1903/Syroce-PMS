@@ -77,8 +77,9 @@ async def test_legacy_txn_without_items_falls_back_to_pos_orders(monkeypatch, us
 
     assert result["success"] is True
     splits = {s["split_number"]: s for s in result["splits"]}
-    assert splits[1]["amount"] == 80.0
-    assert splits[2]["amount"] == 60.0
+    assert splits[1]["amount"] == 57.14
+    assert splits[2]["amount"] == 42.86
+    assert result['total_validation']['actual'] == 100.0  # Actual paid total, not pre-discount catalog sum.
     assert fake_db.pos_orders.last_filter == {"id": "ord1", "tenant_id": "t1"}
 
 
@@ -191,12 +192,11 @@ async def test_v2_schema_unit_price_quantity_fallback(monkeypatch, user):
         _perm=None,
     )
     splits = {s["split_number"]: s for s in result["splits"]}
-    assert splits[1]["amount"] == 100.0
+    assert splits[1]["amount"] == 200.0
 
 
-async def test_update_one_filter_is_tenant_scoped(monkeypatch, user):
-    """split_check's terminal `update_one` MUST include tenant_id (same
-    bug class as the KDS IDOR fixed earlier in this batch)."""
+async def test_split_preview_does_not_rewrite_paid_transaction(monkeypatch, user):
+    """Preview must not turn a paid receipt into an unposted 'split' status."""
     txn = {
         "id": "tx1",
         "tenant_id": "t1",
@@ -229,6 +229,4 @@ async def test_update_one_filter_is_tenant_scoped(monkeypatch, user):
         current_user=user,
         _perm=None,
     )
-    assert fake_db.pos_transactions.update_filter == {
-        "id": "tx1", "tenant_id": "t1",
-    }
+    assert fake_db.pos_transactions.update_filter is None

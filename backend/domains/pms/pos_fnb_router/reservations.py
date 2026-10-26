@@ -4,7 +4,6 @@ reservations.py
 Restaurant table management and reservation endpoints.
 """
 
-import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,7 +15,7 @@ from core.security import get_current_user, security
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module_role
 
-router = APIRouter(tags=["pos_reservations"])
+router = APIRouter(prefix='/api', tags=["pos_reservations"])
 
 
 class ReservationCreateRequest(BaseModel):
@@ -52,35 +51,8 @@ async def get_reservations(
 async def create_reservation(
     req: ReservationCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
-    """Create a new table reservation."""
-
-    # Conflict check (Double-booking defense)
-    conflict = await db.pos_table_reservations.find_one(
-        {"tenant_id": current_user.tenant_id, "outlet_id": req.outlet_id, "table_id": req.table_id, "res_date": req.res_date, "res_time": req.res_time, "status": {"$in": ["confirmed", "seated"]}}
-    )
-
-    if conflict:
-        raise HTTPException(status_code=400, detail="Masa bu saatte zaten dolu.")
-
-    doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "outlet_id": req.outlet_id,
-        "table_id": req.table_id,
-        "guest_name": req.guest_name,
-        "pax": req.pax,
-        "res_date": req.res_date,
-        "res_time": req.res_time,
-        "notes": req.notes,
-        "status": "confirmed",
-        "created_at": datetime.now(UTC).isoformat(),
-        "created_by": current_user.id,
-    }
-
-    await db.pos_table_reservations.insert_one(doc)
-
-    doc.pop("_id", None)
-    return doc
+    from domains.pms.pos_fnb.reservation_store import create
+    return await create(db, current_user.tenant_id, current_user.id, **req.model_dump())
 
 
 @router.put("/pos/reservations/{reservation_id}/status")

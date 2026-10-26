@@ -183,10 +183,15 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
         return False, f"retryable: folio {folio_id} not found at apply time"
 
     folio_status = folio.get("status") or "open"
-    if folio_status != "open":
+    expected_currency = folio.get('currency')
+    if folio_status == 'open' and not expected_currency and folio.get('booking_id') and any(c.get('currency') for c in charges):
+        booking = await db.bookings.find_one({'tenant_id': tenant_id, 'id': folio['booking_id']}, {'currency': 1}) or {}
+        expected_currency = booking.get('currency')
+    currency_mismatch = expected_currency and any(c.get('currency') and c['currency'] != expected_currency for c in charges)
+    if folio_status != "open" or currency_mismatch:
         # Apply-time late-charge / AR guard — NEVER silently write to a
         # non-open folio.
-        await _route_late_charge(db, tenant_id, folio, order_id, charges, folio_status)
+        await _route_late_charge(db, tenant_id, folio, order_id, charges, 'currency_mismatch' if currency_mismatch else folio_status)
         reversal = await db.outbox_events.find_one({'tenant_id': tenant_id, 'entity_id': order_id, 'event_type': POS_CHARGE_REVERSED})
         if reversal:
             return await _apply_reversed({'tenant_id': tenant_id, 'payload': {**reversal.get('payload', {}), 'folio_id': folio_id, 'source_pos_order_id': order_id}})

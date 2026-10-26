@@ -91,10 +91,14 @@ async def get_outlets(current_user: User = Depends(get_current_user)):
         {"_id": 0},
     ).to_list(100)
 
-    # Get transaction counts per outlet
+    # Same canonical sales and PMS operating day as the POS reports.
+    from domains.pms.pos_router.pos_core import _query_pos_transactions
+    settings = await db.tenant_settings.find_one({'tenant_id': current_user.tenant_id}, {'business_date': 1}) or {}
+    business_date = str(settings.get('business_date') or datetime.now(UTC).date().isoformat())
+    transactions = await _query_pos_transactions(current_user.tenant_id, limit=None, date=business_date, database=db)
     for outlet in outlets:
-        today_trans = await db.pos_menu_transactions.count_documents({"tenant_id": current_user.tenant_id, "outlet_id": outlet["id"], "transaction_date": datetime.now(UTC).date().isoformat()})
-        outlet["today_transactions"] = today_trans
+        outlet['today_transactions'] = sum(row.get('outlet_id') == outlet['id'] and row.get('status') in {'completed', 'closed', 'paid'} for row in transactions)
+        outlet['business_date'] = business_date
 
     return {"outlets": outlets, "count": len(outlets)}
 
@@ -385,63 +389,8 @@ async def create_pos_transaction_with_menu(
 
 @router.get("/pos/menu-sales-breakdown")
 async def get_menu_sales_breakdown(outlet_id: str = None, start_date: str = None, end_date: str = None, current_user: User = Depends(get_current_user)):
-    """Get menu item sales breakdown"""
-    if not start_date:
-        start_date = datetime.now(UTC).date().isoformat()
-    if not end_date:
-        end_date = start_date
-
-    # Get transactions
-    query = {"tenant_id": current_user.tenant_id, "transaction_date": {"$gte": start_date, "$lte": end_date}}
-
-    if outlet_id:
-        query["outlet_id"] = outlet_id
-
-    transactions = await db.pos_menu_transactions.find(query, {"_id": 0}).to_list(10000)
-
-    # Aggregate by menu item
-    menu_sales = {}
-    category_sales = {}
-    outlet_sales = {}
-
-    for trans in transactions:
-        outlet_name = trans.get("outlet_name", "Unknown")
-        outlet_sales[outlet_name] = outlet_sales.get(outlet_name, 0) + trans.get("total_amount", 0)
-
-        for item in trans.get("items", []):
-            item_name = item.get("item_name")
-            category = item.get("category", "Other")
-
-            if item_name not in menu_sales:
-                menu_sales[item_name] = {"item_name": item_name, "category": category, "quantity_sold": 0, "total_revenue": 0, "total_cost": 0, "gross_profit": 0}
-
-            menu_sales[item_name]["quantity_sold"] += item.get("quantity", 0)
-            menu_sales[item_name]["total_revenue"] += item.get("total_price", 0)
-            menu_sales[item_name]["total_cost"] += item.get("total_cost", 0)
-            menu_sales[item_name]["gross_profit"] += item.get("total_price", 0) - item.get("total_cost", 0)
-
-            category_sales[category] = category_sales.get(category, 0) + item.get("total_price", 0)
-
-    # Sort by revenue
-    sorted_menu_sales = sorted(menu_sales.values(), key=lambda x: x["total_revenue"], reverse=True)
-
-    # Calculate totals
-    total_revenue = sum(item["total_revenue"] for item in sorted_menu_sales)
-    total_cost = sum(item["total_cost"] for item in sorted_menu_sales)
-
-    return {
-        "date_range": f"{start_date} to {end_date}",
-        "menu_items": sorted_menu_sales,
-        "by_category": [{"category": cat, "revenue": round(rev, 2)} for cat, rev in sorted(category_sales.items(), key=lambda x: x[1], reverse=True)],
-        "by_outlet": [{"outlet_name": name, "revenue": round(rev, 2)} for name, rev in sorted(outlet_sales.items(), key=lambda x: x[1], reverse=True)],
-        "summary": {
-            "total_transactions": len(transactions),
-            "total_revenue": round(total_revenue, 2),
-            "total_cost": round(total_cost, 2),
-            "gross_profit": round(total_revenue - total_cost, 2),
-            "profit_margin": round((total_revenue - total_cost) / total_revenue * 100, 1) if total_revenue > 0 else 0,
-        },
-    }
+    from domains.pms.pos_fnb.report_adapters import report
+    return await report(db, current_user.tenant_id, 'breakdown', start_date, end_date, outlet_id, days=1)
 
 
 # 3. Z REPORT / GÜNLÜK KAPANIŞ
@@ -859,64 +808,9 @@ async def get_stock_consumption_mobile(outlet_id: str | None = None, start_date:
 
 @router.get("/fnb/mobile/daily-summary")
 async def get_fnb_daily_summary_mobile(date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get comprehensive F&B daily summary"""
+    from domains.pms.pos_fnb.report_adapters import report
     current_user = await get_current_user(credentials)
-
-    if date:
-        target_date = datetime.fromisoformat(date).date()
-    else:
-        target_date = datetime.now(UTC).date()
-
-    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
-    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=UTC)
-
-    # Orders summary
-    orders_query = {"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_of_day, "$lte": end_of_day}}
-
-    total_orders = 0
-    total_revenue = 0.0
-    orders_by_outlet = {}
-    orders_by_status = {"pending": 0, "preparing": 0, "ready": 0, "served": 0, "cancelled": 0}
-
-    async for order in db.pos_orders.find(orders_query):
-        total_orders += 1
-        total_revenue += order.get("total", 0)
-
-        outlet = order.get("outlet_name", "Unknown")
-        if outlet not in orders_by_outlet:
-            orders_by_outlet[outlet] = {"count": 0, "revenue": 0}
-        orders_by_outlet[outlet]["count"] += 1
-        orders_by_outlet[outlet]["revenue"] += order.get("total", 0)
-
-        status = order.get("status", "pending")
-        orders_by_status[status] = orders_by_status.get(status, 0) + 1
-
-    # Stock consumption summary
-    consumption_query = {"tenant_id": current_user.tenant_id, "consumed_at": {"$gte": start_of_day, "$lte": end_of_day}}
-
-    total_consumption_cost = 0.0
-    consumption_count = 0
-
-    async for consumption in db.stock_consumption.find(consumption_query):
-        total_consumption_cost += consumption.get("cost", 0)
-        consumption_count += 1
-
-    # Calculate profit
-    gross_profit = total_revenue - total_consumption_cost
-    profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
-
-    return {
-        "date": target_date.isoformat(),
-        "orders": {
-            "total_count": total_orders,
-            "total_revenue": total_revenue,
-            "by_outlet": orders_by_outlet,
-            "by_status": orders_by_status,
-            "average_order_value": total_revenue / total_orders if total_orders > 0 else 0,
-        },
-        "stock_consumption": {"total_cost": total_consumption_cost, "item_count": consumption_count},
-        "profitability": {"revenue": total_revenue, "cost": total_consumption_cost, "gross_profit": gross_profit, "profit_margin_percentage": profit_margin},
-    }
+    return await report(db, current_user.tenant_id, 'mobile', date, date, days=1)
 
 
 # ========================================

@@ -1,7 +1,7 @@
 """Public menu and signed-table ordering, backed by the canonical POS service."""
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from pymongo.errors import DuplicateKeyError
 
@@ -9,12 +9,21 @@ from common.context import OperationContext
 from core.database import db
 from core.entitlement import require_tenant_module
 from core.tenant_currency import get_tenant_currency
+from core.tenant_db import tenant_context
 from domains.pms.pos_extensions.pos_happy_hour import _apply_discount, _rule_matches, hotel_local_time
 from domains.pms.pos_fnb.checkout_benefits import fingerprint
 from domains.pms.pos_fnb.guest_qr import verify_table_token
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
 
-router = APIRouter(prefix='/api/public/fnb', tags=['guest_menu'])
+
+async def public_tenant_scope(tenant_id: str):
+    # No login authority is granted. Reads remain tenant-scoped, writes still
+    # require the signed table capability below. Restore context on all exits.
+    with tenant_context(tenant_id):
+        yield
+
+
+router = APIRouter(prefix='/api/public/fnb', tags=['guest_menu'], dependencies=[Depends(public_tenant_scope)])
 
 
 class GuestOrderItem(BaseModel):

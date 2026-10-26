@@ -58,6 +58,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         "source_pos_order_id": 1,
         "booking_id": 1,
         "folio_id": 1,
+        'outlet_id': 1,
         "business_date": 1,
         "date": 1,
         "charge_date": 1,
@@ -75,6 +76,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         "tax_inclusive": 1,
         "posted_by": 1,
         "demo_reconstruction": 1,
+        'pos_financial_version': 1,
     }
     folio_rows, extra_rows, pos_rows = await asyncio.gather(
         # Financial reports may cover high-volume F&B and chain properties.
@@ -154,6 +156,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
                 "vat_amount": row.get("vat_amount"), "tax_breakdown": row.get("tax_breakdown"),
                 "discount_amount": row.get("discount_amount"),
                 "report_refund": value < 0, "source_pos_order_id": order_id,
+                '_pos_transaction': row,
                 "currency": row.get("currency") or order_currencies.get(order_id),
                 "business_date": row.get("business_date") or row.get("transaction_date"), "date": row.get("created_at")})
     direct_pos_rows = [
@@ -171,8 +174,67 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         for row in pos_rows
         if str(row.get("id") or "") not in represented_pos_ids | settled_ids
     ]
-    return await resolve_ledger_currencies([
+    result = await resolve_ledger_currencies([
         *({**row, "report_source": "folio"} for row in folio_rows if is_revenue_charge(row)),
         *({**row, "report_source": "extra"} for row in extra_rows if is_revenue_charge(row)),
         *({**row, "report_source": "pos"} for row in [*transaction_rows, *direct_pos_rows]),
     ], tenant_id, database=database, fallback_currency=fallback_currency)
+    # Repair the VIEW, never the historical ledger. An old single aggregate
+    # folio row can be split only when its exact sale snapshot proves both
+    # gross and tax. Conflicting/unknown evidence remains visibly unreconciled.
+    from domains.pms.pos_fnb.folio_lines import checkout_lines
+    from domains.pms.pos_fnb.reporting import is_refund
+
+    ids = [row['source_pos_order_id'] for row in result if row.get('report_source') == 'folio'
+           and row.get('source_pos_order_id') and row.get('pos_financial_version') != 2]
+    originals = await database.pos_transactions.find({'tenant_id': tenant_id, 'order_id': {'$in': ids},
+        'status': 'completed', 'payment_method': 'room_charge'}, {'_id': 0}).to_list(None) if ids else []
+    by_order = {row['order_id']: row for row in originals}
+    counts = {}
+    for row in result:
+        if row.get('report_source') == 'folio' and row.get('source_pos_order_id'):
+            key = row['source_pos_order_id']
+            counts[key] = counts.get(key, 0) + 1
+    normalized = []
+    for row in result:
+        txn = row.pop('_pos_transaction', None)
+        ratio = 1
+        if row.get('report_source') == 'folio' and row.get('pos_financial_version') != 2:
+            txn = by_order.get(row.get('source_pos_order_id'))
+            if txn and (counts[row['source_pos_order_id']] != 1 or money(txn.get('amount')) != money(row.get('total'))
+                    or money(txn.get('tax_amount')) != money(row.get('tax_amount'))
+                    or txn.get('currency') != row.get('currency')):
+                txn = None
+        elif txn and is_refund(txn):
+            original = txn.get('source_sale')
+            if original and money(original.get('total_amount')):
+                ratio = -abs(money(txn.get('total_amount'))) / money(original['total_amount'])
+                txn = original
+            else:
+                txn = None
+        if not txn or txn.get('tax_amount') is None or not (txn.get('order_items') or txn.get('items')):
+            normalized.append(row)
+            continue
+        try:
+            lines = checkout_lines(txn)
+        except Exception:
+            # A malformed snapshot is not permission to guess a tax/category.
+            normalized.append(row)
+            continue
+        # Round cumulatively so a virtual partial refund conserves its exact
+        # posted cents. Never create an off-by-cent report-only financial row.
+        from domains.pms.pos_fnb.folio_lines import allocate
+        totals = allocate(abs(money(row['total'])), [line['total'] for line in lines])
+        taxes = allocate(abs(money(row.get('tax_amount'))), [line['vat_amount'] for line in lines])
+        for index, (line, total, tax) in enumerate(zip(lines, totals, taxes)):
+            sign = -1 if ratio < 0 else 1
+            vat = sign * tax
+            discount = rounded(money(line['discount_amount']) * ratio)
+            value = sign * total
+            net = rounded(money(value) - money(vat))
+            normalized.append({**row, 'id': f"{row.get('id')}:pos-line:{index}",
+                'charge_category': line['charge_category'], 'category': line['charge_category'],
+                'amount': net, 'subtotal': rounded(money(net) + money(discount)), 'discount_amount': discount,
+                'vat_amount': vat, 'tax_amount': 0, 'tax_breakdown': {'vat': vat}, 'total': value,
+                'report_normalized_from': row.get('id'), 'report_normalization': 'verified_pos_snapshot'})
+    return normalized

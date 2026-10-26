@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { TrendingUp, DollarSign, Target, BarChart3, PieChart, Award } from 'lucide-react';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 const ComprehensiveReportsModule = () => {
   const [menuEngineering, setMenuEngineering] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
@@ -123,6 +124,8 @@ const ComprehensiveReportsModule = () => {
                     </Card>
                   </div>
 
+                  {(menuEngineering?.report_warnings || []).map(message => <p key={message} role="alert" className="text-sm text-amber-800">{message}</p>)}
+                  <p className="text-sm text-gray-600">Maliyetler güncel katalogdan hesaplanır; geçmiş dönem kârlılığının kesinleşmiş muhasebe raporu değildir. Eksik maliyetler sıfır kabul edilmez.</p>
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
@@ -144,10 +147,10 @@ const ComprehensiveReportsModule = () => {
                               </Badge>
                             </td>
                             <td className="p-3 text-right">{item.quantity_sold}</td>
-                            <td className="p-3 text-right">${item.revenue.toFixed(2)}</td>
+                            <td className="p-3 text-right">{item.revenue == null ? 'Doğrulanamadı' : formatCurrency(item.revenue, menuEngineering.currency || cachedTenantCurrency())}</td>
                             <td className="p-3 text-right">
                               <span className={item.profit_margin > 50 ? 'text-green-600' : 'text-red-600'}>
-                                {item.profit_margin}%
+                                {item.profit_margin == null ? 'Maliyet doğrulanamadı' : `${item.profit_margin}%`}
                               </span>
                             </td>
                             <td className="p-3 text-sm">{item.recommendation}</td>

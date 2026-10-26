@@ -557,3 +557,22 @@ async def test_dashboard_legacy_menu_contract_creates_real_priced_order(_patch):
     assert order["subtotal"] == 120.0
     assert order["tax_amount"] == 12.0
     assert order["total_amount"] == 132.0
+
+
+async def test_legacy_room_post_carries_vat_not_city_tax_and_currency(_patch):
+    result = await pos_core.create_pos_order(data=_req([('m1', 1)], idem='VAT-CURRENCY'), credentials=None)
+    charge = _posted_events(_patch)[0]['payload']['charges'][0]
+    assert charge['amount'] == charge['subtotal'] == 100
+    assert charge['vat_amount'] == 18 and charge['tax_amount'] == 0 and charge['total'] == 118
+    assert charge['currency'] == result['order']['currency'] == 'TRY'
+    assert charge['pos_financial_version'] == 2
+    assert charge['business_date'] == '2026-09-23'
+
+
+async def test_legacy_room_currency_mismatch_rejects_before_intent(_patch):
+    from fastapi import HTTPException
+    _patch.folios.docs[0]['currency'] = 'USD'
+    with pytest.raises(HTTPException) as error:
+        await pos_core.create_pos_order(data=_req([('m1', 1)], idem='BAD-CURRENCY'), credentials=None)
+    assert error.value.status_code == 422
+    assert _patch.pos_orders.insert_calls == 0 and not _posted_events(_patch)

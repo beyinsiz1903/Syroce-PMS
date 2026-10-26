@@ -586,7 +586,7 @@ class PosFnbServiceV2:
                     "tenant_id": ctx.tenant_id,
                     "status": {"$in": ["checked_in", "in_house"]},
                 },
-                {"_id": 0, "id": 1, "status": 1},
+                {"_id": 0, "id": 1, "status": 1, "currency": 1},
             )
             if not booking:
                 return ServiceResult.fail(
@@ -596,19 +596,25 @@ class PosFnbServiceV2:
             folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
             if not folio:
                 return ServiceResult.fail("Open guest folio not found", "FOLIO_NOT_OPEN")
+            sale_currency = str(txn_doc['currency']).upper()
+            folio_currency = str(folio.get('currency') or booking.get('currency') or sale_currency).upper()
+            if folio_currency != sale_currency:
+                return ServiceResult.fail('Oda folyosunun para birimi adisyondan farklı. Kur dönüşümü doğrulanmadan aktarım yapılamaz.', 'FOLIO_CURRENCY_MISMATCH')
             folio_charge_id = str(uuid.uuid4())
-            charge_doc = {
-                    "id": folio_charge_id,
+            from domains.pms.pos_fnb.folio_lines import checkout_lines
+
+            charge_docs = [{
+                    **line,
+                    'id': folio_charge_id if index == 0 else str(uuid.uuid4()),
+                    'currency': sale_currency,
+                    'business_date': business_date,
+                    'pos_financial_version': 2,
                     "tenant_id": ctx.tenant_id,
                     "booking_id": booking_id,
                     "folio_id": folio["id"],
                     "guest_id": folio.get("guest_id"),
                     "charge_type": "pos_fnb",
-                    "charge_category": "food",
-                    "description": f"F&B - Order #{order.get('order_number')}",
-                    "amount": grand_total,
-                    "tax_amount": txn_doc["tax_amount"],
-                    "total": grand_total,
+                    'description': f"F&B #{order.get('order_number')} — {line['description']}",
                     "voided": False,
                     "date": now.isoformat(),
                     "posted_by": ctx.actor_id,
@@ -616,14 +622,13 @@ class PosFnbServiceV2:
                     # Dedup key for the consumer's partial unique index
                     # ux_folio_charges_pos_source (tenant, source_pos_order_id, line_no).
                     "source_pos_order_id": order_id,
-                    "line_no": 0,
-            }
+            } for index, line in enumerate(checkout_lines(txn_doc))]
             outbox_payload = {
                 "tenant_id": ctx.tenant_id,
                 "folio_id": folio["id"],
                 "source_pos_order_id": order_id,
                 "booking_id": booking_id,
-                "charges": [charge_doc],
+                "charges": charge_docs,
             }
             txn_doc['booking_id'] = booking_id
             txn_doc['folio_id'] = folio['id']
@@ -692,6 +697,11 @@ class PosFnbServiceV2:
             from domains.pms.pos_fnb.stock_recovery import run_stock_job
 
             await run_stock_job(self._db, ctx.tenant_id, order_id, ctx.actor_id)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                logger.exception('Unexpected recipe stock HTTP failure for order %s', order_id)
+            else:
+                logger.warning('Recipe stock job awaits operator action order=%s tenant=%s reason=%s', order_id, ctx.tenant_id, exc.detail)
         except Exception:  # noqa: BLE001 — never break payment on stock failure
             logger.exception(
                 "Recipe stock consumption failed for order %s (tenant %s)",
@@ -1724,22 +1734,15 @@ class PosFnbServiceV2:
         if table.get("status") in ("occupied", "reserved"):
             return ServiceResult.fail(f"Table {table_number} is {table.get('status')}", "TABLE_UNAVAILABLE")
 
-        reservation_id = str(uuid.uuid4())
-        now = datetime.now(UTC)
-        await self._db.table_reservations.insert_one(
-            {
-                "id": reservation_id,
-                "tenant_id": ctx.tenant_id,
-                "outlet_id": outlet_id,
-                "table_number": table_number,
-                "guest_name": guest_name,
-                "party_size": party_size,
-                "reservation_time": reservation_time,
-                "status": "confirmed",
-                "created_by": ctx.actor_id,
-                "created_at": now.isoformat(),
-            }
-        )
+        from domains.pms.pos_fnb.reservation_store import create
+        try:
+            when = datetime.fromisoformat(reservation_time)
+        except (TypeError, ValueError):
+            raise HTTPException(422, 'Rezervasyon tarih ve saatini birlikte seçin.') from None
+        reservation = await create(self._db, ctx.tenant_id, ctx.actor_id, outlet_id=outlet_id,
+            table_id=table['id'], guest_name=guest_name, pax=party_size,
+            res_date=when.date().isoformat(), res_time=when.strftime('%H:%M'))
+        reservation_id = reservation['id']
 
         await self._db.table_layouts.update_one(
             {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id},
