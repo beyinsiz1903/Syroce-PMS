@@ -330,6 +330,8 @@ class RoomSwapService:
                         "is_impersonating": is_impersonating,
                         "moved_by_name": moved_by,
                     },
+                    session=session,
+                    require_chain=session is not None,
                 )
                 await audit_log(
                     actor_id=actor_id or moved_by,
@@ -345,8 +347,14 @@ class RoomSwapService:
                         "is_impersonating": is_impersonating,
                         "moved_by_name": moved_by,
                     },
+                    session=session,
+                    require_chain=session is not None,
                 )
             except Exception as e:
+                if session is not None:
+                    # A successful occupied-room move must have both sealed
+                    # operator/reason records in the SAME transaction.
+                    raise
                 logger.warning(f"Failed to write room swap audit log: {e}")
 
             return {

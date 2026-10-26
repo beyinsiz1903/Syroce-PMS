@@ -15,7 +15,9 @@ they run without a live Mongo.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -31,6 +33,9 @@ def _match(doc: dict, flt: dict) -> bool:
     for k, v in flt.items():
         if isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
+                return False
+        elif isinstance(v, dict) and '$ne' in v:
+            if doc.get(k) == v['$ne']:
                 return False
         elif doc.get(k) != v:
             return False
@@ -48,6 +53,16 @@ class _Cursor:
         out = [{kk: vv for kk, vv in d.items() if kk != "_id"} for d in self._docs]
         return out[:n] if n else out
 
+    def __aiter__(self):
+        self._iterator = iter(self._docs)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iterator)
+        except StopIteration:
+            raise StopAsyncIteration
+
 
 class _Coll:
     def __init__(self, unique_keys=None):
@@ -55,17 +70,17 @@ class _Coll:
         self.insert_calls = 0
         self.unique_keys = unique_keys
 
-    def find(self, flt=None, proj=None):
+    def find(self, flt=None, proj=None, session=None):
         flt = flt or {}
         return _Cursor([d for d in self.docs if _match(d, flt)])
 
-    async def find_one(self, flt, proj=None, sort=None):
+    async def find_one(self, flt, proj=None, sort=None, session=None):
         matches = [d for d in self.docs if _match(d, flt)]
         if not matches:
             return None
         return {kk: vv for kk, vv in matches[0].items() if kk != "_id"}
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, session=None):
         if self.unique_keys:
             for d in self.docs:
                 if all(d.get(k) == doc.get(k) for k in self.unique_keys):
@@ -74,7 +89,7 @@ class _Coll:
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id=doc.get("id", "x"))
 
-    async def update_one(self, flt, update, upsert=False):
+    async def update_one(self, flt, update, upsert=False, session=None):
         for d in self.docs:
             if _match(d, flt):
                 if "$set" in update:
@@ -87,6 +102,9 @@ class _Coll:
             self.docs.append(newdoc)
             return SimpleNamespace(matched_count=0, modified_count=0, upserted_id="x")
         return SimpleNamespace(matched_count=0, modified_count=0)
+
+    async def create_index(self, *args, **kwargs):
+        return 'index'
 
 
 class _FakeDB:
@@ -104,6 +122,9 @@ class _FakeDB:
         self.inventory_movements = _Coll()
         self.tenant_settings = _Coll()
         self.tenant_settings.docs.append({"tenant_id": TENANT, "business_date": "2026-09-23"})
+        self.client = object()
+        self.payments = _Coll()
+        self.minibar_locks = _Coll()
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -131,10 +152,18 @@ def _patch(monkeypatch):
     monkeypatch.setattr(mr, "_ensure_minibar_charge_index", _noop_index)
     monkeypatch.setattr(mr, "_ensure_minibar_consumption_index", _noop_index)
 
-    async def _balance(db, tenant_id, folio_id):
-        return 0.0
+    from domains.pms import minibar_consumption as mc
+    monkeypatch.setattr(mc, 'audit_log', AsyncMock())
 
-    monkeypatch.setattr(mr, "_recalc_folio_balance", _balance)
+    async def transaction(**kwargs):
+        previous = {name: deepcopy(coll.docs) for name, coll in vars(fake).items() if isinstance(coll, _Coll)}
+        try:
+            return await kwargs['callback'](object())
+        except Exception:
+            for name, docs in previous.items():
+                getattr(fake, name).docs = docs
+            raise
+    monkeypatch.setattr(mc, 'with_resource_locks', transaction)
     return fake
 
 
@@ -145,14 +174,14 @@ def _seed_room(fake, room_id="R1", number="101"):
 def _seed_booking(fake, room_id="R1", booking_id="B1", status="checked_in"):
     fake.bookings.docs.append({
         "id": booking_id, "tenant_id": TENANT, "room_id": room_id,
-        "status": status, "guest_id": "G1",
+        "status": status, "guest_id": "G1", 'currency': 'TRY',
     })
 
 
 def _seed_open_folio(fake, booking_id="B1", folio_id="F1"):
     fake.folios.docs.append({
         "id": folio_id, "tenant_id": TENANT, "booking_id": booking_id,
-        "folio_type": "guest", "status": "open", "guest_id": "G1",
+        "folio_type": "guest", "status": "open", "guest_id": "G1", 'currency': 'TRY',
     })
 
 
@@ -160,6 +189,7 @@ def _seed_item(fake, item_id, name, price, inv=None):
     fake.minibar_items.docs.append({
         "id": item_id, "tenant_id": TENANT, "name": name, "price": price,
         "category": "drink", "active": True, "inventory_product_id": inv,
+        'currency': 'TRY', 'tax_rate': 0,
     })
 
 
@@ -246,6 +276,7 @@ async def test_consume_idempotency_key_returns_prior(_patch):
     _patch.minibar_consumptions.docs.append({
         "id": "L1", "tenant_id": TENANT, "idempotency_key": "K1",
         "status": "posted", "total": 99.0,
+        'room_id': 'R1', 'lines': [{'item_id': 'I1', 'quantity': 1}],
     })
     res = await consume_call(
         _consume_payload([("I1", 1)], key="K1"), _user("front_desk")
@@ -304,10 +335,9 @@ async def test_consume_insufficient_stock_does_not_block_billing(_patch):
     assert res["stock"][0]["status"] == "insufficient_stock"
 
 
-async def test_consume_retry_after_partial_failure_does_not_double_charge(_patch):
-    """Charge'lar yazıldıktan SONRA akış patlasa (consumption insert vb.), aynı
-    idempotency_key ile retry deterministik log_id üretir → folio_charges dedup
-    index satırları reddeder → çift faturalama olmaz."""
+async def test_historical_partial_source_is_not_silently_acknowledged_as_posted(_patch):
+    """An incomplete old source lacks booking/currency/tax proof: fail visible,
+    leave it untouched and do not manufacture a completed consumption."""
     _seed_room(_patch)
     _seed_booking(_patch)
     _seed_open_folio(_patch)
@@ -322,11 +352,12 @@ async def test_consume_retry_after_partial_failure_does_not_double_charge(_patch
         "line_no": 0, "charge_category": "minibar", "total": 20.0, "voided": False,
     })
 
-    res = await consume_call(_consume_payload([("I1", 1)], key=key), _user("front_desk"))
-
-    # Retry yeni charge YAZMAMALI (dedup index reddeder).
+    with pytest.raises(HTTPException) as error:
+        await consume_call(_consume_payload([('I1', 1)], key=key), _user('front_desk'))
+    assert error.value.status_code == 409
     assert _patch.folio_charges.insert_calls == 0
-    assert res["posted_to_folio"] is True
+    assert not _patch.minibar_consumptions.docs
+    assert len(_patch.folio_charges.docs) == 1 and _patch.folio_charges.docs[0]['id'] == 'pre'
 
 
 async def test_consume_concurrent_same_key_single_consumption(_patch):

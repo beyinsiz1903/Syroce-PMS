@@ -47,6 +47,7 @@ async def audit_log(
     property_id: str | None = None,
     correlation_id: str | None = None,
     session=None,
+    require_chain: bool = False,
 ) -> dict[str, Any]:
     entry = build_audit_entry(
         actor_id=actor_id,
@@ -63,7 +64,7 @@ async def audit_log(
         # entry are committed together on the same Mongo client/session.
         from core.audit_chain import append_audit_log
 
-        await append_audit_log(db, entry, session=session)
+        await append_audit_log(db, entry, session=session, **({'require_chain': True} if require_chain else {}))
     else:
         from core.audit_chain import append_audit_log
 

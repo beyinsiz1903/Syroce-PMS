@@ -80,3 +80,13 @@ async def test_one_snapshot_covers_room_types_and_selected_excel_view(dataset):
     with pytest.raises(HTTPException) as exc:
         await read(output='xlsx', snapshot=result['snapshot'])
     assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_occupancy_uses_the_same_catalog_case_normalization_as_forecast(dataset):
+    dataset.rooms.find.return_value.to_list.return_value = [
+        {'id': 'r1', 'room_type': 'Standard'}, {'id': 'r2', 'room_type': 'standard'}]
+    result = await read()
+    assert result['room_types'] == ['Standard']
+    assert len(result['room_type_groups']) == 1
+    assert result['room_type_groups'][0]['physical_rooms'] == 2

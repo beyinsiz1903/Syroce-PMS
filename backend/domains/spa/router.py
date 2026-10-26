@@ -71,8 +71,10 @@ class ServiceIn(BaseModel):
     name: str
     category: str = "massage"  # massage / facial / body / hydro / nail / hair
     duration_minutes: int = Field(60, ge=10, le=480)
-    price: float = Field(0, ge=0)
+    price: float = Field(0, ge=0, le=1e9, allow_inf_nan=False)
     currency: str = "TRY"
+    # Displayed SPA price is VAT-inclusive. None is unknown, never zero tax.
+    tax_rate: float | None = Field(None, ge=0, le=1)
     description: str | None = None
     requires_room_type: str | None = None  # e.g. "wet_room"
     commission_rate: float = Field(0, ge=0, le=1)
@@ -420,9 +422,10 @@ class AppointmentIn(BaseModel):
     guest_name: str
     guest_phone: str | None = None
     reservation_id: str | None = None  # link to PMS reservation
+    folio_id: str | None = None  # explicit target when the reservation has multiple windows
     notes: str | None = None
     charge_to_room: bool = False
-    price_override: float | None = None
+    price_override: float | None = Field(None, ge=0, le=1e9, allow_inf_nan=False)
 
 
 def _overlap(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datetime) -> bool:
@@ -486,6 +489,18 @@ async def create_appointment(
     service = await db.spa_services.find_one({"id": body.service_id, "tenant_id": tenant_id})
     if not service:
         raise HTTPException(404, "Hizmet bulunamadı")
+    if body.charge_to_room:
+        if not body.reservation_id:
+            raise HTTPException(422, 'Odaya aktarım için otel rezervasyonu gerekli')
+        booking = await db.bookings.find_one({'tenant_id': tenant_id, 'id': body.reservation_id}, {'_id': 0})
+        if not booking:
+            raise HTTPException(404, 'Bağlı otel rezervasyonu bulunamadı')
+        if booking.get('status') not in {'confirmed', 'guaranteed', 'checked_in', 'in_house'}:
+            raise HTTPException(409, 'Bu konaklamaya SPA randevusu bağlanamaz')
+        if str(service.get('currency') or 'TRY').upper() != str(booking.get('currency') or 'TRY').upper():
+            raise HTTPException(409, 'SPA hizmeti ve rezervasyon para birimi farklı')
+        if service.get('tax_rate') is None:
+            raise HTTPException(409, 'Odaya aktarım öncesi SPA hizmetinin KDV oranını tanımlayın')
 
     starts = body.starts_at if body.starts_at.tzinfo else body.starts_at.replace(tzinfo=UTC)
     ends = starts + timedelta(minutes=service["duration_minutes"])
@@ -522,10 +537,12 @@ async def create_appointment(
         "duration_minutes": service["duration_minutes"],
         "price": body.price_override if body.price_override is not None else service["price"],
         "currency": service.get("currency", "TRY"),
+        "tax_rate": service.get("tax_rate"),
         "guest_id": body.guest_id,
         "guest_name": body.guest_name,
         "guest_phone": body.guest_phone,
         "reservation_id": body.reservation_id,
+        "folio_id": body.folio_id,
         "notes": body.notes,
         "charge_to_room": body.charge_to_room,
         "status": "scheduled",
@@ -604,36 +621,43 @@ async def change_status(
     appt = await db.spa_appointments.find_one({"id": appt_id, "tenant_id": current_user.tenant_id})
     if not appt:
         raise HTTPException(404, "Randevu bulunamadı")
-    cur_status = appt.get("status", "scheduled")
-    if body.status not in _SPA_TRANSITIONS.get(cur_status, set()):
-        raise HTTPException(409, f"Geçersiz geçiş: {cur_status} → {body.status}")
-    update = {"status": body.status, "updated_at": datetime.now(UTC).isoformat()}
-    if body.status == "completed":
-        update["completed_at"] = datetime.now(UTC).isoformat()
-    # Atomic CAS claim FIRST: only the request that flips the status from the
-    # observed value runs the folio side effect, so a concurrent transition
-    # (e.g. another "completed", or a "cancelled") never leaves a charge
-    # attached to a non-completed record. tenant_id keeps cross-tenant safety.
-    res = await db.spa_appointments.update_one(
-        {"id": appt_id, "tenant_id": current_user.tenant_id, "status": cur_status},
-        {"$set": update},
-    )
-    if res.modified_count == 0:
-        latest = await db.spa_appointments.find_one({"id": appt_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-        return {"ok": True, "status": latest.get("status") if latest else body.status, "idempotent": True}
-    # We won the transition → run the folio side effect (idempotent via the
-    # dedup index). If it fails, the completion must not stand: revert the
-    # transition we just claimed (fail-closed, no completed-without-charge).
-    if body.status == "completed" and appt.get("charge_to_room") and appt.get("reservation_id"):
-        try:
-            await _post_to_folio(current_user.tenant_id, appt)
-        except Exception:
-            await db.spa_appointments.update_one(
-                {"id": appt_id, "tenant_id": current_user.tenant_id, "status": "completed"},
-                {"$set": {"status": cur_status, "updated_at": datetime.now(UTC).isoformat()}, "$unset": {"completed_at": ""}},
-            )
-            raise
-    return {"ok": True, "status": body.status}
+    from shared_kernel.audit_helper import audit_log
+
+    tid = current_user.tenant_id
+
+    async def transition(session):
+        current = await db.spa_appointments.find_one({'id': appt_id, 'tenant_id': tid}, session=session)
+        if not current:
+            raise HTTPException(404, 'Randevu bulunamadı')
+        old = current.get('status', 'scheduled')
+        if body.status not in _SPA_TRANSITIONS.get(old, set()):
+            raise HTTPException(409, f'Geçersiz geçiş: {old} → {body.status}')
+        update = {'status': body.status, 'updated_at': datetime.now(UTC).isoformat()}
+        posted = None
+        if body.status == 'completed':
+            update['completed_at'] = update['updated_at']
+            if current.get('charge_to_room'):
+                posted = await _post_to_folio(tid, {**current, **update}, session=session,
+                    actor_id=current_user.id, actor_name=current_user.name)
+                update['folio_charge_id'] = posted['charge']['id']
+                update['folio_id'] = posted['charge']['folio_id']
+        changed = await db.spa_appointments.update_one({'id': appt_id, 'tenant_id': tid, 'status': old}, {'$set': update}, session=session)
+        if changed.modified_count != 1:
+            raise HTTPException(409, 'SPA durumu eşzamanlı değişti; folyo aktarımı geri alındı')
+        await audit_log(actor_id=current_user.id, tenant_id=tid, entity_type='reservation' if current.get('reservation_id') else 'spa_appointment',
+            entity_id=current.get('reservation_id') or appt_id, action='spa_status_changed',
+            metadata={'source_spa_appointment_id': appt_id, 'from_status': old, 'to_status': body.status,
+                'reason': current.get('notes'), 'actor_name': current_user.name}, session=session, require_chain=True)
+        return {'ok': True, 'status': body.status, 'posted': posted}
+
+    result = await with_resource_locks(client=db.client, db=db, tenant_id=tid, locks_collection='spa_locks',
+        resources=[('appointment', appt_id), ('booking', appt.get('reservation_id'))], callback=transition)
+    if result['posted']:
+        from core.report_cache import invalidate_financial_report_caches
+
+        invalidate_financial_report_caches(tid)
+        await _publish_posting(tid, result['posted'])
+    return {key: value for key, value in result.items() if key != 'posted'}
 
 
 # Allowed status transitions (defensive workflow guard).
@@ -646,48 +670,24 @@ _SPA_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-async def _post_to_folio(tenant_id: str, appt: dict) -> None:
-    """Write a folio posting (idempotent) and emit Xchange POSTING_CHARGE.
-
-    Dedup: a unique partial index on ``(tenant_id, dedup_key)`` makes the
-    posting insert idempotent per appointment. A second "completed" PATCH
-    (or a retry) hits ``DuplicateKeyError`` → no double charge and no
-    duplicate Xchange event. Fail-closed: if the dedup index cannot be
-    ensured, the insert is aborted so completion fails rather than risk a
-    non-idempotent charge.
-    """
-    from pymongo.errors import DuplicateKeyError
-
-    from shared_kernel.pos_idem import ensure_compound_unique
+async def _post_to_folio(tenant_id: str, appt: dict, *, session=None, actor_id=None, actor_name=None):
+    from domains.spa.folio import post_charge
 
     db = get_system_db()
-    await ensure_compound_unique(
-        db.folio_postings,
-        [("tenant_id", 1), ("dedup_key", 1)],
-        partial_filter={"dedup_key": {"$type": "string"}},
-        name="uniq_folio_postings_dedup",
-    )  # may raise → fail-closed (no charge without dedup guarantee)
-    posting = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "reservation_id": appt.get("reservation_id"),
-        "folio_id": appt.get("reservation_id"),  # 1:1 with reservation
-        "transaction_code": "SPA",
-        "description": f"Spa: {appt.get('service_name')}",
-        "amount": float(appt.get("price", 0)),
-        "currency": appt.get("currency", "TRY"),
-        "posting_type": "CHARGE",
-        "posted_at": datetime.now(UTC).isoformat(),
-        "source": "spa_module",
-        "reference": appt.get("id"),
-        "dedup_key": f"spa_module:{appt.get('id')}",
-    }
-    try:
-        await db.folio_postings.insert_one(posting)
-    except DuplicateKeyError:
-        # Already posted for this appointment → idempotent no-op; do not
-        # re-publish the Xchange event.
+    if session is not None:
+        return await post_charge(db, tenant_id, appt, actor_id, actor_name, session=session)
+    async def post(s):
+        return await post_charge(db, tenant_id, appt, actor_id, actor_name, session=s)
+    result = await with_resource_locks(client=db.client, db=db, tenant_id=tenant_id, locks_collection='spa_locks',
+        resources=[('appointment', appt['id']), ('booking', appt.get('reservation_id'))], callback=post)
+    await _publish_posting(tenant_id, result)
+    return result
+
+
+async def _publish_posting(tenant_id, result):
+    if result.get('replayed'):
         return
+    posting = result['posting']
     # Best-effort Xchange publish (don't fail the spa workflow on bus error)
     try:
         from integrations.xchange.bus import bus

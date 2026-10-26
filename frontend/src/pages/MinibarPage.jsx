@@ -25,7 +25,7 @@ const CATEGORY_OPTIONS = [
 ];
 const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS.map((c) => [c.value, c.label]));
 
-const EMPTY_ITEM = { name: '', price: '', category: 'drink', active: true, inventory_product_id: '' };
+const EMPTY_ITEM = { name: '', price: '', currency: '', tax_percent: '', category: 'drink', active: true, inventory_product_id: '' };
 
 // `/pms/rooms` returns a bare array. Accept the two historic wrapped shapes as
 // well, so a rollout behind a cache/proxy cannot silently leave the room picker
@@ -139,6 +139,8 @@ const MinibarPage = ({ user }) => {
     setItemForm({
       name: item.name || '',
       price: String(item.price ?? ''),
+      currency: item.currency || currency,
+      tax_percent: item.tax_rate == null ? '' : String(item.tax_rate * 100),
       category: item.category || 'drink',
       active: item.active !== false,
       inventory_product_id: item.inventory_product_id || '',
@@ -156,9 +158,16 @@ const MinibarPage = ({ user }) => {
       toast.error('Geçerli bir fiyat girin');
       return;
     }
+    const taxPercent = Number(itemForm.tax_percent);
+    if (itemForm.tax_percent === '' || !Number.isFinite(taxPercent) || taxPercent < 0 || taxPercent > 100) {
+      toast.error('KDV oranını doğrulayın; bilinmeyen vergi sıfır sayılmaz');
+      return;
+    }
     const body = {
       name: itemForm.name.trim(),
       price,
+      currency: itemForm.currency || currency,
+      tax_rate: taxPercent / 100,
       category: itemForm.category,
       active: itemForm.active,
       inventory_product_id: itemForm.inventory_product_id.trim() || null,
@@ -202,6 +211,9 @@ const MinibarPage = ({ user }) => {
     (sum, it) => sum + (cart[it.id] || 0) * (it.price || 0),
     0,
   );
+  const selectedItems = activeItems.filter(item => (cart[item.id] || 0) > 0);
+  const cartCurrencies = [...new Set(selectedItems.map(item => item.currency).filter(Boolean))];
+  const cartCurrency = cartCurrencies.length === 1 && selectedItems.every(item => item.currency) ? cartCurrencies[0] : null;
 
   const setQty = (itemId, qty) => {
     setCart((prev) => {
@@ -224,6 +236,10 @@ const MinibarPage = ({ user }) => {
       toast.error('En az bir ürün ekleyin');
       return;
     }
+    if (!cartCurrency || selectedItems.some(item => item.tax_rate == null)) {
+      toast.error('Ürünlerin para birimi ve KDV oranını doğrulayın; farklı para birimlerini ayrı aktarın');
+      return;
+    }
     if (!pendingKeyRef.current) {
       pendingKeyRef.current =
         (crypto?.randomUUID?.() ?? `minibar-${selectedRoom}-${Date.now()}-${Math.random()}`);
@@ -239,6 +255,9 @@ const MinibarPage = ({ user }) => {
         toast.success('Tüketim folio\'ya işlendi');
       } else {
         toast.warning('Folio açık değil — late-charge kaydına yönlendirildi');
+      }
+      if ((res.data?.stock || []).some(row => !['depleted', 'already_applied', 'skipped'].includes(row.status))) {
+        toast.warning('Tüketim kaydedildi fakat bazı stok hareketleri tamamlanamadı; stok kayıtlarını inceleyin.');
       }
       pendingKeyRef.current = null;
       setCart({});
@@ -377,7 +396,7 @@ const MinibarPage = ({ user }) => {
                 <CardContent className="p-3 flex items-center justify-between gap-3">
                   <div className="text-sm">
                     <span className="font-semibold">{cartCount}</span> ürün ·{' '}
-                    <span className="font-semibold">{formatCurrency(cartTotal, currency)}</span>
+                    <span className="font-semibold">{cartCurrency ? formatCurrency(cartTotal, cartCurrency) : 'Para birimlerini ayrı aktarın'}</span>
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => setCart({})}>Temizle</Button>
@@ -500,7 +519,7 @@ const MinibarPage = ({ user }) => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Fiyat ({currency})</Label>
+                <Label className="text-xs">KDV dahil fiyat ({itemForm.currency || currency})</Label>
                 <Input type="number" min="0" step="0.01" value={itemForm.price} onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })} />
               </div>
               <div>
@@ -515,6 +534,17 @@ const MinibarPage = ({ user }) => {
                   ))}
                 </select>
               </div>
+            </div>
+            <div>
+              <Label className="text-xs">Para birimi</Label>
+              <select value={itemForm.currency || currency} onChange={(e) => setItemForm({ ...itemForm, currency: e.target.value })} className="h-9 w-full border rounded-md px-3 text-sm">
+                {['TRY', 'USD', 'EUR', 'GBP', 'CHF'].map(code => <option key={code}>{code}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">KDV oranı (%)</Label>
+              <Input type="number" min="0" max="100" step="0.01" value={itemForm.tax_percent} onChange={(e) => setItemForm({ ...itemForm, tax_percent: e.target.value })} />
+              <p className="text-xs text-muted-foreground mt-1">Ürün ve folyo aynı para biriminde olmalıdır. Full comp misafirin tüketimi kaydedilir, borç oluşmaz.</p>
             </div>
             <div>
               <Label className="text-xs">Envanter Ürün ID (opsiyonel — stok düşümü için)</Label>
