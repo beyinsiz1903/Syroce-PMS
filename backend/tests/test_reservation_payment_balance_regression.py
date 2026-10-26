@@ -177,6 +177,49 @@ def test_normal_discount_does_not_hide_a_real_room_price_mismatch():
     assert summary["pricing_reconciliation_difference"] == 4800.0
 
 
+@pytest.mark.parametrize("complimentary", [False, True])
+def test_item_concessions_do_not_invent_a_price_mismatch_after_last_night(complimentary):
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 19200, "check_in": "2026-10-21", "check_out": "2026-10-25",
+         "is_partially_complimentary": complimentary},
+        [{"id": str(day), "charge_type": "room_charge", "business_date": f"2026-10-{day}", "total": 4800}
+         for day in range(21, 25)] + [{"id": "food", "charge_category": "food", "total": 2100}],
+        [{"amount": 5800, "method": "cash"},
+         {"amount": 7200, "method": "discount", "payment_type": "comp_adjustment", "concession_id": "room-comp", "charge_ids": ["21", "22", "23"]},
+         {"amount": 100, "method": "discount", "payment_type": "comp_adjustment", "concession_id": "food-comp", "charge_ids": ["food"]}],
+        [], [],
+    )
+    assert summary["room_plan_fully_posted"] is True
+    assert summary["pricing_reconciliation_required"] is False
+    assert summary["pricing_reconciliation_target_total"] == 19200
+    assert summary["folio_balance"] == summary["reservation_total_due"] == 8200
+    assert summary["complimentary_adjustment_total"] == 7300
+
+
+@pytest.mark.parametrize("posted", [9000, 11000])
+def test_item_comp_does_not_hide_real_room_price_over_or_undercharge(posted):
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 10000, "check_in": "2026-10-21", "check_out": "2026-10-22"},
+        [{"charge_type": "room_charge", "business_date": "2026-10-21", "total": posted}],
+        [{"amount": 1000, "method": "discount", "payment_type": "comp_adjustment", "concession_id": "item-comp"}],
+        [], [],
+    )
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_difference"] == 1000
+    assert summary["pricing_reconciliation_direction"] == ("posted_above_booking" if posted > 10000 else "booking_above_posted")
+
+
+def test_marked_closed_night_comp_conversion_still_reconciles_reduced_header():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 5000, "check_in": "2026-10-21", "check_out": "2026-10-22"},
+        [{"charge_type": "room_charge", "business_date": "2026-10-21", "total": 10000}],
+        [{"amount": 5000, "method": "discount", "payment_type": "comp_adjustment", "comp_mode": "closed_nights_adjustment"}],
+        [], [],
+    )
+    assert summary["pricing_reconciliation_required"] is False
+    assert summary["pricing_reconciliation_target_total"] == summary["reservation_total_due"] == 5000
+
+
 def test_audited_rate_correction_offsets_closed_room_charge_without_rewriting_it():
     summary = reservation_detail._build_financial_summary(
         {

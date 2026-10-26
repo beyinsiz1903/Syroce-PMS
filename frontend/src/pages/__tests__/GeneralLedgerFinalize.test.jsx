@@ -8,6 +8,22 @@ vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() }
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('voucher finalization', () => {
+  it.each([0, 1])('shows a reviewed legacy exception without falsely certifying original seals (issues=%s)', async issues => {
+    axios.get.mockImplementation(async url => ({ data: url === '/gl/integrity-audit' ? {
+      fully_sealed: false, counts: { sealed: 91, legacy_unsealed: 2, issues },
+      legacy_review: { review_valid: true, legacy_reviewed_count: 2, historical_source_verified: false },
+    } : {} }));
+    render(<MemoryRouter initialEntries={['/?tab=journals']}><GeneralLedgerModule /></MemoryRouter>);
+    const notice = await screen.findByTestId('gl-legacy-review');
+    expect(notice).toHaveTextContent('geriye dönük mühürlenmedi');
+    expect(notice).toHaveTextContent('resmî/tarihî mali doğrulama değildir');
+    const status = screen.getByTestId('gl-integrity-audit');
+    expect(status).toHaveClass('border-amber-300');
+    expect(status).toHaveTextContent('2 eski mühürsüz kayıt');
+    expect(status).toHaveTextContent(issues ? 'İnceleme gerekli' : 'Demo incelemesi tamamlandı (özgün mühür yok)');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it('shows the source explanation instead of generic GL reversal for linked records', async () => {
     axios.get.mockImplementation(async url => ({ data: url === '/gl/voucher-policy'
       ? { policy: { mode: 'authorized_self', version: 0 }, can_manage: false, can_finalize: true }

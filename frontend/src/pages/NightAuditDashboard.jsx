@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import AccountingPendingNotice from '@/components/night-audit/AccountingPendingNotice';
 import { useTranslation } from 'react-i18next';
 import axios from "axios";
 
@@ -595,6 +596,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             </CardContent>
           </Card>
         )}
+
+        <AccountingPendingNotice runs={history} />
 
         {/* Business Date & Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

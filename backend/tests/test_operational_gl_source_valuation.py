@@ -58,6 +58,63 @@ def test_actual_receipt_snapshot_must_match_day_and_cannot_hide_realised_fx():
         plan(payments=[{**payment, "exchange_rate_date": "2026-10-02"}])
 
 
+@pytest.mark.parametrize("receipt,expected_account", [(1001, "646"), (999, "656")])
+def test_explicit_realised_fx_preserves_native_receivable_and_actual_receipt(receipt, expected_account):
+    payment = {"id": "p", "currency": "USD", "amount": 20, "method": "card", "reporting_amount": receipt,
+        "reporting_currency": "TRY", "exchange_rate_date": DAY}
+    rates = {**RATES, "realised_fx_accounts": {"gain": "646", "loss": "656"}}
+    p = plan(payments=[payment], valuation=rates)
+    assert p["payment_total_try"] == receipt and p["payment_by_account_minor"] == {"108": receipt * 100}
+    assert next(r for r in p["lines"] if r["account_code"] == "120")["credit"] == 1000
+    assert p["manifest"]["sources"][0]["realised_fx_minor"] == (receipt - 1000) * 100
+    assert any(r["account_code"] == expected_account for r in p["lines"])
+    _, debit, credit = normalize_journal_lines(p["lines"])
+    assert debit == credit
+
+
+def test_fully_refunded_different_receipt_rate_keeps_four_source_differences_but_net_zero():
+    payments = [{"id": str(i), "currency": code, "method": "card", "amount": amount,
+        "reporting_amount": received, "reporting_currency": "TRY", "exchange_rate_date": DAY,
+        "payment_type": "refund" if amount < 0 else "deposit"}
+        for code, amounts in [("USD", [(100, 5000.01), (-40, 2000), (-60, 3000.01)]),
+                              ("EUR", [(100, 5500.01), (-40, 2200), (-60, 3300.01)])]
+        for i, (amount, received) in enumerate(amounts)]
+    for payment in payments:
+        payment["id"] = payment["currency"] + payment["id"]
+    p = plan(payments=payments, valuation={**RATES, "realised_fx_accounts": {"gain": "646", "loss": "656"}})
+    assert p["payment_total_try"] == 0 and p["lines"] == []
+    assert sum(r.get("realised_fx_minor", 0) for r in p["manifest"]["sources"]) == 0
+    assert len([r for r in p["manifest"]["sources"] if r.get("realised_fx_minor")]) == 4
+    assert len(p["manifest"]["sources"]) == 6
+
+
+@pytest.mark.parametrize("accounts", [{}, {"gain": "646"}, {"gain": "646", "loss": "646"}, {"gain": "", "loss": "656"}])
+def test_invalid_fx_accounts_fail_closed(accounts):
+    with pytest.raises(v.OperationalValuationError):
+        plan(valuation={**RATES, "realised_fx_accounts": accounts})
+
+
+async def test_realised_fx_account_validation_replay_source_seal_and_report(ledger_db, monkeypatch):
+    from domains.accounting import gl_router
+    db = ledger_db
+    await seed(db, original=False)
+    await db.payments.update_one({"id": "p"}, {"$set": {"reporting_amount": 6051,
+        "reporting_currency": "TRY", "exchange_rate_date": DAY}})
+    rates = {**RATES, "realised_fx_accounts": {"gain": "646", "loss": "656"}}
+    with pytest.raises(v.OperationalValuationError, match="correctly typed"):
+        await v.preview_daily_valuation(db, "hotel", "run", rates)
+    await db.gl_accounts.insert_many([{"tenant_id": "hotel", "code": "646", "type": "revenue", "normal_balance": "credit", "active": True},
+        {"tenant_id": "hotel", "code": "656", "type": "expense", "normal_balance": "debit", "active": True}])
+    p = await v.preview_daily_valuation(db, "hotel", "run", rates)
+    result = await v.post_daily_valuation(db, "hotel", "run", rates, p["preview_hash"], "operator")
+    assert (await v.post_daily_valuation(db, "hotel", "run", rates, p["preview_hash"], "operator"))["entry_id"] == result["entry_id"]
+    monkeypatch.setattr(gl_router, "db", db)
+    report = await gl_router.operational_reconciliation(DAY, SimpleNamespace(tenant_id="hotel", role="admin"))
+    assert report["healthy"] and report["folios"]["gl_total"] == report["folios"]["payment_total"] == 6051
+    await db.payments.update_one({"id": "p"}, {"$set": {"reporting_amount": 6052}})
+    assert not (await gl_router.operational_reconciliation(DAY, SimpleNamespace(tenant_id="hotel", role="admin")))["healthy"]
+
+
 @pytest.mark.parametrize("source", [
     {"id": "e", "currency": "EUR", "total": 10},
     {"id": "e", "currency": "EUR", "total": 10, "tax_amount": 11},

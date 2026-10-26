@@ -491,15 +491,29 @@ def _build_financial_summary(
         if parsed is not None
     }
     room_plan_fully_posted = bool(expected_dates) and posted_room_dates == expected_dates
-    # A historical Comp operation cannot rewrite room revenue already sealed
-    # by Night Audit.  It therefore creates a dedicated, audited discount for
-    # exactly those closed-night charges.  Compare the booking header against
-    # the *net* accommodation position; otherwise a correctly offset Comp stay
-    # is falsely flagged as a price/tahakkuk mismatch and checkout is blocked.
+    # Only a commercial Comp conversion changes the agreed room-price header.
+    # Item concessions (including room concessions) leave that header gross
+    # and settle the folio separately. Subtracting them here invents a price
+    # mismatch after the last night posts; an F&B/SPA concession must never
+    # change this room-price comparison either. Legacy conversions did not
+    # have comp_mode, but explicitly marked the booking as complimentary.
+    room_price_comp_conversion_total = sum(
+        float(payment.get("amount", 0) or 0)
+        for payment in payments
+        if is_effective(payment)
+        and payment.get("method") == "discount"
+        and str(payment.get("payment_type") or "").lower() == "comp_adjustment"
+        and not payment.get("concession_id")
+        and (
+            payment.get("comp_mode") in {"entire_stay", "open_nights", "closed_nights_adjustment"}
+            or booking.get("is_complimentary")
+            or booking.get("is_partially_complimentary")
+        )
+    )
     reconciled_reservation_price_component_total = max(
         0.0,
         float(reservation_price_component_total or 0)
-        - float(complimentary_adjustment_total or 0)
+        - room_price_comp_conversion_total
         - float(rate_correction_total or 0),
     )
     raw_pricing_difference = reconciled_reservation_price_component_total - booking_total
@@ -4727,6 +4741,31 @@ async def apply_demo_source_remediation(data: DemoSourceRemediationIn, current_u
     _ensure_hotel_context(current_user)
     from core.database import client
     from modules.pms_core.demo_source_remediation import apply
+    return await apply(db, client, current_user, data)
+
+
+class DemoAccountingReviewIn(DemoSourceRemediationIn):
+    confirmation: Literal["REVIEW_SYNTHETIC_DEMO_ACCOUNTING_100001_ONLY"]
+
+
+@router.get("/demo-accounting-review/preview")
+async def preview_demo_accounting_review(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _enforce_perm(current_user, "manage_night_audit")
+    _ensure_hotel_context(current_user)
+    from modules.pms_core.demo_accounting_review import preview
+    return await preview(db, current_user.tenant_id)
+
+
+@router.post("/demo-accounting-review/apply")
+async def apply_demo_accounting_review(data: DemoAccountingReviewIn, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _enforce_perm(current_user, "manage_night_audit")
+    _ensure_hotel_context(current_user)
+    from core.database import client
+    from modules.pms_core.demo_accounting_review import apply
     return await apply(db, client, current_user, data)
 
 

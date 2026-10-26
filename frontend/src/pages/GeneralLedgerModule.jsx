@@ -1380,12 +1380,18 @@ const GeneralLedgerModule = () => {
                   <div className="flex items-center justify-between gap-2">
                     <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900"><ShieldCheck className="h-4 w-4" /> Yevmiye bütünlük zinciri</p>
                     <span className={`text-xs font-semibold ${integrityAudit.fully_sealed ? 'text-emerald-700' : 'text-amber-700'}`}>
-                      {integrityAudit.fully_sealed ? 'Doğrulandı' : 'İnceleme gerekli'}
+                      {integrityAudit.fully_sealed ? 'Doğrulandı'
+                        : integrityAudit.legacy_review?.review_valid && integrityAudit.counts?.issues === 0
+                          && integrityAudit.counts?.legacy_unsealed === integrityAudit.legacy_review.legacy_reviewed_count
+                          ? 'Demo incelemesi tamamlandı (özgün mühür yok)' : 'İnceleme gerekli'}
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-gray-600">
                     {integrityAudit.counts?.sealed || 0} mühürlü kayıt · {integrityAudit.counts?.legacy_unsealed || 0} eski mühürsüz kayıt · {integrityAudit.counts?.issues || 0} bütünlük sorunu
                   </p>
+                  {integrityAudit.legacy_review?.review_valid && <p className="mt-2 text-xs text-amber-900" data-testid="gl-legacy-review">
+                    {integrityAudit.legacy_review.legacy_reviewed_count} eski kaydın Demo incelemesi tamamlandı. Özgün kayıtlar değiştirilmedi veya geriye dönük mühürlenmedi; bu inceleme resmî/tarihî mali doğrulama değildir.
+                  </p>}
                 </div>
               )}
               {sequenceAudit && (

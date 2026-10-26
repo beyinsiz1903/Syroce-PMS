@@ -688,6 +688,22 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
     return {"success": False, "error": f"Unexpected state: {st}", "code": "UNEXPECTED"}
 
 
+async def _post_close_accounting(tenant_id: str, bd: str, run_id: str):
+    """Persist expected operator action separately from unexpected failures."""
+    from core.integrations.operational_gl_bridge import SourceValuationRequired, post_night_audit_daily_to_gl
+
+    try:
+        await post_night_audit_daily_to_gl(db, tenant_id, bd, run_id=run_id, actor="night_audit")
+    except SourceValuationRequired as exc:
+        logger.warning("Night audit requires source valuation run=%s: %s", run_id, exc)
+        await db.night_audit_runs.update_one({"tenant_id": tenant_id, "id": run_id},
+            {"$set": {"gl_bridge_status": "valuation_required", "gl_bridge_error": str(exc)[:500]}})
+    except Exception as exc:
+        logger.exception("Night audit GL bridge failed for run=%s: %s", run_id, exc)
+        await db.night_audit_runs.update_one({"tenant_id": tenant_id, "id": run_id},
+            {"$set": {"gl_bridge_status": "failed", "gl_bridge_error": str(exc)[:500]}})
+
+
 async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
     """Post charges, reconcile, and roll date. Shared by start and resume."""
     try:
@@ -763,22 +779,7 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
     # Accounting is a downstream, idempotent bridge. The operational close is
     # never rolled back after room charges reconcile, but any GL failure is
     # persisted visibly on the run for finance to retry.
-    try:
-        from core.integrations.operational_gl_bridge import post_night_audit_daily_to_gl
-
-        await post_night_audit_daily_to_gl(
-            db,
-            tenant_id,
-            bd,
-            run_id=run_id,
-            actor="night_audit",
-        )
-    except Exception as exc:
-        logger.exception("Night audit GL bridge failed for run=%s: %s", run_id, exc)
-        await db.night_audit_runs.update_one(
-            {"tenant_id": tenant_id, "id": run_id},
-            {"$set": {"gl_bridge_status": "failed", "gl_bridge_error": str(exc)[:500]}},
-        )
+    await _post_close_accounting(tenant_id, bd, run_id)
 
     # Record the daily high/urgent pending-task backlog snapshot so the GM
     # dashboard can show a real day-over-day delta for pending tasks. The
