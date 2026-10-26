@@ -8,7 +8,6 @@ Tüm uçlar tenant-scoped; mutasyonlar muhasebe seviyesi RBAC. PII/secret loglan
 """
 
 import asyncio
-import io
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -3567,30 +3566,14 @@ async def export_gl_report(
         workbook = create_excel_workbook(title, headers, rows, sheet_name=title[:31])
         return excel_response(workbook, f"{filename}.xlsx")
 
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+    from core.accounting.report_pdf import ReportFontError, build_gl_pdf
 
-    output = io.BytesIO()
-    document = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24)
-    styles = getSampleStyleSheet()
-    table = Table([headers, *rows], repeatRows=1)
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A5F")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 7),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ]
-        )
-    )
-    document.build([Paragraph(title, styles["Title"]), table])
+    try:
+        content = build_gl_pdf(report, title, headers, rows, start=start, end=end, as_of=as_of)
+    except ReportFontError as exc:
+        raise HTTPException(503, str(exc)) from exc
     return Response(
-        content=output.getvalue(),
+        content=content,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
     )
