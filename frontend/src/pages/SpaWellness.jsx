@@ -63,10 +63,10 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const [bookForm, setBookForm] = useState({
     service_id: '', therapist_id: '', room_id: '',
     starts_at: new Date().toISOString().slice(0, 16),
-    guest_name: '', guest_phone: '', reservation_id: '', charge_to_room: false,
+    guest_name: '', guest_phone: '', reservation_id: '', folio_id: '', charge_to_room: false,
   });
   const [serviceForm, setServiceForm] = useState({
-    name: '', category: 'massage', duration_minutes: 60, price: 0, currency: tenantCurrency,
+    name: '', category: 'massage', duration_minutes: 60, price: 0, currency: tenantCurrency, tax_percent: '',
   });
   const [therapistForm, setTherapistForm] = useState({
     name: '', specialties: [], work_start: '09:00', work_end: '21:00',
@@ -124,7 +124,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const book = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/spa/appointments', bookForm);
+      await axios.post('/spa/appointments', { ...bookForm, folio_id: bookForm.folio_id || null });
       toast.success('Randevu oluşturuldu');
       setShowBook(false);
       setBookForm({ ...bookForm, guest_name: '', guest_phone: '' });
@@ -150,7 +150,11 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
   const addService = async (e) => {
     e.preventDefault();
-    try { await axios.post('/spa/services', serviceForm); setShowServiceForm(false); await load(); }
+    try {
+      const { tax_percent, ...values } = serviceForm;
+      await axios.post('/spa/services', { ...values, tax_rate: Number(tax_percent) / 100 });
+      setShowServiceForm(false); await load();
+    }
     catch (err) { toast.error(err.response?.data?.detail || 'Eklenemedi'); }
   };
   const addTherapist = async (e) => {
@@ -455,6 +459,9 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
               <Input value={bookForm.reservation_id}
                      onChange={(e) => setBookForm({ ...bookForm, reservation_id: e.target.value })} />
             </Field>
+            {bookForm.charge_to_room && <Field label="Hedef folyo ID (birden fazla açık folyo varsa zorunlu)">
+              <Input value={bookForm.folio_id} onChange={(e) => setBookForm({ ...bookForm, folio_id: e.target.value })} />
+            </Field>}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={bookForm.charge_to_room}
                      onChange={(e) => setBookForm({ ...bookForm, charge_to_room: e.target.checked })} />
@@ -485,8 +492,11 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
               <Field label={t('cm.pages_SpaWellness.sure_dk')}><Input type="number" required value={serviceForm.duration_minutes}
                 onChange={(e) => setServiceForm({ ...serviceForm, duration_minutes: +e.target.value })} /></Field>
             </div>
-            <Field label={`Fiyat (${serviceForm.currency || tenantCurrency})`}><Input type="number" required value={serviceForm.price}
+            <Field label={`KDV dahil fiyat (${serviceForm.currency || tenantCurrency})`}><Input type="number" min="0" step="0.01" required value={serviceForm.price}
               onChange={(e) => setServiceForm({ ...serviceForm, price: +e.target.value })} /></Field>
+            <Field label="KDV oranı (%)"><Input type="number" min="0" max="100" step="0.01" required value={serviceForm.tax_percent}
+              onChange={(e) => setServiceForm({ ...serviceForm, tax_percent: e.target.value })} /></Field>
+            <p className="text-xs text-muted-foreground">Vergi oranını tesis politikanıza göre girin. Odaya aktarımda fiyat ve vergi randevu kaydından alınır; sonradan değişen katalog fiyatı kullanılmaz.</p>
             <div className="flex justify-end gap-2"><Button type="submit">{t('cm.pages_SpaWellness.ekle')}</Button></div>
           </form>
         </Modal>

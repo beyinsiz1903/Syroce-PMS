@@ -38,6 +38,13 @@ const MODULE_LABELS = {
 };
 
 const ACTION_LABELS = {
+  room_swap: "Odalar karşılıklı değiştirildi",
+  charge_split: "Hizmet bedeli diğer folyoya aktarıldı",
+  payment_recorded: "Ödeme kaydedildi",
+  spa_status_changed: "SPA hizmet durumu değiştirildi",
+  spa_charge_posted: "SPA hizmeti misafir folyosuna işlendi",
+  minibar_consumed: "Minibar tüketimi misafir folyosuna işlendi",
+  minibar_late_charge: "Minibar tüketimi geç masraf incelemesine alındı",
   concession_applied: "İkram / indirim uygulandı",
   concession_rejected: "Bekleyen ikram / indirim iptal edildi",
   login_success: "Oturum açıldı",
@@ -506,8 +513,14 @@ export default function AuditTimelinePage({
                 {entityTrail && <div className="mt-3 space-y-2">
                     <p className="text-xs text-gray-600">{auditEntityLabel(entityTrail.entity_type)}: {entityTrail.entity_id} ({entityTrail.count || 0}{t("cm.pages_AuditTimelinePage.events")}</p>
                     {(entityTrail.trail || []).map((t, i) => <div key={t.id || i} className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
-                        <p className="text-gray-800">{auditActionLabel(t.operation_name || t.action)}</p>
+                        <p className="text-gray-800">{auditActionLabel(t.operation_name || t.operation || t.action)}</p>
                         <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString(i18n.language) : "—"}</p>
+                        <p className="text-gray-600">İşlemi yapan: {auditActorLabel(t)}</p>
+                        {t.evidence_source === 'reservation_activity_log' && <p className="text-gray-500">Rezervasyon işlem kaydı · imzalı denetim zincirinden ayrı kaynak</p>}
+                        {(t.override_reason || t.metadata?.reason) && <p className="text-gray-700">Açıklama: {t.override_reason || t.metadata.reason}</p>}
+                        {t.metadata && <details className="mt-1"><summary>İşlem ayrıntıları</summary>
+                            <pre className="whitespace-pre-wrap break-all max-h-48 overflow-auto">{JSON.stringify(t.metadata, null, 2)}</pre>
+                          </details>}
                       </div>)}
                     {(entityTrail.report_impact_links || []).length > 0 && <div className="pt-1">
                         <p className="text-xs font-medium text-gray-700 mb-1">Rapor etkisi</p>

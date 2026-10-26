@@ -38,6 +38,22 @@ def cents(value):
 
 def partition(row, amount, *, extra=False):
     """Return source remainder and target part with exact component sums."""
+    # Canonical POS/SPA/minibar lines store VAT separately; tax_amount is
+    # non-VAT tax. Older manual lines use tax_amount as the combined tax.
+    # Normalize ONLY for the existing cent allocator, then restore the source
+    # schema. Never add VAT twice or reject a valid net + VAT = gross line.
+    components = row.get('tax_breakdown')
+    if isinstance(components, dict) and row.get('vat_amount') is not None and row.get('tax_amount') is not None:
+        if any(value is None or isinstance(value, (dict, list, bool)) for value in components.values()):
+            raise HTTPException(409, 'Masraf vergi kırılımı doğrulanamadı')
+        total_tax = sum((cents(value) for value in components.values()), Decimal(0))
+        vat = cents(row['vat_amount'])
+        if vat and 'vat' in components and vat == cents(components['vat']) and cents(row['tax_amount']) + vat == total_tax:
+            combined = {**row, 'tax_amount': float(total_tax)}
+            left, right = partition(combined, amount, extra=extra)
+            for part in (left, right):
+                part['tax_amount'] = float(money(part['tax_amount']) - money(part['vat_amount']))
+            return left, right
     total = cents(next((row[k] for k in ("total", "charge_amount", "amount") if row.get(k) is not None), 0))
     amount = cents(amount)
     if total <= 0 or not 0 < amount <= total:

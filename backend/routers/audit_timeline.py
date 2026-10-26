@@ -495,6 +495,23 @@ async def get_entity_audit_trail(
     canonical_type, query = _entity_timeline_query(ctx.tenant_id, entity_type, entity_id)
 
     logs = await db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    activities = getattr(db, 'reservation_activity_log', None)
+    if canonical_type == 'reservation' and activities is not None:
+        # Reception payments/transfers also have a durable reservation-local
+        # activity log. Include that evidence without rewriting history or
+        # pretending an old activity row belongs to the signed hash chain.
+        rows = await activities.find({'tenant_id': ctx.tenant_id, 'booking_id': entity_id}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+        logs.extend({'id': 'activity:' + str(row.get('id')), 'operation_name': row.get('action'),
+            'actor_id': (row.get('details') or {}).get('actor_id') or row.get('actor'), 'actor_name': row.get('actor'),
+            'timestamp': row.get('created_at'), 'metadata': row.get('details') or {},
+            'evidence_source': 'reservation_activity_log', 'result_status': 'success'} for row in rows)
+        def sort_time(row):
+            try:
+                stamp = datetime.fromisoformat(_ts_to_iso(row.get('timestamp')).replace('Z', '+00:00'))
+                return (stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC)).timestamp()
+            except (ValueError, TypeError):
+                return 0
+        logs = sorted(logs, key=sort_time, reverse=True)[:limit]
 
     # Compute diffs between snapshots
     trail = []
@@ -504,6 +521,7 @@ async def get_entity_audit_trail(
             "id": log.get("id"),
             "operation": log.get("operation_name"),
             "actor_id": log.get("actor_id"),
+            "actor_name": log.get("actor_name"),
             "actor_role": log.get("actor_role"),
             "result_status": log.get("result_status"),
             "severity": log.get("severity"),
@@ -512,6 +530,13 @@ async def get_entity_audit_trail(
             "before_snapshot": log.get("before_snapshot"),
             "after_snapshot": log.get("after_snapshot"),
             "override_reason": log.get("override_reason"),
+            # Domain writers keep room numbers, transfer parties, currency
+            # and the operator's reason here. Do not discard that evidence
+            # when serializing the per-reservation timeline.
+            "metadata": log.get("metadata"),
+            "details": log.get("details"),
+            "operation_label": log.get("operation_label"),
+            "evidence_source": log.get('evidence_source') or 'audit_logs',
         }
         # Compute changed fields if both snapshots exist
         before = log.get("before_snapshot") or {}

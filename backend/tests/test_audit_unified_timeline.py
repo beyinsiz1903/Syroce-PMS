@@ -111,3 +111,64 @@ async def test_retention_status_reports_the_configured_audit_contract(monkeypatc
         "archive_immutable": True,
         "policy_source": "gdpr_retention_policy",
     }
+
+
+@pytest.mark.asyncio
+async def test_entity_trail_keeps_protected_room_and_payment_metadata(monkeypatch):
+    from routers import audit_timeline as timeline
+
+    original = {'id': 'e', 'tenant_id': 'hotel-a', 'actor_id': 'operator', 'action': 'room_swap',
+        'entity_type': 'reservation', 'entity_id': 'b', 'timestamp': '2026-10-25T12:00:00Z',
+        'metadata': {'from_room': '102', 'to_room': '103', 'reason': 'Misafir oda tercihi',
+            'amount': 100, 'currency': 'EUR', 'password': 'never-return-this'}}
+    class Cursor:
+        def sort(self, *args):
+            return self
+        def limit(self, *args):
+            return self
+        async def to_list(self, *args):
+            return [original]
+    class Logs:
+        def find(self, query, *args):
+            assert query['tenant_id'] == 'hotel-a'
+            return Cursor()
+    from types import SimpleNamespace
+    monkeypatch.setattr(timeline, 'db', SimpleNamespace(audit_logs=Logs()))
+    result = await timeline.get_entity_audit_trail('reservation', 'b', limit=50,
+        current_user=SimpleNamespace(tenant_id='hotel-a', id='operator', role='admin'), _perm=None)
+    row = result['trail'][0]
+    assert row['operation'] == 'room_swap' and row['actor_id'] == 'operator'
+    assert row['metadata']['from_room'] == '102' and row['metadata']['to_room'] == '103'
+    assert row['metadata']['reason'] == 'Misafir oda tercihi' and row['metadata']['currency'] == 'EUR'
+    assert 'never-return-this' not in str(result) and original['metadata']['password'] == 'never-return-this'
+
+
+@pytest.mark.asyncio
+async def test_reservation_local_payment_is_visible_without_claiming_a_hash_chain(monkeypatch):
+    from types import SimpleNamespace
+    from routers import audit_timeline as timeline
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+        def sort(self, *args):
+            return self
+        def limit(self, *args):
+            return self
+        async def to_list(self, *args):
+            return self.rows
+    class Collection:
+        def __init__(self, rows):
+            self.rows = rows
+        def find(self, query, *args):
+            assert query['tenant_id'] == 'hotel'
+            return Cursor(self.rows)
+    payment = {'id': 'payment-log', 'booking_id': 'b', 'actor': 'Ayşe Kaya', 'action': 'payment_recorded',
+        'created_at': '2026-10-25T15:00:00+03:00', 'details': {'amount': 2200, 'currency': 'TRY',
+            'received_currency': 'EUR', 'received_amount': 40, 'method': 'cash'}}
+    monkeypatch.setattr(timeline, 'db', SimpleNamespace(audit_logs=Collection([]), reservation_activity_log=Collection([payment])))
+    result = await timeline.get_entity_audit_trail('reservation', 'b', limit=50,
+        current_user=SimpleNamespace(tenant_id='hotel', id='manager', role='admin'), _perm=None)
+    entry = result['trail'][0]
+    assert entry['actor_name'] == 'Ayşe Kaya' and entry['operation'] == 'payment_recorded'
+    assert entry['metadata']['received_amount'] == 40 and entry['metadata']['received_currency'] == 'EUR'
+    assert entry['evidence_source'] == 'reservation_activity_log' and 'record_hash' not in entry

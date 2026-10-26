@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import sys
 import types
+from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -61,6 +63,9 @@ class _Cursor:
 
     def limit(self, *a, **k):
         return self
+
+    async def to_list(self, length=None):
+        return deepcopy(self._docs if length is None else self._docs[:length])
 
     def __aiter__(self):
         self._it = iter(self._docs)
@@ -130,6 +135,15 @@ class _FakeDB:
         self.spa_appointments = _Coll()
         self.golf_tee_bookings = _Coll()
         self.folio_postings = _Coll(unique_keys=("tenant_id", "dedup_key"))
+        self.folio_charges = _Coll(unique_keys=("_id",))
+        self.bookings = _Coll()
+        self.bookings.docs.append({'id': 'RES1', 'tenant_id': TENANT, 'status': 'checked_in', 'currency': 'TRY'})
+        self.folios = _Coll()
+        self.folios.docs.append({'id': 'F1', 'booking_id': 'RES1', 'tenant_id': TENANT, 'status': 'open', 'currency': 'TRY', 'balance': 0})
+        self.payments = _Coll()
+        self.tenant_settings = _Coll()
+        self.tenant_settings.docs.append({'tenant_id': TENANT, 'business_date': '2026-10-25'})
+        self.client = object()
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -149,6 +163,21 @@ def _patch(monkeypatch):
 
     monkeypatch.setattr(spa, "get_system_db", lambda: fake)
     monkeypatch.setattr(golf, "get_system_db", lambda: fake)
+    from domains.spa import folio as spa_folio
+    from shared_kernel import audit_helper
+
+    monkeypatch.setattr(spa_folio, 'audit_log', AsyncMock())
+    monkeypatch.setattr(audit_helper, 'audit_log', AsyncMock())
+
+    async def transaction(**kwargs):
+        saved = {name: deepcopy(coll.docs) for name, coll in vars(fake).items() if isinstance(coll, _Coll)}
+        try:
+            return await kwargs['callback'](object())
+        except Exception:
+            for name, docs in saved.items():
+                getattr(fake, name).docs = docs
+            raise
+    monkeypatch.setattr(spa, 'with_resource_locks', transaction)
 
     # ensure_compound_unique is imported lazily inside _post_to_folio; patch
     # it on its home module so both routers pick up the noop.
@@ -187,12 +216,14 @@ def _seed_appt(fake, *, status="scheduled", charge=True, res="RES1", aid="A1"):
         "id": aid, "tenant_id": TENANT, "status": status,
         "service_name": "İsveç Masajı", "price": 1500.0, "currency": "TRY",
         "charge_to_room": charge, "reservation_id": res,
+        'tax_rate': .2,
     })
 
 
 async def test_spa_post_to_folio_idempotent_direct(_patch):
     appt = {"id": "A1", "tenant_id": TENANT, "service_name": "X",
-            "price": 1500.0, "currency": "TRY", "reservation_id": "RES1"}
+            "price": 1500.0, "currency": "TRY", "reservation_id": "RES1", 'tax_rate': .2,
+            'completed_at': '2026-10-25T12:00:00+03:00'}
     await spa._post_to_folio(TENANT, appt)
     await spa._post_to_folio(TENANT, appt)  # retry / concurrent second call
     assert _patch.folio_postings.insert_calls == 1
@@ -200,6 +231,11 @@ async def test_spa_post_to_folio_idempotent_direct(_patch):
     # Xchange published exactly once (no duplicate event on the dedup no-op).
     assert len(_patch.publishes) == 1
     assert _patch.folio_postings.docs[0]["dedup_key"] == "spa_module:A1"
+    assert len(_patch.folio_charges.docs) == 1
+    assert _patch.folio_charges.docs[0]['folio_id'] == 'F1'
+    assert _patch.folio_charges.docs[0]['amount'] == 1250
+    assert _patch.folio_charges.docs[0]['vat_amount'] == 250
+    assert _patch.folios.docs[0]['balance'] == 1500
 
 
 async def test_spa_complete_posts_single_charge(_patch):
@@ -235,9 +271,8 @@ async def test_spa_complete_rbac_denies_non_finance(_patch):
     assert _patch.folio_postings.insert_calls == 0
 
 
-async def test_spa_complete_cas_loser_is_idempotent(_patch):
-    """If the row already moved to completed under us (CAS filter misses),
-    the request returns idempotent without a second charge."""
+async def test_spa_complete_cas_loser_rolls_back_financial_transaction(_patch):
+    """An unexpected status CAS miss cannot commit the newly posted charge."""
     _seed_appt(_patch, status="scheduled")
 
     real_update = _patch.spa_appointments.update_one
@@ -254,12 +289,10 @@ async def test_spa_complete_cas_loser_is_idempotent(_patch):
 
     _patch.spa_appointments.update_one = _racy_update
 
-    res = await spa.change_status(
-        "A1", spa.StatusUpdate(status="completed"),
-        current_user=_user(), _perm=None,
-    )
-    assert res.get("idempotent") is True
-    assert res["status"] == "completed"
+    with pytest.raises(HTTPException) as error:
+        await spa.change_status('A1', spa.StatusUpdate(status='completed'), current_user=_user(), _perm=None)
+    assert error.value.status_code == 409
+    assert not _patch.folio_charges.docs and not _patch.folio_postings.docs
 
 
 async def test_spa_complete_post_failure_reverts_status(_patch):

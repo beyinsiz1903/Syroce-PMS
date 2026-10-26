@@ -167,6 +167,32 @@ def test_multicomponent_tax_never_allocates_a_cent_to_zero_tax():
         assert round(sum(part["tax_breakdown"].values()), 2) == part["tax_amount"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('category', ['spa', 'minibar', 'food'])
+async def test_canonical_department_vat_can_move_to_another_room_without_changing_revenue(scenario, category):
+    scenario.folio_charges.rows[0].update(charge_category=category, tax_amount=0, vat_amount=20,
+        tax_breakdown={'vat': 20}, amount=100, total=120)
+    result = await run(scenario)
+    old, new = scenario.folio_charges.rows
+    assert result['success']
+    assert (old['amount'], old['vat_amount'], old['tax_amount'], old['total']) == (60, 12, 0, 72)
+    assert (new['amount'], new['vat_amount'], new['tax_amount'], new['total']) == (40, 8, 0, 48)
+    assert sum(row['total'] for row in (old, new)) == 120
+    assert old['tax_breakdown']['vat'] + new['tax_breakdown']['vat'] == 20
+
+
+def test_canonical_vat_and_other_tax_keep_cent_exact_components():
+    for total in range(3, 31):
+        for wanted in range(1, total):
+            row = {'amount': (total - 2) / 100, 'vat_amount': .01, 'tax_amount': .01,
+                'tax_breakdown': {'vat': .01, 'other': .01}, 'total': total / 100}
+            left, right = partition(row, wanted / 100)
+            for part in (left, right):
+                assert round(part['amount'] + part['vat_amount'] + part['tax_amount'], 2) == part['total']
+            for field in ('amount', 'vat_amount', 'tax_amount', 'total'):
+                assert round(left[field] + right[field], 2) == row[field]
+
+
 @pytest.mark.parametrize("row,extra", [
     ({"total": 120, "amount": 120, "quantity": 2}, True),
     ({"total": 120, "amount": 120, "tax_amount": 0, "tax_breakdown": {"vat": None}}, False),

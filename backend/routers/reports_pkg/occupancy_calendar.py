@@ -14,6 +14,7 @@ from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.occupancy_calendar import occupancy_calendar
+from modules.pms_core.report_room_types import load_room_type_labels
 from modules.pms_core.stay_night_metrics import room_block_overlap_match, stay_overlap_match, with_checkin_business_date_evidence
 
 sub_router = APIRouter()
@@ -39,15 +40,20 @@ async def get_occupancy_calendar(start_date: str, end_date: str, room_type: str 
     first, last = date_range(start_date, end_date)
     tid = current_user.tenant_id
     rooms, bookings, blocks = await asyncio.gather(
-        db.rooms.find({"tenant_id": tid}, {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "is_active": 1, "is_virtual": 1}).to_list(None),
+        db.rooms.find({"tenant_id": tid}, {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "room_type_id": 1, "is_active": 1, "is_virtual": 1}).to_list(None),
         db.bookings.find({"tenant_id": tid, **stay_overlap_match(first, last)},
-                         {"_id": 0, "id": 1, "room_id": 1, "room_number": 1, "room_type": 1,
+                         {"_id": 0, "id": 1, "room_id": 1, "room_number": 1, "room_type": 1, "room_type_id": 1,
                           "status": 1, "check_in": 1, "check_out": 1, "checked_in_at": 1, "checked_in_business_date": 1, "checked_out_at": 1, "checked_out_business_date": 1}).to_list(None),
         db.room_blocks.find({"tenant_id": tid, **room_block_overlap_match(first, last)},
                             {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "allow_sell": 1, "status": 1}).to_list(None),
     )
     business_day = date.fromisoformat((await ensure_business_date_initialized(db, tid))["business_date"])
     bookings = await with_checkin_business_date_evidence(db, tid, bookings)
+    # The occupancy matrix and forecast must agree on the same tenant room
+    # catalog. "standard" and "Standard" are not two sellable room types.
+    labels = await load_room_type_labels(db, tid, rooms)
+    rooms, bookings = labels.normalize(rooms), labels.normalize(bookings)
+    room_type = labels(room_type) if room_type else None
     data = occupancy_calendar(rooms, bookings, blocks, first, last, business_day, room_type)
     if room_type and room_type not in data["room_types"]:
         raise HTTPException(422, "Geçerli bir oda tipi seçin.")

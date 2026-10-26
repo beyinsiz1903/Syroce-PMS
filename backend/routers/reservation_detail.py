@@ -816,6 +816,7 @@ async def _ensure_reservation_folio(
 # yapan endpoint'ler (create/check-in-all/check-out-all/add-room)
 # tenant cache'ini düşürür.
 from cache_manager import cache as _gb_cache  # noqa: E402
+from core.report_cache import invalidate_financial_report_caches  # noqa: E402
 
 _GROUP_BOOKINGS_CACHE_TTL = 30
 _GROUP_BOOKINGS_CACHE_PREFIX = "group_bookings_list"
@@ -2096,6 +2097,13 @@ async def record_payment(
             "currency": currency,
             "method": data.method,
             "payment_type": data.payment_type,
+            "payment_id": payment['id'],
+            "folio_id": folio['id'],
+            "actor_id": current_user.id,
+            "received_currency": payment['received_currency'],
+            "received_amount": payment['received_amount'],
+            "exchange_rate": payment['exchange_rate'],
+            "reason": data.notes,
         },
     )
 
@@ -2587,9 +2595,7 @@ async def split_charge(
         if is_replica_set_unavailable(exc):
             raise HTTPException(503, "Masraf aktarımı için transaction desteği gerekli") from exc
         raise
-    if _gb_cache:
-        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+    invalidate_financial_report_caches(tid)
     async def refresh_transferred_booking_states():
         from core.booking_payment_state import refresh_booking_payment_state
 
@@ -2601,7 +2607,9 @@ async def split_charge(
         async def record_split_activity():
             await _log_activity(tid, booking_id, "charge_split", current_user.name,
                 {"charge_id": data.charge_id, "split_amount": data.split_amount,
-                 "target_booking_id": target_id, "reason": data.reason})
+                 "target_booking_id": target_id, "reason": data.reason, "actor_id": current_user.id,
+                 "source_booking_id": booking_id, "currency": result['new_charge'].get('currency'),
+                 "target_folio_id": result['new_charge'].get('folio_id')})
 
         await _run_post_commit_hook(record_split_activity, operation="service_charge_split_activity")
     return result
@@ -2847,9 +2855,7 @@ async def room_change(
         await stamp_open_business_date(db, tid, charge)
         await db.folio_charges.insert_one({**charge})
         await _refresh_cached_folio_balance(tid, folio["id"])
-        if _gb_cache:
-            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+        invalidate_financial_report_caches(tid)
 
     await _log_activity(
         tid,
@@ -2934,9 +2940,7 @@ async def early_checkin(
         }
         await stamp_open_business_date(db, tid, charge)
         await db.extra_charges.insert_one({**charge})
-        if _gb_cache:
-            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+        invalidate_financial_report_caches(tid)
 
     await _log_activity(
         tid,
@@ -3008,9 +3012,7 @@ async def late_checkout(
         }
         await stamp_open_business_date(db, tid, charge)
         await db.extra_charges.insert_one({**charge})
-        if _gb_cache:
-            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+        invalidate_financial_report_caches(tid)
 
     await _log_activity(
         tid,
@@ -3262,9 +3264,7 @@ async def add_extra_charge_detail(
     await stamp_open_business_date(db, tid, charge)
     await db.extra_charges.insert_one({**charge})
 
-    if _gb_cache:
-        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+    invalidate_financial_report_caches(tid)
 
     await _log_activity(
         tid,
@@ -3317,9 +3317,7 @@ async def void_reservation_extra_charge(
         {"id": charge_id, "booking_id": booking_id, "tenant_id": tid, "voided": {"$ne": True}},
         {"$set": {"voided": True, "void_reason": data.reason, "voided_by": current_user.id, "voided_at": now}},
     )
-    if _gb_cache:
-        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+    invalidate_financial_report_caches(tid)
 
     await _log_activity(
         tid,
