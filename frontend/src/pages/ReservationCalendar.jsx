@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { isMappingIssue, mergeUnassignedAttention, resetUnassignedListScroll } from './calendar/unassignedPanel';
+import { loadChannelAttention } from './calendar/channelAttention';
 import MappingIssueCard from './calendar/MappingIssueCard';
 import { lazyWithPreload } from '@/routes/lazyWithPreload';
 import { runIdle } from '@/lib/idle';
@@ -349,10 +350,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     let cancelled = false;
     setAllUnassignedLoading(true);
     setAllUnassignedError(false);
-    Promise.all([
-      axios.get('/api/channel-manager/conflict-queue?limit=200'),
-      axios.get('/api/channel-manager/conflict-queue/mapping-issues'),
-    ])
+    loadChannelAttention(axios)
       .then(([queue, mapping]) => {
         if (!cancelled) {
           setAllUnassignedBookings(mergeUnassignedAttention(
