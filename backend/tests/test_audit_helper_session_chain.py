@@ -4,6 +4,17 @@ from core import audit_chain
 from shared_kernel import audit_helper
 
 
+async def test_core_audit_preserves_transaction_and_requires_its_chain(monkeypatch):
+    from unittest.mock import AsyncMock
+    from core.audit import log_audit_event
+    append = AsyncMock()
+    monkeypatch.setattr(audit_chain, "append_audit_log", append)
+    session, database = object(), object()
+    await log_audit_event("A", "finance", "gl_journal_reversed", "gl_journal", "entry", "Bağlı ters kayıt", db=database, session=session)
+    assert append.call_args.args[0] is database
+    assert append.call_args.kwargs == {"session": session, "require_chain": True}
+
+
 @pytest.mark.asyncio
 async def test_transactional_audit_write_uses_the_hash_chain(monkeypatch):
     captured = {}

@@ -268,6 +268,13 @@ export const voucherActionNames = (status, mode) => mode === 'authorized_self' ?
   rejected: ['edit', 'cancel'],
 }[status] || []);
 
+export function journalReversalBlocker(entry, control) {
+  if (control?.can_reverse === false) return control.reason || 'Bu kayıt kaynak işlemle birlikte düzeltilmelidir.';
+  if (['billing_settlement', 'billing_settlement_reversal'].includes(entry.source)) return 'Rezervasyondaki özgün kaynaklı mahsup bölümünden bağlı ters kayıt oluşturun.';
+  if (entry.reverses_entry_id || entry.source === 'reversal' || entry.reversal_status === 'reversed') return 'Bu kayıt zaten ters kayda bağlı.';
+  return '';
+}
+
 const VOUCHER_HISTORY_ACTION_LABELS = {
   created: 'Taslak oluşturuldu',
   updated: 'Taslak güncellendi',
@@ -413,6 +420,7 @@ const GeneralLedgerModule = () => {
   
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
+  const [journalReversalControls, setJournalReversalControls] = useState({});
   const [vouchers, setVouchers] = useState([]);
   const [voucherPolicy, setVoucherPolicy] = useState(null);
   const [sequenceAudit, setSequenceAudit] = useState(null);
@@ -557,6 +565,7 @@ const GeneralLedgerModule = () => {
         axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: Number(businessDate.slice(0, 4)) } }),
       ]);
       setJournals(markReversedJournalEntries(journalRes.data?.entries || []));
+      setJournalReversalControls(journalRes.data?.reversal_controls || {});
       setVouchers(voucherRes.data?.vouchers || []);
       setSequenceAudit(auditRes.data || null);
       setIntegrityAudit(integrityRes.data || null);
@@ -1143,6 +1152,8 @@ const GeneralLedgerModule = () => {
   };
 
   const requestJournalReversal = (journal) => {
+    const blocker = journalReversalBlocker(journal, journalReversalControls[journal.id]);
+    if (blocker) { toast.error(blocker); return; }
     setReversalReason('');
     setReversalDate(journal?.date && journal.date > businessDate ? journal.date : businessDate);
     setReversalDialog({ journal });
@@ -1468,7 +1479,7 @@ const GeneralLedgerModule = () => {
                       </div>
                       <p className="text-sm text-gray-600 truncate">{j.memo}</p>
                       {j.reversal_status === 'reversed' && <p className="text-xs text-amber-700 mt-2">Bu fiş için ters kayıt oluşturuldu.</p>}
-                      {j.source !== 'reversal' && j.reversal_status !== 'reversed' && (
+                      {journalReversalBlocker(j, journalReversalControls[j.id]) ? <p className="mt-2 text-xs text-slate-600">{journalReversalBlocker(j, journalReversalControls[j.id])}</p> : (
                         <Button size="sm" variant="outline" className="w-full mt-3" disabled={reversalBusy === j.id} onClick={() => requestJournalReversal(j)}>
                           <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> {reversalBusy === j.id ? 'Oluşturuluyor...' : 'Ters Kayıt Oluştur'}
                         </Button>

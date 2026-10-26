@@ -9,7 +9,9 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from core import audit_chain
+from core import database as database_module
 from core.booking_atomicity import with_resource_locks
+from domains.accounting import gl_router as gl
 from domains.pms import cashier_service
 from modules.pms_core import settlement_instruments as s
 from modules.pms_core.reporting_financials import effective_collection
@@ -24,6 +26,8 @@ async def store(ledger_db, monkeypatch):
     db = ledger_db
     monkeypatch.setattr(audit_chain, "_system_db", lambda: db)
     monkeypatch.setattr(cashier_service, "db", db)
+    monkeypatch.setattr(gl, "db", db)
+    monkeypatch.setattr(database_module, "client", db.client)
     await db.tenant_settings.insert_one({"tenant_id": "A", "business_date": "2026-10-24"})
     await db.bookings.insert_one({"tenant_id": "A", "id": "b", "status": "checked_in", "guest_id": "g", "currency": "TRY"})
     await db.folios.insert_one({"tenant_id": "A", "id": "f", "booking_id": "b", "status": "open", "currency": "TRY"})
@@ -73,6 +77,118 @@ async def apply(db, item, body):
 
 async def reverse(db, op, body):
     return await atomic(db, lambda session: s.reverse(db, "A", ACTOR, op["id"], body, session=session, record_cash=cashier_service.record_cash_transaction))
+
+
+def gl_reverse_request():
+    return gl.JournalReversalIn(date="2026-10-24", reason="Kaynak koruması testi", idempotency_key=str(uuid4()))
+
+
+async def funding_only(db):
+    return await post_journal_entry(db, "A", date="2026-10-23", memo="Fonlama kaynağı",
+        lines=[{"account_code": "102", "debit": 100}, {"account_code": "336", "credit": 100}], source="manual", idempotency_key=str(uuid4()))
+
+
+def issue_from(entry):
+    return s.Issue(request_id=uuid4(), booking_id="b", kind="wallet", currency="TRY", amount_minor=10000,
+        account_code="336", funding_entry_id=entry["id"], reference=str(uuid4()), reason="Kaynakla bağlı hak")
+
+
+async def test_general_gl_reversal_cannot_detach_settlement_or_its_allocated_funding(store):
+    db = store
+    item, _, funding = await funded_issue(db, "gift_card_redemption")
+    applied = await apply(db, item, application())
+    undone = await reverse(db, applied, s.Reverse(request_id=uuid4(), booking_id="b", reference="Özgün iade belgesi", reason="Kontrollü kaynak iadesi"))
+    count = await db.gl_journal_entries.count_documents({})
+    for identity in [funding["id"], applied["gl_journal_entry_id"], undone["gl_journal_entry_id"]]:
+        with pytest.raises(HTTPException) as exc:
+            await gl.reverse_journal(identity, gl_reverse_request(), current_user=SimpleNamespace(**{**vars(ACTOR), "tenant_id": "A"}))
+        assert exc.value.status_code == 409
+    assert await db.gl_journal_entries.count_documents({}) == count
+    assert (await s.reconcile(db, "A"))["healthy"]
+    assert (await audit_chain.verify_chain("A"))["ok"]
+
+
+async def test_reversed_unallocated_funding_cannot_mint_new_credit(store):
+    db = store
+    entry = await funding_only(db)
+    who = SimpleNamespace(**{**vars(ACTOR), "tenant_id": "A"})
+    first = await gl.reverse_journal(entry["id"], gl_reverse_request(), current_user=who)
+    assert verify_journal_entry_hash(first["entry"])
+    body = issue_from(entry)
+    with pytest.raises(HTTPException) as exc:
+        await atomic(db, lambda session: s.issue(db, "A", ACTOR, body, session=session))
+    assert exc.value.status_code == 409 and "ters kaydedilmiş" in exc.value.detail
+    assert await db.billing_instruments.count_documents({}) == 0
+    assert (await audit_chain.verify_chain("A"))["ok"]
+
+
+@pytest.mark.parametrize("attempt", range(3))
+async def test_first_funding_allocation_and_generic_gl_reversal_cannot_both_commit(store, attempt):
+    db = store
+    entry = await funding_only(db)
+    body = issue_from(entry)
+    await s.prepare(db, "A")
+    await gl.ensure_compound_unique(db.gl_journal_entries, [("tenant_id", 1), ("reverses_entry_id", 1)],
+        partial_filter={"reverses_entry_id": {"$type": "string"}}, name="ux_gl_single_reversal")
+    who = SimpleNamespace(**{**vars(ACTOR), "tenant_id": "A"})
+    start = asyncio.Event()
+    async def allocate():
+        await start.wait()
+        return await atomic(db, lambda session: s.issue(db, "A", ACTOR, body, session=session))
+    async def undo():
+        await start.wait()
+        return await gl.reverse_journal(entry["id"], gl_reverse_request(), current_user=who)
+    tasks = [asyncio.create_task(callback()) for callback in ([allocate, undo] if attempt % 2 else [undo, allocate])]
+    start.set()
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    assert sum(isinstance(result, dict) for result in results) == 1, results
+    errors = [result for result in results if isinstance(result, HTTPException)]
+    assert len(errors) == 1 and errors[0].status_code == 409
+    assert not (await db.billing_instruments.count_documents({}) and await db.gl_journal_entries.count_documents({"reverses_entry_id": entry["id"]}))
+
+
+async def test_gl_reversal_rolls_back_journal_and_source_if_required_audit_fails(store, monkeypatch):
+    from unittest.mock import AsyncMock
+    db = store
+    entry = await funding_only(db)
+    monkeypatch.setattr(gl, "log_audit_event", AsyncMock(side_effect=RuntimeError("Audit unavailable")))
+    with pytest.raises(RuntimeError, match="Audit unavailable"):
+        await gl.reverse_journal(entry["id"], gl_reverse_request(), current_user=SimpleNamespace(**{**vars(ACTOR), "tenant_id": "A"}))
+    assert await db.gl_journal_entries.count_documents({}) == 1
+    assert (await db.gl_journal_entries.find_one({"id": entry["id"]})).get("reversal_status") is None
+
+
+async def test_legacy_reversed_funding_is_blocked_on_apply_and_flagged_by_reconciliation(store):
+    db = store
+    item, _, funding = await funded_issue(db, "wallet")
+    await apply(db, item, application(amount_minor=5000))
+    # Reproduce an out-of-band historical reversal locally without invoking
+    # the newly protected API. The original hash remains valid, so checking
+    # only that hash would incorrectly allow spending the reversed funding.
+    await post_journal_entry(db, "A", date="2026-10-24", memo="Eski genel ters kayıt yolu",
+        lines=[{"account_code": "102", "credit": 100}, {"account_code": "336", "debit": 100}],
+        source="reversal", idempotency_key=str(uuid4()), reverses_entry_id=funding["id"], reversal_reason="Yerel negatif senaryo")
+    assert verify_journal_entry_hash(await db.gl_journal_entries.find_one({"id": funding["id"]}))
+    with pytest.raises(HTTPException) as exc:
+        await apply(db, item, application(amount_minor=5000))
+    assert exc.value.status_code == 409 and "ters kaydedilmiş" in exc.value.detail
+    reconciliation = await s.reconcile(db, "A")
+    assert reconciliation["healthy"] is False
+    assert reconciliation["issues"][0]["reason"] == "funding_source_invalid"
+    assert await db.payments.count_documents({}) == 1
+
+
+async def test_generic_reversal_has_no_unsafe_standalone_fallback(store, monkeypatch):
+    from unittest.mock import AsyncMock
+    from pymongo.errors import OperationFailure
+    from core import booking_atomicity
+    db = store
+    entry = await funding_only(db)
+    monkeypatch.setattr(booking_atomicity, "with_resource_locks", AsyncMock(side_effect=OperationFailure("Transactions are not supported on standalone; replica set required", code=20)))
+    with pytest.raises(HTTPException) as exc:
+        await gl.reverse_journal(entry["id"], gl_reverse_request(), current_user=SimpleNamespace(**{**vars(ACTOR), "tenant_id": "A"}))
+    assert exc.value.status_code == 503
+    assert await db.gl_journal_entries.count_documents({}) == 1
 
 
 @pytest.mark.parametrize("kind", list(s.KINDS))

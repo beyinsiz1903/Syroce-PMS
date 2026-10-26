@@ -290,15 +290,26 @@ async def test_direct_pos_never_assumes_foreign_base_is_try_or_unknown_method_is
 
 
 async def test_reversed_correction_cannot_be_certified_and_keeps_foreign_positions(ledger_db, monkeypatch):
+    from core import audit_chain, database
     from domains.accounting import gl_router as gl
     db = ledger_db
     await seed(db)
     p = await v.preview_daily_valuation(db, "hotel", "run", RATES)
     result = await v.post_daily_valuation(db, "hotel", "run", RATES, p["preview_hash"], "operator")
     monkeypatch.setattr(gl, "db", db)
+    # The reversal now commits its journal, source marker and audit chain in
+    # one transaction. Every collection must use the isolated fixture's client,
+    # not the application's independently constructed global Mongo client.
+    monkeypatch.setattr(database, "client", db.client)
+    monkeypatch.setattr(audit_chain, "_system_db", lambda: db)
     user = SimpleNamespace(tenant_id="hotel", role="finance", id="finance")
     reversal = await gl.reverse_journal(result["entry_id"], gl.JournalReversalIn(date=DAY, reason="Source correction reversal acceptance", idempotency_key="reverse-correction-acceptance"), user)
     assert any(r.get("currency") == "EUR" for r in reversal["entry"]["lines"])
+    assert verify_journal_entry_hash(reversal["entry"])
+    corrected = await db.gl_journal_entries.find_one({"id": result["entry_id"]})
+    assert corrected["reversed_by_entry_id"] == reversal["entry"]["id"]
+    audit = await db.audit_logs.find_one({"tenant_id": "hotel", "action": "gl_journal_reversed"})
+    assert audit["record_hash"] == audit_chain.compute_record_hash(audit, audit["seq"], audit["prev_hash"])
     with pytest.raises(v.OperationalValuationError, match="manual reconciliation"):
         await v.preview_daily_valuation(db, "hotel", "run", RATES)
 

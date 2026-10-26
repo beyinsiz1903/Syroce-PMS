@@ -146,6 +146,7 @@ class _FakeDB:
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
         self.gl_vouchers = _Coll("gl_vouchers")
         self.gl_voucher_policies = _Coll("gl_voucher_policies")
+        self.billing_instruments = _Coll("billing_instruments")
         self.gl_operational_mappings = _Coll("gl_operational_mappings")
         self.gl_intercompany_rules = _Coll("gl_intercompany_rules")
         self.gl_eledger_settings = _Coll("gl_eledger_settings")
@@ -204,6 +205,9 @@ def _patch(monkeypatch):
     monkeypatch.setattr(gl_posting, "ensure_gl_idem_index", _noop)
     monkeypatch.setattr(gl, "ensure_compound_unique", _noop)
     monkeypatch.setattr(gl, "log_audit_event", _noop)
+    async def _transaction(user, callback):
+        return await callback(None)
+    monkeypatch.setattr(gl, "_journal_reversal_transaction", _transaction)
     return fake
 
 
@@ -791,6 +795,37 @@ async def test_reversal_date_must_be_in_open_period(_patch):
             current_user=_user("finance"),
         )
     assert exc.value.status_code == 409
+
+
+@pytest.mark.parametrize("source", ["billing_settlement", "billing_settlement_reversal"])
+async def test_linked_settlement_is_not_reversed_independently_from_folio(_patch, source):
+    await _patch.gl_journal_entries.insert_one({"tenant_id": TENANT, "id": "linked", "source": source, "status": "posted"})
+    with pytest.raises(HTTPException) as exc:
+        await gl.reverse_journal("linked", gl.JournalReversalIn(date="2026-10-24", reason="Genel ters kayıt engeli", idempotency_key="linked-request-001"), current_user=_user())
+    assert exc.value.status_code == 409 and "özgün mahsuba" in exc.value.detail
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_gl_list_explains_allocated_funding_without_leaking_other_tenant_links(_patch):
+    for identity in ["funded", "free", "other"]:
+        await _patch.gl_journal_entries.insert_one({"tenant_id": TENANT, "id": identity, "source": "manual_voucher", "status": "posted"})
+    await _patch.billing_instruments.insert_one({"tenant_id": TENANT, "funding_entry_id": "funded"})
+    await _patch.billing_instruments.insert_one({"tenant_id": "tenant-B", "funding_entry_id": "other"})
+    result = await gl.list_journal(start=None, end=None, limit=200, current_user=_user())
+    assert result["reversal_controls"]["funded"]["can_reverse"] is False
+    assert "hediye kartı/cüzdan" in result["reversal_controls"]["funded"]["reason"]
+    assert result["reversal_controls"]["free"]["can_reverse"] is True
+    assert result["reversal_controls"]["other"]["can_reverse"] is True
+
+
+async def test_annual_integrity_does_not_hide_unsealed_legacy_rows_without_year_or_sequence(_patch):
+    for identity, tenant, day in [("old-1", TENANT, "2026-08-15"), ("old-2", TENANT, "2026-08-16"),
+        ("other-year", TENANT, "2025-08-15"), ("other-tenant", "tenant-B", "2026-08-15")]:
+        await _patch.gl_journal_entries.insert_one({"id": identity, "tenant_id": tenant, "date": day, "status": "posted"})
+    result = await gl.journal_integrity_audit(fiscal_year=2026, current_user=_user())
+    assert result["fully_sealed"] is False and result["source_ledger_ready"] is False
+    assert result["counts"]["legacy_unsealed"] == 2
+    assert set(result["legacy_unsealed_entries"]) == {"old-1", "old-2"}
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ async def log_audit_event(
     after_value: dict = None,
     db=None,
     severity: str = "info",
+    session=None,
 ):
     """Helper function to log audit events.
 
@@ -77,5 +78,8 @@ async def log_audit_event(
         db = _default_db
     from core.audit_chain import append_audit_log
 
-    await append_audit_log(db, audit_copy)
+    if session is None:
+        await append_audit_log(db, audit_copy)
+    else:
+        await append_audit_log(db, audit_copy, session=session, require_chain=True)
     return audit_log

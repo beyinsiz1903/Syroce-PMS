@@ -10,6 +10,7 @@ import {
   getJournalValidationError,
   GL_ENDPOINTS,
   isForeignCurrency,
+  journalReversalBlocker,
   markReversedJournalEntries,
   mergeAccountBalances,
   normalizeAccountCode,
@@ -23,6 +24,13 @@ import {
 } from '@/pages/GeneralLedgerModule';
 
 describe('GeneralLedgerModule persistent GL contract', () => {
+  it('does not offer an independent GL reversal for source-linked settlements or allocated funding', () => {
+    expect(journalReversalBlocker({ source: 'billing_settlement' })).toContain('kaynaklı mahsup');
+    expect(journalReversalBlocker({ source: 'billing_settlement_reversal' })).toBeTruthy();
+    expect(journalReversalBlocker({ source: 'manual_voucher' }, { can_reverse: false, reason: 'Fonlama hakkı ayrılmış' })).toBe('Fonlama hakkı ayrılmış');
+    expect(journalReversalBlocker({ source: 'manual_voucher' }, { can_reverse: true })).toBe('');
+    expect(journalReversalBlocker({ source: 'reversal' })).toBeTruthy();
+  });
   it('preserves operational switches and explicit optional accounts without inventing a concession account', () => {
     expect(toOperationalMappingPayload({ enabled: false, auto_pos: false, auto_night_audit: false,
       cash_account_code: ' 100.01 ', security_deposit_account_code: ' 326 ',

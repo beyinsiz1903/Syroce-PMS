@@ -57,6 +57,7 @@ from models.schemas import User
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from modules.pms_core.report_money import resolve_ledger_currencies
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_folio_payment, is_non_cash_adjustment, report_payment_period_match
+from shared_kernel.atomic_workflow import SessionDatabase
 from shared_kernel.gl_periods import (
     GLPeriodError,
     assert_gl_period_open,
@@ -1622,7 +1623,24 @@ async def list_journal(
             date_q["$lte"] = end
         q["date"] = date_q
     rows = await db.gl_journal_entries.find(q, {"_id": 0}).sort("date", -1).to_list(limit)
-    return {"entries": rows}
+    allocations = await db.billing_instruments.find({"tenant_id": tenant_id, "funding_entry_id": {"$in": [row["id"] for row in rows]}},
+        {"_id": 0, "funding_entry_id": 1}).to_list(None)
+    funded = {row["funding_entry_id"] for row in allocations}
+    controls = {}
+    for row in rows:
+        reason = _journal_reversal_blocker(row, row["id"] in funded)
+        if not reason and (row.get("reverses_entry_id") or row.get("reversal_status") == "reversed"):
+            reason = "Bu kayıt zaten ters kayda bağlı; ikinci bir genel ters kayıt açılamaz"
+        controls[row["id"]] = {"can_reverse": reason is None, "reason": reason}
+    return {"entries": rows, "reversal_controls": controls}
+
+
+def _journal_reversal_blocker(original, allocated):
+    if original.get("source") in {"billing_settlement", "billing_settlement_reversal"}:
+        return "Kaynaklı mahsup genel muhasebeden bağımsız çevrilemez; rezervasyondaki özgün mahsuba bağlı ters kayıt akışını kullanın"
+    if allocated:
+        return "Bu fonlama fişi hediye kartı/cüzdan haklarına bağlı; genel ters kayıt kapalı. Kaynak haklarıyla birlikte düzeltilmelidir"
+    return None
 
 
 def _posted_journal_query(tenant_id, start, end):
@@ -1717,7 +1735,13 @@ async def journal_integrity_audit(
     query: dict = {"tenant_id": tenant_id}
     if fiscal_year is not None:
         query["fiscal_year"] = fiscal_year
-    entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(100000)
+    entry_query = dict(query)
+    if fiscal_year is not None:
+        # Old manual rows can have a canonical date but neither fiscal_year
+        # nor a chain ordinal. Do not hide them behind a green annual audit.
+        entry_query = {"tenant_id": tenant_id, "$or": [{"fiscal_year": fiscal_year},
+            {"fiscal_year": None, "date": {"$gte": f"{fiscal_year}-01-01", "$lt": f"{fiscal_year + 1}-01-01"}}]}
+    entries = await db.gl_journal_entries.find(entry_query, {"_id": 0}).to_list(100000)
     reservations = await db.gl_sequence_reservations.find(query, {"_id": 0}).to_list(100000)
     counters = [counter for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000) if counter.get("counter_type") != "voucher"]
 
@@ -1726,7 +1750,10 @@ async def journal_integrity_audit(
     counter_by_year = {int(row["fiscal_year"]): int(row.get("value") or 0) for row in counters}
     years = sorted(set(counter_by_year) | {key[0] for key in entries_by_key} | {key[0] for key in reservations_by_key})
     issues: list[dict] = []
-    legacy_unsealed: list[str] = []
+    legacy_unsealed: list[str] = [str(entry.get("entry_no") or entry.get("id")) for entry in entries
+        if not entry.get("entry_hash") and not entry.get("posting_sequence")]
+    issues.extend({"code": "sealed_entry_sequence_missing", "entry_id": entry.get("id")} for entry in entries
+        if entry.get("entry_hash") and not entry.get("posting_sequence"))
     sealed_count = 0
     posted_count = 0
     void_count = 0
@@ -2500,13 +2527,50 @@ async def reverse_journal(
 ):
     """Create an immutable, linked contra-entry; never edit/delete the source."""
     _require_role(current_user, _GL_ROLES)
+    return await _journal_reversal_transaction(
+        current_user, lambda session: _reverse_journal(entry_id, payload, current_user, session=session)
+    )
+
+
+async def _journal_reversal_transaction(user, callback):
+    from core.booking_atomicity import is_replica_set_unavailable, with_resource_locks
+    from core.database import client
+    from modules.pms_core import settlement_instruments
+
+    # Serialize with gift/wallet issuance, not just other GL reversals. A
+    # read-only "is allocated?" guard can race with the first allocation.
+    await settlement_instruments.prepare(db, _tenant_of(user))
+    await ensure_compound_unique(
+        db.gl_journal_entries, [("tenant_id", 1), ("reverses_entry_id", 1)],
+        partial_filter={"reverses_entry_id": {"$type": "string"}}, name="ux_gl_single_reversal",
+    )
+
+    async def commit(session):
+        await settlement_instruments._serialize(db, _tenant_of(user), session)
+        return await callback(session)
+
+    try:
+        return await with_resource_locks(client=client, db=db, tenant_id=_tenant_of(user),
+            locks_collection="reservation_financial_locks", resources=[("booking", "billing-policy")], callback=commit)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Kaynaklı muhasebe ters kaydı için Mongo transaction desteği gerekli") from exc
+        raise
+
+
+async def _reverse_journal(entry_id, payload, current_user, *, session=None):
     tenant_id = _tenant_of(current_user)
-    original = await db.gl_journal_entries.find_one(
+    storage = SessionDatabase(db, session) if session is not None else db
+    original = await storage.gl_journal_entries.find_one(
         {"tenant_id": tenant_id, "id": entry_id, "status": "posted"},
         {"_id": 0},
     )
     if not original:
         raise HTTPException(status_code=404, detail="Ters kayıt yapılacak fiş bulunamadı")
+    allocated = await storage.billing_instruments.find_one({"tenant_id": tenant_id, "funding_entry_id": entry_id})
+    blocker = _journal_reversal_blocker(original, bool(allocated))
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
     if original.get("reverses_entry_id"):
         raise HTTPException(status_code=409, detail="Bir ters kayıt fişi yeniden ters kayda alınamaz")
 
@@ -2532,22 +2596,16 @@ async def reverse_journal(
         raise HTTPException(status_code=409, detail="Kaynak fişin ters çevrilecek satırı yok")
 
     idempotency_key = payload.idempotency_key.strip()
-    existing_reversal = await db.gl_journal_entries.find_one(
+    existing_reversal = await storage.gl_journal_entries.find_one(
         {"tenant_id": tenant_id, "reverses_entry_id": entry_id},
         {"_id": 0},
     )
     if existing_reversal and existing_reversal.get("idempotency_key") != idempotency_key:
         raise HTTPException(status_code=409, detail="Bu fiş için daha önce ters kayıt oluşturulmuş")
 
-    await ensure_compound_unique(
-        db.gl_journal_entries,
-        [("tenant_id", 1), ("reverses_entry_id", 1)],
-        partial_filter={"reverses_entry_id": {"$type": "string"}},
-        name="ux_gl_single_reversal",
-    )
     try:
         reversal = await post_journal_entry(
-            db,
+            storage,
             tenant_id,
             date=reversal_date,
             memo=f"{original.get('entry_no') or entry_id} ters kaydı — {payload.reason.strip()}",
@@ -2565,7 +2623,7 @@ async def reverse_journal(
     except DuplicateKeyError as exc:
         raise HTTPException(status_code=409, detail="Bu fiş için eşzamanlı olarak ters kayıt oluşturulmuş") from exc
 
-    await db.gl_journal_entries.update_one(
+    await storage.gl_journal_entries.update_one(
         {"tenant_id": tenant_id, "id": entry_id},
         {
             "$set": {
@@ -2591,6 +2649,7 @@ async def reverse_journal(
         },
         db=db,
         severity="warning",
+        session=session,
     )
     return {"entry": reversal, "original_entry_id": entry_id}
 

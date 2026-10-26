@@ -8,6 +8,21 @@ vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() }
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('voucher finalization', () => {
+  it('shows the source explanation instead of generic GL reversal for linked records', async () => {
+    axios.get.mockImplementation(async url => ({ data: url === '/gl/voucher-policy'
+      ? { policy: { mode: 'authorized_self', version: 0 }, can_manage: false, can_finalize: true }
+      : url === '/gl/journal' ? { entries: [
+        { id: 'linked', source: 'billing_settlement', memo: 'Misafir cüzdanı' },
+        { id: 'funding', source: 'manual_voucher', memo: 'Fonlama kaydı' },
+        { id: 'ordinary', source: 'manual_voucher', memo: 'Sıradan mahsup' },
+      ], reversal_controls: { funding: { can_reverse: false, reason: 'Fonlama kaynağı haklara bağlı' } } } : {} }));
+    render(<MemoryRouter initialEntries={['/?tab=journals']}><GeneralLedgerModule /></MemoryRouter>);
+    expect(await screen.findByText('Fonlama kaynağı haklara bağlı')).toBeInTheDocument();
+    expect(screen.getByText(/Rezervasyondaki özgün kaynaklı mahsup/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Ters Kayıt Oluştur' })).toHaveLength(1);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it('collects a reason and uses the single server finalization path', async () => {
     axios.get.mockImplementation(async url => ({ data: url === '/gl/voucher-policy'
       ? { policy: { mode: 'authorized_self', version: 0 }, can_manage: false, can_finalize: true }
