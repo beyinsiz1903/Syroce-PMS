@@ -63,7 +63,15 @@ def normalized_valuation(business_date, valuation):
         except (InvalidOperation, ValueError, TypeError) as exc:
             raise OperationalValuationError("Source rates must be positive, finite and at most six decimals") from exc
         rates[code] = format(rate.normalize(), "f")
-    return {"business_date": business_date, "base_currency": "TRY", "reference": reference, "rates_to_try": rates}
+    result = {"business_date": business_date, "base_currency": "TRY", "reference": reference, "rates_to_try": rates}
+    accounts = valuation.get("realised_fx_accounts")
+    if accounts is not None:
+        if (not isinstance(accounts, dict) or set(accounts) != {"gain", "loss"}
+            or any(not isinstance(v, str) or not v.strip() or len(v) > 40 for v in accounts.values())
+            or accounts["gain"].strip() == accounts["loss"].strip()):
+            raise OperationalValuationError("Explicit distinct realised FX gain/loss accounts required")
+        result["realised_fx_accounts"] = {k: v.strip() for k, v in accounts.items()}
+    return result
 
 
 async def daily_sources(db, tenant_id, business_date):
@@ -107,7 +115,7 @@ def build_plan(charges, payments, mapping, valuation, security=()):
 
     rates = valuation["rates_to_try"]
     rows, charge_groups, payment_groups = [], {}, {}
-    payment_base_groups, adjustment_groups = {}, {}
+    payment_base_groups, adjustment_groups, fx_groups = {}, {}, {}
     for kind, sources in (("charge", charges), ("payment", payments)):
         for source in sources:
             code = "TRY" if source["currency"] in {"TL", "TRL"} else source["currency"]
@@ -171,7 +179,15 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                         raise OperationalValuationError("Receipt TRY snapshot is not bound to this source day")
                     receipt = abs(minor(source["reporting_amount"])) * (1 if paid > 0 else -1)
                     if receipt != base_paid:
-                        raise OperationalValuationError("Receipt/source valuation difference requires explicit realised FX accounting")
+                        fx_accounts = valuation.get("realised_fx_accounts")
+                        if code == "TRY" or not fx_accounts:
+                            raise OperationalValuationError("Receipt/source valuation difference requires explicit realised FX accounting")
+                        if set(fx_accounts.values()) & {v for k, v in mapping.items() if k.endswith("_account_code")}:
+                            raise OperationalValuationError("Realised FX accounts must be separate from operational accounts")
+                        account = _payment_account(mapping, method)
+                        delta = receipt - base_paid
+                        fx_groups[(code, account)] = fx_groups.get((code, account), 0) + delta
+                        row.update(valuation_amount_minor=base_paid, realised_fx_minor=delta)
                     row.update(reporting_amount_minor=receipt, received_currency=source.get("received_currency"),
                                received_amount_minor=minor(source["received_amount"]) if source.get("received_amount") is not None else None)
                 account = _payment_account(mapping, method)
@@ -211,8 +227,16 @@ def build_plan(charges, payments, mapping, valuation, security=()):
             raise OperationalValuationError("Net-zero foreign receipts have a TRY rounding difference requiring explicit accounting")
         line(account, paid, code, "debit", "Günlük tahsilat / iade", base_paid)
         line(mapping["receivable_account_code"], paid, code, "credit", "Folyo tahsilat kapaması", base_paid)
-        payment_total += base_paid
-        payment_by_account[account] = payment_by_account.get(account, 0) + base_paid
+        fx = fx_groups.get((code, account), 0)
+        if fx:
+            # Keep the folio/native receivable at source-day value. Record
+            # the actual TRY receipt difference separately, never as sales,
+            # tax, a source overwrite or an adjusted exchange rate.
+            line(account, fx, "TRY", "debit", "Tahsilatın kayıtlı TRY karşılığı ile kaynak gün değeri farkı")
+            side = "gain" if fx > 0 else "loss"
+            line(valuation["realised_fx_accounts"][side], abs(fx), "TRY", "credit" if fx > 0 else "debit", "Gerçekleşen tahsilat kur farkı")
+        payment_total += base_paid + fx
+        payment_by_account[account] = payment_by_account.get(account, 0) + base_paid + fx
     # Folio offsets are not receipts or a fiscal credit note. Preserve the
     # original charge/tax rows; post a distinct contra-sales/receivable pair.
     for code, value in sorted(adjustment_groups.items()):
@@ -271,6 +295,14 @@ async def preview_daily_valuation(db, tenant_id, run_id, valuation):
     if not mapping["enabled"] or not mapping["auto_night_audit"]:
         raise OperationalValuationError("Operational night-audit mapping is disabled")
     normalized = normalized_valuation(run["business_date"], valuation)
+    if normalized.get("realised_fx_accounts"):
+        if set(normalized["realised_fx_accounts"].values()) & {value for key, value in mapping.items() if key.endswith("_account_code")}:
+            raise OperationalValuationError("Realised FX accounts must be separate from operational accounts")
+        for kind, code in normalized["realised_fx_accounts"].items():
+            account = await db.gl_accounts.find_one({"tenant_id": tenant_id, "code": code, "active": True}, {"_id": 0})
+            expected = ("revenue", "credit") if kind == "gain" else ("expense", "debit")
+            if not account or (account.get("type"), account.get("normal_balance")) != expected:
+                raise OperationalValuationError("Active correctly typed realised FX gain/loss account required: " + code)
     charges, payments, security = await daily_sources(db, tenant_id, run["business_date"])
     plan = build_plan(charges, payments, mapping, normalized, security)
     by_key = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": "operational-daily:" + run["business_date"]}, {"_id": 0})
@@ -295,7 +327,20 @@ async def preview_daily_valuation(db, tenant_id, run_id, valuation):
     if original and not plan["manifest"]["sources"] and any(minor(row.get("debit")) or minor(row.get("credit")) for row in original.get("lines", [])):
         # Missing source history is not proof that an old posted receipt or
         # revenue never happened. Do not erase it via an empty-source contra.
-        raise OperationalValuationError("Source history missing for nonzero original journal; manual source reconciliation required")
+        from fastapi import HTTPException
+
+        from modules.pms_core.demo_accounting_review import RUN, TENANT, verified
+        review = None
+        if tenant_id == TENANT and run_id == RUN and correction:
+            try:
+                review = await verified(db, tenant_id)
+            except HTTPException as exc:
+                raise OperationalValuationError("Demo legacy source review no longer verifies") from exc
+        if not review:
+            raise OperationalValuationError("Source history missing for nonzero original journal; manual source reconciliation required")
+        # Separate present-day decision, NOT an edit of the old empty manifest
+        # or its seal. verified() pins the original/contra/current Sept source.
+        plan["demo_legacy_review"] = review
     if original and (original.get("reversal_status") or original.get("reverses_entry_id") or
                      await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "reverses_entry_id": original["id"]}, {"id": 1})):
         raise OperationalValuationError("Original journal already reversed; manual reconciliation required")

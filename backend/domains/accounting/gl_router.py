@@ -885,6 +885,7 @@ class OperationalValuationIn(BaseModel):
     base_currency: Literal["TRY"] = "TRY"
     rates_to_try: dict[str, str] = Field(default_factory=dict, max_length=5)
     reference: str = Field(min_length=3, max_length=240)
+    realised_fx_accounts: dict[Literal["gain", "loss"], str] | None = Field(default=None, max_length=2)
 
 
 class OperationalValuationPostIn(OperationalValuationIn):
@@ -1800,6 +1801,14 @@ async def journal_integrity_audit(
     if duplicate_entry_numbers:
         issues.append({"code": "duplicate_entry_number", "entry_numbers": sorted(set(duplicate_entry_numbers))[:100]})
 
+    legacy_review = None
+    if fiscal_year in {None, 2026}:
+        from modules.pms_core.demo_accounting_review import verified
+        try:
+            legacy_review = await verified(db, tenant_id)
+        except HTTPException:
+            issues.append({"code": "demo_legacy_review_invalid"})
+
     return {
         "fiscal_year": fiscal_year,
         "healthy": not issues,
@@ -1818,6 +1827,7 @@ async def journal_integrity_audit(
             "issues": len(issues),
         },
         "legacy_unsealed_entries": legacy_unsealed[:100],
+        "legacy_review": legacy_review,
         "issues": issues[:500],
     }
 
@@ -2005,7 +2015,8 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
     mapping = await get_operational_mapping(db, tenant_id)
     failed_night_audits = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
     failed_pos = await db.pos_transactions.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
-    unverified = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "posted", "gl_valued_entry_id": {"$exists": False}})
+    unverified = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "$or": [
+        {"gl_bridge_status": "posted", "gl_valued_entry_id": {"$exists": False}}, {"gl_bridge_status": "valuation_required"}]})
     latest = await db.night_audit_runs.find_one(
         {"tenant_id": tenant_id, "status": "completed"},
         {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_status": 1, "gl_entry_no": 1},
@@ -2241,6 +2252,9 @@ async def operational_reconciliation(
            for plan in valued_plans for source in plan["manifest"]["sources"]):
         warnings.append({"code": "demo_reconstructed_sources", "historical_source_verified": False,
             "message": "Demo yeniden-kurma kaynakları kullanıldı; matematiksel mutabakat tarihî mali doğrulama değildir."})
+    for plan in valued_plans:
+        if plan.get("demo_legacy_review"):
+            warnings.append({"code": "demo_legacy_accounting_review", **plan["demo_legacy_review"]})
     if fully_valued:
         blockers = [b for b in blockers if b["code"] != "source_currency_requires_try_valuation"]
         payment_by_account = valued_plans[0]["payment_by_account_minor"]

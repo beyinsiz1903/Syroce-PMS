@@ -19,6 +19,10 @@ class OperationalGLBridgeError(ValueError):
     pass
 
 
+class SourceValuationRequired(OperationalGLBridgeError):
+    """Expected operator workflow, not an unhandled application crash."""
+
+
 DEFAULT_MAPPING = {
     "enabled": False,
     "auto_night_audit": True,
@@ -77,7 +81,8 @@ async def _require_try_source_rows(db, tenant_id, rows):
     resolved = await resolve_ledger_currencies(rows, tenant_id, database=db, fallback_currency="UNKNOWN")
     unsupported = sorted({row["currency"] for row in resolved if row["currency"] not in {"TRY", "TRL"}})
     if unsupported:
-        raise OperationalGLBridgeError("Source-day TRY valuation required before GL posting: " + ", ".join(unsupported))
+        error = SourceValuationRequired if set(unsupported) <= {"USD", "EUR", "GBP", "CHF"} else OperationalGLBridgeError
+        raise error("Source-day TRY valuation required before GL posting: " + ", ".join(unsupported))
     return resolved
 
 
@@ -125,7 +130,7 @@ async def post_night_audit_daily_to_gl(
                and str(row.get("charge_category") or row.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}]
     if any(is_non_cash_adjustment(row) and effective_folio_payment(row)
            and not (row.get("mice_event_id") and row.get("gl_journal_entry_id")) for row in payments):
-        raise OperationalGLBridgeError("Non-cash folio adjustments require the explicit source-valuation workflow")
+        raise SourceValuationRequired("Non-cash folio adjustments require the explicit source-valuation workflow")
     payments = [row for row in deduplicate_report_payments(payments)
                 if effective_collection(row) and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
     if hasattr(db, "security_fund_operations") and await db.security_fund_operations.find_one({"tenant_id": tenant_id, "business_date": business_date}):

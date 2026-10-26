@@ -1,0 +1,60 @@
+DEMO HOTEL: 24 EKİM KAPANIŞI SONRASI MUHASEBE KABULÜ
+
+Kapsam
+Yalnız Syroce Demo Hotel / 100001; yapay sunum kayıtlarıdır. Gerçek tesis,
+resmî mali belge, gerçek banka tahsilatı veya tarihî vergi doğrulaması değildir.
+Online ödeme sağlayıcısı kapsam dışıdır. Exely TEST 501694 ARI ve rezervasyon
+çekimi kapalı, HotelRunner kapalı, connector'lar paused kalmalıdır.
+
+26 Ekim'de kullanıcı açık onayıyla tamamlanan işlem
+24 Ekim simülasyonu 10 aday ve sıfır engel verdi. Yapay kasa vardiyası 3.100 TL
+sayım, sıfır fark ile kapandı. Normal gün sonu çalışması yalnız beklenen 10 oda
+gecesini işledi ve iş gününü 25 Ekim'e ilerletti. Kapanış tekrarlanmamalıdır.
+Mevcut 60 sunum rezervasyonunda eski ödeme/ekstra/harcama satırları ve tüm
+konaklamanın kalan borcu değişmedi. Başarısız GL köprüsü kısmi fiş üretmedi.
+
+Canlıya alındıktan sonra, normal API'ler üzerinden kalan kabul
+1. Yeni sürümün gerçekten yayında olduğunu doğrula; sadece başarılı CI yeterli
+   değildir. İş günü 25 Ekim, bağlantılar kapalı olmalı. 25 Ekim'i kapatma.
+2. GET /api/pms/demo-accounting-review/preview: sabit kapsam ve kaynak özetini
+   incele. POST /api/pms/demo-accounting-review/apply için yalnız sunulan kaynak
+   fingerprint'i, kalıcı request_id, açık gerekçe ve
+   REVIEW_SYNTHETIC_DEMO_ACCOUNTING_100001_ONLY teyidini kullan.
+   Bu işlem sadece bugünkü inceleme kararını ve kanıt kopyalarını zincirli audit'e
+   ekler. Eski fiş, kaynak, sıra, tarih, ödeme veya hash değiştirilmez.
+3. 24 Ekim run'ı için mevcut valuation/preview ve valuation/post API'lerini kullan.
+   Örnek sunum kuru USD=50, EUR=55; açıkça yapay kur gerekçesi gerekir.
+   realised_fx_accounts alanını yalnız doğru tipli aktif 646 (gain) ve 656 (loss)
+   hesaplarıyla açıkça gönder. Önizlemenin manifestinde bu seçimin korunduğunu
+   ve gerçek kaynak satırlarını doğrula. expected_preview_hash aynı olmalıdır.
+   Hesapları seçmeden kaynak/fiş oran farkı varsayılan olarak engellenir.
+4. 100/40/60 USD ve EUR tam iade senaryolarındaki karşılıklı 0,01 TL kaynak
+   farkları aynen manifestte kalmalıdır. Bu örnekte net etkileri sıfırdır.
+   Net fark oluşursa alacak değeri ve gerçek tahsilat korunarak ayrı kur
+   kârı/zararı satırları üretilir; satışa/vergiye veya kaynak tutarına gömülmez.
+5. Yeni tek fişin bütünlük, kaynak, borç/alacak, kasa ve döviz mutabakatını oku.
+   Eski 93 fişin değiştirilmediğini; 60 rezervasyondaki borç, ödeme ve harcamaların
+   aynı kaldığını; 24 Ekim'e yalnız 10 beklenen gece satırının eklendiğini doğrula.
+   15 Ekim ve 24 Ekim mutabakatını ve gelir/folyo/GL raporlarını yeniden karşılaştır.
+
+Tarihî kayıtların doğru sunumu
+15 Ekim'deki mühürlü 8.000 TL fiş/karşı fiş neti sıfırdır. Aynı ödeme, önceki
+kanıtlı Demo yeniden-kurmasında 5 Eylül kaynak gününe bağlanmıştır. Yeni bugünkü
+inceleme; mevcut özgün/karşı fişi, 5 Eylül değerlemesini ve önceki audit kararını
+birlikte doğrular. Eski boş kaynak manifesti yeniden yazılmaz ve yeni tarihî
+kaynak icat edilmez. İki Ağustos manuel fişi mühürsüz olarak kalır.
+İnceleme tamamlanınca UI bunu açıkça söyler; fully_sealed, source_ledger_ready
+ve official_ledger_ready bu incelemeyle true yapılmaz. Tarihî mali doğrulama
+iddiası kurulmaz. İncelenen kaynak/karar değişirse mutabakat yeniden engellenir.
+
+Arayüz / hata ayrımı
+Desteklenen döviz ve ikramlar için beklenen kaynak değerleme gereği artık
+valuation_required olarak görünür; günün kapandığı ama GL aktarımının bitmediği
+ayrı uyarılır. Beklenmeyen programlama/veri tabanı ve bilinmeyen para birimi
+hataları hâlâ failed ve istisna kaydı üretir; hata izleme kapatılmaz.
+Kalem ikramları, rezervasyonun brüt oda fiyatını değiştiren Comp dönüşümünden
+ayrılır. Böylece son gece işlendiğinde gerçek fiyat farkları saklanmadan,
+geçerli oda/SPA/yemek ikramları yanlış fiyat uyuşmazlığı oluşturmaz.
+
+Bu dosya bir çalıştırılabilir veri düzeltme betiği veya otomatik seed değildir.
+Özgün 786 operasyonluk sunum günlüğü hiçbir adımda tekrar çalıştırılmamalıdır.
