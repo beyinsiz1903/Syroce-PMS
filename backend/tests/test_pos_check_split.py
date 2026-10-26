@@ -1,13 +1,13 @@
 """Regression tests for POST /api/pos/check-split (pos_core.split_check).
 
 Covers the Sentry production bug (TypeError: '<' not supported between str and int)
-plus the defensive hardening added on top:
-  - by_item: string indices, non-numeric, negative, out-of-range
-  - by_item: all-invalid payload returns 400 (no silent empty splits)
-  - custom: string amounts, non-numeric amounts default to 0
+plus the financial integrity hardening added on top:
+  - by_item: decimal string indices remain supported
+  - invalid, incomplete, negative, empty or duplicate partitions are rejected
+  - custom: decimal string amounts work, malformed amounts are never zeroed
   - custom/by_item: non-numeric split_num falls back to sequential number
   - response includes total_validation with expected/actual/delta/match
-  - equal split path remains unaffected
+  - cent-exact equal split preview never rewrites a paid receipt
 """
 from types import SimpleNamespace
 
@@ -78,46 +78,28 @@ async def test_by_item_string_indices_does_not_crash(monkeypatch, fake_user, fak
     assert res["total_validation"]["match"] is True
 
 
-async def test_by_item_negative_index_dropped(monkeypatch, fake_user, fake_txn):
-    """Python's negative-index access (-1 -> last item) must NOT be exploitable."""
-    res = await _call(
-        monkeypatch, fake_user, fake_txn,
-        split_type="by_item",
-        split_details={"1": [-1, 0]},
-    )
-    splits = {s["split_number"]: s for s in res["splits"]}
-    assert splits[1]["amount"] == 40.0
-    assert splits[1]["items"] == ["Burger"]
+async def test_by_item_negative_index_rejected(monkeypatch, fake_user, fake_txn):
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='by_item', split_details={'1': [-1, 0]})
+    assert error.value.status_code == 422
 
 
-async def test_by_item_all_invalid_indices_returns_400(monkeypatch, fake_user, fake_txn):
-    with pytest.raises(HTTPException) as exc:
-        await _call(
-            monkeypatch, fake_user, fake_txn,
-            split_type="by_item",
-            split_details={"1": ["x", "y"], "2": [99]},
-        )
-    assert exc.value.status_code == 400
+async def test_by_item_all_invalid_indices_rejected(monkeypatch, fake_user, fake_txn):
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='by_item', split_details={'1': ['x', 'y'], '2': [99]})
+    assert error.value.status_code == 422
 
 
-async def test_by_item_out_of_range_index_dropped(monkeypatch, fake_user, fake_txn):
-    res = await _call(
-        monkeypatch, fake_user, fake_txn,
-        split_type="by_item",
-        split_details={"1": [0, 99], "2": [2]},
-    )
-    splits = {s["split_number"]: s for s in res["splits"]}
-    assert splits[1]["amount"] == 40.0
-    assert splits[2]["amount"] == 35.0
+async def test_by_item_out_of_range_index_rejected(monkeypatch, fake_user, fake_txn):
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='by_item', split_details={'1': [0, 99], '2': [1, 2]})
+    assert error.value.status_code == 422
 
 
 async def test_by_item_non_numeric_split_num_falls_back(monkeypatch, fake_user, fake_txn):
-    res = await _call(
-        monkeypatch, fake_user, fake_txn,
-        split_type="by_item",
-        split_details={"abc": [0]},
-    )
-    assert res["splits"][0]["split_number"] == 1
+    result = await _call(monkeypatch, fake_user, fake_txn, split_type='by_item', split_details={'abc': [0, 1, 2]})
+    assert result['splits'][0]['split_number'] == 1
+    assert result['splits'][0]['amount'] == 100
 
 
 async def test_custom_string_amounts(monkeypatch, fake_user, fake_txn):
@@ -132,13 +114,10 @@ async def test_custom_string_amounts(monkeypatch, fake_user, fake_txn):
     assert res["total_validation"]["match"] is True
 
 
-async def test_custom_non_numeric_amount_defaults_to_zero(monkeypatch, fake_user, fake_txn):
-    res = await _call(
-        monkeypatch, fake_user, fake_txn,
-        split_type="custom",
-        split_details={"1": "abc"},
-    )
-    assert res["splits"][0]["amount"] == 0.0
+async def test_custom_non_numeric_amount_is_rejected_not_zeroed(monkeypatch, fake_user, fake_txn):
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='custom', split_details={'1': 'abc'})
+    assert error.value.status_code == 422
 
 
 async def test_equal_split_unaffected(monkeypatch, fake_user, fake_txn):
@@ -152,49 +131,29 @@ async def test_equal_split_unaffected(monkeypatch, fake_user, fake_txn):
     assert res["total_validation"]["match"] is True
 
 
-async def test_total_validation_detects_mismatch(monkeypatch, fake_user, fake_txn):
-    """When client only assigns a subset of items, total_validation flags the delta."""
-    res = await _call(
-        monkeypatch, fake_user, fake_txn,
-        split_type="by_item",
-        split_details={"1": [0]},
-    )
-    assert res["total_validation"]["expected"] == 100.0
-    assert res["total_validation"]["actual"] == 40.0
-    assert res["total_validation"]["delta"] == -60.0
-    assert res["total_validation"]["match"] is False
+async def test_incomplete_partition_is_rejected(monkeypatch, fake_user, fake_txn):
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='by_item', split_details={'1': [0]})
+    assert error.value.status_code == 422
 
 
-async def test_missing_split_details_returns_400_by_item(monkeypatch, fake_user, fake_txn):
-    with pytest.raises(HTTPException) as exc:
-        await _call(
-            monkeypatch, fake_user, fake_txn,
-            split_type="by_item",
-            split_details=None,
-        )
-    assert exc.value.status_code == 400
+async def test_missing_split_details_is_rejected(monkeypatch, fake_user, fake_txn):
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='by_item', split_details=None)
+    assert error.value.status_code == 422
 
 
-async def test_by_item_all_empty_arrays_not_blocked(monkeypatch, fake_user, fake_txn):
-    """All-empty split arrays (no raw indices) must NOT trigger the all-invalid 400."""
-    res = await _call(
-        monkeypatch, fake_user, fake_txn,
-        split_type="by_item",
-        split_details={"1": [], "2": []},
-    )
-    assert res["success"] is True
-    assert all(s["amount"] == 0.0 for s in res["splits"])
+async def test_empty_partition_is_rejected(monkeypatch, fake_user, fake_txn):
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='by_item', split_details={'1': [], '2': []})
+    assert error.value.status_code == 422
 
 
-async def test_total_validation_tolerance_boundary(monkeypatch, fake_user, fake_txn):
-    """Floating point delta within 0.01 must report match=True (boundary)."""
-    fake_txn["total_amount"] = 100.005
-    res = await _call(
-        monkeypatch, fake_user, fake_txn,
-        split_type="custom",
-        split_details={"1": 50.0, "2": 50.0},
-    )
-    assert res["total_validation"]["match"] is True
+async def test_minor_unit_mismatch_is_not_silently_accepted(monkeypatch, fake_user, fake_txn):
+    fake_txn['total_amount'] = 100.005
+    with pytest.raises(HTTPException) as error:
+        await _call(monkeypatch, fake_user, fake_txn, split_type='custom', split_details={'1': 50, '2': 50})
+    assert error.value.status_code == 422
 
 
 async def test_transaction_not_found_returns_404(monkeypatch, fake_user):

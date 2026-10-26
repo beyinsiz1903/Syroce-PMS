@@ -232,6 +232,8 @@ async def test_daily_summary_uses_selected_date_outlet_and_excludes_voids(monkey
         outlet_id="outlet-a",
         date="2026-09-27",
     )
+    assert result.pop('report_warnings') == []
+    assert 'İade düşülmüş' in result.pop('basis')
     assert result == {
         "date": "2026-09-27",
         "outlet_id": "outlet-a",

@@ -57,6 +57,7 @@ async def enrich_refunds(database, tenant_id, rows):
         current = min(paid, round(previous + abs(float(row.get('total_amount') or row.get('amount') or 0)), 2))
         consumed[source['id']] = current
         copy = dict(row)
+        copy['source_sale'] = source
         for field in ('tax_amount', 'tip_amount', 'discount_amount', 'service_charge_amount'):
             if field not in copy:
                 original = float(source.get(field) or 0)

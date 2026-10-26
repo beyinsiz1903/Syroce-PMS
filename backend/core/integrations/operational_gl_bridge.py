@@ -256,6 +256,16 @@ async def post_direct_pos_to_gl(
             "debit": _amount(total),
             "memo": "POS tahsilatı",
         }]
+        quote = transaction.get('checkout_quote') or {}
+        if quote.get('currency_code') and quote.get('currency_code') != quote.get('base_currency'):
+            # Keep the actual tender/rate, including its stored rounding
+            # residual, without rewriting the base-currency sales or tax.
+            foreign = _minor(quote.get('amount_foreign'))
+            rate = Decimal(str(quote.get('rate_used') or 0))
+            converted = int((Decimal(foreign) * rate).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+            if rate <= 0 or abs(converted - total) > 1:
+                raise OperationalGLBridgeError('Foreign tender rounding needs an explicit valuation before GL posting')
+            settlement_lines[0].update(currency=quote['currency_code'], foreign_amount=quote['amount_foreign'], exchange_rate=str(rate))
     lines = [
         *settlement_lines,
         {"account_code": mapping["revenue_account_code"], "credit": _amount(total - tax), "memo": "POS geliri"},
@@ -306,13 +316,22 @@ async def post_direct_pos_refund_to_gl(
         raise OperationalGLBridgeError("POS refund values are not postable")
     if str(original_transaction.get("currency") or order.get("currency") or "TRY").strip().upper() not in {"TRY", "TRL", "TL"}:
         raise OperationalGLBridgeError("Foreign-base POS refund requires the original sealed TRY valuation")
-    original_tax = _minor(order.get("tax_amount"))
-    refund_tax = int((Decimal(original_tax) * Decimal(refunded) / Decimal(paid)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    original_tax = _minor(original_transaction.get('tax_amount', order.get('tax_amount')))
+    refund_tax = (abs(_minor(refund['tax_amount'])) if refund.get('tax_amount') is not None else
+        int((Decimal(original_tax) * Decimal(refunded) / Decimal(paid)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)))
 
     breakdown = original_transaction.get("payment_breakdown") or []
     settlement_lines = []
     allocated = 0
-    if breakdown:
+    if refund.get('payment_breakdown'):
+        for part in refund['payment_breakdown']:
+            value = abs(_minor(part.get('amount')))
+            if value:
+                settlement_lines.append({'account_code': _payment_account(mapping, part['method']),
+                    'credit': _amount(value), 'memo': 'POS iade ödeme dağılımı'})
+        if sum(_minor(line['credit']) for line in settlement_lines) != refunded:
+            raise OperationalGLBridgeError('Refund tender snapshot does not match refund total')
+    elif breakdown:
         for index, part in enumerate(breakdown):
             if index == len(breakdown) - 1:
                 part_refund = refunded - allocated

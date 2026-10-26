@@ -71,13 +71,14 @@ def test_wrapped_split_details_body_is_accepted(client):
     """E2E contract: body is `{"split_details": {...}}`."""
     r = client.post(
         "/api/pos/check-split?transaction_id=tx1&split_type=by_item&split_count=2",
-        json={"split_details": {"1": [0], "2": [1]}},
+        json={"split_details": {"1": [0, 1], "2": [2]}},
     )
     assert r.status_code == 200, r.text
     body = r.json()
     splits = {s["split_number"]: s for s in body["splits"]}
-    assert splits[1]["amount"] == 40.0
-    assert splits[2]["amount"] == 25.0
+    assert splits[1]["amount"] == 65.0
+    assert splits[2]["amount"] == 35.0
+    assert body['preview_only']
 
 
 def test_bare_dict_body_is_rejected(client):

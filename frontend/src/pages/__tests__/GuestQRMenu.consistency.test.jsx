@@ -30,6 +30,18 @@ describe('signed guest QR ordering', () => {
     await waitFor(() => expect(sessionStorage.length).toBe(0));
   });
 
+  it('shows Turkish labels instead of internal category keys', async () => {
+    axios.get.mockResolvedValue({ data: { currency: 'TRY', categories: [
+      { name: 'beverage', items: [] }, { name: 'appetizer', items: [] },
+      { name: 'food', items: [] }, { name: 'dessert', items: [] },
+    ] } });
+    render(<GuestQRMenu />);
+    expect(await screen.findByRole('heading', { name: 'İçecekler' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Başlangıçlar' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ana yemekler' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tatlılar' })).toBeInTheDocument();
+  });
+
   it('keeps the same immutable request after a network error AND page reload', async () => {
     axios.post.mockRejectedValueOnce(new Error('timeout'));
     const view = render(<GuestQRMenu />);

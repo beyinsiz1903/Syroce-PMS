@@ -1,47 +1,22 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from domains.pms.pos_fnb_router import fnb_reports
-
-
-class _Cursor:
-    def __init__(self, rows, limits):
-        self.rows = rows
-        self.limits = limits
-
-    async def to_list(self, limit):
-        self.limits.append(limit)
-        return self.rows
-
-
-class _Collection:
-    def __init__(self):
-        self.queries = []
-        self.limits = []
-
-    def find(self, query):
-        self.queries.append(query)
-        return _Cursor([], self.limits)
+from domains.pms.pos_fnb import report_adapters
 
 
 @pytest.mark.asyncio
-async def test_fnb_dashboard_uses_non_overlapping_non_void_ledger_scope(monkeypatch):
-    charges = _Collection()
-    orders = _Collection()
-    monkeypatch.setattr(fnb_reports, "db", SimpleNamespace(folio_charges=charges, pos_orders=orders))
+async def test_fnb_dashboard_uses_canonical_current_and_previous_business_day(monkeypatch):
+    calls = []
+    async def snapshot(database, tenant_id, first, last, *args):
+        calls.append((tenant_id, first, last))
+        return {'period': {'start_date': first, 'end_date': last}, 'currency': 'TRY',
+            'totals_by_currency': {}, 'financial_by_currency': {}, 'report_warnings': [], 'basis': 'posted business day',
+            'revenue_rows': [], 'financial_total': 0, 'sale_count': 0, 'refund_count': 0, 'sales': []}
+    monkeypatch.setattr(report_adapters, 'snapshot', snapshot)
 
-    async def current_user(_credentials):
-        return SimpleNamespace(tenant_id="tenant-1")
+    result = await report_adapters.report(SimpleNamespace(), 'tenant-1', 'dashboard', '2026-10-02', '2026-10-02')
 
-    monkeypatch.setattr(fnb_reports, "get_current_user", current_user)
-
-    await fnb_reports.get_fnb_dashboard(date="2026-10-02", credentials=None)
-
-    current, previous = charges.queries
-    assert current["voided"] == {"$ne": True}
-    assert current["date"]["$lt"] == "2026-10-03T00:00:00"
-    assert previous["date"]["$lt"] == "2026-10-02T00:00:00"
-    assert orders.queries[0]["created_at"]["$lt"] == "2026-10-03T00:00:00"
-    assert charges.limits == [None, None]
-    assert orders.limits == [None]
+    assert calls == [('tenant-1', '2026-10-02', '2026-10-02'), ('tenant-1', '2026-10-01', '2026-10-01')]
+    assert result['date'] == '2026-10-02' and result['summary']['total_revenue'] == 0

@@ -5,6 +5,12 @@ import { toast, Toaster } from 'react-hot-toast';
 import { ShoppingCart, Plus, Minus, Send, UtensilsCrossed } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 
+const categoryLabel = (category) => ({
+  appetizer: 'Başlangıçlar', food: 'Ana yemekler', main: 'Ana yemekler',
+  dessert: 'Tatlılar', beverage: 'İçecekler', drinks: 'İçecekler',
+  alcohol: 'Alkollü içecekler', fnb: 'Yiyecek ve içecekler', other: 'Diğer',
+}[category] || category);
+
 const GuestQRMenu = () => {
   const { tenantId, outletId } = useParams();
   const [categories, setCategories] = useState([]);
@@ -147,7 +153,7 @@ const GuestQRMenu = () => {
         {!error && categories.length === 0 && <p role="status">Bu satış noktasında şu an sipariş verilebilecek ürün yok. Personelden yardım isteyin.</p>}
         {categories.map(cat => (
           <div key={cat.name}>
-            <h2 className="text-lg font-bold text-gray-800 border-b pb-2 mb-4">{cat.name}</h2>
+            <h2 className="text-lg font-bold text-gray-800 border-b pb-2 mb-4">{categoryLabel(cat.name)}</h2>
             <div className="space-y-4">
               {cat.items.map(item => (
                 <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">

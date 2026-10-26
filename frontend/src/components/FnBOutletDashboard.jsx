@@ -12,9 +12,9 @@ import {
 import { formatCurrency, currencySymbol, cachedTenantCurrency } from '@/lib/currency';
 
 /* ─── helpers ── */
-const fmtDate = (d) => d.toISOString().slice(0, 10);
-const fmt2    = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtPct  = (n) => `${Number(n || 0).toFixed(1)}%`;
+const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fmt2    = (n) => n == null ? 'Doğrulanamadı' : Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct  = (n) => n == null ? 'Doğrulanamadı' : `${Number(n).toFixed(1)}%`;
 const activeCurrency = () => cachedTenantCurrency();
 
 function SummaryCard({ icon: Icon, label, value, color }) {
@@ -59,6 +59,7 @@ const FnBOutletDashboard = () => {
   const [endDate,       setEndDate]       = useState(() => fmtDate(new Date()));
   const [loading,       setLoading]       = useState(false);
   const [menuData,      setMenuData]      = useState(null);
+  const [reportError, setReportError] = useState('');
 
   const loadOutlets = useCallback(async () => {
     try {
@@ -69,6 +70,7 @@ const FnBOutletDashboard = () => {
 
   const loadSales = useCallback(async () => {
     setLoading(true);
+    setReportError('');
     try {
       const res = await axios.get('/pos/menu-sales-breakdown', {
         params: {
@@ -78,7 +80,7 @@ const FnBOutletDashboard = () => {
         },
       });
       setMenuData(res.data);
-    } catch { toast.error('F&B satışları yüklenemedi'); }
+    } catch { setMenuData(null); setReportError('F&B satışları yüklenemedi; rapor doğrulanamadı.'); toast.error('F&B satışları yüklenemedi'); }
     finally  { setLoading(false); }
   }, [selectedOutlet, startDate, endDate]);
 
@@ -88,6 +90,8 @@ const FnBOutletDashboard = () => {
   const byOutlet   = menuData?.by_outlet   || [];
   const topItems   = useMemo(() => (menuData?.menu_items || []).slice(0, 15), [menuData]);
   const byCategory = menuData?.by_category || [];
+  const reportCurrency = menuData?.currency || activeCurrency();
+  const money = (value, currency = reportCurrency) => value == null ? 'Doğrulanamadı' : formatCurrency(value, currency);
 
   return (
     <div className="space-y-5">
@@ -129,6 +133,11 @@ const FnBOutletDashboard = () => {
         </div>
       </div>
 
+      {reportError && <p role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{reportError}</p>}
+      {menuData?.basis && <p className="text-sm text-gray-600">{menuData.period?.start_date} – {menuData.period?.end_date} · {menuData.basis}</p>}
+      {(menuData?.report_warnings || []).map(message => <p key={message} role="alert" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{message}</p>)}
+      {menuData?.requires_currency_selection && <div className="rounded border p-3 text-sm">{Object.entries(menuData.totals_by_currency || {}).map(([code, totals]) => <p key={code}>{code}: {formatCurrency(totals.revenue, code)}</p>)}</div>}
+      {summary?.cost_basis && <p className="text-xs text-gray-500">Maliyetler güncel ürün kataloğuna dayanır; geçmiş dönemin kesin kârlılığı değildir. Maliyeti bilinmeyen ürünler sıfır kabul edilmez.</p>}
       {/* ── Summary cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {loading && !menuData ? (
@@ -140,9 +149,9 @@ const FnBOutletDashboard = () => {
           ))
         ) : summary ? (
           <>
-            <SummaryCard icon={DollarSign}  label="Toplam Ciro"   value={formatCurrency(summary.total_revenue, activeCurrency())}     color="blue"  />
-            <SummaryCard icon={TrendingDown} label="Toplam Maliyet" value={formatCurrency(summary.total_cost, activeCurrency())}      color="red"   />
-            <SummaryCard icon={TrendingUp}  label="Brüt Kâr"     value={formatCurrency(summary.gross_profit, activeCurrency())}      color="green" />
+            <SummaryCard icon={DollarSign}  label="Toplam Ciro"   value={money(summary.total_revenue)}     color="blue"  />
+            <SummaryCard icon={TrendingDown} label="Toplam Maliyet" value={money(summary.total_cost)}      color="red"   />
+            <SummaryCard icon={TrendingUp}  label="Brüt Kâr"     value={money(summary.gross_profit)}      color="green" />
             <SummaryCard icon={Percent}     label="Kâr Marjı"    value={fmtPct(summary.profit_margin)}          color="gray"  />
           </>
         ) : (
@@ -167,7 +176,7 @@ const FnBOutletDashboard = () => {
                 value={o.revenue}
                 maxValue={summary?.total_revenue || 1}
                 color="indigo"
-                suffix={currencySymbol(activeCurrency())}
+                suffix={currencySymbol(reportCurrency)}
               />
             ))}
           </div>
@@ -188,7 +197,7 @@ const FnBOutletDashboard = () => {
                 value={c.revenue}
                 maxValue={summary?.total_revenue || 1}
                 color="emerald"
-                suffix={currencySymbol(activeCurrency())}
+                suffix={currencySymbol(reportCurrency)}
               />
             ))}
           </div>
@@ -226,9 +235,9 @@ const FnBOutletDashboard = () => {
                   <tr key={item.item_name} className={`border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
                     <td className="py-2.5 font-medium text-gray-900 truncate max-w-[180px]">{item.item_name}</td>
                     <td className="py-2.5 text-right text-gray-600">{item.quantity_sold}</td>
-                    <td className="py-2.5 text-right font-semibold text-blue-600">{formatCurrency(item.total_revenue, item.currency || activeCurrency())}</td>
-                    <td className="py-2.5 text-right text-red-500">{formatCurrency(item.total_cost, item.currency || activeCurrency())}</td>
-                    <td className="py-2.5 text-right font-semibold text-emerald-600">{formatCurrency(item.gross_profit, item.currency || activeCurrency())}</td>
+                    <td className="py-2.5 text-right font-semibold text-blue-600">{money(item.total_revenue, item.currency || reportCurrency)}</td>
+                    <td className="py-2.5 text-right text-red-500">{money(item.total_cost, item.currency || reportCurrency)}</td>
+                    <td className="py-2.5 text-right font-semibold text-emerald-600">{money(item.gross_profit, item.currency || reportCurrency)}</td>
                   </tr>
                 ))}
               </tbody>

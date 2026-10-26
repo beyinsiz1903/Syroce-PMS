@@ -40,6 +40,7 @@ async def _query_pos_transactions(
     start_date: str | None = None,
     end_date: str | None = None,
     date: str | None = None,
+    database=None,
 ) -> list[dict]:
     """Canonical POS transaction query.
 
@@ -50,6 +51,7 @@ async def _query_pos_transactions(
     that order exists. Read every source and de-duplicate by transaction and
     order identity so the same check cannot be counted twice.
     """
+    database = database if database is not None else db
     common_q: dict[str, Any] = {"tenant_id": tenant_id}
     if outlet_id:
         common_q["outlet_id"] = outlet_id
@@ -75,10 +77,10 @@ async def _query_pos_transactions(
     tx_q["$or"] = [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]
 
     source_rows = await asyncio.gather(
-        db.pos_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-        db.pos_menu_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-        db.transactions.find(tx_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-        db.pos_orders.find(order_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        database.pos_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        database.pos_menu_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        database.transactions.find(tx_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        database.pos_orders.find(order_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
     )
 
     financial_rows = [*source_rows[0], *source_rows[1], *source_rows[2]]
@@ -325,28 +327,24 @@ async def get_pos_daily_summary(
     total_sales = round(sum(float(row.get("total_amount", 0) or 0) for row in completed), 2)
     count = len(completed)
     item_totals: dict[str, dict[str, Any]] = {}
-    for row in completed:
-        for item in row.get("order_items") or row.get("items") or []:
-            name = str(item.get("item_name") or item.get("name") or "").strip()
-            if not name:
-                continue
-            quantity = float(item.get("quantity", 1) or 0)
-            line_total = item.get("total")
-            if line_total is None:
-                line_total = item.get("total_price")
-            if line_total is None:
-                unit_price = item.get("unit_price")
-                if unit_price is None:
-                    unit_price = item.get("price", 0)
-                line_total = float(unit_price or 0) * quantity
+    from domains.pms.pos_fnb.analytics import item_rows
+    from domains.pms.pos_fnb.reporting import enrich_refunds
 
-            key = name.casefold()
-            aggregate = item_totals.setdefault(
-                key,
-                {"name": name, "quantity": 0.0, "revenue": 0.0},
-            )
-            aggregate["quantity"] += quantity
-            aggregate["revenue"] += float(line_total or 0)
+    enriched, report_warnings = await enrich_refunds(db, current_user.tenant_id, completed)
+    for item in item_rows(enriched):
+        name = str(item.get('description') or '').strip()
+        if not name:
+            continue
+        quantity = float(item.get("quantity", 1) or 0)
+        line_total = item['net_revenue']
+
+        key = name.casefold()
+        aggregate = item_totals.setdefault(
+            key,
+            {"name": name, "quantity": 0.0, "revenue": 0.0},
+        )
+        aggregate["quantity"] += quantity
+        aggregate["revenue"] += float(line_total or 0)
 
     top_items = sorted(
         item_totals.values(),
@@ -361,6 +359,8 @@ async def get_pos_daily_summary(
         "date": date,
         "outlet_id": outlet_id,
         "total_sales": total_sales,
+        'report_warnings': report_warnings,
+        'basis': 'İade düşülmüş ödeme/oda aktarımı; bahşiş dahil. Ürün miktarları ve gelirleri iade düşülmüş, KDV hariçtir.',
         "transaction_count": count,
         "average_transaction": round(total_sales / count, 2) if count else 0,
         "top_items": top_items,
@@ -510,7 +510,8 @@ async def get_z_report(
             "discounts": round(discounts, 2),
             "service_charges": round(service_charges, 2),
             "refunds": round(refunds, 2),
-            "void_amount": round(sum(float(t.get("total_amount", 0) or 0) for t in void_tx), 2),
+            "void_amount": round(sum(float(t.get("grand_total", t.get("total_amount", 0)) or 0) for t in void_tx), 2),
+            'void_basis': 'İptal adisyon tutarı vergi dahil, tahsilat değildir.',
             "transaction_count": len(valid_tx),
             'sale_count': len(sales),
             "void_count": len(void_tx),
@@ -561,41 +562,12 @@ async def get_void_transactions(
 # ── GET /pos/void-report ──
 @router.get("/pos/void-report")
 async def get_void_report(start_date: str | None = None, end_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get voided transactions report"""
+    from domains.pms.pos_fnb.analytics import VOID, period
     current_user = await get_current_user(credentials)
-
-    if not start_date:
-        start_date = datetime.now(UTC).replace(hour=0, minute=0, second=0)
-    else:
-        start_date = datetime.fromisoformat(start_date)
-
-    if not end_date:
-        end_date = datetime.now(UTC).replace(hour=23, minute=59, second=59)
-    else:
-        end_date = datetime.fromisoformat(end_date)
-
-    voided_transactions = []
-    total_voided_amount = 0
-
-    async for transaction in db.pos_transactions.find({"tenant_id": current_user.tenant_id, "status": "voided", "voided_at": {"$gte": start_date, "$lte": end_date}}).sort("voided_at", -1):
-        voided_transactions.append(
-            {
-                "transaction_id": transaction.get("id"),
-                "outlet_name": transaction.get("outlet_name"),
-                "table_number": transaction.get("table_number"),
-                "original_amount": transaction.get("total_amount", 0),
-                "voided_by": transaction.get("voided_by"),
-                "voided_at": transaction.get("voided_at").isoformat() if transaction.get("voided_at") else None,
-                "void_reason": transaction.get("void_reason", ""),
-                "items": transaction.get("items", []),
-            }
-        )
-
-        total_voided_amount += transaction.get("total_amount", 0)
-
-    return {
-        "date_range": {"start": start_date.date().isoformat(), "end": end_date.date().isoformat()},
-        "voided_transactions": voided_transactions,
-        "total_voided_count": len(voided_transactions),
-        "total_voided_amount": total_voided_amount,
-    }
+    start, end = await period(db, current_user.tenant_id, start_date, end_date, days=1)
+    rows = await _query_pos_transactions(current_user.tenant_id, limit=None, start_date=start, end_date=end)
+    voided = [row for row in rows if row.get('status') in VOID]
+    return {'date_range': {'start': start, 'end': end}, 'voided_transactions': voided,
+        'total_voided_count': len(voided),
+        'total_voided_amount': round(sum(float(row.get('grand_total', row.get('total_amount', 0)) or 0) for row in voided), 2),
+        'basis': 'PMS iş günü; iptal adisyon tutarı vergi dahil, tahsilat değildir.'}

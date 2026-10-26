@@ -2080,12 +2080,12 @@ async def operational_reconciliation(
     pos_query = {
         "tenant_id": tenant_id,
         "status": {"$in": ["completed", "closed", "paid"]},
-        "$or": [
-            {"transaction_date": selected},
-            {"closed_at": {"$gte": selected, "$lt": next_day}},
-            {"created_at": {"$gte": selected, "$lt": next_day}},
-        ],
     }
+    from core.business_date_service import accounting_day_match
+    pos_query.update(accounting_day_match(selected,
+        {'transaction_date': selected},
+        {'transaction_date': {'$in': [None, '']}, 'closed_at': {'$gte': selected, '$lt': next_day}},
+        {'transaction_date': {'$in': [None, '']}, 'closed_at': {'$in': [None, '']}, 'created_at': {'$gte': selected, '$lt': next_day}}))
     (
         payments,
         pos_transactions,
@@ -2103,7 +2103,7 @@ async def operational_reconciliation(
                 "tenant_id": tenant_id,
                 "voided": {"$ne": True},
                 "source_pos_order_id": {"$exists": True},
-                "date": {"$gte": selected, "$lt": next_day},
+                **accounting_day_match(selected, {'date': {'$gte': selected, '$lt': next_day}}),
             },
             {"_id": 0, "source_pos_order_id": 1},
         ).to_list(100000),
@@ -2295,6 +2295,10 @@ async def operational_reconciliation(
     for transaction in direct_pos:
         amount_minor = _reconciliation_minor(transaction.get("total_amount", transaction.get("amount")))
         pos_total_minor += amount_minor
+        if (transaction.get('gl_bridge_status') == 'no_activity' and amount_minor == 0
+                and _reconciliation_minor(transaction.get('tax_amount')) == 0
+                and not any(_reconciliation_minor(part.get('amount')) for part in transaction.get('payment_breakdown') or [])):
+            continue  # Auditable zero-price comp; do not invent a zero journal.
         entry = entries_by_id.get(str(transaction.get("gl_journal_entry_id"))) or entries_by_source.get(("pos_direct", str(transaction.get("order_id"))))
         if transaction.get("gl_bridge_status") != "posted" or not entry:
             blockers.append(
@@ -2305,10 +2309,17 @@ async def operational_reconciliation(
                 }
             )
             continue
-        account = _settlement_account(mapping, transaction.get("payment_method"))
-        linked_minor = sum(int(line.get("debit_minor") or 0) for line in entry.get("lines", []) if str(line.get("account_code") or "") == account)
+        parts = transaction.get('payment_breakdown') or [{'method': transaction.get('payment_method'), 'amount': _reconciliation_amount(amount_minor)}]
+        expected_accounts: dict[str, int] = {}
+        for part in parts:
+            account = _settlement_account(mapping, part.get('method'))
+            expected_accounts[account] = expected_accounts.get(account, 0) + _reconciliation_minor(part.get('amount'))
+        actual_accounts = {account: sum(int(line.get('debit_minor') or 0) - int(line.get('credit_minor') or 0)
+            for line in entry.get('lines', []) if str(line.get('account_code') or '') == account)
+            for account in expected_accounts}
+        linked_minor = sum(actual_accounts.values())
         pos_gl_total_minor += linked_minor
-        if linked_minor != amount_minor:
+        if linked_minor != amount_minor or actual_accounts != expected_accounts:
             blockers.append(
                 {
                     "code": "pos_gl_variance",
