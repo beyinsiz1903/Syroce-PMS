@@ -35,7 +35,7 @@ class _Database:
 
 
 @pytest.mark.asyncio
-async def test_night_audit_charge_dedup_index_only_covers_active_charges(monkeypatch):
+async def test_night_audit_charge_dedup_index_only_covers_active_room_and_no_show_charges(monkeypatch):
     database = _Database()
     monkeypatch.setattr(night_audit_hardened, "db", database)
 
@@ -44,12 +44,22 @@ async def test_night_audit_charge_dedup_index_only_covers_active_charges(monkeyp
     database.folio_charges.drop_index.assert_awaited_once_with("idx_folio_charges_na_dedup")
     matching_calls = [
         call for call in database.folio_charges.create_index.await_args_list
-        if call.kwargs.get("name") == "idx_folio_charges_na_dedup"
+        if call.kwargs.get("name") == "idx_folio_charges_na_active_v2"
     ]
     assert len(matching_calls) == 1
     assert matching_calls[0].kwargs["unique"] is True
     assert matching_calls[0].kwargs["partialFilterExpression"] == {
         "business_date": {"$exists": True},
-        "charge_type": {"$exists": True},
+        "charge_type": {"$in": ["room_charge", "no_show_fee"]},
         "voided": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_existing_dedup_is_kept_if_replacement_cannot_be_built(monkeypatch):
+    database = _Database()
+    database.folio_charges.create_index.side_effect = RuntimeError('Cannot create replacement index')
+    monkeypatch.setattr(night_audit_hardened, 'db', database)
+    with pytest.raises(RuntimeError):
+        await night_audit_hardened.ensure_night_audit_indexes()
+    database.folio_charges.drop_index.assert_not_awaited()
