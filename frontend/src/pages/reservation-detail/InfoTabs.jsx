@@ -15,6 +15,7 @@ import api from '@/api/axios';
 import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
 import { reservationPaymentSummary } from './paymentSummary';
+import { latestCollectionPayment, paymentMethod } from '@/lib/folioPayments';
 const ALERT_LEVEL_BG = {
   danger: 'bg-red-50 border-red-300 text-red-800',
   warning: 'bg-amber-50 border-amber-300 text-amber-800',
@@ -167,7 +168,7 @@ export function GeneralInfoTab({
   const paymentStatus = ['unknown', 'reconciliation'].includes(paymentOverview.kind) ? paymentOverview.label
     : paymentOverview.kind === 'due' ? 'Ödeme bekleniyor'
     : paymentOverview.kind === 'credit' ? 'Misafir alacağı var' : 'Kalan ödeme yok';
-  const lastPayment = (payments || []).filter(p => !p.voided).slice(-1)[0];
+  const lastPayment = latestCollectionPayment(payments);
   const depositAmt = summary?.total_deposits || 0;
   const hasDeposit = depositAmt > 0 || deposits && deposits.length > 0;
   const roomImg = room?.images && room.images.length > 0 ? room.images[0] : null;
@@ -314,7 +315,9 @@ export function GeneralInfoTab({
               {Number(summary.total_discounts) > 0 && <InfoLine label="İkram / indirim" value={`−${fmtCurrency(summary.total_discounts, currency)}`} />}
               <InfoLine label="Toplam tahsilat" value={fmtCurrency(summary.total_payments, currency)} />
               <InfoLine label={paymentOverview.label} value={<span className={`font-semibold ${paymentTone}`}>{paymentOverview.displayAmount == null ? '—' : fmtCurrency(paymentOverview.displayAmount, currency)}</span>} />
-              {lastPayment?.method && <InfoLine label="Ödeme Yöntemi" value={PAYMENT_METHOD_LABELS[String(lastPayment.method).toLowerCase()] || lastPayment.method} />}
+              <InfoLine label="Son tahsilat yöntemi" value={lastPayment
+                ? PAYMENT_METHOD_LABELS[paymentMethod(lastPayment)] || paymentMethod(lastPayment)
+                : Array.isArray(payments) ? 'Tahsilat kaydı yok' : 'Doğrulanamadı'} />
               {hasDeposit && <InfoLine label="Depozito Durumu" value={depositAmt > 0 ? 'Depozito alındı' : 'Depozito alınmadı'} />}
               {depositAmt > 0 && <InfoLine label="Depozito Tutarı" value={`${fmtCurrency(depositAmt, currency)}`} />}
             </div>

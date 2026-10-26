@@ -18,6 +18,29 @@ describe('GeneralInfoTab', () => {
     apiGet.mockResolvedValue({ data: {} });
   });
 
+  it('shows the actual last receipt method instead of a later Comp adjustment', () => {
+    render(<GeneralInfoTab booking={{ id: 'summary-115' }} guest={null} room={null}
+      summary={{ balance: 3400, reservation_total_due: 8200 }} payments={[
+        { method: 'bank_transfer', amount: 4800, created_at: '2026-10-24T16:33:00Z' },
+        { method: 'cash', amount: 1000, created_at: '2026-10-24T16:42:00Z' },
+        { method: 'discount', amount: 7300, created_at: '2026-10-24T20:49:00Z' },
+      ]} />);
+    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Nakit');
+    expect(screen.getByTestId('general-payment-info')).not.toHaveTextContent('discount');
+    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('Toplam kalan ödeme8.200 TL');
+  });
+
+  it('does not present a fully Comp or source-settled stay as a cash receipt', () => {
+    render(<GeneralInfoTab booking={{ id: 'comp' }} summary={{ balance: 0 }}
+      payments={[{ method: 'discount', amount: 100 }, { method: 'wallet', amount: 50 }]} />);
+    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Tahsilat kaydı yok');
+  });
+
+  it('does not claim no receipts when payment rows were not provided', () => {
+    render(<GeneralInfoTab booking={{ id: 'missing-payments' }} summary={{ balance: 0 }} />);
+    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Doğrulanamadı');
+  });
+
   it('shows the booked category before a physical room has been assigned', async () => {
     await act(async () => {
       render(<GeneralInfoTab booking={{ id: 'unassigned-exely', room_type: 'Deluxe' }} guest={null} room={null} />);

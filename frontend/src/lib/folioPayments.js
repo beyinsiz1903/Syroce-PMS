@@ -11,6 +11,15 @@ export const signedFolioPayment = row => {
   return String(row.payment_type || '').trim().toLowerCase() === 'refund' && amount > 0 ? -amount : amount;
 };
 export const collectionPayment = row => isNonCashPayment(row) ? 0 : signedFolioPayment(row);
+// Display the last actual receipt, not a later concession, AR transfer or refund.
+// Sort a copy: payment history order and ledger values must remain untouched.
+export const latestCollectionPayment = payments => {
+  const receipts = (Array.isArray(payments) ? payments : [])
+    .filter(row => row && paymentMethod(row) && collectionPayment(row) > 0)
+    .sort((a, b) => (Date.parse(a.processed_at || a.paid_at || a.created_at) || 0)
+      - (Date.parse(b.processed_at || b.paid_at || b.created_at) || 0));
+  return receipts[receipts.length - 1] || null;
+};
 export const folioPaymentLabel = row => ({
   cash: 'Nakit', card: 'Kredi kartı', credit_card: 'Kredi kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme', agency: 'Acente',
   discount: 'İkram / indirim (tahsilat değil)', complimentary: 'İkram (tahsilat değil)', correction: 'Finansal düzeltme (tahsilat değil)',

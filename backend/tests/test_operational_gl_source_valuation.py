@@ -201,6 +201,53 @@ async def test_missing_sources_never_erase_nonzero_original_journal(ledger_db):
     assert await ledger_db.gl_journal_entries.find_one({"id": original["id"]}, {"_id": 0}) == original
 
 
+@pytest.mark.parametrize("corruption", [None, "hash", "source_ref", "source", "date"])
+async def test_existing_empty_source_contra_is_visible_but_never_certifies_missing_history(ledger_db, monkeypatch, corruption):
+    from domains.accounting import gl_router
+
+    db = ledger_db
+    await seed(db, original=False)
+    await db.folio_charges.delete_many({"tenant_id": "hotel"})
+    await db.payments.delete_many({"tenant_id": "hotel"})
+    original = await post_journal_entry(db, "hotel", date=DAY, memo="Legacy receipt",
+        lines=[{"account_code": "100", "debit": 8000}, {"account_code": "120", "credit": 8000}],
+        source="night_audit", source_ref="run", actor="old", idempotency_key="operational-daily:" + DAY)
+    manifest = plan()["manifest"]
+    # Simulate an already posted pre-guard empty-source correction. Current
+    # posting must keep rejecting this; only the read-only report is repaired.
+    correction = await post_journal_entry(db, "hotel", date=DAY, memo="Legacy empty-source contra",
+        lines=[{"account_code": "100", "credit": 8000}, {"account_code": "120", "debit": 8000}],
+        source="night_audit_correction", source_ref="run", actor="old", source_manifest=manifest,
+        idempotency_key="operational-correction:run")
+    await db.night_audit_runs.update_one({"id": "run"}, {"$set": {
+        "gl_bridge_status": "posted", "gl_journal_entry_id": original["id"], "gl_valued_entry_id": correction["id"]}})
+    if corruption:
+        # Re-seal wrong links so the test exercises link checks, not only hash.
+        changed = {"hash": {"entry_hash": "bad"}, "source_ref": {"source_ref": "other-run"},
+            "source": {"source": "night_audit"}, "date": {"date": "2026-10-02"}}[corruption]
+        if corruption != "hash":
+            from shared_kernel.gl_posting import compute_journal_entry_hash
+            changed["entry_hash"] = compute_journal_entry_hash({**correction, **changed})
+        await db.gl_journal_entries.update_one({"id": correction["id"]}, {"$set": changed})
+    before = await db.gl_journal_entries.find({}, {"_id": 0}).to_list(10)
+    monkeypatch.setattr(gl_router, "db", db)
+    report = await gl_router.operational_reconciliation(DAY, SimpleNamespace(tenant_id="hotel", role="admin"))
+    assert not report["healthy"] and not report["folios"]["source_valuation_verified"]
+    assert any(b["code"] in {"source_valuation_invalid", "folio_gl_variance"} for b in report["blockers"])
+    assert report["folios"]["payment_total"] == 0
+    if corruption is None:
+        assert report["folios"]["gl_total"] == report["folios"]["variance"] == 0
+        assert report["journal"]["linked_entry_count"] == 2
+        assert [b["code"] for b in report["blockers"]] == ["source_valuation_invalid"]
+    else:
+        assert report["folios"]["gl_total"] == 8000
+        assert report["journal"]["linked_entry_count"] == 1
+    assert await db.gl_journal_entries.find({}, {"_id": 0}).to_list(10) == before
+    expected_error = "Multiple original source journals" if corruption == "source" else "Source history missing"
+    with pytest.raises(v.OperationalValuationError, match=expected_error):
+        await v.preview_daily_valuation(db, "hotel", "run", RATES)
+
+
 async def test_genuine_empty_day_without_prior_money_is_still_no_activity(ledger_db):
     await seed(ledger_db, original=False)
     await ledger_db.folio_charges.delete_many({"tenant_id": "hotel"})

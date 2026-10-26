@@ -2209,12 +2209,19 @@ async def operational_reconciliation(
         if not valued or not valued.get("source_manifest"):
             continue
         try:
+            basis = next((e for e in linked_night_entries if e.get("source_ref") == run["id"] and e.get("source") == "night_audit"), None)
+            if (not basis or not verify_journal_entry_hash(basis) or not verify_journal_entry_hash(valued)
+                or valued.get("source_ref") != run["id"] or valued.get("date") != selected
+                or valued.get("source") != ("night_audit" if valued["id"] == basis["id"] else "night_audit_correction")):
+                raise OperationalValuationError("Valued journal link/integrity mismatch")
+            # Show the actual sealed ledger pair even when current source
+            # verification fails. Dropping its correction invents a cash
+            # variance; including it does NOT attest the missing source.
+            if valued["id"] != basis["id"]:
+                linked_night_entries.append(valued)
             plan = await preview_daily_valuation(db, tenant_id, run["id"], valued["source_manifest"]["valuation"])
             if plan["action"] not in {"already_posted", "already_corrected"}:
                 raise OperationalValuationError("Source journal no longer matches its valued manifest")
-            basis = next((e for e in linked_night_entries if e.get("source_ref") == run["id"]), None)
-            if not basis or not verify_journal_entry_hash(valued):
-                raise OperationalValuationError("Valued journal link/integrity mismatch")
             combined = [basis] if valued["id"] == basis["id"] else [basis, valued]
             actual, expected = {}, {}
             for journal in combined:
@@ -2226,8 +2233,6 @@ async def operational_reconciliation(
                 expected[code] = expected.get(code, 0) + _reconciliation_minor(line.get("debit")) - _reconciliation_minor(line.get("credit"))
             if {k: v for k, v in actual.items() if v} != {k: v for k, v in expected.items() if v}:
                 raise OperationalValuationError("Valued source and combined journal account balances differ")
-            if valued["id"] != basis["id"]:
-                linked_night_entries.append(valued)
             valued_plans.append(plan)
         except (OperationalValuationError, GLPostingError, KeyError) as exc:
             blockers.append({"code": "source_valuation_invalid", "record_id": run["id"], "message": str(exc)})

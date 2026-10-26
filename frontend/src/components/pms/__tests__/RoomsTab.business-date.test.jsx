@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import RoomsTab, { formatCleaningDuration, formatRoomAttribute } from '@/components/pms/RoomsTab';
+import RoomsTab, { formatCleaningDuration, formatRoomAttribute, roomBalanceScope } from '@/components/pms/RoomsTab';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
 vi.mock('sonner', () => ({
@@ -34,6 +34,32 @@ const booking = {
 };
 
 describe('RoomsTab PMS business date', () => {
+  it('labels posted folio debt separately from the whole-stay amount without changing payment defaults', () => {
+    render(<RoomsTab rooms={[{ ...room, status: 'occupied' }]} businessDate="2026-08-28"
+      bookings={[{ ...booking, status: 'checked_in', folio_balance: 3400, reservation_total_due: 8200, currency: 'TRY' }]} />);
+    expect(screen.getByTestId('room-balance-208')).toHaveTextContent('Folyo borcu:');
+    expect(screen.getByTestId('room-balance-208')).toHaveTextContent('3.400,00');
+    expect(screen.getByTestId('room-balance-208')).toHaveTextContent('İşlenmemiş oda bedeli hariç.');
+    fireEvent.click(within(screen.getByTestId('room-card-208')).getByRole('button', { name: 'Ödeme' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Folyo borcu:');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Henüz işlenmemiş oda bedeli dahil toplam kalan ödeme');
+    expect(screen.getByTestId('quick-payment-amount')).toHaveValue('3400');
+  });
+
+  it('does not mislabel a booking-only estimate as a posted folio charge', () => {
+    render(<RoomsTab rooms={[room]} bookings={[booking]} businessDate="2026-08-28" />);
+    expect(screen.getByTestId('room-balance-208')).toHaveTextContent('Rezervasyon bakiyesi:');
+    expect(screen.getByTestId('room-balance-208')).not.toHaveTextContent('Folyo borcu:');
+  });
+
+  it('recognizes explicit zero but not malformed folio values as evidence of posted scope', () => {
+    expect(roomBalanceScope({ folio_balance: 0 })).toBe('folio');
+    expect(roomBalanceScope({ folio_balance: '0' })).toBe('folio');
+    for (const value of [undefined, null, '', ' ', false, [], {}, 'invalid']) {
+      expect(roomBalanceScope({ folio_balance: value })).toBe('reservation');
+    }
+  });
+
   it('presents stored room metadata with guest-facing Turkish labels', () => {
     expect(formatRoomAttribute('standard')).toBe('Standart');
     expect(formatRoomAttribute('city')).toBe('Şehir');
