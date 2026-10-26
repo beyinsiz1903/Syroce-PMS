@@ -190,13 +190,36 @@ jobs:
             - name: Install frontend
               run: cd frontend && yarn install --ignore-engines --frozen-lockfile
             - name: Install Playwright browsers
+              timeout-minutes: 8
+              env:
+                  PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '120000'
               run: |
-                  # Unrelated Microsoft/Google apt feeds can fail with 403 or hash mismatch.
-                  # Playwright downloads its own Chromium; retain Ubuntu dependency feeds
-                  # and all apt signature/hash verification.
-                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
-                      -exec grep -lE 'packages\.microsoft\.com|dl\.google\.com/linux/chrome(-stable)?/deb' {} + 2>/dev/null | xargs -r sudo rm -f || true
-                  cd frontend && yarn e2e:install
+                  set -euo pipefail
+                  # The runner's mirror+file source can stall on azure.archive.ubuntu.com
+                  # until the entire job expires. Scope official HTTPS sources and bounded
+                  # acquisition retries to this install; do not alter the runner's sources
+                  # or disable TLS/package signature/hash verification.
+                  apt_dir=$(mktemp -d "${RUNNER_TEMP}/playwright-apt.XXXXXX")
+                  trap 'rm -r -- "$apt_dir"' EXIT
+                  mkdir "$apt_dir/sources.list.d"
+                  printf '%s\n' \
+                      'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble main restricted universe multiverse' \
+                      'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse' \
+                      'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse' \
+                      > "$apt_dir/sources.list"
+                  printf '%s\n' \
+                      "Dir::Etc::sourcelist \"$apt_dir/sources.list\";" \
+                      "Dir::Etc::sourceparts \"$apt_dir/sources.list.d\";" \
+                      'Acquire::Retries "2";' \
+                      'Acquire::http::Timeout "20";' \
+                      'Acquire::https::Timeout "20";' \
+                      'Acquire::Languages "none";' \
+                      'APT::Update::Error-Mode "any";' \
+                      > "$apt_dir/apt.conf"
+                  # Pass APT_CONFIG after sudo: sudo normally strips it from the environment.
+                  sudo env APT_CONFIG="$apt_dir/apt.conf" "$(command -v node)" \
+                      frontend/node_modules/playwright/cli.js install-deps chromium
+                  cd frontend && yarn playwright install chromium
             - name: Build + serve frontend
               env:
                   VITE_BACKEND_URL: /api

@@ -198,27 +198,29 @@ async def _load_bookings_for_date_check(
 
 async def ensure_night_audit_indexes():
     """Create all required indexes for the hardened night audit."""
-    # The original room-charge dedup index also covered voided correction
-    # rows.  A legitimate rate correction voids the old charge and posts its
-    # replacement with the same booking/date/type tuple, so that definition
-    # incorrectly raised E11000.  Upgrade the index in place: only active
-    # charges participate in duplicate prevention, while the full correction
-    # history remains available in the ledger.
-    charge_dedup_name = "idx_folio_charges_na_dedup"
+    # Night-audit dedup MUST NOT cover POS/minibar/service rows: a booking can
+    # receive multiple checks (and multiple product lines) on the same day.
+    # Install the narrowed guard BEFORE removing its legacy broad predecessor;
+    # room/no-show concurrency protection is never absent during the upgrade.
+    legacy_charge_dedup_name = "idx_folio_charges_na_dedup"
+    charge_dedup_name = "idx_folio_charges_na_active_v2"
+    charge_dedup_keys = [("tenant_id", 1), ("booking_id", 1), ("business_date", 1), ("charge_type", 1)]
     charge_dedup_filter = {
         "business_date": {"$exists": True},
-        "charge_type": {"$exists": True},
+        "charge_type": {"$in": ["room_charge", "no_show_fee"]},
         "voided": False,
     }
-    try:
-        charge_indexes = await db.folio_charges.index_information()
-        current_dedup = charge_indexes.get(charge_dedup_name)
-        if current_dedup and current_dedup.get("partialFilterExpression") != charge_dedup_filter:
-            await db.folio_charges.drop_index(charge_dedup_name)
-            logger.info("Upgrading %s to active-charge-only deduplication", charge_dedup_name)
-    except Exception as e:
-        if "index not found" not in str(e).lower() and "ns not found" not in str(e).lower():
-            logger.warning("Could not inspect/upgrade %s: %s", charge_dedup_name, e)
+    await db.folio_charges.create_index(charge_dedup_keys, name=charge_dedup_name,
+        unique=True, partialFilterExpression=charge_dedup_filter)
+    charge_indexes = await db.folio_charges.index_information()
+    if legacy_charge_dedup_name in charge_indexes:
+        try:
+            await db.folio_charges.drop_index(legacy_charge_dedup_name)
+        except Exception as exc:
+            # Another application process may have finished the same upgrade.
+            if getattr(exc, 'code', None) != 27:
+                raise
+        logger.info("Replaced broad folio dedup with room/no-show-only index")
 
     idx_defs = [
         (
@@ -250,12 +252,6 @@ async def ensure_night_audit_indexes():
             [("tenant_id", 1), ("booking_id", 1), ("posting_date", 1), ("posting_type", 1)],
             "idx_na_items_booking_dedup",
             {},
-        ),
-        (
-            "folio_charges",
-            [("tenant_id", 1), ("booking_id", 1), ("business_date", 1), ("charge_type", 1)],
-            charge_dedup_name,
-            {"unique": True, "partialFilterExpression": charge_dedup_filter},
         ),
         (
             # Run-level concurrency lock for the pms-core night audit engine:

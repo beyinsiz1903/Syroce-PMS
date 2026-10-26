@@ -205,8 +205,22 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
             await db.folio_charges.insert_one(charge_doc)
             inserted += 1
         except DuplicateKeyError:
-            # This exact (order, line) already posted — idempotent skip.
-            continue
+            # E11000 can also come from an unrelated/obsolete unique index.
+            # Only an exact stored source line proves a harmless redelivery.
+            existing = await db.folio_charges.find_one({
+                'tenant_id': tenant_id, 'folio_id': folio_id,
+                'source_pos_order_id': order_id, 'line_no': cdoc.get('line_no'),
+            })
+            fields = ('booking_id', 'charge_category', 'amount', 'total', 'currency',
+                      'vat_amount', 'tax_amount', 'subtotal', 'discount_amount', 'tax_breakdown')
+            if existing and all(existing.get(field) == cdoc.get(field) for field in fields):
+                continue
+            if inserted:
+                await _recalc_folio_balance(db, tenant_id, folio_id)
+                invalidate_financial_report_caches(tenant_id)
+            if existing:
+                return False, 'permanent: POS folio source line conflicts with stored financial values'
+            return False, 'retryable: POS folio unique-index conflict; no matching source line was posted'
 
     balance = await _recalc_folio_balance(db, tenant_id, folio_id)
     # Close the check/insert race: a reversal worker can finish between the
