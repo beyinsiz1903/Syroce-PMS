@@ -48,7 +48,11 @@ async def enrich_refunds(database, tenant_id, rows, session=None):
     enriched = {}
     warnings = []
     for row in sorted(known.values(), key=lambda r: (_time(r), str(r.get('id')))):
-        source = by_id.get(row.get('original_transaction_id')) or by_order.get(row.get('order_id'))
+        # An explicit source ID cannot silently fall back to another sale.
+        source = (by_id.get(row['original_transaction_id']) if row.get('original_transaction_id')
+                  else by_order.get(row.get('order_id')))
+        if source and row.get('order_id') and source.get('order_id') != row['order_id']:
+            source = None
         paid = float((source or {}).get('total_amount') or 0)
         if not source or paid <= 0:
             if any(field not in row for field in ('tax_amount', 'category_amounts')):
@@ -59,6 +63,14 @@ async def enrich_refunds(database, tenant_id, rows, session=None):
         consumed[source['id']] = current
         copy = dict(row)
         copy['source_sale'] = source
+        source_currency = str(source.get('currency') or '').strip().upper()
+        refund_currency = str(row.get('currency') or '').strip().upper()
+        if source_currency and refund_currency and source_currency != refund_currency:
+            warnings.append('İade para birimi kaynak satışla uyuşmuyor; kapanış öncesinde kaynakları inceleyin.')
+        elif not refund_currency and source_currency:
+            # Immutable source sale, not today's property or tender currency.
+            # The stored legacy refund remains untouched.
+            copy['currency'] = source_currency
         for field in ('tax_amount', 'tip_amount', 'discount_amount', 'service_charge_amount'):
             if field not in copy:
                 original = float(source.get(field) or 0)
