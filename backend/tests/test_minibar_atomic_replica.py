@@ -45,6 +45,8 @@ async def test_vat_currency_receivable_and_sealed_log_conserve_each_line(wired):
     assert [(r['amount'], r['vat_amount'], r['total']) for r in rows] == [(50, 10, 60), (100, 10, 110)]
     assert all(r['currency'] == 'TRY' and r['business_date'] == '2026-10-25' and r['tax_amount'] == 0 for r in rows)
     assert (await wired.folios.find_one({}))['balance'] == 170
+    booking = await wired.bookings.find_one({'id': 'b'})
+    assert booking['balance'] == 170 and booking['payment_status'] == 'pending'
     log = await wired.audit_logs.find_one({'action': 'minibar_consumed'})
     assert log['record_hash'] and log['actor_id'] == 'manager' and log['entity_id'] == 'b'
     assert log['metadata']['amount'] == 170 and log['metadata']['reason'] == 'Oda misafiri tüketimi'
@@ -59,6 +61,16 @@ async def test_replay_cannot_change_amount_or_create_double_consumption(wired):
     with pytest.raises(HTTPException) as error:
         await router.consume(payload(quantity=2), user())
     assert error.value.status_code == 409
+
+
+async def test_replay_repairs_old_projection_without_replaying_consumption_or_audit(wired):
+    await router.consume(payload(), user())
+    await wired.bookings.update_one({'id': 'b'}, {'$set': {'balance': 9999, 'payment_status': 'paid'}})
+    replay = await router.consume(payload(), user())
+    booking = await wired.bookings.find_one({'id': 'b'})
+    assert replay['idempotent'] and booking['balance'] == 170 and booking['payment_status'] == 'pending'
+    assert await wired.folio_charges.count_documents({}) == 2
+    assert await wired.minibar_consumptions.count_documents({}) == await wired.audit_logs.count_documents({}) == 1
 
 
 async def test_legacy_broad_unique_index_does_not_silently_lose_second_product(wired):
@@ -104,6 +116,17 @@ async def test_audit_failure_rolls_back_consumption_and_all_debt(wired, monkeypa
     from domains.pms import minibar_consumption
     monkeypatch.setattr(minibar_consumption, 'audit_log', AsyncMock(side_effect=RuntimeError('audit unavailable')))
     with pytest.raises(RuntimeError, match='audit unavailable'):
+        await router.consume(payload(), user())
+    assert not await wired.folio_charges.count_documents({}) and not await wired.minibar_consumptions.count_documents({})
+    assert (await wired.folios.find_one({}))['balance'] == 0
+
+
+async def test_reservation_projection_failure_rolls_back_consumption(wired, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from domains.pms import minibar_consumption
+    monkeypatch.setattr(minibar_consumption, 'refresh_booking_payment_state', AsyncMock(side_effect=RuntimeError('projection unavailable')))
+    with pytest.raises(RuntimeError, match='projection unavailable'):
         await router.consume(payload(), user())
     assert not await wired.folio_charges.count_documents({}) and not await wired.minibar_consumptions.count_documents({})
     assert (await wired.folios.find_one({}))['balance'] == 0

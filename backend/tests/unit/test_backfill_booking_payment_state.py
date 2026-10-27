@@ -94,7 +94,7 @@ def world(monkeypatch):
     )
     balances = world_balances = {"b1": 0, "b2": 0, "b3": 600}
     database.balances = world_balances
-    monkeypatch.setattr(detail, "_reservation_outstanding_balance", AsyncMock(side_effect=lambda _t, b: balances[b["id"]]))
+    monkeypatch.setattr(detail, "_reservation_outstanding_balance", AsyncMock(side_effect=lambda _t, b, **_kw: balances[b["id"]]))
     monkeypatch.setattr(tenant_db, "get_system_db", lambda: database)
     return database
 

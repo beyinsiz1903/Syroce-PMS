@@ -91,6 +91,14 @@ async def _recalc_folio_balance(db, tenant_id: str, folio_id: str) -> float:
         {"id": folio_id, "tenant_id": tenant_id},
         {"$set": {"balance": balance, "updated_at": _now_iso()}},
     )
+    folio = await db.folios.find_one({'tenant_id': tenant_id, 'id': folio_id}, {'_id': 0, 'booking_id': 1})
+    if folio and folio.get('booking_id'):
+        from core.booking_payment_state import refresh_booking_payment_state
+
+        # Do not copy this one folio's balance to the reservation: split
+        # windows, future room nights, deposits and non-cash settlements use
+        # the same canonical summary as reservation detail/payment status.
+        await refresh_booking_payment_state(db, tenant_id, folio['booking_id'], strict=True)
     return balance
 
 
@@ -231,8 +239,8 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
     reversal = await db.outbox_events.find_one({'tenant_id': tenant_id, 'entity_id': order_id, 'event_type': POS_CHARGE_REVERSED})
     if reversal:
         return await _apply_reversed({'tenant_id': tenant_id, 'payload': {**reversal.get('payload', {}), 'folio_id': folio_id, 'source_pos_order_id': order_id}})
-    if inserted:
-        invalidate_financial_report_caches(tenant_id)
+    # Replay can be repairing a previously failed projection/cache hook.
+    invalidate_financial_report_caches(tenant_id)
     return True, (f"posted {inserted} charge(s) for order {order_id} to folio {folio_id}; balance={balance}")
 
 
@@ -321,8 +329,7 @@ async def _apply_reversed(event: dict[str, Any]) -> tuple[bool, str]:
     )
 
     balances = {fid: await _recalc_folio_balance(db, tenant_id, fid) for fid in sorted(folio_ids)}
-    if res.modified_count:
-        invalidate_financial_report_caches(tenant_id)
+    invalidate_financial_report_caches(tenant_id)
     if folio_id:
         balance = balances.get(folio_id, 0)
         return True, (f"reversed {res.modified_count} charge(s) for order {order_id}; folio {folio_id} balance={balance}")
@@ -337,10 +344,14 @@ async def handle_ic_pos_event(event: dict[str, Any]) -> tuple[bool, str]:
     False + "permanent: ..." goes to the DLQ.
     """
     event_type = event.get("event_type", "")
-    if event_type == POS_CHARGE_POSTED:
-        return await _apply_posted(event)
-    if event_type == POS_CHARGE_REVERSED:
-        return await _apply_reversed(event)
+    try:
+        if event_type == POS_CHARGE_POSTED:
+            return await _apply_posted(event)
+        if event_type == POS_CHARGE_REVERSED:
+            return await _apply_reversed(event)
+    except Exception as exc:  # durable source lines are safe to re-deliver
+        logger.warning('POS folio/projection apply needs retry: %s', type(exc).__name__)
+        return False, 'retryable: POS folio or reservation projection refresh failed'
     return False, f"permanent: unknown IC event_type '{event_type}'"
 
 

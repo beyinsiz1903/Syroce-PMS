@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from core.booking_atomicity import with_resource_locks
+from core.booking_payment_state import refresh_booking_payment_state
 from core.business_date_service import stamp_open_business_date
 from core.report_cache import invalidate_financial_report_caches
 from modules.pms_core.receivable_reporting import folio_snapshots
@@ -52,6 +53,10 @@ async def consume_to_folio(database, payload, current_user):
             requested_lines = [(row.item_id, row.quantity) for row in payload.lines]
             if prior.get('room_id') != payload.room_id or original_lines != requested_lines or prior.get('fingerprint', fingerprint) != fingerprint:
                 raise HTTPException(409, 'Minibar işlem anahtarı farklı bilgilerle kullanılmış')
+            if prior.get('status') == 'posted' and prior.get('booking_id'):
+                # Replay repairs pre-upgrade derived fields without replaying
+                # stock, revenue, audit consumption or the original charges.
+                await refresh_booking_payment_state(database, tid, prior['booking_id'], session=session, strict=True)
             return {'consumption': prior, 'idempotent': True, 'posted_to_folio': prior.get('status') == 'posted', 'stock': []}
         room = await database.rooms.find_one({'id': payload.room_id, 'tenant_id': tid}, session=session)
         if not room:
@@ -114,6 +119,7 @@ async def consume_to_folio(database, payload, current_user):
                 raise HTTPException(409, 'Minibar öncesi folyo para birimi mutabakatı gerekli')
             balance = float(snap['balance_by_currency'].get(code, 0))
             await database.folios.update_one({'tenant_id': tid, 'id': folio['id']}, {'$set': {'balance': balance}}, session=session)
+            await refresh_booking_payment_state(database, tid, booking['id'], session=session, strict=True)
             doc.update(folio_id=folio['id'], folio_balance=balance)
         else:
             latest = await database.folios.find_one({'tenant_id': tid, 'booking_id': booking['id'], 'folio_type': 'guest'}, sort=[('created_at', -1)], session=session)

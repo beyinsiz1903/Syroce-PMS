@@ -31,6 +31,10 @@ from domains.pms import minibar_router as mr
 # ---------------------------------------------------------------------------
 def _match(doc: dict, flt: dict) -> bool:
     for k, v in flt.items():
+        if k == '$or':
+            if not any(_match(doc, clause) for clause in v):
+                return False
+            continue
         if isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
                 return False
@@ -124,6 +128,8 @@ class _FakeDB:
         self.tenant_settings.docs.append({"tenant_id": TENANT, "business_date": "2026-09-23"})
         self.client = object()
         self.payments = _Coll()
+        self.extra_charges = _Coll()
+        self.deposits = _Coll()
         self.minibar_locks = _Coll()
 
     def __getitem__(self, name):
@@ -227,6 +233,7 @@ async def test_consume_posts_one_charge_per_line_to_open_folio(_patch):
     assert sorted(c["total"] for c in charges) == [30.0, 40.0]
     assert {c["business_date"] for c in charges} == {"2026-09-23"}
     assert _patch.minibar_consumptions.docs[0]["status"] == "posted"
+    assert _patch.bookings.docs[0]['balance'] == 70
 
 
 async def test_consume_fail_closed_without_active_booking(_patch):

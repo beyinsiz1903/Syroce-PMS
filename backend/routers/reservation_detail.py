@@ -658,13 +658,17 @@ async def _reservation_outstanding_balance(
     booking: dict,
     *,
     session=None,
+    database=None,
 ) -> float:
     """Return the same booking-scoped balance shown by reservation detail."""
+    handle = database if database is not None else db
+    kwargs = {"session": session} if session is not None else {}
     folios = [
         folio
-        async for folio in db.folios.find(
+        async for folio in handle.folios.find(
             {"booking_id": booking["id"], "tenant_id": tenant_id},
             {"_id": 0, "id": 1},
+            **kwargs,
         )
     ]
     financial_query = _booking_or_folio_scope_query(
@@ -682,10 +686,10 @@ async def _reservation_outstanding_balance(
         kwargs = {"session": session} if session is not None else {}
         return [document async for document in collection.find(financial_query, {"_id": 0}, **kwargs)]
 
-    charges = await collect_financial(db.folio_charges)
-    payments = await collect_financial(db.payments)
-    extra_charges = await collect(db.extra_charges)
-    deposits = await collect(db.deposits)
+    charges = await collect_financial(handle.folio_charges)
+    payments = await collect_financial(handle.payments)
+    extra_charges = await collect(handle.extra_charges)
+    deposits = await collect(handle.deposits)
     summary = _build_financial_summary(
         booking,
         charges,

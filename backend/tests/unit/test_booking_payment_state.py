@@ -51,6 +51,13 @@ async def test_refresh_never_raises():
     assert await state.refresh_booking_payment_state(db, "t1", "b1") is None
 
 
+@pytest.mark.asyncio
+async def test_strict_refresh_propagates_failure_for_transaction_or_outbox_retry():
+    db = SimpleNamespace(bookings=SimpleNamespace(find_one=AsyncMock(side_effect=RuntimeError('down'))))
+    with pytest.raises(RuntimeError, match='down'):
+        await state.refresh_booking_payment_state(db, 't1', 'b1', strict=True)
+
+
 @pytest.mark.parametrize("status", ["failed", "cancelled", "canceled", "rejected", "declined", "pending", "FAILED"])
 def test_payments_that_moved_no_money_count_nowhere(status):
     bad = [{**CASH, "status": status}, {"amount": 2000, "method": "city_ledger", "status": status},
