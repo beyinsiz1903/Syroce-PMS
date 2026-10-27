@@ -347,14 +347,14 @@ def test_read_parser_preserves_provider_context_and_roomstay_index():
     response = f'''<soap:Envelope xmlns:soap="{SOAP_NS}"><soap:Body>
     <OTA_ResRetrieveRS xmlns="{OTA_NS}"><Success/><ReservationsList><HotelReservation
     CreateDateTime="2030-01-01T09:00:00Z" LastModifyDateTime="2030-01-01T10:00:00Z" ResStatus="Commit">
-    <UniqueID Type="14" ID="provider-reservation" ID_Context="context"/>
+    <UniqueID Type="14" ID="provider-reservation" ID_Context="PMSConnect"/>
     <RoomStays><RoomStay IndexNumber="17"><RoomTypes><RoomType RoomTypeCode="STD"/></RoomTypes>
     <RatePlans><RatePlan RatePlanCode="BAR"/></RatePlans><TimeSpan Start="2030-01-01" End="2030-01-02"/>
     </RoomStay></RoomStays></HotelReservation></ReservationsList></OTA_ResRetrieveRS>
     </soap:Body></soap:Envelope>'''
     parsed = parse_read_rs(response.encode())
     reservation = parsed["reservations"][0]
-    assert reservation["reservation_id_context"] == "context"
+    assert reservation["reservation_id_context"] == "PMSConnect"
     assert reservation["rooms"][0]["index_number"] == "17"
 
 

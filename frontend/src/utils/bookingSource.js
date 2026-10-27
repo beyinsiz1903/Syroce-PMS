@@ -1,3 +1,5 @@
+import { exelyReservationDetails } from './exelyReservation';
+
 const cleanSource = (value) => String(value || '').trim();
 
 const sourceValue = (booking = {}) => {
@@ -31,6 +33,9 @@ export const bookingSourceLabel = (booking = {}) => {
   if (booking.agency_name && (booking.agency_id || ['agency', 'acente'].includes(String(booking.source_channel || booking.channel || '').toLowerCase()))) {
     return `Acente · ${booking.agency_name}`;
   }
+
+  const exely = exelyReservationDetails(booking);
+  if (exely?.channel && exely.channel.toLowerCase() !== 'exely') return `${exely.channel} · Exely`;
 
   const raw = sourceValue(booking);
   if (raw && typeof raw === 'object') return cleanSource(raw.name || raw.label || raw.code) || 'Belirtilmemiş';

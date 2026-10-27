@@ -13,6 +13,26 @@ vi.mock('@/api/axios', () => ({
 import { GeneralInfoTab } from '../InfoTabs';
 
 describe('GeneralInfoTab', () => {
+  it('separates the provider payment instruction and external reference from actual receipts', () => {
+    render(<GeneralInfoTab booking={{ id: 'exely-channel', booking_source: 'exely',
+      provider_group_reservation_id: 'exely-group', provider_channel_name: 'Liberty Channel',
+      channel_reservation_id: 'liberty-booking', provider_payment_method: 'PayOnArrival' }}
+      summary={{ balance: 220, total_payments: 0 }} payments={[]} />);
+    expect(screen.getByTestId('exely-source-details')).toHaveTextContent('Liberty Channel');
+    expect(screen.getByText('Exely rezervasyon no').parentElement).toHaveTextContent('exely-group');
+    expect(screen.getByText('Kanal rezervasyon no').parentElement).toHaveTextContent('liberty-booking');
+    expect(screen.getByText('Exely ödeme yöntemi').parentElement).toHaveTextContent('PayOnArrival');
+    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Tahsilat kaydı yok');
+  });
+
+  it('shows legacy Exely payment instructions without pretending that a card guarantee is a receipt', () => {
+    render(<GeneralInfoTab booking={{ id: 'legacy-exely', channel: 'exely',
+      payment_method: 'BankCardGuarantee', ota_confirmation: 'exely-number' }} payments={[]} />);
+    expect(screen.getByTestId('exely-source-details')).toHaveTextContent('BankCardGuarantee');
+    expect(screen.getByTestId('exely-source-details')).toHaveTextContent('tahsilat kaydı değildir');
+    expect(screen.queryByText('Kanal rezervasyon no')).not.toBeInTheDocument();
+  });
+
   it('renders a structured agency cancellation policy instead of crashing the reservation', () => {
     render(<GeneralInfoTab booking={{ id: 'agency-policy', cancellation_policy: { free_until_days_before: 7, penalty_pct: 50, no_show_penalty_pct: 100 } }} />);
     expect(screen.getByText(/Girişten 7 gün öncesine kadar ücretsiz iptal/)).toHaveTextContent('İptal kesintisi: %50 · Gelmeme kesintisi: %100');

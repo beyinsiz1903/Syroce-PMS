@@ -78,19 +78,19 @@ Code under test: `9431b3668d33444cf58e562db3095bc1ee49c92c`, merged as `ba83ba98
 | R1.3 | Correct category/date/guest per room | OFFLINE room guest regression; new live readback pending |
 | R1.4 | Guest comment visible | LIVE updated R9 comment visible in normal Deluxe PMS detail |
 | R1.5 | Exely booking number visible | LIVE new 20261110-501694-1200421110 visible in normal PMS detail |
-| R1.6 | Total AND every nightly amount equal provider | OFFLINE nightly price regression; new live nightly readback pending |
+| R1.6 | Total AND every nightly amount equal provider | Follow-up fixes nonuniform embedded Exely nightly-price readback/posting; targeted offline evidence passes; deployment and new provider/PMS comparison pending |
 | R1.7 | Booking source shown as Exely | LIVE normal Deluxe detail and both room list entries show Exely |
 | R2 | Two adults and child on main bed | LIVE child case demographics; full bed/payment presentation acceptance pending |
 | R2.1 | Adults/children displayed separately | LIVE 2 adults / 1 child / age6, verified PMS readback |
-| R2.2 | Provider payment method displayed | OFFLINE PayOnArrival parser; live normal PMS UI pending |
-| R3 | Unmapped booking: no create, RequestDenied+message, no ARI; map/redeliver | LIVE 1200421158: pending_mapping + explicit rejection-sent/no-PMS-ACK UI; added only Suite/Dynamic mapping, normal pull changed same source to imported/150 USD. Exact wire ACK count/no-ARI evidence still pending. Existing temporary inventory hold remains a documented interpretation gap versus strict no-booking requirement |
+| R2.2 | Provider payment method displayed | Follow-up adds explicit provider payment-instruction display separately from PMS receipts; deployment and live UI acceptance pending |
+| R3 | Unmapped booking: no create, RequestDenied+message, no ARI; map/redeliver | LIVE 1200421158 rejection/redelivery predates alert-only fix. New synthetic PMS holds were removed by deployed PR1392; new alert-only live fixture and exact wire ACK/no-ARI proof remain pending |
 | R4 | Two undelivered bookings in one read | OFFLINE parser/lifecycle; two simultaneous new live bookings pending |
 | R4.1 | Separate ACK with own IDs/PMS numbers | OFFLINE exact per-version ACK; live two-booking evidence pending |
 | R4.2 | Availability for both bookings | OFFLINE publication path; live readback pending |
-| R5 | Prepayment + extra service, correct accommodation total | PENDING dedicated live booking; do not charge real money or include extras in accommodation total |
+| R5 | Prepayment + extra service, correct accommodation total | Offline room-total/prepayment isolation, including explicit zero-price accommodation, covered by follow-up. Dedicated provider fixture still pending; no real payment authorized |
 | R6 | Booking originating from a channel | PENDING vendor channel test fixture |
 | R6.1 | One guest, multiple days, comment | OFFLINE parser/guest/nights; live channel-origin case pending |
-| R6.2 | Liberty Channel name + External UniqueID visible | PENDING Liberty Channel test reservation/access; do not fabricate a channel event |
+| R6.2 | Liberty Channel name + External UniqueID visible | Follow-up fixes CompanyName child parsing and separates External from PMSConnect IDs through import/display; genuine Liberty Channel fixture and live acceptance still pending |
 | R7 | Customer contact modification | LIVE contact name updated in source row and updated email visible in normal PMS detail |
 | R8 | Room guest contact modification | LIVE Deluxe guest changed separately; Standard unchanged in provider and PMS lists; normal Deluxe detail verified |
 | R9 | Comment modification | LIVE provider and normal PMS detail show R9 COMMENT UPDATED |
@@ -242,3 +242,25 @@ Conclusion: **NOT CERTIFIED / execution incomplete**. Offline results are green;
 - Full history now has independent state and pagination ownership. Operational room/front-desk date-window refreshes cannot replace it. The reservation list and its counters use the same complete history; manual/background refresh also refreshes an already-requested history workspace. Loading/error/retry states are explicit, with the last complete list preserved on refresh failure. No partial pagination run is published.
 - Request generations ignore stale responses and unmounted/previous-scope requests. Tenant/user scope masks old rows immediately; delayed callbacks from a previous scope cannot start a new request. Repeated full pages fail closed instead of looping or duplicating totals, and overlapping page IDs are deduplicated. API write permissions, booking/financial data and provider behavior are unchanged.
 - Verification:66 frontend tests passed across14 files, including direct-entry bootstrap/history ordering, manual refresh, stale refresh, pagination beyond the first page, later-page failure, malformed payload, repeated/overlapping pages, scope changes, and visible retry/loading controls. Changed-file ESLint and production build passed. Tests use mocked synthetic data; no live record was modified. Deployment/live direct-entry and refresh acceptance for this new correction remain pending. The18/58 bounded-live count is unchanged.
+
+## 2026-10-27 remaining-acceptance audit and source-contract corrections
+
+The complete three-page supplied test plan was re-read, including rendered pages. The supplied PMSConnect 1.17.1 specification pp.72,93,96–99 was checked for identity, channel and payment semantics. These are contract corrections, not new provider certification passes.
+
+Read-only TEST501694 checks on the current deployed revision verified ARI and scheduled imports remain disabled, six provider inbox records remain present, zero pending events and zero errors in the last24 hours. One historical error is preserved. No archived Demo reservations were restored; no provider writes, new booking terms, real payments, day closing or other property operations were performed.
+
+Confirmed defects and bounded fixes:
+
+- The parser previously iterated all descendant UniqueID nodes and overwrote its delivery identity with the last Type14, including External or nested profile IDs. It now selects only direct PMSConnect/empty-context reservation IDs, preserves External references separately, and rejects conflicting provider identities without exposing them in error messages. No ACK is manufactured or manually retried.
+- OTA BookingChannel uses a CompanyName child, not the attribute previously read. The actual channel name/code and external references now survive normalization, durable current-row storage and each PMS room booking. Integration provenance stays Exely. A genuine channel fixture is still needed; synthetic Liberty Channel strings are not evidence of a provider event.
+- The guest detail now separates Exely/channel references and raw provider payment instructions from actual PMS receipts. PayOnArrival, a card guarantee or provider prepayment is not counted as collected PMS money.
+- A valid nonuniform Exely source plan (90+130) was displayed as an evenly allocated110+110 when the separate PMS daily-rate collection was empty. Detail readback and the shared room-charge calculator now use only a complete, finite, nonnegative, cent-exact plan that reconciles to the room's accommodation total. Existing explicit PMS rates and migration cutover protection win. Invalid, duplicate, out-of-stay, incomplete or changed-total plans are not labelled source prices. This does not rewrite any historical charge/tax or source version.
+- An explicitly zero-price room is no longer replaced by the group's nonzero total, which may include an extra service. Provider deposits never become a fabricated PMS receipt.
+
+Verification:348 selected backend tests passed, including real isolated localhost-replica demographics/tenant-CAS cases and parse→normalize→durable import→single exact-ID ACK (provider mocked). Frontend full run:2214 passed, zero failures/errors. Production frontend build, changed-file Ruff/ESLint and diff checks passed. No CI gate, quarantine or security configuration was weakened.
+
+Local evidence directory is kept outside source control. Initial failing regressions, environment failures and the obsolete mixed live-server/WSSE test run are preserved separately; they are not counted as successful provider acceptance. The isolated replica rerun resolves the two local DB setup failures. The pre-existing cache-warmer UTC deprecation warning remains.
+
+Release prerequisites: merge/deploy this correction normally and independently verify the exact live revision before new provider mutation. Keep the Demo's ARI/scheduler off until a bounded test window and its baseline/restoration are reconciled. Do not repeat the archived test imports or broadcast the Demo's full synthetic room data. Remaining external dependencies include a genuine Liberty Channel booking/redelivery fixture, a no-real-money prepayment+service fixture and Exely's acceptance of maximum horizons/request traces. Every new booking-terms acceptance requires action-time approval; official provider sign-off cannot be fabricated locally.
+
+The bounded-live count remains18/58. None of the40 incomplete requirements has been silently changed to PASS by these offline tests or the local visual preview.

@@ -5,6 +5,19 @@ from core.channel_room_charge_pricing import (
 )
 
 
+def test_exely_nonuniform_source_plan_is_used_by_both_night_audit_paths():
+    booking = {"booking_source": "exely", "source": {"provider": "exely"},
+               "check_in": "2030-11-10", "check_out": "2030-11-12", "total_amount": 220,
+               "daily_rates": [{"date": "2030-11-10", "amount": 90}, {"date": "2030-11-11", "amount": 130}]}
+    assert calculate_room_charge(booking, '2030-11-10')['total'] == 90
+    assert calculate_room_charge(booking, '2030-11-11')['total'] == 130
+    assert calculate_room_charge(booking, '2030-11-11', explicit_daily_rate=125)['total'] == 125
+    # Source-opening/cutover protection still precedes all nightly plans.
+    assert calculate_room_charge({**booking, 'migration_cutover_date': '2030-11-11'}, '2030-11-10')['total'] == 0
+    invalid = {**booking, 'total_amount': 230}
+    assert calculate_room_charge(invalid, '2030-11-11')['total'] == 115
+
+
 def _hotelrunner_booking(**overrides):
     booking = {
         "id": "booking-1",
