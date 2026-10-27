@@ -79,32 +79,37 @@ def payment_state(*, balance: float, payments: list[dict]) -> str:
 PAYMENT_FIELDS = {"_id": 0, "amount": 1, "method": 1, "payment_type": 1, "status": 1, "voided": 1}
 
 
-async def compute_booking_payment_state(database, tenant_id: str, booking: dict, payments: list[dict] | None = None) -> dict:
+async def compute_booking_payment_state(database, tenant_id: str, booking: dict, payments: list[dict] | None = None, *, session=None) -> dict:
     """Balance, status and collected money of one reservation, from its live
     payments; also used on read so records older than this module are right."""
     from routers.reservation_detail import _reservation_outstanding_balance
 
-    balance = round(float(await _reservation_outstanding_balance(tenant_id, booking)), 2)
+    balance = round(float(await _reservation_outstanding_balance(tenant_id, booking, database=database, session=session)), 2)
     if payments is None:
+        kwargs = {'session': session} if session is not None else {}
         payments = await database.payments.find(
-            {"tenant_id": tenant_id, "booking_id": booking["id"]}, PAYMENT_FIELDS).to_list(None)
+            {"tenant_id": tenant_id, "booking_id": booking["id"]}, PAYMENT_FIELDS, **kwargs).to_list(None)
     return {"balance": max(0.0, balance), "payment_status": payment_state(balance=balance, payments=payments),
             "collected_amount": collected_amount(payments)}
 
 
-async def refresh_booking_payment_state(database, tenant_id: str, booking_id: str) -> dict | None:
-    """Recompute ``balance`` and ``payment_status`` after a payment change.
+async def refresh_booking_payment_state(database, tenant_id: str, booking_id: str, *, session=None, strict=False) -> dict | None:
+    """Recompute balance/status after a payment OR charge/reversal change.
 
-    Never raises: a payment that was recorded must not look failed because
-    the cached fields could not be refreshed (the next refresh repairs them).
+    Existing post-commit callers stay best-effort. Transactional department
+    posting and the retryable POS outbox use strict=True: a failed projection
+    must roll back or retry, never leave an acknowledged stale reservation.
     """
     try:
-        booking = await database.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
+        kwargs = {'session': session} if session is not None else {}
+        booking = await database.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}, **kwargs)
         if not booking:
             return None
-        state = await compute_booking_payment_state(database, tenant_id, booking)
-        await database.bookings.update_one({"id": booking_id, "tenant_id": tenant_id}, {"$set": state})
+        state = await compute_booking_payment_state(database, tenant_id, booking, session=session)
+        await database.bookings.update_one({"id": booking_id, "tenant_id": tenant_id}, {"$set": state}, **kwargs)
         return state
     except Exception as exc:  # noqa: BLE001 - see docstring
         logger.warning("Booking payment state refresh failed booking=%s error=%s", booking_id, type(exc).__name__)
+        if strict:
+            raise
         return None

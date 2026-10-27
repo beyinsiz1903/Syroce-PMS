@@ -8,6 +8,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
 
+from core.booking_payment_state import refresh_booking_payment_state
 from core.business_date_service import stamp_open_business_date
 from modules.pms_core.folio_selection import select_booking_folio
 from modules.pms_core.receivable_reporting import folio_snapshots
@@ -72,6 +73,7 @@ async def post_charge(database, tenant_id, appt, actor_id, actor_name, *, sessio
         raise HTTPException(409, 'SPA aktarımı öncesinde folyo para birimi mutabakatı gerekli')
     await database.folios.update_one({'tenant_id': tenant_id, 'id': folio['id']},
         {'$set': {'balance': float(snap['balance_by_currency'].get(code, 0))}}, session=session)
+    await refresh_booking_payment_state(database, tenant_id, booking_id, session=session, strict=True)
     await audit_log(actor_id=actor_id, tenant_id=tenant_id, entity_type='reservation', entity_id=booking_id,
         action='spa_charge_posted', metadata={'source_spa_appointment_id': appt['id'], 'folio_id': folio['id'],
             'charge_id': cid, 'amount': float(net), 'vat_amount': float(vat), 'total': float(gross), 'currency': code,

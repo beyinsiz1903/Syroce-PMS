@@ -51,6 +51,8 @@ async def test_completion_is_actual_receivable_with_known_vat_and_real_folio_ide
     folio = await wired.folios.find_one({'id': 'actual-folio'})
     snap = (await folio_snapshots(wired, 't', [folio], fallback_currency='TRY'))['actual-folio']
     assert folio['balance'] == snap['balance_by_currency']['TRY'] == 1500
+    booking = await wired.bookings.find_one({'id': 'b'})
+    assert booking['balance'] == 1500 and booking['payment_status'] == 'pending'
     posting = await wired.folio_postings.find_one({'tenant_id': 't'})
     assert posting['folio_charge_id'] == charge['id'] and posting['folio_id'] == folio['id']
     audit = await wired.audit_logs.find_one({'action': 'spa_charge_posted'})
@@ -118,3 +120,14 @@ def test_missing_vat_is_not_fabricated_as_tax_free():
     with pytest.raises(HTTPException) as error:
         amounts({'price': 1500})
     assert error.value.status_code == 409
+
+
+async def test_reservation_projection_failure_rolls_back_charge_and_completion(wired, monkeypatch):
+    from domains.spa import folio
+
+    monkeypatch.setattr(folio, 'refresh_booking_payment_state', AsyncMock(side_effect=RuntimeError('projection unavailable')))
+    with pytest.raises(RuntimeError, match='projection unavailable'):
+        await complete()
+    assert not await wired.folio_charges.count_documents({}) and not await wired.folio_postings.count_documents({})
+    assert (await wired.folios.find_one({}))['balance'] == 0
+    assert (await wired.spa_appointments.find_one({}))['status'] == 'scheduled'

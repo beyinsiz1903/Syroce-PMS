@@ -162,6 +162,7 @@ class _FakeDB:
         self.pos_late_charges = _Coll()
         self.outbox_events = _Coll()
         self.tenant_settings = _Coll()
+        self.bookings = _Coll()
         self.tenant_settings.docs.append(
             {"tenant_id": "tenant-A", "business_date": "2026-09-23"}
         )

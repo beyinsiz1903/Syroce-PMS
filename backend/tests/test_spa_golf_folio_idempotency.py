@@ -41,6 +41,10 @@ TENANT = "tenant-A"
 # ---------------------------------------------------------------------------
 def _match(doc: dict, flt: dict) -> bool:
     for k, v in flt.items():
+        if k == '$or':
+            if not any(_match(doc, clause) for clause in v):
+                return False
+            continue
         if isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
                 return False
@@ -141,6 +145,8 @@ class _FakeDB:
         self.folios = _Coll()
         self.folios.docs.append({'id': 'F1', 'booking_id': 'RES1', 'tenant_id': TENANT, 'status': 'open', 'currency': 'TRY', 'balance': 0})
         self.payments = _Coll()
+        self.extra_charges = _Coll()
+        self.deposits = _Coll()
         self.tenant_settings = _Coll()
         self.tenant_settings.docs.append({'tenant_id': TENANT, 'business_date': '2026-10-25'})
         self.client = object()
