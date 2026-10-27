@@ -2,7 +2,7 @@
  * Virtualized Booking List
  * Efficiently renders large lists using react-window
  */
-import React, { memo } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -58,8 +58,8 @@ const BookingRow = memo(({ index, style, data }) => {
   return (
     <div style={style} className="px-2">
       <Card className="p-3 mb-2 hover:shadow-md transition-shadow">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1 grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 w-full lg:flex-1 grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2">
             <div>
               <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.misafir')}</div>
               <div className="font-medium flex items-center gap-1 min-w-0 truncate">
@@ -81,16 +81,16 @@ const BookingRow = memo(({ index, style, data }) => {
             
             <div>
               <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.giris_cikis')}</div>
-              <div className="text-sm flex items-center gap-1 whitespace-nowrap">
-                <Calendar className="w-3 h-3" />
-                {new Date(booking.check_in).toLocaleDateString('tr-TR')} - 
-                {new Date(booking.check_out).toLocaleDateString('tr-TR')}
+              <div className="text-sm flex flex-wrap items-center gap-x-1" data-testid={`stay-dates-${booking.id}`}>
+                <Calendar className="w-3 h-3 shrink-0" />
+                <span>{new Date(booking.check_in).toLocaleDateString('tr-TR')}</span>
+                <span>– {new Date(booking.check_out).toLocaleDateString('tr-TR')}</span>
               </div>
             </div>
             
             <div>
               <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.tutar')}</div>
-              <div className="font-semibold tabular-nums">
+              <div className="font-semibold tabular-nums break-words" data-testid={`stay-amount-${booking.id}`}>
                 {formatBookingAmount(booking.total_amount, booking.currency || booking.currency_code || cachedTenantCurrency())}
               </div>
             </div>
@@ -126,6 +126,15 @@ BookingRow.displayName = 'BookingRow';
 
 const VirtualizedBookingList = ({ bookings, onSelectBooking, height = 600 }) => {
   const { t } = useTranslation();
+  const [wideRows, setWideRows] = useState(() => window.matchMedia?.('(min-width: 1024px)').matches ?? true);
+  useEffect(() => {
+    const media = window.matchMedia?.('(min-width: 1024px)');
+    if (!media) return;
+    const update = () => setWideRows(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   if (!bookings || bookings.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
@@ -139,7 +148,7 @@ const VirtualizedBookingList = ({ bookings, onSelectBooking, height = 600 }) => 
       <List
         height={height}
         itemCount={bookings.length}
-        itemSize={124}
+        itemSize={wideRows ? 124 : 228}
         width="100%"
         itemData={{
           bookings,

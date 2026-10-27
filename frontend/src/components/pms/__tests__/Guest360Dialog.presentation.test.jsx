@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -24,6 +24,14 @@ afterEach(() => cleanup());
 const renderDialog = (ui) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 describe('Guest360Dialog sunum tutarlılığı', () => {
+  it('reports a failed guest read and retries the same identity and section', () => {
+    const loadGuest360 = vi.fn();
+    renderDialog(<Guest360Dialog open onClose={vi.fn()} selectedGuest360="missing-guest" loadGuest360={loadGuest360} initialSection="history" error="Misafir profili yüklenemedi." />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Misafir profili yüklenemedi.');
+    fireEvent.click(screen.getByRole('button', { name: 'Yeniden dene' }));
+    expect(loadGuest360).toHaveBeenCalledWith('missing-guest', 'history');
+  });
+
   it('Türkçe başlıkları ve API para biriminde finansal değerleri gösterir', () => {
     renderDialog(
       <Guest360Dialog
