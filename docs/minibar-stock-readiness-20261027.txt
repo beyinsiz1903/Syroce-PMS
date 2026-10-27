@@ -1,0 +1,69 @@
+MINIBAR / DEMO PRESENTATION READINESS — 27 OCTOBER 2026
+
+Scope
+  Central hotel warehouse integration, durable stock recovery, reviewed
+  synthetic future-booking archive, and a bounded permission/configuration/
+  interruption/concurrency regression matrix. Not a guarantee for every
+  conceivable deployment, device, role override, or infrastructure failure.
+
+Implemented
+  1. Minibar catalog explicitly selects central inventory_items or the legacy
+     inventory backend. Product identity is frozen on consumption, never
+     guessed from a product name or a subsequently edited catalog.
+  2. Financial consumption stores durable stock jobs in the same transaction.
+     Stock quantity, one source-bound movement, sealed audit and job completion
+     commit together. A stock outage never silently loses the job; retry does
+     not recreate guest charges. A missing completed movement is not permission
+     to deplete the same stock again.
+  3. Shortage/inactive/missing/invalid stock is visible to operators. Catalog
+     edits, stock opening, reconciliation and actual stock movements are audited.
+     Central warehouse opening has a stable request UUID and content hash.
+  4. Browser retry retains the exact consumption request across a tab reload,
+     scoped to tenant and actor. Cart/room cannot be changed while the outcome
+     is unknown. Invalid/unavailable request storage blocks a new HTTP write.
+  5. Legacy jobless consumption is NOT assumed to have verified stock. Explicit
+     reasoned reconciliation creates a NEW current-open-day stock instruction;
+     original lines, guest debt, currency, VAT and closed financial day remain.
+  6. Seven exact synthetic future-booking IDs may be locally archived only for
+     Demo Hotel 100001, with paused outbound channels, reviewed source hash,
+     reason, retained before-images and sealed logs. Any financial/service source,
+     including a zero-valued source or a folio-only payment, blocks the archive.
+     No provider cancellation, no-show, room deletion or accounting correction.
+
+Verification coverage
+  - Actual replica transactions: concurrent same-key requests, two rooms racing
+    for the last unit, lost acknowledgements, stock/audit/financial/projection
+    interruptions, immutable source identity, tenant isolation, and safe replay.
+  - 13 roles x TRY/USD/EUR x full-comp/normal x open/closed folio x sufficient/
+    insufficient stock: 312 combined cases, plus permission dependency checks
+    for front desk, POS, SPA, reports and individual permission grants.
+  - Regression suite also covers POS refund/report currency, room projections,
+    source VAT, business-day precedence, SPA quotas/entitlements and audit.
+  - Frontend stock/retry/read-error/access tests and the complete frontend suite.
+  - Exact executed counts and remaining live acceptance are recorded in the PR.
+    Old standalone HTTP check-in tests require a separately seeded local server;
+    they are not claimed as executed by the replica-only regression run.
+
+Live baseline (read-only, before deploying this change)
+  Deployed SHA: 9c17de8c93aeeac87a5ffb0b5fc2d5c5b11ef55a
+  Demo open business day: 2026-10-26; do not advance it for this work.
+  31 physical rooms, 60 current/future October stays, healthy reconciliation.
+  Audit: 9,269 verified chained records, no breaks/unverifiable records;
+  2,882 pre-chain historical records are explicitly separate, not rehashed.
+  32 minibar sources / 64 lines: 47 waters + 47 chocolates, not stock-linked.
+  Seven exact synthetic future reservations still exist at this baseline.
+
+Deployment-dependent live acceptance — NOT YET PERFORMED by this code change
+  A. Verify deployed merge SHA and that ONLY Demo Hotel channels remain paused.
+  B. Preview archive, verify no source blockers, archive reviewed IDs once;
+     preserve QT2ED0 (an occupied physical room) and all financial history.
+  C. Create two explicitly synthetic 100-unit central stock openings with
+     reviewed example unit costs (20/45 TRY), not real supplier invoices/payments.
+     Link six currency catalog variants to these two physical products.
+  D. Reconcile 32 reviewed old consumptions on the open stock day only. Expected
+     remaining balance is 53 units per product, absent intervening stock changes.
+  E. Compare original guest details, 25 October POS seal, GL journals, money,
+     forecast, room capacity, channel pause and audit chain against the baseline.
+     No original October seed, bank capture, KBS or fiscal document may be rerun.
+  Evidence and guarded normal-API driver are retained in the task workspace;
+  no privileged database edit or public endpoint bypass is required.

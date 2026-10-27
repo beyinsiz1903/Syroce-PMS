@@ -25,7 +25,13 @@ const CATEGORY_OPTIONS = [
 ];
 const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS.map((c) => [c.value, c.label]));
 
-const EMPTY_ITEM = { name: '', price: '', currency: '', tax_percent: '', category: 'drink', active: true, inventory_product_id: '' };
+const EMPTY_ITEM = { name: '', price: '', currency: '', tax_percent: '', category: 'drink', active: true, inventory_product_id: '', inventory_source: '' };
+const STOCK_LABELS = {
+  depleted: 'Stok işlendi', already_applied: 'Stok işlendi', pending: 'Stok aktarımı bekliyor', pending_retry: 'Stok yeniden denenmeli',
+  unlinked: 'Stok ürünü bağlı değil', legacy_untracked: 'Eski kayıt — stok mutabakatı gerekli',
+  insufficient_stock: 'Stok yetersiz', product_not_found: 'Stok ürünü bulunamadı',
+  inactive_product: 'Stok ürünü pasif', invalid_stock_quantity: 'Stok miktarı geçersiz',
+};
 
 // `/pms/rooms` returns a bare array. Accept the two historic wrapped shapes as
 // well, so a rollout behind a cache/proxy cannot silently leave the room picker
@@ -38,14 +44,34 @@ export const roomsFromResponse = (data) => {
 };
 
 const CATALOG_ROLES = new Set(['admin', 'super_admin', 'supervisor']);
+const CONSUME_ROLES = new Set([...CATALOG_ROLES, 'front_desk', 'housekeeping', 'staff']);
 
-const MinibarPage = ({ user }) => {
+export const minibarCapabilities = (user) => ({
+  canManageCatalog: Boolean(user?.is_super_admin) || CATALOG_ROLES.has(user?.role),
+  canConsume: Boolean(user?.is_super_admin) || CONSUME_ROLES.has(user?.role),
+});
+
+const pendingStorageKey = user => `syroce:minibar:pending:${user?.tenant_id || ''}:${user?.id || ''}`;
+const readPending = key => {
+  try {
+    const value = sessionStorage.getItem(key);
+    if (!value) return {};
+    const request = JSON.parse(value);
+    if (typeof request.room_id !== 'string' || !request.room_id || typeof request.idempotency_key !== 'string' ||
+      !request.idempotency_key || !Array.isArray(request.lines) || !request.lines.length ||
+      request.lines.some(line => typeof line.item_id !== 'string' || !line.item_id || !Number.isInteger(line.quantity) || line.quantity < 1)) {
+      throw new Error('invalid pending request');
+    }
+    return { request };
+  } catch {
+    return { error: 'Önceki minibar isteği güvenle okunamadı. Yeni tüketim göndermeden işlem geçmişini yetkiliyle doğrulayın.' };
+  }
+};
+
+const MinibarWorkspace = ({ user }) => {
   useTranslation();
   const currency = cachedTenantCurrency();
-  const roles = [user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])]
-    .filter(Boolean)
-    .map((role) => String(role).toLowerCase());
-  const canManageCatalog = roles.some((role) => CATALOG_ROLES.has(role));
+  const { canManageCatalog, canConsume } = minibarCapabilities(user);
   const [tab, setTab] = useState('consume');
 
   // Katalog
@@ -54,19 +80,31 @@ const MinibarPage = ({ user }) => {
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [itemForm, setItemForm] = useState(EMPTY_ITEM);
+  const [inventoryProducts, setInventoryProducts] = useState([]);
+  const [loadErrors, setLoadErrors] = useState({});
+  const [stockDialog, setStockDialog] = useState(null);
+  const [stockBindings, setStockBindings] = useState({});
+  const [stockReason, setStockReason] = useState('');
+  const [stockBusy, setStockBusy] = useState(false);
 
   // Tüketim
   const [rooms, setRooms] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [roomsError, setRoomsError] = useState('');
-  const [selectedRoom, setSelectedRoom] = useState('');
-  const [cart, setCart] = useState({});
+  const storageKey = pendingStorageKey(user);
+  const [restored] = useState(() => readPending(storageKey));
+  const [storageError, setStorageError] = useState(restored.error || '');
+  const [selectedRoom, setSelectedRoom] = useState(restored.request?.room_id || '');
+  const [cart, setCart] = useState(() => Object.fromEntries((restored.request?.lines || []).map(line => [line.item_id, line.quantity])));
   const [submitting, setSubmitting] = useState(false);
   const [consumptions, setConsumptions] = useState([]);
   const [lateCharges, setLateCharges] = useState([]);
   // Stabil idempotency anahtarı: bir gönderim denemesi için bir kez üretilir,
   // başarıyla işlenene kadar (retry'larda) yeniden kullanılır → çift faturalama yok.
-  const pendingKeyRef = useRef(null);
+  const pendingKeyRef = useRef(restored.request || null);
+  const [pendingRetry, setPendingRetry] = useState(Boolean(restored.request));
+  const consumptionRequestRef = useRef(0);
+  const setLoadError = (name, message = '') => setLoadErrors(previous => ({ ...previous, [name]: message }));
 
   const activeItems = items.filter((i) => i.active);
 
@@ -75,8 +113,10 @@ const MinibarPage = ({ user }) => {
     try {
       const res = await axios.get('/minibar/items', { params: { include_inactive: true } });
       setItems(res.data?.items || []);
+      setLoadError('items');
     } catch (e) {
       console.error('Minibar items load error', e);
+      setLoadError('items', 'Minibar kataloğu doğrulanamadı. Yenile ile tekrar deneyin.');
     } finally {
       setLoadingItems(false);
     }
@@ -101,27 +141,46 @@ const MinibarPage = ({ user }) => {
     try {
       const res = await axios.get('/minibar/late-charges');
       setLateCharges(res.data?.late_charges || []);
+      setLoadError('late');
     } catch (e) {
       console.error('Late charges load error', e);
+      setLoadError('late', 'Geç ücret kayıtları yüklenemedi; liste tamamlanmış sayılmaz.');
     }
   }, []);
 
   const loadConsumptions = useCallback(async (roomId) => {
+    const request = ++consumptionRequestRef.current;
     try {
       const params = roomId ? { room_id: roomId } : {};
       const res = await axios.get('/minibar/consumptions', { params });
-      setConsumptions(res.data?.consumptions || []);
+      if (request === consumptionRequestRef.current) {
+        setConsumptions(res.data?.consumptions || []);
+        setLoadError('consumptions');
+      }
     } catch (e) {
       console.error('Consumptions load error', e);
+      if (request === consumptionRequestRef.current) setLoadError('consumptions', 'Tüketim ve stok durumu doğrulanamadı. Yenile ile tekrar deneyin.');
     }
   }, []);
+
+  const loadInventoryProducts = useCallback(async () => {
+    if (!canManageCatalog) return;
+    try {
+      const response = await axios.get('/minibar/inventory-products');
+      setInventoryProducts(response.data?.items || []);
+      setLoadError('inventory');
+    } catch {
+      setLoadError('inventory', 'Merkezî stok ürünleri yüklenemedi; stok bağlantısını değiştirmeyin.');
+    }
+  }, [canManageCatalog]);
 
   useEffect(() => {
     loadItems();
     loadRooms();
     loadLateCharges();
     loadConsumptions();
-  }, [loadItems, loadRooms, loadLateCharges, loadConsumptions]);
+    loadInventoryProducts();
+  }, [loadItems, loadRooms, loadLateCharges, loadConsumptions, loadInventoryProducts]);
 
   useEffect(() => {
     loadConsumptions(selectedRoom);
@@ -144,6 +203,7 @@ const MinibarPage = ({ user }) => {
       category: item.category || 'drink',
       active: item.active !== false,
       inventory_product_id: item.inventory_product_id || '',
+      inventory_source: item.inventory_source || (item.inventory_product_id ? 'legacy' : ''),
     });
     setShowItemDialog(true);
   };
@@ -154,7 +214,7 @@ const MinibarPage = ({ user }) => {
       return;
     }
     const price = parseFloat(itemForm.price);
-    if (Number.isNaN(price) || price < 0) {
+    if (!Number.isFinite(price) || price < 0) {
       toast.error('Geçerli bir fiyat girin');
       return;
     }
@@ -171,6 +231,7 @@ const MinibarPage = ({ user }) => {
       category: itemForm.category,
       active: itemForm.active,
       inventory_product_id: itemForm.inventory_product_id.trim() || null,
+      inventory_source: itemForm.inventory_product_id ? itemForm.inventory_source : null,
     };
     try {
       if (editItem) {
@@ -225,6 +286,7 @@ const MinibarPage = ({ user }) => {
   };
 
   const submitConsumption = async () => {
+    if (!canConsume || submitting || storageError) return;
     if (!selectedRoom) {
       toast.error('Önce oda seçin');
       return;
@@ -236,40 +298,86 @@ const MinibarPage = ({ user }) => {
       toast.error('En az bir ürün ekleyin');
       return;
     }
-    if (!cartCurrency || selectedItems.some(item => item.tax_rate == null)) {
+    if (!pendingKeyRef.current && (!cartCurrency || selectedItems.some(item => item.tax_rate == null))) {
       toast.error('Ürünlerin para birimi ve KDV oranını doğrulayın; farklı para birimlerini ayrı aktarın');
       return;
     }
     if (!pendingKeyRef.current) {
-      pendingKeyRef.current =
-        (crypto?.randomUUID?.() ?? `minibar-${selectedRoom}-${Date.now()}-${Math.random()}`);
+      pendingKeyRef.current = {
+        room_id: selectedRoom, lines,
+        idempotency_key: (globalThis.crypto?.randomUUID?.() ?? `minibar-${selectedRoom}-${Date.now()}-${Math.random()}`),
+      };
+    }
+    // Persist BEFORE the HTTP write. A reload after a lost response must replay
+    // this exact request, even if the catalog has changed in the meantime.
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify(pendingKeyRef.current));
+    } catch {
+      setStorageError('Tüketim isteği güvenle saklanamadı; çift ücret riskini önlemek için gönderilmedi.');
+      return;
     }
     setSubmitting(true);
     try {
-      const res = await axios.post('/minibar/consume', {
-        room_id: selectedRoom,
-        lines,
-        idempotency_key: pendingKeyRef.current,
-      });
+      const res = await axios.post('/minibar/consume', pendingKeyRef.current);
       if (res.data?.posted_to_folio) {
         toast.success('Tüketim folio\'ya işlendi');
       } else {
         toast.warning('Folio açık değil — late-charge kaydına yönlendirildi');
       }
-      if ((res.data?.stock || []).some(row => !['depleted', 'already_applied', 'skipped'].includes(row.status))) {
+      if (res.data?.stock_complete === false || (res.data?.stock || []).some(row => !['depleted', 'already_applied'].includes(row.status))) {
         toast.warning('Tüketim kaydedildi fakat bazı stok hareketleri tamamlanamadı; stok kayıtlarını inceleyin.');
       }
+      sessionStorage.removeItem(storageKey);
       pendingKeyRef.current = null;
+      setPendingRetry(false);
       setCart({});
       loadConsumptions(selectedRoom);
       loadLateCharges();
       loadItems();
     } catch (e) {
       // Anahtarı KORU: kullanıcı tekrar denerse aynı key gider, backend çift yazmaz.
+      if ([400, 403, 404, 409, 422].includes(e.response?.status)) {
+        try {
+          sessionStorage.removeItem(storageKey);
+          pendingKeyRef.current = null;
+          setPendingRetry(false);
+        } catch { setPendingRetry(true); }
+      } else setPendingRetry(true);
       toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const openStockDialog = (consumption) => {
+    setStockDialog(consumption);
+    setStockReason('');
+    setStockBindings({});
+  };
+
+  const repairStock = async () => {
+    if (stockReason.trim().length < 5) return toast.error('En az 5 karakterlik işlem gerekçesi yazın');
+    const missing = (stockDialog.stock || []).filter(job => ['unlinked', 'legacy_untracked'].includes(job.status));
+    const bindings = missing.map(job => {
+      const product = inventoryProducts.find(p => `${p.inventory_source}:${p.id}` === stockBindings[job.line_no]);
+      return product && { line_no: job.line_no, inventory_product_id: product.id, inventory_source: product.inventory_source };
+    });
+    if (bindings.some(binding => !binding)) return toast.error('Her eksik satır için stok ürünü seçin');
+    setStockBusy(true);
+    try {
+      const path = bindings.length ? 'reconcile-stock' : 'retry-stock';
+      const response = await axios.post(`/minibar/consumptions/${stockDialog.id}/${path}`, {
+        reason: stockReason.trim(), ...(bindings.length ? { bindings } : {}),
+      });
+      const complete = Boolean(response.data?.stock?.length) && response.data.stock.every(job => ['depleted', 'already_applied'].includes(job.status));
+      if (complete) toast.success('Stok hareketleri tamamlandı; yeni folyo borcu oluşturulmadı');
+      else toast.warning('Bazı stok hareketleri bekliyor. Miktar ve ürün bağlantılarını kontrol edin.');
+      setStockDialog(null);
+      loadConsumptions(selectedRoom);
+      loadInventoryProducts();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Stok işlemi doğrulanamadı; aynı işlem güvenle yeniden denenebilir');
+    } finally { setStockBusy(false); }
   };
 
   const fmt = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -286,12 +394,19 @@ const MinibarPage = ({ user }) => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { loadItems(); loadRooms(); loadLateCharges(); loadConsumptions(selectedRoom); }}
+              onClick={() => { loadItems(); loadRooms(); loadLateCharges(); loadConsumptions(selectedRoom); loadInventoryProducts(); }}
             >
               <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
             </Button>
           }
         />
+        {Object.entries(loadErrors).filter(([, message]) => message).map(([name, message]) => (
+          <p key={name} role="alert" className="text-sm text-destructive">{message}</p>
+        ))}
+        {storageError && <p role="alert" className="text-sm text-destructive">{storageError}</p>}
+        {pendingRetry && <p role="alert" className="text-sm text-destructive">
+          Son tüketim isteğinin sonucu doğrulanamadı. Oda/sepet korunuyor; aynı isteği yeniden gönderin, yeni işlem oluşturulmaz.
+        </p>}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard icon={Boxes} label="Aktif Ürün" value={activeItems.length} intent="info" />
@@ -314,7 +429,7 @@ const MinibarPage = ({ user }) => {
                 <select
                   value={selectedRoom}
                   onChange={(e) => setSelectedRoom(e.target.value)}
-                  disabled={loadingRooms || Boolean(roomsError)}
+                  disabled={loadingRooms || Boolean(roomsError) || submitting || pendingRetry || !canConsume}
                   className="h-9 w-full border rounded-md px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                   data-testid="minibar-room-select"
                 >
@@ -366,7 +481,7 @@ const MinibarPage = ({ user }) => {
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => setQty(it.id, qty - 1)}
-                            disabled={qty <= 0}
+                            disabled={qty <= 0 || submitting || pendingRetry || !canConsume}
                             aria-label={`${it.name} miktarını azalt`}
                             title="Miktarı azalt"
                           >
@@ -378,6 +493,7 @@ const MinibarPage = ({ user }) => {
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => setQty(it.id, qty + 1)}
+                            disabled={submitting || pendingRetry || !canConsume}
                             aria-label={`${it.name} miktarını artır`}
                             title="Miktarı artır"
                           >
@@ -396,11 +512,11 @@ const MinibarPage = ({ user }) => {
                 <CardContent className="p-3 flex items-center justify-between gap-3">
                   <div className="text-sm">
                     <span className="font-semibold">{cartCount}</span> ürün ·{' '}
-                    <span className="font-semibold">{cartCurrency ? formatCurrency(cartTotal, cartCurrency) : 'Para birimlerini ayrı aktarın'}</span>
+                    <span className="font-semibold">{pendingRetry ? 'Önceki tüketim isteği doğrulanıyor' : cartCurrency ? formatCurrency(cartTotal, cartCurrency) : 'Para birimlerini ayrı aktarın'}</span>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setCart({})}>Temizle</Button>
-                    <Button size="sm" onClick={submitConsumption} disabled={submitting || !selectedRoom} data-testid="minibar-submit">
+                    <Button variant="outline" size="sm" onClick={() => setCart({})} disabled={submitting || pendingRetry}>Temizle</Button>
+                    <Button size="sm" onClick={submitConsumption} disabled={submitting || !selectedRoom || !canConsume || Boolean(storageError) || (!pendingRetry && Boolean(loadErrors.items))} data-testid="minibar-submit">
                       <Receipt className="w-4 h-4 mr-1.5" /> {submitting ? 'İşleniyor...' : 'Folio\'ya İşle'}
                     </Button>
                   </div>
@@ -423,6 +539,11 @@ const MinibarPage = ({ user }) => {
                           </div>
                           <div className="text-xs text-gray-500 truncate">
                             {(c.lines || []).map((l) => `${l.item_name} x${l.quantity}`).join(', ')}
+                          </div>
+                          <div className="text-xs text-muted-foreground" data-testid={`minibar-stock-${c.id}`}>
+                            {(c.stock || []).map(job => `${job.item_name || 'Ürün'}: ${STOCK_LABELS[job.status] || 'Stok doğrulanamadı'}`).join(' · ')}
+                            {c.stock_complete === false && canManageCatalog && <Button size="sm" variant="outline" className="ml-2 h-7"
+                              onClick={() => openStockDialog(c)}>Stok işlemini tamamla</Button>}
                           </div>
                         </div>
                         <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${
@@ -470,7 +591,7 @@ const MinibarPage = ({ user }) => {
                         </div>
                         <div className="text-xs text-gray-500">
                           {CATEGORY_LABELS[it.category] || it.category} · {formatCurrency(it.price, it.currency || currency)}
-                          {it.inventory_product_id ? ' · stok bağlı' : ''}
+                          {it.inventory_product_id ? ' · stok bağlı' : ' · stok takibi bağlı değil'}
                         </div>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
@@ -547,8 +668,19 @@ const MinibarPage = ({ user }) => {
               <p className="text-xs text-muted-foreground mt-1">Ürün ve folyo aynı para biriminde olmalıdır. Full comp misafirin tüketimi kaydedilir, borç oluşmaz.</p>
             </div>
             <div>
-              <Label className="text-xs">Envanter Ürün ID (opsiyonel — stok düşümü için)</Label>
-              <Input value={itemForm.inventory_product_id} onChange={(e) => setItemForm({ ...itemForm, inventory_product_id: e.target.value })} placeholder="Boş bırakılabilir" />
+              <Label htmlFor="minibar-inventory-product" className="text-xs">Merkezî stok ürünü</Label>
+              <select id="minibar-inventory-product" disabled={Boolean(loadErrors.inventory)} className="h-9 w-full border rounded-md px-3 text-sm"
+                value={itemForm.inventory_product_id ? `${itemForm.inventory_source}:${itemForm.inventory_product_id}` : ''}
+                onChange={event => {
+                  const product = inventoryProducts.find(p => `${p.inventory_source}:${p.id}` === event.target.value);
+                  setItemForm({ ...itemForm, inventory_product_id: product?.id || '', inventory_source: product?.inventory_source || '' });
+                }}>
+                <option value="">Stok takibi yok</option>
+                {inventoryProducts.map(product => <option key={`${product.inventory_source}:${product.id}`} value={`${product.inventory_source}:${product.id}`}>
+                  {product.name} · {product.quantity ?? 'Miktar bilinmiyor'} {product.unit} {product.inventory_source === 'legacy' ? '(eski mobil stok)' : '(merkezî depo)'}
+                </option>)}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">Bağlantı sonraki tüketimlerde kullanılır. Eski kayıtlar gerekçeli stok mutabakatıyla tamamlanır; folyo yeniden borçlandırılmaz.</p>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={itemForm.active} onChange={(e) => setItemForm({ ...itemForm, active: e.target.checked })} />
@@ -557,12 +689,36 @@ const MinibarPage = ({ user }) => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowItemDialog(false)}>Vazgeç</Button>
-            <Button onClick={saveItem}>{editItem ? 'Kaydet' : 'Ekle'}</Button>
+            <Button onClick={saveItem} disabled={Boolean(loadErrors.inventory)}>{editItem ? 'Kaydet' : 'Ekle'}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(stockDialog)} onOpenChange={open => { if (!open && !stockBusy) setStockDialog(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Minibar stok mutabakatı</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Yalnız stok aktarılır; yeni ücret veya ödeme oluşmaz. Eski takip edilmemiş satırlar bugünkü açık iş gününde, gerekçenizle kaydedilir.</p>
+          {(stockDialog?.stock || []).filter(job => ['unlinked', 'legacy_untracked'].includes(job.status)).map(job => (
+            <div key={job.line_no}>
+              <Label htmlFor={`stock-binding-${job.line_no}`}>{job.item_name || 'Ürün'} × {job.quantity}</Label>
+              <select id={`stock-binding-${job.line_no}`} className="h-9 w-full border rounded-md px-3 text-sm" disabled={stockBusy || Boolean(loadErrors.inventory)}
+                value={stockBindings[job.line_no] || ''} onChange={event => setStockBindings({ ...stockBindings, [job.line_no]: event.target.value })}>
+                <option value="">Stok ürünü seçin</option>
+                {inventoryProducts.map(product => <option key={`${product.inventory_source}:${product.id}`} value={`${product.inventory_source}:${product.id}`}>
+                  {product.name} · {product.quantity ?? 'Miktar bilinmiyor'} {product.unit}
+                </option>)}
+              </select>
+            </div>
+          ))}
+          <Label htmlFor="minibar-stock-reason">İşlem gerekçesi</Label>
+          <Input id="minibar-stock-reason" value={stockReason} onChange={event => setStockReason(event.target.value)} disabled={stockBusy} />
+          <DialogFooter><Button variant="outline" disabled={stockBusy} onClick={() => setStockDialog(null)}>Vazgeç</Button>
+            <Button onClick={repairStock} disabled={stockBusy || Boolean(loadErrors.inventory)}>{stockBusy ? 'İşleniyor...' : 'Stok işlemini tamamla'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
 };
 
+// A property/account switch must never reuse another actor's pending request.
+const MinibarPage = ({ user }) => <MinibarWorkspace key={pendingStorageKey(user)} user={user} />;
 export default MinibarPage;

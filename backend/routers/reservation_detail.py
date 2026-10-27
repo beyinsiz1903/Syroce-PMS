@@ -4750,6 +4750,42 @@ class DemoAccountingReviewIn(DemoSourceRemediationIn):
     confirmation: Literal["REVIEW_SYNTHETIC_DEMO_ACCOUNTING_100001_ONLY"]
 
 
+class DemoPresentationArchiveIn(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    request_id: UUID
+    source_fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+    reason: str = Field(min_length=20, max_length=1000)
+    booking_ids: list[str] = Field(min_length=1, max_length=20)
+    confirmation: Literal['ARCHIVE_REVIEWED_SYNTHETIC_DEMO_100001_ONLY']
+
+    @field_validator('reason')
+    @classmethod
+    def meaningful_archive_reason(cls, value):
+        if len(value.strip()) < 20:
+            raise ValueError('Arşivleme gerekçesini açıkça yazın')
+        return value.strip()
+
+
+@router.get('/demo-presentation-archive/preview')
+async def preview_demo_presentation_archive(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op('manage_city_ledger')), _admin=Depends(require_op('manage_night_audit'))):
+    _enforce_perm(current_user, 'manage_city_ledger')
+    _enforce_perm(current_user, 'manage_night_audit')
+    _ensure_hotel_context(current_user)
+    from modules.pms_core.demo_presentation_archive import plan, public_plan
+    return public_plan(await plan(db, current_user.tenant_id))
+
+
+@router.post('/demo-presentation-archive/apply')
+async def apply_demo_presentation_archive(data: DemoPresentationArchiveIn, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op('manage_city_ledger')), _admin=Depends(require_op('manage_night_audit'))):
+    _enforce_perm(current_user, 'manage_city_ledger')
+    _enforce_perm(current_user, 'manage_night_audit')
+    _ensure_hotel_context(current_user)
+    from modules.pms_core.demo_presentation_archive import apply
+    return await apply(db, current_user, data)
+
+
 @router.get("/demo-accounting-review/preview")
 async def preview_demo_accounting_review(current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):

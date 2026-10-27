@@ -1,7 +1,7 @@
 """Atomic minibar debt + source log + sealed operator audit.
 
-The catalog price is VAT-inclusive and has an explicit currency. Stock remains
-the existing, separately reported best-effort inventory operation.
+The catalog price is VAT-inclusive and has an explicit currency. Frozen stock
+work is stored with the source, then applied atomically and safely replayed.
 """
 import hashlib
 import json
@@ -16,6 +16,7 @@ from core.booking_atomicity import with_resource_locks
 from core.booking_payment_state import refresh_booking_payment_state
 from core.business_date_service import stamp_open_business_date
 from core.report_cache import invalidate_financial_report_caches
+from domains.pms.minibar_stock import ensure_stock_indexes, make_jobs, run_stock, stock_complete, stock_view
 from modules.pms_core.receivable_reporting import folio_snapshots
 from shared_kernel.audit_helper import audit_log
 
@@ -39,6 +40,7 @@ async def consume_to_folio(database, payload, current_user):
     try:
         await m._ensure_minibar_charge_index()
         await m._ensure_minibar_consumption_index()
+        await ensure_stock_indexes(database)
         await database.minibar_locks.create_index([('tenant_id', 1), ('kind', 1), ('resource_id', 1)], unique=True)
     except Exception as exc:
         raise HTTPException(503, 'Minibar faturalama tekillik koruması hazır değil') from exc
@@ -90,7 +92,8 @@ async def consume_to_folio(database, payload, current_user):
             line = {'line_no': number, 'item_id': row.item_id, 'item_name': item['name'], 'category': item.get('category'),
                 'quantity': row.quantity, 'unit_price': item['price'], 'amount': float(net), 'vat_amount': float(vat),
                 'tax_rate': item['tax_rate'], 'total': float(gross), 'currency': code,
-                'original_total': float(original), 'inventory_product_id': item.get('inventory_product_id')}
+                'original_total': float(original), 'inventory_product_id': item.get('inventory_product_id'),
+                'inventory_source': item.get('inventory_source')}
             lines.append(line)
             if folio:
                 cid = str(uuid5(NAMESPACE_URL, f'minibar:{tid}:{log_id}:{number}'))
@@ -111,7 +114,8 @@ async def consume_to_folio(database, payload, current_user):
             'booking_id': booking['id'], 'guest_id': booking.get('guest_id'), 'lines': lines,
             'total': float(sum((Decimal(str(row['total'])) for row in lines), Decimal(0))), 'currency': code,
             'note': payload.note, 'idempotency_key': payload.idempotency_key, 'fingerprint': fingerprint,
-            'posted_by': actor, 'created_at': now, 'status': 'posted' if folio else 'late_charge', 'charge_ids': charge_ids}
+            'posted_by': actor, 'created_at': now, 'status': 'posted' if folio else 'late_charge', 'charge_ids': charge_ids,
+            'stock_jobs': make_jobs(lines)}
         await stamp_open_business_date(database, tid, doc)
         if folio:
             snap = (await folio_snapshots(database, tid, [folio], fallback_currency=code, session=session))[folio['id']]
@@ -133,22 +137,24 @@ async def consume_to_folio(database, payload, current_user):
                 'amount': doc['total'], 'currency': code, 'business_date': doc['business_date'], 'reason': payload.note},
             session=session, require_chain=True)
         return {'consumption': doc, 'posted_to_folio': bool(folio), 'folio_status': 'open' if folio else 'late_charge',
-            '_items': items, 'stock': []}
+            'stock': []}
 
     try:
         result = await with_resource_locks(client=database.client, db=database, tenant_id=tid, locks_collection='minibar_locks',
             resources=[('room', payload.room_id), ('consumption', log_id)], callback=commit)
     except DuplicateKeyError as exc:
         raise HTTPException(409, 'Minibar tekillik çakışması; hiçbir yeni ücret kaydedilmedi. Kaynak kayıtları kontrol edin.') from exc
-    if result.get('idempotent'):
-        return result
-    invalidate_financial_report_caches(tid)
-    items = result.pop('_items')
-    for line in result['consumption']['lines']:
-        try:
-            stock = await m._deplete_stock_best_effort(tid, actor, items[line['item_id']], line['quantity'], log_id, line['line_no'])
-        except Exception:
-            m.logger.exception('Minibar stok hareketi tamamlanamadı source=%s', log_id)
-            stock = {'status': 'error'}
-        result['stock'].append({'item_id': line['item_id'], **stock})
+    if not result.get('idempotent'):
+        invalidate_financial_report_caches(tid)
+    try:
+        # Replay may finish a pending STOCK job, never charge the guest again.
+        result['stock'] = await run_stock(database, tid, result['consumption']['id'], actor)
+    except Exception:
+        # The durable pending job survives an outage after financial commit.
+        # Do not falsely report stock success or drop the operator's retry.
+        m.logger.warning('Minibar stok işi yeniden deneme bekliyor source=%s', log_id)
+        result['stock'] = [{**job, 'status': 'pending_retry', 'retryable': True}
+            if job['status'] not in {'unlinked', 'legacy_untracked'} else job
+            for job in stock_view(result['consumption'])]
+    result['stock_complete'] = stock_complete(result['stock'])
     return result
