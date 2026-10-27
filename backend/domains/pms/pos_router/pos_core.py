@@ -41,6 +41,8 @@ async def _query_pos_transactions(
     end_date: str | None = None,
     date: str | None = None,
     database=None,
+    session=None,
+    validate_duplicates=None,
 ) -> list[dict]:
     """Canonical POS transaction query.
 
@@ -76,14 +78,22 @@ async def _query_pos_transactions(
     tx_q = dict(legacy_q)
     tx_q["$or"] = [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]
 
-    source_rows = await asyncio.gather(
-        database.pos_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-        database.pos_menu_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-        database.transactions.find(tx_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-        database.pos_orders.find(order_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-    )
+    kwargs = {"session": session} if session is not None else {}
+    queries = [(database.pos_transactions, legacy_q), (database.pos_menu_transactions, legacy_q),
+               (database.transactions, tx_q), (database.pos_orders, order_q)]
+    if session is not None:
+        # MongoDB forbids parallel operations within one transaction/session.
+        source_rows = [await coll.find(query, {"_id": 0}, **kwargs).sort("created_at", -1).to_list(limit)
+                       for coll, query in queries]
+    else:
+        source_rows = await asyncio.gather(*(coll.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
+                                           for coll, query in queries))
 
     financial_rows = [*source_rows[0], *source_rows[1], *source_rows[2]]
+    if validate_duplicates is not None:
+        # Normal report reads retain legacy precedence. Financial sealing may
+        # instead reject conflicting copies before precedence hides them.
+        validate_duplicates(financial_rows)
     settled_order_ids = {
         str(row.get("order_id"))
         for row in financial_rows

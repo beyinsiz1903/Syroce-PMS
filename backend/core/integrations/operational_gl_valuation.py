@@ -39,6 +39,46 @@ def amount(value):
     return float(Decimal(value) / 100)
 
 
+def source_tax_components(source):
+    """Validate both stored tax schemas without rewriting source evidence.
+
+    Night audit stores aggregate tax_amount. Department charges store VAT in
+    vat_amount and OTHER tax in tax_amount. An explicit breakdown must match
+    the identified schema; an unexplained difference is never forgiven.
+    """
+    if source.get("tax_amount") is None:
+        raise OperationalValuationError("Unknown source tax must be resolved, not assumed zero: " + str(source.get("id")))
+    aggregate = minor(source["tax_amount"])
+    breakdown = source.get("tax_breakdown") or {}
+    if not isinstance(breakdown, dict) or set(breakdown) - {"vat", "accommodation_tax"}:
+        raise OperationalValuationError("Unsupported or inconsistent source tax breakdown")
+    accommodation = minor(breakdown.get("accommodation_tax"))
+    if breakdown:
+        vat = minor(breakdown.get("vat"))
+        if source.get("vat_amount") is not None:
+            if minor(source["vat_amount"]) != vat:
+                raise OperationalValuationError("Explicit source VAT disagrees with tax breakdown")
+            # Accept either aggregate or explicitly separated VAT/other-tax.
+            if aggregate not in {vat + accommodation, accommodation}:
+                raise OperationalValuationError("Unsupported or inconsistent source tax breakdown")
+        elif aggregate != vat + accommodation:
+            raise OperationalValuationError("Unsupported or inconsistent source tax breakdown")
+        tax = vat + accommodation
+    elif source.get("vat_amount") is not None:
+        vat = minor(source["vat_amount"])
+        if aggregate or "night_audit" in str(source.get("posted_by") or ""):
+            raise OperationalValuationError("Aggregate room tax requires an explicit component breakdown")
+        accommodation, tax = aggregate, vat + aggregate
+    else:
+        tax, vat = aggregate, aggregate
+    gross = minor(source.get("total", source.get("amount")))
+    if (gross >= 0 and not 0 <= tax <= gross) or (gross < 0 and not gross <= tax <= 0):
+        raise OperationalValuationError("Source tax is outside its signed charge total")
+    if (tax >= 0 and (vat < 0 or accommodation < 0)) or (tax < 0 and (vat > 0 or accommodation > 0)):
+        raise OperationalValuationError("Source tax components must have the signed tax direction")
+    return tax, accommodation
+
+
 def normalized_valuation(business_date, valuation):
     try:
         if date.fromisoformat(business_date).isoformat() != business_date:
@@ -143,20 +183,8 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                 rows.append(row)
                 continue
             if kind == "charge":
-                if source.get("tax_amount") is None:
-                    raise OperationalValuationError("Unknown source tax must be resolved, not assumed zero: " + row["id"])
-                gross, tax = minor(source.get("total", source.get("amount"))), minor(source["tax_amount"])
-                if (gross >= 0 and not 0 <= tax <= gross) or (gross < 0 and not gross <= tax <= 0):
-                    raise OperationalValuationError("Source tax is outside its signed charge total")
-                breakdown = source.get("tax_breakdown") or {}
-                if not isinstance(breakdown, dict):
-                    raise OperationalValuationError("Invalid source tax breakdown")
-                accommodation = minor(breakdown.get("accommodation_tax"))
-                if breakdown and (set(breakdown) - {"vat", "accommodation_tax"} or minor(breakdown.get("vat")) + accommodation != tax):
-                    raise OperationalValuationError("Unsupported or inconsistent source tax breakdown")
-                if breakdown and ((tax >= 0 and (minor(breakdown.get("vat")) < 0 or accommodation < 0))
-                                  or (tax < 0 and (minor(breakdown.get("vat")) > 0 or accommodation > 0))):
-                    raise OperationalValuationError("Source tax components must have the signed tax direction")
+                gross = minor(source.get("total", source.get("amount")))
+                tax, accommodation = source_tax_components(source)
                 if accommodation and not mapping.get("accommodation_tax_account_code"):
                     raise OperationalValuationError("An explicit accommodation-tax account is required; do not merge it into VAT")
                 row.update(gross_minor=gross, tax_minor=tax, accommodation_tax_minor=accommodation)

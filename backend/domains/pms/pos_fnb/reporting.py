@@ -26,21 +26,22 @@ def _time(row):
     return str(value)
 
 
-async def enrich_refunds(database, tenant_id, rows):
+async def enrich_refunds(database, tenant_id, rows, session=None):
+    kwargs = {"session": session} if session is not None else {}
     refunds = [row for row in rows if is_refund(row)]
     if not refunds:
         return rows, []
     ids = [r['original_transaction_id'] for r in refunds if r.get('original_transaction_id')]
     orders = [r['order_id'] for r in refunds if r.get('order_id')]
     source_filter = {'tenant_id': tenant_id, 'status': 'completed', '$or': [{'id': {'$in': ids}}, {'order_id': {'$in': orders}}]}
-    sources = await database.pos_transactions.find(source_filter, {'_id': 0}).to_list(None)
+    sources = await database.pos_transactions.find(source_filter, {'_id': 0}, **kwargs).to_list(None)
     sources = [row for row in sources if not is_refund(row) and row.get('status') == 'completed']
     by_id = {row.get('id'): row for row in sources}
     by_order = {row.get('order_id'): row for row in sources if row.get('order_id')}
     history = await database.pos_transactions.find({
         'tenant_id': tenant_id, '$or': [{'original_transaction_id': {'$in': list(by_id)}}, {'order_id': {'$in': orders}}],
         '$and': [{'$or': [{'payment_type': 'refund'}, {'status': 'refunded'}]}],
-    }, {'_id': 0}).to_list(None)
+    }, {'_id': 0}, **kwargs).to_list(None)
     known = {row.get('id'): row for row in history if is_refund(row)}
     known.update({row['id']: row for row in refunds if row.get('id')})
     consumed = {}

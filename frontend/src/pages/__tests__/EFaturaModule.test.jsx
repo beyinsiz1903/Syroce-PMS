@@ -4,6 +4,7 @@ import axios from 'axios';
 
 import EFaturaModule from '../EFaturaModule';
 import { confirmDialog } from '@/lib/dialogs';
+import { toast } from 'sonner';
 
 vi.mock('axios', () => ({
   default: {
@@ -27,6 +28,10 @@ describe('EFaturaModule POS closure integrity', () => {
       if (url === '/efatura/invoices') return Promise.resolve({ data: { invoices: [] } });
       if (url === '/pos/daily-closures') return Promise.resolve({ data: { closures: [] } });
       if (url === '/efatura/settings') return Promise.resolve({ data: { enabled: false } });
+      if (url === '/pos/daily-closure-preview') return Promise.resolve({ data: {
+        closure_date: '2026-10-25', preview_hash: 'a'.repeat(64),
+        totals_by_currency: { TRY: { net_sales: 350, tips: 50 } },
+      } });
       return Promise.reject(new Error(`unexpected request: ${url}`));
     });
   });
@@ -50,8 +55,30 @@ describe('EFaturaModule POS closure integrity', () => {
     const button = await screen.findByRole('button', { name: /daily pos closure/i });
     fireEvent.click(button);
 
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/pos/daily-closure'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/pos/daily-closure', {
+      business_date: '2026-10-25', expected_preview_hash: 'a'.repeat(64), reason: expect.any(String),
+    }));
     expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not close or show a fake zero when preview fails', async () => {
+    axios.get.mockImplementation((url) => url === '/pos/daily-closure-preview'
+      ? Promise.reject({ response: { data: { detail: { message: 'Kaynak doğrulanamadı' } } } })
+      : Promise.resolve({ data: {} }));
+    render(<EFaturaModule />);
+    fireEvent.click(await screen.findByRole('button', { name: /daily pos closure/i }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Kaynak doğrulanamadı'));
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(confirmDialog).not.toHaveBeenCalled();
+  });
+
+  it('renders each native currency separately and labels room charge as non-cash', async () => {
+    axios.get.mockResolvedValue({ data: { closures: [{ id: 'multi', closure_date: '2026-10-25', transaction_count: 2,
+      totals_by_currency: { USD: { net_sales: 100, tips: 5, refund_total: 0, cash_sales: 105, card_sales: 0, room_charge_sales: 0 },
+        EUR: { net_sales: 50, tips: 0, refund_total: 10, cash_sales: 0, card_sales: 0, room_charge_sales: 50 } } }] } });
+    render(<EFaturaModule />);
+    expect(await screen.findAllByText(/Gelir:/)).toHaveLength(2);
+    expect(screen.getAllByText(/tahsilat değil/)).toHaveLength(2);
   });
 
   it('downloads the selected closure report without another financial write', async () => {

@@ -17,6 +17,10 @@ const EFaturaModule = () => {
   const [posClosures, setPosClosures] = useState([]);
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [closing, setClosing] = useState(false);
+  const [closureDate, setClosureDate] = useState('');
+  const closureAmounts = (closure) => Object.entries(closure.totals_by_currency || {})
+    .map(([currency, totals]) => `${formatCurrency(totals.net_sales, currency)} gelir + ${formatCurrency(totals.tips, currency)} bahşiş`).join(' / ');
 
   useEffect(() => {
     loadData();
@@ -60,24 +64,33 @@ const EFaturaModule = () => {
   };
 
   const handlePOSClosure = async () => {
-    const confirmed = await confirmDialog({
-      title: 'Günlük POS kapanışı',
-      message: 'Otel iş günündeki kesinleşmiş POS işlemleri kapatılacak. Aynı iş günü için ikinci bir kapanış kaydı oluşturulmaz. Devam edilsin mi?',
-      confirmText: 'Kapanışı Tamamla',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-
+    if (closing) return;
+    setClosing(true);
     try {
-      const response = await axios.post('/pos/daily-closure');
+      const { data: preview } = await axios.get('/pos/daily-closure-preview', {
+        params: closureDate ? { business_date: closureDate } : {},
+      });
+      const confirmed = await confirmDialog({
+        title: 'Günlük POS kapanışı',
+        message: `${preview.closure_date}: ${closureAmounts(preview)}. İadeler düşülmüştür. Odaya aktarım nakit tahsilat değildir. Bu kayıt mali Z raporu değildir. Kaynak özeti kaydedilsin mi?`,
+        confirmText: 'Kapanışı Tamamla', variant: 'danger',
+      });
+      if (!confirmed) return;
+      const response = await axios.post('/pos/daily-closure', {
+        business_date: preview.closure_date, expected_preview_hash: preview.preview_hash,
+        reason: 'Yetkili kullanıcı günlük POS kaynak özetini inceleyerek kapanış kaydı oluşturdu.',
+      });
       if (response.data.replayed) {
         toast.info('Bu iş günü için POS kapanışı daha önce tamamlanmış');
       } else {
-        toast.success(`Günlük kapanış tamamlandı: ${formatCurrency(response.data.total_sales, response.data.currency || cachedTenantCurrency())}`);
+        toast.success(`Günlük kapanış tamamlandı: ${closureAmounts(response.data)}`);
       }
       await loadData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Kapanış tamamlanamadı');
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : detail?.message || 'Kapanış tamamlanamadı');
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -85,11 +98,15 @@ const EFaturaModule = () => {
     const columns = [
       ['İş Günü', closure.closure_date],
       ['İşlem Sayısı', closure.transaction_count],
-      ['Toplam Satış', closure.total_sales],
-      ['Nakit', closure.cash_sales],
-      ['Kart', closure.card_sales],
-      ['Diğer', closure.other_sales || 0],
+      ['Hesaplama', closure.calculation_version || 'Eski kayıt; yeniden doğrulanmadı'],
     ];
+    for (const [currency, totals] of Object.entries(closure.totals_by_currency || {})) {
+      for (const [label, key] of [['İade sonrası gelir (KDV dahil, bahşiş hariç)', 'net_sales'], ['Bahşiş', 'tips'],
+        ['Net ödeme ve aktarım', 'total_sales'], ['İade', 'refund_total'], ['Nakit', 'cash_sales'],
+        ['Kart', 'card_sales'], ['Odaya aktarım (tahsilat değil)', 'room_charge_sales'], ['Diğer (odaya aktarım dahil)', 'other_sales']]) {
+        columns.push([`${currency} ${label}`, totals[key]]);
+      }
+    }
     const csv = columns.map(([label, value]) => `"${label}","${value}"`).join('\n');
     const url = window.URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
@@ -132,10 +149,14 @@ const EFaturaModule = () => {
           <h1 className="text-3xl font-bold">E-Fatura & POS Integration</h1>
           <p className="text-gray-600">Electronic invoicing & daily closures</p>
         </div>
-        <Button onClick={handlePOSClosure}>
+        <div className="flex items-end gap-2">
+          <div><Label htmlFor="pos-closure-date">İş günü (boş: PMS iş günü)</Label>
+            <Input id="pos-closure-date" type="date" value={closureDate} onChange={(e) => setClosureDate(e.target.value)} /></div>
+        <Button onClick={handlePOSClosure} disabled={closing}>
           <FileText className="w-4 h-4 mr-2" />
           Daily POS Closure
         </Button>
+        </div>
       </div>
 
       {/* E-Fatura Settings */}
@@ -231,8 +252,14 @@ const EFaturaModule = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-green-600">{formatCurrency(closure.total_sales, closure.currency || cachedTenantCurrency())}</div>
-                  <div className="text-xs text-gray-600">Nakit: {formatCurrency(closure.cash_sales, closure.currency || cachedTenantCurrency())} | Kart: {formatCurrency(closure.card_sales, closure.currency || cachedTenantCurrency())}</div>
+                  {closure.totals_by_currency ? Object.entries(closure.totals_by_currency).map(([currency, totals]) => (
+                    <div key={currency} className="text-sm space-y-1">
+                      <div className="font-bold text-green-600">Gelir: {formatCurrency(totals.net_sales, currency)}</div>
+                      <div>Bahşiş: {formatCurrency(totals.tips, currency)} · İade: {formatCurrency(totals.refund_total, currency)}</div>
+                      <div>Nakit: {formatCurrency(totals.cash_sales, currency)} · Kart: {formatCurrency(totals.card_sales, currency)}</div>
+                      <div>Odaya aktarım: {formatCurrency(totals.room_charge_sales, currency)} (tahsilat değil)</div>
+                    </div>
+                  )) : <div className="text-sm text-muted-foreground">Eski kayıt — iade/bahşiş ayrımı yeniden doğrulanmadı</div>}
                 </div>
                 <Button size="sm" variant="outline" onClick={() => handleDownloadPOSClosureReport(closure)}>
                   <Download className="w-4 h-4 mr-1" />
