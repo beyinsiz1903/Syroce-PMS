@@ -171,6 +171,7 @@ async def test_registered_reports_use_canonical_snapshot_and_business_date(db, m
     assert sales['summary']['total_sales'] == 220
     mobile = await marketplace_router.get_fnb_daily_summary_mobile(DAY, None)
     assert mobile['orders']['total_revenue'] == 220
+    assert mobile['orders']['by_outlet'] == {'bar': {'count': 2, 'revenue': 220}}
     assert mobile['stock_consumption']['total_cost'] is None
     breakdown = await marketplace_router.get_menu_sales_breakdown(None, DAY, DAY, user)
     assert breakdown['summary']['total_revenue'] == 220

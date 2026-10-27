@@ -50,6 +50,8 @@ describe('işlem kayıtları kullanıcı dili', () => {
     expect(auditEntityLabel('gl_voucher')).toBe('Muhasebe fişi');
     expect(auditActionLabel('gl_voucher_approved')).toBe('Muhasebe fişi gerekçeyle onaylandı');
     expect(auditActionLabel('gl_voucher_policy_changed')).toBe('Tesisin fiş onay politikası değiştirildi');
+    expect(auditActionLabel('charge_split')).toBe('Hizmet bedeli diğer folyoya aktarıldı');
+    expect(auditActionLabel('charge_received')).toBe('Diğer folyodan hizmet bedeli alındı');
   });
 
   it('API hareketlerini modül adıyla özetler', () => {

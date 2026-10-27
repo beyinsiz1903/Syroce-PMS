@@ -2586,7 +2586,7 @@ async def split_charge(
     folios = await db.folios.find({"tenant_id": tid, "booking_id": {"$in": [booking_id, target_id]}}, {"_id": 0, "id": 1}).to_list(None)
 
     async def commit(session):
-        return await split_service_charge(db, tid, current_user.name, booking_id, data, operation_id, session=session)
+        return await split_service_charge(db, tid, current_user.name, booking_id, data, operation_id, session=session, actor_id=current_user.id)
 
     try:
         result = await _run_reservation_financial_transaction(tenant_id=tid, booking_id=booking_id,

@@ -90,6 +90,7 @@ async def test_maintenance_invalid_month_is_a_client_error():
 
 async def test_spa_summary_preserves_native_currencies(ledger_db):
     await ledger_db.spa_appointments.insert_many([{'tenant_id': 'A', 'id': code, 'starts_at': '2026-10-19T10:00:00Z', 'status': 'completed', 'price': 100, 'currency': code} for code in ['EUR', 'USD']])
+    await ledger_db.folio_charges.insert_many([{'tenant_id': 'A', 'source_spa_appointment_id': code, 'total': 100, 'currency': code} for code in ['EUR', 'USD']])
     result = await spa.daily_summary('2026-10-19', USER)
     assert result.get('revenue_by_currency') == {'EUR': 100, 'USD': 100}, result
 
@@ -107,6 +108,7 @@ async def test_spa_day_compares_instants_not_offset_text(ledger_db):
             ('in-naive-utc', '2026-10-18T21:00:00'), ('in-far-offset', '2026-10-20T09:00:00+14:00'),
             ('out-prev', '2026-10-18T22:00:00+03:00'), ('out-next', '2026-10-20T00:00:00+03:00'), ('out-garbage', 'not a date')]
     await ledger_db.spa_appointments.insert_many([{'tenant_id': 'A', 'id': i, 'starts_at': at, 'status': 'completed', 'price': 1, 'currency': 'EUR'} for i, at in rows])
+    await ledger_db.folio_charges.insert_many([{'tenant_id': 'A', 'source_spa_appointment_id': i, 'total': 1, 'currency': 'EUR'} for i, _ in rows])
     result = await spa.daily_summary('2026-10-19', USER)
     assert result['total'] == 5 and result['revenue_by_currency'] == {'EUR': 5}, result
 

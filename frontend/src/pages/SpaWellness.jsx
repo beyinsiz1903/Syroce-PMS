@@ -29,6 +29,19 @@ export const revenueText = (summary, format) => {
   return codes.map((code) => format(byCurrency[code], code)).join(' · ');
 };
 
+export const SpaRevenueSummary = ({ summary, money }) => (
+  <div>
+    <Stat label="Folyoya işlenen SPA geliri" value={revenueText(summary, money)} cls="text-indigo-600" />
+    <p className="text-xs text-gray-500 mt-1">Tamamlanan randevuların aktif folyo ücretleri; ikram gelir değildir, tahsilat ayrı izlenir.</p>
+    {Object.keys(summary.complimentary_value_by_currency || {}).length > 0 && (
+      <p className="text-xs text-gray-500 mt-1">İkram edilen hizmet değeri: {revenueText({ revenue_by_currency: summary.complimentary_value_by_currency }, money)}</p>
+    )}
+    {summary.revenue_complete === false && (
+      <p role="status" className="text-xs text-amber-700 mt-1">{summary.unposted_appointments} tamamlanan randevunun folyo kaydı yok. Hizmet değeri gelire eklenmedi: {revenueText({ revenue_by_currency: summary.unposted_value_by_currency }, money)}</p>
+    )}
+  </div>
+);
+
 const STATUS = {
   scheduled: { label: 'Planlandı', cls: 'bg-sky-100 text-sky-800' },
   in_progress: { label: 'Devam Ediyor', cls: 'bg-amber-100 text-amber-800' },
@@ -232,7 +245,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
           <Stat label={t('cm.pages_SpaWellness.bugun_toplam')} value={summary.total} />
           <Stat label="Tamamlanan" value={summary.by_status?.completed || 0} cls="text-emerald-600" />
           <Stat label="Planlanan" value={summary.by_status?.scheduled || 0} cls="text-sky-600" />
-          <Stat label={t('cm.pages_SpaWellness.bugunku_ciro')} value={revenueText(summary, money)} cls="text-indigo-600" />
+          <SpaRevenueSummary summary={summary} money={money} />
         </div>
       )}
 

@@ -1,5 +1,6 @@
 from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -14,7 +15,8 @@ from tests.unit.test_folio_allocation import Collection
 
 
 @pytest.fixture
-def scenario():
+def scenario(monkeypatch):
+    monkeypatch.setattr('modules.pms_core.service_charge_split.audit_log', AsyncMock())
     booking = {"tenant_id": "hotel", "currency": "TRY", "status": "checked_in"}
     folio = {"tenant_id": "hotel", "currency": "TRY", "status": "open"}
     return SimpleNamespace(

@@ -40,6 +40,7 @@ const MODULE_LABELS = {
 const ACTION_LABELS = {
   room_swap: "Odalar karşılıklı değiştirildi",
   charge_split: "Hizmet bedeli diğer folyoya aktarıldı",
+  charge_received: "Diğer folyodan hizmet bedeli alındı",
   payment_recorded: "Ödeme kaydedildi",
   spa_status_changed: "SPA hizmet durumu değiştirildi",
   spa_charge_posted: "SPA hizmeti misafir folyosuna işlendi",
