@@ -564,12 +564,13 @@ async def _execute_pipeline(
         no_show_items = [item for item in pending_items if item.get("posting_type") == "no_show"]
         pending = len(pending_items)
         skipped = len(skipped_items)
-        projected_room_revenue = round(sum(float(item.get("amount") or 0) for item in room_items), 2)
-        projected_tax = round(sum(float(item.get("tax_amount") or 0) for item in room_items), 2)
-        projected_total = round(sum(float(item.get("total") or 0) for item in pending_items), 2)
         projected_room_revenue_by_currency = _money_breakdown(room_items, "amount")
         projected_tax_by_currency = _money_breakdown(room_items, "tax_amount")
         projected_total_by_currency = _money_breakdown(pending_items, "total")
+        # An unconverted USD + EUR + TRY scalar is not a monetary total.
+        projected_room_revenue = next(iter(projected_room_revenue_by_currency.values()), 0) if len(projected_room_revenue_by_currency) <= 1 else None
+        projected_tax = next(iter(projected_tax_by_currency.values()), 0) if len(projected_tax_by_currency) <= 1 else None
+        projected_total = next(iter(projected_total_by_currency.values()), 0) if len(projected_total_by_currency) <= 1 else None
         room_ids = list({item.get("room_id") for item in items if item.get("room_id")})
         room_docs = await db.rooms.find(
             {"tenant_id": tenant_id, "id": {"$in": room_ids}},
@@ -1268,6 +1269,12 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                         {"$inc": {"balance": item["total"]}},
                         session=session,
                     )
+
+                # Room posting changes the reservation's posted balance just
+                # like SPA/minibar/POS posting. Commit the derived booking
+                # projection with the charge; failure must roll back both.
+                from core.booking_payment_state import refresh_booking_payment_state
+                await refresh_booking_payment_state(db, tenant_id, item["booking_id"], session=session, strict=True)
 
                 # 4. Journal / audit entry
                 await db.pms_audit_trail.insert_one(

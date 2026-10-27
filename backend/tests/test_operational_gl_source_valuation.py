@@ -21,6 +21,29 @@ def plan(charges=(), payments=(), security=(), valuation=None):
     return v.build_plan(list(charges), list(payments), MAPPING, v.normalized_valuation(DAY, valuation or RATES), security)
 
 
+@pytest.mark.parametrize('code', ['TRY', 'USD', 'EUR'])
+def test_department_separate_vat_matches_aggregate_schema_without_source_mutation(code):
+    source = {'id': 'spa', 'currency': code, 'amount': 625, 'total': 750,
+              'vat_amount': 125, 'tax_amount': 0, 'tax_breakdown': {'vat': 125}}
+    original = deepcopy(source)
+    result = plan([source])
+    assert source == original
+    assert result['lines'] == plan([{**source, 'tax_amount': 125}])['lines']
+    tax = next(line for line in result['lines'] if line['account_code'] == MAPPING['tax_account_code'])
+    assert tax['credit'] == 125 * {'TRY': 1, 'USD': 50, 'EUR': 55}[code]
+
+
+@pytest.mark.parametrize('values', [
+    {'vat_amount': 124}, {'tax_amount': 1}, {'tax_breakdown': {'vat': 124}},
+    {'tax_breakdown': {'vat': 125, 'unknown': 1}},
+])
+def test_conflicting_department_tax_evidence_still_fails_closed(values):
+    source = {'id': 'spa', 'currency': 'TRY', 'total': 750, 'vat_amount': 125,
+              'tax_amount': 0, 'tax_breakdown': {'vat': 125}}
+    with pytest.raises(v.OperationalValuationError):
+        plan([{**source, **values}])
+
+
 @pytest.mark.parametrize("rate", ["NaN", "Infinity", "-1", "0", "1000001", "55.1234567"])
 def test_invalid_rates_fail_closed(rate):
     with pytest.raises(v.OperationalValuationError):

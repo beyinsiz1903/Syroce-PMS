@@ -73,6 +73,22 @@ async def test_night_audit_bridge_is_disabled_until_configured(monkeypatch):
 
     assert result == {"status": "skipped", "reason": "not_configured"}
     post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_try_department_vat_and_room_accommodation_tax_are_not_revenue(monkeypatch):
+    mapping = {**bridge.DEFAULT_MAPPING, "enabled": True, "accommodation_tax_account_code": "360.02"}
+    database = SimpleNamespace(gl_operational_mappings=_collection(one=mapping),
+        folio_charges=_collection(rows=[
+            {"total": 750, "amount": 625, "vat_amount": 125, "tax_amount": 0, "tax_breakdown": {"vat": 125}, "currency": "TRY"},
+            {"total": 111, "amount": 100, "tax_amount": 11, "tax_breakdown": {"vat": 10, "accommodation_tax": 1}, "currency": "TRY"}]),
+        payments=_collection(), night_audit_runs=_collection())
+    post = AsyncMock(return_value={"id": "journal"})
+    monkeypatch.setattr(bridge, "post_journal_entry", post)
+    await bridge.post_night_audit_daily_to_gl(database, "t", "2026-10-25", run_id="run")
+    lines = post.await_args.kwargs['lines']
+    assert {r['account_code']: r.get('credit', r.get('debit')) for r in lines} == {
+        '120': 861, '600': 725, '391': 135, '360.02': 1}
     database.night_audit_runs.update_one.assert_awaited_once()
 
 

@@ -139,7 +139,15 @@ async def post_night_audit_daily_to_gl(
     payments = await _require_try_source_rows(db, tenant_id, payments)
 
     charge_total = sum((_minor(row.get("total", row.get("amount"))) for row in charges), 0)
-    tax_total = sum((_minor(row.get("tax_amount")) for row in charges), 0)
+    from core.integrations.operational_gl_valuation import OperationalValuationError, source_tax_components
+    try:
+        components = [source_tax_components(row) for row in charges]
+    except OperationalValuationError as exc:
+        raise OperationalGLBridgeError(str(exc)) from exc
+    tax_total = sum(tax for tax, _ in components)
+    accommodation_total = sum(accommodation for _, accommodation in components)
+    if accommodation_total and not mapping.get("accommodation_tax_account_code"):
+        raise SourceValuationRequired("An explicit accommodation-tax account is required")
     if tax_total < 0 or tax_total > charge_total:
         raise OperationalGLBridgeError("Night-audit tax total is outside the charge total")
     lines: list[dict] = []
@@ -148,8 +156,10 @@ async def post_night_audit_daily_to_gl(
         net_revenue = charge_total - tax_total
         if net_revenue:
             lines.append({"account_code": mapping["revenue_account_code"], "credit": _amount(net_revenue), "memo": "Günlük oda/PMS geliri"})
-        if tax_total:
-            lines.append({"account_code": mapping["tax_account_code"], "credit": _amount(tax_total), "memo": "Günlük hesaplanan vergi"})
+        if tax_total - accommodation_total:
+            lines.append(_signed_line(mapping["tax_account_code"], tax_total - accommodation_total, "credit", "Günlük hesaplanan vergi"))
+        if accommodation_total:
+            lines.append(_signed_line(mapping["accommodation_tax_account_code"], accommodation_total, "credit", "Günlük konaklama vergisi"))
 
     payment_totals: dict[str, int] = {}
     for payment in payments:
