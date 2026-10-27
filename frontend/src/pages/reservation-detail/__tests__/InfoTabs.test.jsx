@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -69,28 +69,47 @@ describe('GeneralInfoTab', () => {
     expect(screen.getByText('Toplam Konuk').parentElement.parentElement).toHaveTextContent('3');
   });
 
-  it('shows the explainable no-show risk score for an upcoming booking', async () => {
-    apiGet.mockImplementation((url) => {
-      if (url.includes('/no-show-risk/')) return Promise.resolve({ data: { score: 65, level: 'medium', factors: [{ label: 'Ödeme yapılmamış' }] } });
-      return Promise.resolve({ data: {} });
-    });
-    render(
-      <GeneralInfoTab
-        booking={{
-          id: 'booking-a',
-          status: 'confirmed',
-          check_in: '2026-08-26',
-          check_out: '2026-08-28',
-          adults: 2,
-          children: 0,
-        }}
-        guest={null}
-        room={null}
-      />,
-    );
+  it.each(['confirmed', 'guaranteed', 'pending', 'checked_in', 'in_house', 'checked_out', 'cancelled', 'no_show'])(
+    'does not request or display a predicted no-show warning for a %s booking', async (status) => {
+      apiGet.mockImplementation((url) => {
+        if (url.includes('/no-show-risk/')) return Promise.resolve({ data: { score: 65, level: 'medium', factors: [{ label: 'Ödeme yapılmamış' }] } });
+        return Promise.resolve({ data: {} });
+      });
+      await act(async () => {
+        render(
+          <GeneralInfoTab
+            booking={{
+              id: 'booking-a',
+              status,
+              check_in: '2026-08-26',
+              check_out: '2026-08-28',
+              adults: 2,
+              children: 0,
+            }}
+            guest={null}
+            room={null}
+          />,
+        );
+      });
 
-    expect(await screen.findByTestId('no-show-risk-banner')).toHaveTextContent('No-show riski: 65/100');
-    expect(apiGet).toHaveBeenCalledWith('/pms/no-show-risk/booking-a');
+      expect(screen.queryByTestId('no-show-risk-banner')).not.toBeInTheDocument();
+      expect(screen.queryByText(/No-show riski/i)).not.toBeInTheDocument();
+      expect(apiGet).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves actual no-show history after removing the prediction', () => {
+    const onSwitchTab = vi.fn();
+    render(<GeneralInfoTab booking={{ id: 'actual-no-show', status: 'no_show' }}
+      history={[{ id: 'no-show-event', action: 'marked_noshow', actor: 'Ayşe Kaya', created_at: '2026-10-25T14:00:00Z' }]}
+      onSwitchTab={onSwitchTab} />);
+
+    expect(screen.getByText('No-show işaretlendi')).toBeInTheDocument();
+    expect(screen.getByText(/Ayşe Kaya/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tüm Geçmiş' }));
+    expect(onSwitchTab).toHaveBeenCalledWith('history');
+    expect(screen.queryByTestId('no-show-risk-banner')).not.toBeInTheDocument();
+    expect(apiGet).not.toHaveBeenCalled();
   });
 
   it('keeps guest alerts visible and does not score an in-house stay', async () => {
