@@ -130,3 +130,50 @@ async def test_real_guest_or_inhouse_booking_never_becomes_a_demo_archive(seeded
     await seeded.bookings.update_one({'id': bid}, {'$set': {'guest_name': 'Gerçek Misafir', 'status': 'checked_in'}})
     reviewed = await archive.plan(seeded, archive.TENANT)
     assert {'source_identity_changed', 'not_a_future_unarrived_reservation'}.issubset(reviewed['blocked'][0]['reasons'])
+
+
+async def linked_direct_guest(db, *, embedded=None, tenant=None):
+    bid = '438a48d7-8f67-4bd6-b0f6-ee0dfe2cbf21'
+    await db.bookings.update_one({'id': bid}, {'$set': {'guest_id': 'direct-guest'}, '$unset': {'guest_name': ''}})
+    if embedded is not None:
+        await db.bookings.update_one({'id': bid}, {'$set': {'guest_name': embedded}})
+    await db.guests.insert_one({'tenant_id': tenant or archive.TENANT, 'id': 'direct-guest', 'name': archive.SOURCES[bid]})
+    return bid
+
+
+async def test_direct_booking_without_embedded_name_uses_scoped_link_and_preserves_raw_booking(seeded):
+    bid = await linked_direct_guest(seeded)
+    reviewed = await archive.plan(seeded, archive.TENANT)
+    assert not reviewed['blocked'] and len(reviewed['eligible']) == 7
+    public = next(row for row in archive.public_plan(reviewed)['eligible'] if row['id'] == bid)
+    assert public['guest_name'] == archive.SOURCES[bid]
+    body = await request(seeded)
+    await archive.apply(seeded, actor(), body)
+    receipt = await seeded.demo_presentation_archives.find_one({})
+    evidence = next(row for row in receipt['before_images'] if row['booking']['id'] == bid)
+    assert 'guest_name' not in evidence['booking']
+    assert evidence['verified_identity']['linked_guest'] == {'id': 'direct-guest', 'name': archive.SOURCES[bid]}
+    assert (await seeded.guests.find_one({'id': 'direct-guest'}))['name'] == archive.SOURCES[bid]
+
+
+@pytest.mark.parametrize('change', ['foreign_profile', 'missing_profile', 'contradictory_cache'])
+async def test_guest_identity_fallback_never_accepts_foreign_missing_or_contradictory_source(seeded, change):
+    bid = await linked_direct_guest(seeded, embedded='Başka Misafir' if change == 'contradictory_cache' else None,
+        tenant='foreign-hotel' if change == 'foreign_profile' else None)
+    if change == 'missing_profile':
+        await seeded.guests.delete_many({})
+    reviewed = await archive.plan(seeded, archive.TENANT)
+    assert any(row['id'] == bid and 'source_identity_changed' in row['reasons'] for row in reviewed['blocked'])
+    assert not await seeded.demo_presentation_archives.count_documents({})
+    assert (await seeded.bookings.find_one({'id': bid}))['status'] == 'confirmed'
+
+
+async def test_linked_guest_rename_after_preview_invalidates_source_hash_before_any_archive(seeded):
+    await linked_direct_guest(seeded)
+    body = await request(seeded)
+    await seeded.guests.update_one({'id': 'direct-guest'}, {'$set': {'name': 'Farklı Misafir'}})
+    with pytest.raises(HTTPException) as error:
+        await archive.apply(seeded, actor(), body)
+    assert error.value.status_code == 409
+    assert await seeded.bookings.count_documents({'status': 'confirmed'}) == 7
+    assert not await seeded.demo_presentation_archives.count_documents({})
