@@ -17,7 +17,8 @@ from routers.reports_pkg.standard_reports import _posted_revenue_rows
 async def ledger_db():
     uri = os.environ.get("REPORT_AUDIT_MONGO_URL") or os.environ.get("MONGO_URL", "mongodb://127.0.0.1:27017/")
     parsed = urlsplit(uri)
-    if parsed.scheme != "mongodb" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port not in {27017, 27987} or "," in parsed.netloc:
+    # 27989 is the dedicated isolated minibar/readiness replica, not a live DB.
+    if parsed.scheme != "mongodb" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port not in {27017, 27987, 27989} or "," in parsed.netloc:
         pytest.fail("Report acceptance tests only permit a local Mongo server")
     client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=2000, directConnection=True)
     name = "report_audit_acceptance_" + uuid4().hex

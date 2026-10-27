@@ -124,6 +124,8 @@ class _FakeDB:
         self.rooms = _Coll()
         self.inventory = _Coll()
         self.inventory_movements = _Coll()
+        self.inventory_items = _Coll()
+        self.stock_movements = _Coll()
         self.tenant_settings = _Coll()
         self.tenant_settings.docs.append({"tenant_id": TENANT, "business_date": "2026-09-23"})
         self.client = object()
@@ -159,7 +161,12 @@ def _patch(monkeypatch):
     monkeypatch.setattr(mr, "_ensure_minibar_consumption_index", _noop_index)
 
     from domains.pms import minibar_consumption as mc
+    from domains.pms import minibar_stock as ms
     monkeypatch.setattr(mc, 'audit_log', AsyncMock())
+    monkeypatch.setattr(ms, 'audit_log', AsyncMock())
+    monkeypatch.setattr(mr, 'audit_log', AsyncMock())
+    monkeypatch.setattr(mc, 'ensure_stock_indexes', AsyncMock())
+    monkeypatch.setattr(ms, 'ensure_stock_indexes', AsyncMock())
 
     async def transaction(**kwargs):
         previous = {name: deepcopy(coll.docs) for name, coll in vars(fake).items() if isinstance(coll, _Coll)}
@@ -170,6 +177,8 @@ def _patch(monkeypatch):
                 getattr(fake, name).docs = docs
             raise
     monkeypatch.setattr(mc, 'with_resource_locks', transaction)
+    monkeypatch.setattr(ms, 'with_resource_locks', transaction)
+    monkeypatch.setattr(mr, 'with_resource_locks', transaction)
     return fake
 
 
@@ -340,6 +349,7 @@ async def test_consume_insufficient_stock_does_not_block_billing(_patch):
     assert _patch.folio_charges.insert_calls == 1
     assert _patch.inventory.docs[0]["quantity"] == 1
     assert res["stock"][0]["status"] == "insufficient_stock"
+    assert _patch.minibar_consumptions.docs[0]['stock_jobs'][0]['status'] == 'insufficient_stock'
 
 
 async def test_historical_partial_source_is_not_silently_acknowledged_as_posted(_patch):

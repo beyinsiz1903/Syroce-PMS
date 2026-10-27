@@ -4,8 +4,8 @@ PMS / Minibar — Otomatik Tüketim → Folio
 Personel bir oda için minibar tüketimi girer. Sistem:
   1. Misafir folio'suna idempotent charge yazar (dedup index +
      ledger-tabanlı balance recalc — ASLA $inc).
-  2. (Opsiyonel) merkezi envanterden stok düşer + inventory_movements loglar
-     (best-effort; tamamlanmış faturalamayı geri almaz, ama sessiz değildir).
+  2. Kalıcı stok işini aynı transaction'da saklar; merkezî stok/hareket/log
+     ayrı atomik adımda tamamlanır, eksik işlem güvenle yeniden denenir.
   3. Fail-closed: aktif booking yoksa faturalamaz; folio açık değilse sessizce
      kapalı folio'ya yazmaz, operatör görünür `minibar_late_charges` kaydına
      yönlendirir.
@@ -20,14 +20,18 @@ tüketici asenkron outbox yerine personel-tetikli senkron akış olmasıdır
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from core.booking_atomicity import with_resource_locks
 from core.database import db
 from core.security import get_current_user
 from domains.pms.pos_extensions._idem import ensure_compound_unique
 from models.schemas import User
+from shared_kernel.audit_helper import audit_log
 
 logger = logging.getLogger("domains.pms.minibar")
 
@@ -44,6 +48,7 @@ _CONSUME_ROLES = {
 }
 # Katalog (minibar ürünleri) yönetimi yönetici seviyesi.
 _CATALOG_ROLES = {"super_admin", "admin", "supervisor"}
+_READ_ROLES = _CONSUME_ROLES | {"finance", "procurement", "warehouse", "fnb_manager"}
 
 _LATE_CHARGE_COLLECTION = "minibar_late_charges"
 
@@ -143,6 +148,7 @@ class MinibarItemIn(BaseModel):
     active: bool = True
     # Opsiyonel: merkezi envanter (`inventory`) ürünüyle stok bağlama.
     inventory_product_id: str | None = Field(None, max_length=64)
+    inventory_source: Literal['accounting', 'legacy'] | None = None
 
 
 class MinibarItemUpdate(BaseModel):
@@ -153,6 +159,39 @@ class MinibarItemUpdate(BaseModel):
     category: str | None = Field(None, max_length=40)
     active: bool | None = None
     inventory_product_id: str | None = Field(None, max_length=64)
+    inventory_source: Literal['accounting', 'legacy'] | None = None
+
+
+async def _catalog_write(tenant_id, item_id, actor, action, values, create=False):
+    from domains.pms.minibar_stock import validate_link
+
+    await db.minibar_locks.create_index([('tenant_id', 1), ('kind', 1), ('resource_id', 1)], unique=True)
+
+    async def commit(session):
+        before = await db.minibar_items.find_one({'tenant_id': tenant_id, 'id': item_id}, {'_id': 0}, session=session)
+        if not create and not before:
+            raise HTTPException(404, 'Ürün bulunamadı')
+        updates = dict(values)
+        if 'name' in updates:
+            updates['name'] = (updates['name'] or '').strip()
+            if not updates['name']:
+                raise HTTPException(422, 'Ürün adı boş olamaz')
+        if 'inventory_product_id' in updates or 'inventory_source' in updates:
+            product_id = updates.get('inventory_product_id', (before or {}).get('inventory_product_id'))
+            source = updates.get('inventory_source', (before or {}).get('inventory_source'))
+            updates.update(await validate_link(db, tenant_id, product_id, source, session))
+        if create:
+            await db.minibar_items.insert_one(dict(updates), session=session)
+            after = updates
+        else:
+            await db.minibar_items.update_one({'tenant_id': tenant_id, 'id': item_id}, {'$set': updates}, session=session)
+            after = {**before, **updates}
+        await audit_log(actor_id=actor, tenant_id=tenant_id, entity_type='minibar_item', entity_id=item_id,
+            action=action, metadata={'before': before, 'after': after}, session=session, require_chain=True)
+        return after
+
+    return await with_resource_locks(client=db.client, db=db, tenant_id=tenant_id,
+        locks_collection='minibar_locks', resources=[('catalog_item', item_id)], callback=commit)
 
 
 @router.get("/items")
@@ -160,6 +199,7 @@ async def list_items(
     include_inactive: bool = Query(False),
     current_user: User = Depends(get_current_user),
 ):
+    _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     q: dict = {"tenant_id": tenant_id}
     if not include_inactive:
@@ -186,12 +226,13 @@ async def create_item(
         "category": payload.category,
         "active": payload.active,
         "inventory_product_id": payload.inventory_product_id,
+        "inventory_source": payload.inventory_source,
         "created_at": now,
         "updated_at": now,
         "created_by": _actor_id(current_user),
     }
-    await db.minibar_items.insert_one(dict(doc))
-    return {"item": _serialize(doc)}
+    saved = await _catalog_write(tenant_id, doc['id'], _actor_id(current_user), 'minibar_catalog_created', doc, create=True)
+    return {"item": _serialize(saved)}
 
 
 @router.put("/items/{item_id}")
@@ -210,13 +251,7 @@ async def update_item(
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
     updates["updated_at"] = _now_iso()
-    res = await db.minibar_items.update_one(
-        {"id": item_id, "tenant_id": tenant_id},
-        {"$set": updates},
-    )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
-    doc = await db.minibar_items.find_one({"id": item_id, "tenant_id": tenant_id}, {"_id": 0})
+    doc = await _catalog_write(tenant_id, item_id, _actor_id(current_user), 'minibar_catalog_updated', updates)
     return {"item": doc}
 
 
@@ -228,12 +263,8 @@ async def deactivate_item(
     """Soft-delete: ürünü pasifleştirir (geçmiş charge referansları korunur)."""
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
-    res = await db.minibar_items.update_one(
-        {"id": item_id, "tenant_id": tenant_id},
-        {"$set": {"active": False, "updated_at": _now_iso()}},
-    )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+    await _catalog_write(tenant_id, item_id, _actor_id(current_user), 'minibar_catalog_deactivated',
+        {'active': False, 'updated_at': _now_iso()})
     return {"ok": True, "id": item_id}
 
 
@@ -250,90 +281,79 @@ class ConsumeIn(BaseModel):
     lines: list[ConsumeLine] = Field(..., min_length=1, max_length=50)
     note: str | None = Field(None, max_length=500)
     # Aynı tüketim girişinin çift gönderimine karşı (UI double-submit, retry).
-    idempotency_key: str | None = Field(None, max_length=80)
+    idempotency_key: str | None = Field(None, min_length=1, max_length=80)
 
 
-async def _deplete_stock_best_effort(
-    tenant_id: str,
-    actor: str,
-    item: dict,
-    quantity: int,
-    source_log_id: str,
-    line_no: int,
-) -> dict:
-    """Merkezi envanterden atomik (optimistic-lock) stok düşer + hareket loglar.
+class StockRetryIn(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=500)
 
-    Best-effort: tamamlanmış faturalamayı ASLA geri almaz. Stok yetersiz/çakışma
-    durumunda sessiz değil — uyarı loglanır ve sonuç çağrıya döner.
-    Idempotent: inventory_movements üzerinde (tenant, source_minibar_log_id,
-    line_no) tekilliği ile çift düşüm engellenir.
-    """
-    product_id = item.get("inventory_product_id")
-    if not product_id:
-        return {"status": "skipped", "reason": "no_inventory_link"}
 
-    # Idempotent guard: bu (log, satır) için hareket zaten yazıldıysa atla.
-    existing = await db.inventory_movements.find_one(
-        {
-            "tenant_id": tenant_id,
-            "source_minibar_log_id": source_log_id,
-            "line_no": line_no,
-        }
-    )
-    if existing:
-        return {"status": "already_applied"}
+class StockBinding(BaseModel):
+    line_no: int = Field(..., ge=0, le=49)
+    inventory_product_id: str = Field(..., min_length=1, max_length=64)
+    inventory_source: Literal['accounting', 'legacy'] = 'accounting'
 
-    product = await db.inventory.find_one({"id": product_id, "tenant_id": tenant_id})
-    if not product:
-        logger.warning(
-            "Minibar stok düşümü: envanter ürünü yok product=%s tenant=%s",
-            product_id,
-            tenant_id,
-        )
-        return {"status": "product_not_found"}
 
-    current_qty = product.get("quantity", 0)
-    if current_qty < quantity:
-        logger.warning(
-            "Minibar stok yetersiz product=%s mevcut=%s istenen=%s tenant=%s (faturalama sürüyor)",
-            product_id,
-            current_qty,
-            quantity,
-            tenant_id,
-        )
-        return {"status": "insufficient_stock", "available": current_qty}
+class StockReconcileIn(StockRetryIn):
+    bindings: list[StockBinding] = Field(..., min_length=1, max_length=50)
 
-    new_qty = current_qty - quantity
-    res = await db.inventory.update_one(
-        {"id": product_id, "tenant_id": tenant_id, "quantity": current_qty},
-        {"$set": {"quantity": new_qty, "last_updated": _now_iso(), "last_updated_by": actor}},
-    )
-    if res.modified_count == 0:
-        logger.warning(
-            "Minibar stok eşzamanlı değişti product=%s tenant=%s (faturalama sürüyor)",
-            product_id,
-            tenant_id,
-        )
-        return {"status": "concurrent_modification"}
 
-    await db.inventory_movements.insert_one(
-        {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "product_id": product_id,
-            "product_name": product.get("product_name", item.get("name", "Minibar")),
-            "movement_type": "out",
-            "quantity": -quantity,
-            "previous_quantity": current_qty,
-            "new_quantity": new_qty,
-            "reason": "minibar_consumption",
-            "source_minibar_log_id": source_log_id,
-            "line_no": line_no,
-            "performed_by": actor,
-            "timestamp": _now_iso(),
-        }
-    )
-    return {"status": "depleted", "new_quantity": new_qty}
+class StockProductIn(StockRetryIn):
+    request_id: UUID
+    name: str = Field(..., min_length=1, max_length=120)
+    unit: str = Field(..., min_length=1, max_length=30)
+    quantity: float = Field(..., ge=0, le=1e9, allow_inf_nan=False)
+    unit_cost: float = Field(..., ge=0, le=1e9, allow_inf_nan=False)
+    currency: str = Field(..., pattern=r'^[A-Z]{3}$')
+    sku: str | None = Field(None, max_length=80)
+
+
+@router.post('/inventory-products')
+async def create_stock_product(payload: StockProductIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _CATALOG_ROLES)
+    from domains.pms.minibar_stock import create_stock_product as create
+
+    return await create(db, _tenant_of(current_user), _actor_id(current_user), payload)
+
+
+@router.get('/inventory-products')
+async def inventory_products(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _CATALOG_ROLES)
+    from domains.pms.minibar_stock import BACKENDS
+
+    tenant_id = _tenant_of(current_user)
+    products = []
+    for source, (collection, _) in BACKENDS.items():
+        rows = await db[collection].find({'tenant_id': tenant_id}, {'_id': 0}).to_list(2000)
+        for row in rows:
+            if row.get('active') is False or row.get('is_active') is False or row.get('status') == 'inactive':
+                continue
+            products.append({'id': row['id'], 'inventory_source': source,
+                'name': row.get('name') or row.get('product_name') or row['id'],
+                'quantity': row.get('quantity'), 'unit': row.get('unit') or row.get('unit_of_measure')})
+    return {'items': products, 'basis': 'tenant_inventory_rows_no_sample_fallback'}
+
+
+@router.post('/consumptions/{consumption_id}/retry-stock')
+async def retry_stock(consumption_id: str, payload: StockRetryIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _CATALOG_ROLES)
+    if len(payload.reason.strip()) < 5:
+        raise HTTPException(422, 'Stok yeniden deneme gerekçesi zorunlu')
+    from domains.pms.minibar_stock import run_stock, stock_complete
+
+    stock = await run_stock(db, _tenant_of(current_user), consumption_id, _actor_id(current_user), payload.reason.strip())
+    return {'stock': stock, 'stock_complete': stock_complete(stock)}
+
+
+@router.post('/consumptions/{consumption_id}/reconcile-stock')
+async def reconcile_stock(consumption_id: str, payload: StockReconcileIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _CATALOG_ROLES)
+    if len(payload.reason.strip()) < 5:
+        raise HTTPException(422, 'Stok eşleştirme gerekçesi zorunlu')
+    from domains.pms.minibar_stock import reconcile_bindings
+
+    return await reconcile_bindings(db, _tenant_of(current_user), consumption_id, payload.bindings,
+        _actor_id(current_user), payload.reason.strip())
 
 
 @router.post("/consume")
@@ -354,6 +374,9 @@ async def list_consumptions(
     limit: int = Query(100, ge=1, le=500),
     current_user: User = Depends(get_current_user),
 ):
+    _require_role(current_user, _READ_ROLES)
+    from domains.pms.minibar_stock import stock_complete, stock_view
+
     tenant_id = _tenant_of(current_user)
     q: dict = {"tenant_id": tenant_id}
     if room_id:
@@ -361,6 +384,9 @@ async def list_consumptions(
     if booking_id:
         q["booking_id"] = booking_id
     rows = await db.minibar_consumptions.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    for row in rows:
+        row['stock'] = stock_view(row)
+        row['stock_complete'] = stock_complete(row['stock'])
     return {"consumptions": rows}
 
 
@@ -370,6 +396,7 @@ async def list_late_charges(
     limit: int = Query(100, ge=1, le=500),
     current_user: User = Depends(get_current_user),
 ):
+    _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     q: dict = {"tenant_id": tenant_id}
     if status and status != "all":
