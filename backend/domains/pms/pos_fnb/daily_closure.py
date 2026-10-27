@@ -37,10 +37,15 @@ def summarize(transactions, default_currency=None):
         identity = row.get("id") or row.get("transaction_id")
         if not identity:
             raise ValueError("MISSING_POS_TRANSACTION_ID")
-        code = str(row.get("currency") or default_currency or "").upper().strip()
+        refund = status in {"refunded", "refund"} or row.get("payment_type") == "refund"
+        source_currency = (row.get("source_sale") or {}).get("currency")
+        # A missing refund currency is inherited only from its own source.
+        # Property defaults may have changed since the sale and are not proof.
+        code = str(row.get("currency") or (source_currency if refund else default_currency) or "").upper().strip()
         if not re.fullmatch(r"[A-Z]{3}", code):
             raise ValueError("MISSING_POS_CURRENCY")
-        refund = status in {"refunded", "refund"} or row.get("payment_type") == "refund"
+        if refund and source_currency and code != str(source_currency).upper().strip():
+            raise ValueError("POS_REFUND_CURRENCY_MISMATCH")
         amount = money(row.get("total_amount", row.get("amount")))
         tip = money(row.get("tip_amount", 0))
         if (refund and (amount > 0 or tip > 0)) or (not refund and (amount < 0 or tip < 0)) or abs(tip) > abs(amount):

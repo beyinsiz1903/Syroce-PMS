@@ -176,6 +176,7 @@ async def test_full_refund_clears_z_tax_categories_and_preserves_receipt_snapsho
     assert (await service.refund_order(ctx(), 'paid', 55, 'İade', 'r2')).ok
     refunds = await db.pos_transactions.find({'payment_type': 'refund'}).to_list(None)
     assert {row['transaction_date'] for row in refunds} == {'2026-10-18'}
+    assert {row['currency'] for row in refunds} == {'EUR'}
     monkeypatch.setattr(pos_core, 'db', db)
     report = await pos_core.get_z_report('2026-10-18', None, SimpleNamespace(tenant_id='t'))
     assert report['net_sales'] == 0 and report['tax_total'] == 0

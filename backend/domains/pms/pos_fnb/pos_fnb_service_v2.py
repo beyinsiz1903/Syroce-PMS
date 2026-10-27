@@ -1285,6 +1285,11 @@ class PosFnbServiceV2:
             )
             if not updated_sale:
                 return None
+            if updated_sale.get('currency'):
+                # Bind new refunds to the sale snapshot inside the same
+                # transaction; never use the current property's currency or
+                # the guest's foreign tender as a replacement.
+                refund_doc['currency'] = updated_sale['currency']
             new_refunded = round(float(updated_sale.get("refunded_amount") or 0), 2)
             breakdown = updated_sale.get('payment_breakdown') or []
             if breakdown:
