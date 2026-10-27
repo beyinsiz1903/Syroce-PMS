@@ -177,3 +177,92 @@ async def test_linked_guest_rename_after_preview_invalidates_source_hash_before_
     assert error.value.status_code == 409
     assert await seeded.bookings.count_documents({'status': 'confirmed'}) == 7
     assert not await seeded.demo_presentation_archives.count_documents({})
+
+
+async def original_queue_orphan(database, bid):
+    await database.bookings.update_one({'id': bid}, {'$set': archive.REVIEWED_SYNTHETIC_ORPHANS[bid]})
+
+
+@pytest.mark.parametrize('bid', list(archive.REVIEWED_SYNTHETIC_ORPHANS))
+async def test_only_reviewed_original_queue_orphan_can_archive_without_creating_a_guest(seeded, bid):
+    await original_queue_orphan(seeded, bid)
+    reviewed = await archive.plan(seeded, archive.TENANT)
+    assert not reviewed['blocked']
+    evidence = next(row for row in reviewed['eligible'] if row['booking']['id'] == bid)
+    assert evidence['verified_identity']['basis'] == 'reviewed_legacy_synthetic_orphan'
+    await archive.apply(seeded, actor(), await request(seeded, [bid]))
+    assert not await seeded.guests.count_documents({})
+    assert await seeded.rooms.count_documents({'id': 'QT2ED0', 'status': 'occupied'}) == 1
+    log = await seeded.audit_logs.find_one({'entity_id': bid})
+    assert log['metadata']['identity_basis'] == 'reviewed_legacy_synthetic_orphan'
+    assert log['record_hash'] and log['actor_id'] == actor().id and log['metadata']['reason']
+
+
+@pytest.mark.parametrize('bid', list(archive.REVIEWED_SYNTHETIC_ORPHANS))
+@pytest.mark.parametrize('field', ['guest_id', 'created_at', 'guest_name'])
+async def test_queue_orphan_manifest_cannot_accept_reassigned_or_changed_source(seeded, bid, field):
+    await original_queue_orphan(seeded, bid)
+    body = await request(seeded, [bid])
+    await seeded.bookings.update_one({'id': bid}, {'$set': {field: 'changed-source'}})
+    reviewed = await archive.plan(seeded, archive.TENANT)
+    assert any(row['id'] == bid and 'source_identity_changed' in row['reasons'] for row in reviewed['blocked'])
+    with pytest.raises(HTTPException) as error:
+        await archive.apply(seeded, actor(), body)
+    assert error.value.status_code == 409
+    assert not await seeded.demo_presentation_archives.count_documents({})
+
+
+@pytest.mark.parametrize('bid', list(archive.REVIEWED_SYNTHETIC_ORPHANS))
+async def test_reviewed_orphan_never_overrides_an_existing_conflicting_profile(seeded, bid):
+    await original_queue_orphan(seeded, bid)
+    await seeded.guests.insert_one({'tenant_id': archive.TENANT,
+        'id': archive.REVIEWED_SYNTHETIC_ORPHANS[bid]['guest_id'], 'name': 'Gerçek Misafir'})
+    reviewed = await archive.plan(seeded, archive.TENANT)
+    assert any(row['id'] == bid and 'source_identity_changed' in row['reasons'] for row in reviewed['blocked'])
+
+
+async def test_all_seven_actual_source_shapes_archive_once_and_preserve_each_identity_basis(seeded):
+    for bid in archive.REVIEWED_SYNTHETIC_ORPHANS:
+        await original_queue_orphan(seeded, bid)
+    await linked_direct_guest(seeded)
+    for bid, name in archive.SOURCES.items():
+        if bid in archive.REVIEWED_SYNTHETIC_ORPHANS or bid == '438a48d7-8f67-4bd6-b0f6-ee0dfe2cbf21':
+            continue
+        await seeded.bookings.update_one({'id': bid}, {'$set': {'guest_id': 'profile-' + bid}})
+        await seeded.guests.insert_one({'tenant_id': archive.TENANT, 'id': 'profile-' + bid, 'name': name})
+    body = await request(seeded)
+    result = await archive.apply(seeded, actor(), body)
+    assert len(result['archived_ids']) == 7
+    receipt = await seeded.demo_presentation_archives.find_one({})
+    assert len(receipt['before_images']) == 7
+    assert sum(row['verified_identity']['basis'] == 'reviewed_legacy_synthetic_orphan' for row in receipt['before_images']) == 2
+    assert (await archive.apply(seeded, actor(), body))['replayed']
+    assert await seeded.audit_logs.count_documents({'action': 'demo_reservation_archived'}) == 7
+    assert await seeded.guests.count_documents({}) == 5
+
+
+@pytest.mark.parametrize('bid', list(archive.REVIEWED_SYNTHETIC_ORPHANS))
+async def test_reviewed_original_orphan_still_rejects_even_zero_valued_financial_source(seeded, bid):
+    await original_queue_orphan(seeded, bid)
+    await seeded.folio_charges.insert_one({'tenant_id': archive.TENANT, 'booking_id': bid, 'amount': 0})
+    reviewed = await archive.plan(seeded, archive.TENANT)
+    assert any(row['id'] == bid and row['reasons'] == ['financial_or_service_sources_exist'] for row in reviewed['blocked'])
+    with pytest.raises(HTTPException) as error:
+        await archive.apply(seeded, actor(), await request(seeded, [bid]))
+    assert error.value.status_code == 409
+    assert not await seeded.demo_presentation_archives.count_documents({})
+
+
+async def test_eligible_subset_can_archive_without_touching_two_blocked_sources(seeded):
+    blocked = set(archive.REVIEWED_SYNTHETIC_ORPHANS)
+    for bid in blocked:
+        await seeded.bookings.update_one({'id': bid}, {'$set': {'guest_id': 'not-reviewed-profile'}})
+    body = await request(seeded)
+    assert set(body.booking_ids) == set(archive.SOURCES) - blocked
+    result = await archive.apply(seeded, actor(), body)
+    assert len(result['archived_ids']) == 5
+    assert await seeded.bookings.count_documents({'id': {'$in': list(blocked)}, 'status': 'confirmed'}) == 2
+    reviewed = await archive.plan(seeded, archive.TENANT)
+    assert not reviewed['eligible'] and len(reviewed['blocked']) == 2 and len(reviewed['already_archived']) == 5
+    assert await seeded.rooms.count_documents({'id': 'QT2ED0', 'status': 'occupied'}) == 1
+    assert await seeded.audit_logs.count_documents({'action': 'demo_reservation_archived'}) == 5
