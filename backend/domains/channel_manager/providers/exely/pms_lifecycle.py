@@ -348,7 +348,7 @@ def _booking_fields(
     except (TypeError, ValueError):
         nights = max(int(reservation.get("nights") or 1), 1)
     room_total = float(room.get("amount") or 0)
-    if room_total <= 0 and len(reservation.get("rooms") or []) == 1:
+    if room.get("amount") is None and len(reservation.get("rooms") or []) == 1:
         room_total = float(reservation.get("total") or 0)
     children = int(room.get("children") or 0)
     # Preserve a child-only room without inventing an adult, while retaining
@@ -380,6 +380,11 @@ def _booking_fields(
         "base_rate": room_total / nights,
         "paid_amount": 0.0,
         "payment_method": str(reservation.get("payment_method") or ""),
+        "provider_payment_method": str(reservation.get("payment_method") or ""),
+        "provider_channel_name": str(reservation.get("channel_display") or reservation.get("channel") or ""),
+        "provider_channel_code": str(reservation.get("channel_code") or ""),
+        "channel_reservation_id": str(reservation.get("channel_reservation_id") or ""),
+        "channel_reservation_ids": list(reservation.get("channel_reservation_ids") or []),
         "status": "confirmed",
         "channel": "exely",
         "source_channel": "exely",

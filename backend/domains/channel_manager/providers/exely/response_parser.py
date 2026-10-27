@@ -35,6 +35,10 @@ RATE_LIMIT_RETRY_SECONDS = {
 }
 
 
+class _ReservationIdentityError(ValueError):
+    """The read cannot safely select its provider acknowledgement target."""
+
+
 def _ns(tag: str, ns: str = OTA_NS) -> str:
     return f"{{{ns}}}{tag}"
 
@@ -181,7 +185,12 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
 
     # Look for HotelReservation elements
     for hr in body.iter(_ns("HotelReservation")):
-        res = _parse_hotel_reservation(hr)
+        try:
+            res = _parse_hotel_reservation(hr)
+        except _ReservationIdentityError:
+            # Do not acknowledge a partial batch or expose provider IDs in logs.
+            return {"success": False, "result_class": MALFORMED,
+                    "error": "Conflicting reservation identity", "reservations": [], "count": 0}
         if res:
             reservations.append(res)
 
@@ -219,15 +228,28 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         "last_modify": _attr(hr_el, "LastModifyDateTime", ""),
     }
 
-    # UniqueID
-    for uid in hr_el.iter(_ns("UniqueID")):
+    # Only direct reservation IDs belong to this booking. Profile/guest IDs
+    # must never replace the PMSConnect identity used in NotifReportRQ.
+    # PMSConnect 1.17 p.72: External identifies the channel, not the ACK target.
+    provider_ids = {}
+    channel_ids = []
+    for uid in hr_el.findall(_ns("UniqueID")):
         uid_type = _attr(uid, "Type")
-        uid_id = _attr(uid, "ID")
-        if uid_type == "14":
-            res["reservation_id"] = uid_id
-            res["reservation_id_context"] = _attr(uid, "ID_Context", "")
+        uid_id = _attr(uid, "ID").strip()
+        context = _attr(uid, "ID_Context").strip()
+        if uid_type == "14" and uid_id:
+            if context in {"", "PMSConnect"}:
+                provider_ids[uid_id] = context or provider_ids.get(uid_id, "")
+            elif context == "External" and uid_id not in channel_ids:
+                channel_ids.append(uid_id)
         elif uid_type == "16":
             res["booking_source_id"] = uid_id
+    if len(provider_ids) > 1:
+        raise _ReservationIdentityError("Conflicting reservation identity")
+    if provider_ids:
+        res["reservation_id"], res["reservation_id_context"] = next(iter(provider_ids.items()))
+    res["channel_reservation_ids"] = channel_ids
+    res["channel_reservation_id"] = channel_ids[0] if len(channel_ids) == 1 else ""
 
     # Keep room guests keyed by RPH; the last guest is not the booking contact.
     guests_by_rph = {}
@@ -393,10 +415,14 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             res["guest_email"] = _text(customer.find(_ns("Email")))
 
     # Channel from Source
-    for source in hr_el.iter(_ns("Source")):
+    for source in hr_el.findall(f"{_ns('POS')}/{_ns('Source')}"):
         booking_channel = source.find(_ns("BookingChannel"))
         if booking_channel is not None:
-            res["channel"] = _attr(booking_channel, "CompanyName", _attr(booking_channel, "Type", "direct"))
+            company = booking_channel.find(_ns("CompanyName"))
+            # OTA uses a child element, not a CompanyName attribute. Keep the
+            # legacy attribute fallback, but do not present numeric Type as a name.
+            res["channel"] = _text(company) or _attr(booking_channel, "CompanyName") or "exely"
+            res["channel_code"] = _attr(company, "Code")
 
     res.setdefault("channel", "exely")
     res.setdefault("total", sum(r.get("amount", 0) for r in rooms))

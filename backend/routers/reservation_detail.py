@@ -22,6 +22,7 @@ from core.channel_room_charge_pricing import (
     is_channel_total_tax_inclusive,
 )
 from core.database import db
+from core.provider_nightly_rates import exely_daily_rate_plan
 from core.reservation_mutability import ensure_reservation_mutable, reservation_is_historical
 from core.security import get_current_user
 from domains.channel_manager.providers.hotelrunner_notes import resolve_legacy_hotelrunner_note
@@ -1152,6 +1153,23 @@ def _complete_daily_rates_for_stay(daily_rates: list[dict], booking: dict) -> li
 
     missing_dates = [night for night in expected_dates if night not in rows_by_date]
     if not missing_dates:
+        return [rows_by_date[night] for night in expected_dates]
+
+    # Exely stores its per-night amounts on the booking, not in daily_rates.
+    # Use a complete, reconciled source plan for readback before generating an
+    # average. Never override explicit PMS/closed-night prices or persist here.
+    source_rates = exely_daily_rate_plan(booking)
+    if source_rates is not None and any(
+        _daily_rate_cents(row.get("rate")) != source_rates[night]
+        for night, row in rows_by_date.items()
+    ):
+        source_rates = None
+    if source_rates is not None:
+        for night in missing_dates:
+            rows_by_date[night] = {
+                "date": night.isoformat(), "rate": source_rates[night] / 100,
+                "generated": True, "generated_reason": "provider_daily_rate",
+            }
         return [rows_by_date[night] for night in expected_dates]
 
     target_cents = _daily_rate_cents(booking.get("total_amount"))

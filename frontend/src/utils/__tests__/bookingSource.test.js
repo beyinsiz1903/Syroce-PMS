@@ -22,4 +22,9 @@ describe('bookingSourceLabel', () => {
   it('keeps an unknown meaningful source instead of inventing a brand', () => {
     expect(bookingSourceLabel({ source_channel: 'Yerel Partner' })).toBe('Yerel Partner');
   });
+
+  it('shows the actual channel as well as Exely provenance without changing the raw provider', () => {
+    expect(bookingSourceLabel({ booking_source: 'exely', ota_channel: 'exely', provider_channel_name: 'Liberty Channel' }))
+      .toBe('Liberty Channel · Exely');
+  });
 });

@@ -15,6 +15,7 @@ import { useOptionalEntitlements } from '@/context/EntitlementContext';
 import api from '@/api/axios';
 import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
+import { exelyReservationDetails } from '@/utils/exelyReservation';
 import { reservationPaymentSummary } from './paymentSummary';
 import { latestCollectionPayment, paymentMethod } from '@/lib/folioPayments';
 const ALERT_LEVEL_BG = {
@@ -156,6 +157,7 @@ export function GeneralInfoTab({
     : paymentOverview.kind === 'due' ? 'Ödeme bekleniyor'
     : paymentOverview.kind === 'credit' ? 'Misafir alacağı var' : 'Kalan ödeme yok';
   const lastPayment = latestCollectionPayment(payments);
+  const exelySource = exelyReservationDetails(booking);
   const depositAmt = summary?.total_deposits || 0;
   const hasDeposit = depositAmt > 0 || deposits && deposits.length > 0;
   const roomImg = room?.images && room.images.length > 0 ? room.images[0] : null;
@@ -273,6 +275,18 @@ export function GeneralInfoTab({
             <SectionHeader icon={StickyNote} title="Özel İstekler" />
             <div className="border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900">{booking.special_requests}</div>
           </section>}
+
+        {exelySource && <section className="space-y-3" data-testid="exely-source-details">
+          <SectionHeader icon={Globe} title="Exely kaynak bilgileri" />
+          <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm">
+            <InfoLine label="Entegrasyon" value="Exely" />
+            {exelySource.channel && <InfoLine label="Rezervasyon kanalı" value={exelySource.channel} />}
+            {exelySource.reservationId && <InfoLine label="Exely rezervasyon no" value={exelySource.reservationId} />}
+            {exelySource.channelReservationIds.length > 0 && <InfoLine label="Kanal rezervasyon no" value={exelySource.channelReservationIds.join(' · ')} />}
+            <InfoLine label="Exely ödeme yöntemi" value={exelySource.paymentMethod || 'Belirtilmemiş'} />
+          </div>
+          <p className="text-xs text-slate-500">Sağlayıcının ödeme/garanti talimatıdır; PMS tahsilat kaydı değildir.</p>
+        </section>}
 
         {/* Bölüm 4: Ödeme Bilgileri */}
         {summary && <section className="space-y-3" data-testid="general-payment-info">
