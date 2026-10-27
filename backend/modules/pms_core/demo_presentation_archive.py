@@ -63,7 +63,16 @@ async def plan(db, tid, session=None):
             archived.append(bid)
             continue
         reasons = []
-        if booking.get('guest_name') != SOURCES[bid]:
+        # Direct bookings normally store only guest_id; the list API enriches
+        # their display name from guests. Resolve that same tenant-owned source
+        # inside the review transaction, rather than trusting a display cache.
+        embedded_name, guest_id = booking.get('guest_name'), booking.get('guest_id')
+        linked_guest = await db.guests.find_one({'tenant_id': tid, 'id': guest_id},
+            {'_id': 0, 'id': 1, 'name': 1}, session=session) if guest_id else None
+        identity = {'name': SOURCES[bid], 'embedded_name': embedded_name, 'guest_id': guest_id,
+            'linked_guest': linked_guest}
+        names = ([embedded_name] if embedded_name else []) + ([linked_guest.get('name')] if linked_guest else [])
+        if not names or any(name != SOURCES[bid] for name in names) or (guest_id and not linked_guest):
             reasons.append('source_identity_changed')
         if booking.get('status') not in {'confirmed', 'pending', 'guaranteed'}:
             reasons.append('not_a_future_unarrived_reservation')
@@ -88,7 +97,9 @@ async def plan(db, tid, session=None):
             blocked.append({'id': bid, 'reasons': reasons, 'source_counts': counts})
             continue
         locks = await db.room_night_locks.find({'tenant_id': tid, 'booking_id': bid}, {'_id': 0}, session=session).to_list(None)
-        eligible.append({'booking': booking, 'empty_folios': folios, 'room_night_locks': locks})
+        # Guest identity must participate in the source hash and preserved proof,
+        # so a profile rename after preview invalidates the apply request too.
+        eligible.append({'booking': booking, 'verified_identity': identity, 'empty_folios': folios, 'room_night_locks': locks})
     result = {'policy_id': POLICY, 'business_date': day, 'eligible': eligible, 'blocked': blocked,
         'already_archived': archived, 'missing_known_ids': sorted(set(SOURCES) - {b['id'] for b in rows})}
     result['source_fingerprint'] = digest(result)
@@ -96,7 +107,7 @@ async def plan(db, tid, session=None):
 
 
 def public_plan(result):
-    return {**result, 'eligible': [{'id': row['booking']['id'], 'guest_name': row['booking']['guest_name'],
+    return {**result, 'eligible': [{'id': row['booking']['id'], 'guest_name': row['verified_identity']['name'],
         'check_in': row['booking']['check_in'], 'lock_count': len(row['room_night_locks']),
         'empty_folio_count': len(row['empty_folios'])} for row in result['eligible']]}
 
