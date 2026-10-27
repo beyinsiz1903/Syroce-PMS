@@ -1,6 +1,7 @@
 """Keep the patched dependency set installable without weakening the CI gate."""
 from pathlib import Path
 
+import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
@@ -28,3 +29,18 @@ def test_msgpack_pin_rejects_affected_decoder_and_checks_installed_runtime():
     assert Version('1.2.1') not in specifier and Version('1.2.2') not in specifier
     assert Version('1.2.3') in specifier
     assert "Version(version('msgpack')) >= Version('1.2.3')" in (ROOT / 'scripts' / 'post_install.sh').read_text()
+
+
+@pytest.mark.parametrize('package,affected,patched', [
+    ('dnspython', '2.8.0', '2.9.0'),
+    ('pymongo', '4.18.2', '4.18.3'),
+])
+def test_dns_and_bson_pins_require_the_patched_decoder(package, affected, patched):
+    pins = requirements('base.txt')
+    assert Version(affected) not in pins[package].specifier
+    assert Version(patched) in pins[package].specifier
+    post_install = (ROOT / 'scripts' / 'post_install.sh').read_text()
+    if package == 'pymongo':
+        assert "Version(pymongo.version) >= Version('4.18.3')" in post_install
+    else:
+        assert "Version(version('dnspython')) >= Version('2.9.0')" in post_install
