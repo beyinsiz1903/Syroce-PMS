@@ -998,6 +998,15 @@ class ExtraChargeAdd(BaseModel):
     input_currency: str | None = Field(None, min_length=3, max_length=3)
     # Booking-currency units produced by one input-currency unit.
     exchange_rate: float | None = Field(None, gt=0, le=1e9)
+    service_date: date | None = None
+    service_time: str | None = Field(None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+    @field_validator("service_time")
+    @classmethod
+    def service_time_needs_date(cls, value, info):
+        if value and not info.data.get("service_date"):
+            raise ValueError("Hizmet saati için hizmet tarihi de gereklidir")
+        return value
 
 
 class ExtraChargeVoid(BaseModel):
@@ -1276,6 +1285,10 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         extra_charges = []
         async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
             extra_charges.append(ec)
+
+        from modules.pms_core.service_timing import project_service_times
+
+        await project_service_times(db, tid, charges + extra_charges)
 
         # Notes
         notes = []
@@ -3266,6 +3279,10 @@ async def add_extra_charge_detail(
     # posted after midnight (before night audit) disappears into the next
     # day's reports.
     await stamp_open_business_date(db, tid, charge)
+    if data.service_date:
+        charge["service_date"] = data.service_date.isoformat()
+        charge["service_time"] = data.service_time
+        charge["service_timing_source"] = "manual_entry"
     await db.extra_charges.insert_one({**charge})
 
     invalidate_financial_report_caches(tid)
@@ -3280,6 +3297,8 @@ async def add_extra_charge_detail(
             "amount": total,
             "category": data.category,
             "is_complimentary": is_complimentary,
+            "service_date": charge.get("service_date"),
+            "service_time": charge.get("service_time"),
         },
     )
 

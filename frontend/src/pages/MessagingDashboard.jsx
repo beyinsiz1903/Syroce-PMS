@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -612,7 +613,7 @@ function TemplatesTab() {
 // ════════════════════════════════════════════════
 // Send Message Tab
 // ════════════════════════════════════════════════
-function SendTab() {
+export function SendTab({ guestId = '', offer = false }) {
   const { t, i18n } = useTranslation();
   const [templates, setTemplates] = useState([]);
   const [sending, setSending] = useState(false);
@@ -621,6 +622,58 @@ function SendTab() {
   });
   const [variables, setVariables] = useState({});
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [guest, setGuest] = useState(null);
+  const [guestError, setGuestError] = useState('');
+  const [guestLoading, setGuestLoading] = useState(Boolean(guestId));
+  const [contextRetry, setContextRetry] = useState(0);
+  const [settings, setSettings] = useState(null);
+  const [settingsError, setSettingsError] = useState('');
+  const [settingsRetry, setSettingsRetry] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setSettings(null);
+    setSettingsError('');
+    safe(() => get('/messaging-center/settings')).then(r => {
+      if (!active) return;
+      if (r.ok) setSettings(r.data);
+      else setSettingsError('Gönderim bağlantısı doğrulanamadı. Ayarları kontrol edip yeniden deneyin.');
+    });
+    return () => { active = false; };
+  }, [settingsRetry]);
+
+  useEffect(() => {
+    let active = true;
+    setGuest(null);
+    setGuestError('');
+    setGuestLoading(Boolean(guestId));
+    setSelectedTemplate(null);
+    setVariables({});
+    setForm({ channel: 'email', recipient: '', template_id: '', subject: '', body: '', use_case: '' });
+    if (!guestId) return () => { active = false; };
+    safe(() => get(`/crm/guest/${encodeURIComponent(guestId)}`)).then(r => {
+      if (!active) return;
+      const profile = r.data?.guest;
+      if (!r.ok || profile?.id !== guestId) {
+        setGuestError('Misafir bilgileri doğrulanamadı. Yanlış kişiye gönderimi önlemek için taslak açılmadı.');
+      } else {
+        setGuest(profile);
+        const email = String(profile.email || '').trim();
+        const phone = String(profile.phone || '').replace(/[\s()-]/g, '');
+        const emailUsable = EMAIL_RE.test(email) && !/@[^@]*\.(?:local|invalid|test|example)$/i.test(email);
+        const channel = emailUsable ? 'email' : E164_RE.test(phone) ? 'whatsapp' : 'email';
+        setForm({ channel, recipient: emailUsable ? email : E164_RE.test(phone) ? phone : '', template_id: '',
+          subject: offer ? 'Konaklama teklifiniz' : '',
+          body: '',
+          use_case: offer ? 'guest_offer' : 'iletisim' });
+      }
+      setGuestLoading(false);
+    });
+    return () => { active = false; };
+  }, [guestId, offer, contextRetry]);
+
+  const readiness = getMessagingReadiness(settings?.[form.channel], form.channel);
+  const canSend = Boolean(settings) && ['ready', 'sandbox'].includes(readiness.state) && !guestLoading && !guestError;
 
   useEffect(() => {
     (async () => {
@@ -658,6 +711,7 @@ function SendTab() {
   };
 
   const handleSend = async () => {
+    if (!canSend) { toast.error('Gönderim bağlantısını ve misafir bilgilerini doğrulayın.'); return; }
     // Bug #1 — strict format validation
     if (!recipientCheck.ok) { toast.error(recipientCheck.msg); return; }
     if (!form.body && !form.template_id) { toast.error('Mesaj içeriği veya şablon seçin'); return; }
@@ -671,15 +725,20 @@ function SendTab() {
       template_id: form.template_id || undefined,
       variables: Object.keys(variables).length > 0 ? variables : undefined,
       use_case: form.use_case || undefined,
+      guest_id: guest?.id || undefined,
     };
     const r = await safe(() => post('/messaging-center/send', payload));
     if (r.ok && r.data.success) {
-      toast.success(`Mesaj gönderildi (${form.channel})`);
+      // Settings are a snapshot, not proof of the server's eventual delivery
+      // mode/outcome. Never claim real delivery based on the cached provider.
+      toast.success('Gönderim işlemi kaydedildi. Sonucu Gönderim kayıtları sekmesinden izleyebilirsiniz.');
       setForm((p) => ({ ...p, recipient: '', body: '', template_id: '', subject: '' }));
       setVariables({});
       setSelectedTemplate(null);
     } else if (r.ok) {
       toast.error(r.data.error || 'Gönderim hatası');
+    } else {
+      toast.error(typeof r.error === 'string' ? r.error : 'Gönderim tamamlanamadı; gönderim kayıtlarını kontrol edin.');
     }
     setSending(false);
   };
@@ -689,8 +748,23 @@ function SendTab() {
 
   return (
     <div className="space-y-4" data-testid="send-tab">
+      {guestId && <div className="rounded-lg border bg-slate-50 p-4 text-sm" data-testid="message-guest-context">
+        <h2 className="font-semibold">{offer ? 'Misafire teklif taslağı' : 'Misafire mesaj'}</h2>
+        {guestLoading ? <p>Misafir bilgileri doğrulanıyor…</p> : guestError ? <div role="alert"><p>{guestError}</p><Button variant="outline" size="sm" onClick={() => setContextRetry(n => n + 1)}>Yeniden dene</Button></div> : <>
+          <p className="mt-1">{guest?.name || guest?.full_name || 'Misafir'}</p>
+          {!form.recipient && <p className="mt-2 text-amber-700">Kullanılabilir iletişim bilgisi yok. Gerçek alıcı adresini veya telefonunu doğrulayarak girin; örnek adresler kullanılmaz.</p>}
+          <p className="mt-2 text-slate-600">Taslak otomatik gönderilmez. İçeriği, alıcıyı ve iletişim iznini kontrol edin.</p>
+          {offer && <p className="mt-1 text-slate-600">Konaklama tarihlerini, oda tipini, fiyatı ve teklifin geçerlilik koşullarını mesajınıza yazın. Tutar veya indirim otomatik oluşturulmaz.</p>}
+        </>}
+      </div>}
+      <div className="rounded-lg border p-3 text-sm" role="status">
+        {settingsError || (!settings ? 'Gönderim bağlantısı kontrol ediliyor…' : `${readiness.label} · ${readiness.description}`)}
+        {settingsError && <Button className="ml-2" size="sm" variant="outline" onClick={() => setSettingsRetry(n => n + 1)}>Bağlantıyı yeniden kontrol et</Button>}
+        {readiness.state === 'sandbox' && settings && <p className="mt-1 font-medium">Deneme modunda gerçek e-posta veya WhatsApp mesajı gönderilmez.</p>}
+      </div>
       <Card>
         <CardContent className="pt-6 space-y-4">
+          <fieldset disabled={guestLoading || Boolean(guestError)} className="space-y-4 min-w-0">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Kanal</Label>
@@ -703,8 +777,9 @@ function SendTab() {
               </Select>
             </div>
             <div>
-              <Label>{recipientLabel}</Label>
+              <Label htmlFor="message-recipient">{recipientLabel}</Label>
               <Input
+                id="message-recipient"
                 data-testid="send-recipient"
                 value={form.recipient}
                 onChange={(e) => setForm((p) => ({ ...p, recipient: e.target.value }))}
@@ -749,27 +824,27 @@ function SendTab() {
 
           {form.channel === 'email' && (
             <div>
-              <Label>Konu</Label>
-              <Input data-testid="send-subject" value={form.subject}
+              <Label htmlFor="message-subject">Konu</Label>
+              <Input id="message-subject" data-testid="send-subject" value={form.subject}
                 onChange={(e) => setForm((p) => ({ ...p, subject: e.target.value }))} placeholder="E-posta konusu" />
             </div>
           )}
 
           <div>
-            <Label>{t('cm.pages_MessagingDashboard.mesaj_icerigi_e9429')}</Label>
-            <Textarea data-testid="send-body" className="min-h-[100px]" value={form.body}
+            <Label htmlFor="message-body">Mesaj içeriği</Label>
+            <Textarea id="message-body" data-testid="send-body" className="min-h-[160px]" value={form.body}
               onChange={(e) => setForm((p) => ({ ...p, body: e.target.value }))}
-              placeholder={form.channel === 'email' ? 'HTML veya düz metin...' : 'Mesajınızı yazın...'} />
+              placeholder={offer ? 'Konaklama tarihleri, oda tipi, fiyat ve teklif koşulları…' : 'Mesajınızı yazın…'} />
           </div>
 
           <Button
             data-testid="send-message-btn"
             className="w-full"
             onClick={handleSend}
-            disabled={sending || !recipientCheck.ok || (!form.body && !form.template_id)}
+            disabled={sending || !canSend || !recipientCheck.ok || (!form.body && !form.template_id)}
           >
             {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-            {t('cm.pages_MessagingDashboard.mesaj_gonder')}
+            {readiness.state === 'sandbox' ? 'Deneme gönderimi yap' : 'Mesajı gönder'}
           </Button>
           {form.channel === 'whatsapp' && (
             <p className="text-xs text-slate-500 flex items-start gap-1">
@@ -777,6 +852,7 @@ function SendTab() {
               {t('cm.pages_MessagingDashboard.ilk_temas_24_saatlik_konusma_penceresi_d')}
             </p>
           )}
+          </fieldset>
         </CardContent>
       </Card>
     </div>
@@ -1576,15 +1652,20 @@ function ActivityTab() {
 // ════════════════════════════════════════════════
 export default function MessagingDashboard() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const guestId = searchParams.get('guest') || '';
+  const offer = searchParams.get('action') === 'offer';
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   return (
     <div data-testid="messaging-dashboard" className="p-4 lg:p-6 max-w-7xl mx-auto" key={refreshKey}>
+      <Button variant="ghost" className="mb-3" onClick={() => navigate('/app/pms#guests')}>← Ön büroya dön</Button>
       <PageHeader
         icon={MessageSquare}
         title={t('cm.pages_MessagingDashboard.mesajlasma_merkezi')}
-        subtitle={t('cm.pages_MessagingDashboard.e_posta_smtp_ve_whatsapp_business_ile_mi')}
+        subtitle="E-posta ve WhatsApp ile misafir iletişimi"
         actions={
           <Button variant="outline" size="sm" onClick={refresh}>
             <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.yenile_aedf3')}
@@ -1596,13 +1677,13 @@ export default function MessagingDashboard() {
         <CardContent className="py-3 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-sky-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1 text-xs text-sky-900">
-            <strong>Not:</strong> {t('cm.pages_MessagingDashboard.bu_modul_operasyonel_transactional_mesaj')} <strong>Mailing</strong> {t('cm.pages_MessagingDashboard.modulunu_resend_tabanli_kredi_sistemli_k')}
+            Bu ekran tekil misafir mesajları ve konaklama teklifleri içindir. Toplu kampanyalar Mailing ekranında yönetilir. Gönderim için sağlayıcı bağlantısı ve gerekli iletişim izni doğrulanmalıdır.
           </div>
         </CardContent>
       </Card>
 
       <Tabs defaultValue="send">
-        <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 max-w-5xl" data-testid="messaging-tabs">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-8 max-w-5xl mb-4 [&>button]:min-h-9" data-testid="messaging-tabs">
           <TabsTrigger data-testid="tab-send" value="send" className="flex items-center gap-1.5">
             <Send className="h-3.5 w-3.5" /> {t('cm.pages_MessagingDashboard.gonder')}
           </TabsTrigger>
@@ -1613,22 +1694,22 @@ export default function MessagingDashboard() {
             <Zap className="h-3.5 w-3.5" /> Otomasyon
           </TabsTrigger>
           <TabsTrigger data-testid="tab-hsm" value="hsm" className="flex items-center gap-1.5">
-            <Shield className="h-3.5 w-3.5" /> HSM
+            <Shield className="h-3.5 w-3.5" /> Meta şablonları
           </TabsTrigger>
           <TabsTrigger data-testid="tab-activity" value="activity" className="flex items-center gap-1.5">
             <Bell className="h-3.5 w-3.5" /> Aktivite
           </TabsTrigger>
           <TabsTrigger data-testid="tab-logs" value="logs" className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5" /> Loglar
+            <Clock className="h-3.5 w-3.5" /> Gönderim kayıtları
           </TabsTrigger>
           <TabsTrigger data-testid="tab-metrics" value="metrics" className="flex items-center gap-1.5">
-            <BarChart3 className="h-3.5 w-3.5" /> Metrikler
+            <BarChart3 className="h-3.5 w-3.5" /> Gönderim özeti
           </TabsTrigger>
           <TabsTrigger data-testid="tab-settings" value="settings" className="flex items-center gap-1.5">
             <Settings className="h-3.5 w-3.5" /> Ayarlar
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="send"><SendTab /></TabsContent>
+        <TabsContent value="send"><SendTab key={`${guestId}:${offer}`} guestId={guestId} offer={offer} /></TabsContent>
         <TabsContent value="templates"><TemplatesTab /></TabsContent>
         <TabsContent value="automation"><AutomationTab /></TabsContent>
         <TabsContent value="hsm"><WhatsAppTemplateTab /></TabsContent>

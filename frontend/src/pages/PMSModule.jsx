@@ -1280,6 +1280,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           <Suspense fallback={null}>
             <ReservationDetailModal
               bookingId={reservationDetailId}
+              property={tenant}
               onClose={() => setReservationDetailId(null)}
               allBookings={bookings}
             />

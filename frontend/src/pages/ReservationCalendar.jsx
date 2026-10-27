@@ -2028,6 +2028,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       {showDetailModal && detailModalBookingId && (
         <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">{t('cm.pages_ReservationCalendar.yukleniyor_4deb0')}</div></div>}>
           <ReservationDetailModal
+            property={tenant}
             key={detailModalBookingId}
             bookingId={detailModalBookingId}
             onClose={closeReservationDetail}

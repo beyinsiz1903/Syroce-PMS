@@ -434,6 +434,17 @@ def test_negative_reservation_detail_extra_charge_is_rejected():
         reservation_detail.ExtraChargeAdd(description="Negative charge", amount=-1, quantity=1)
 
 
+@pytest.mark.parametrize("date_value,time_value", [("2026-02-30", "12:30"), (None, "12:30"), ("2026-10-24", "24:00"), ("2026-10-24", "12:60"), ("2026-10-24", "9:30")])
+def test_invalid_service_calendar_date_or_time_is_rejected(date_value, time_value):
+    with pytest.raises(ValidationError):
+        reservation_detail.ExtraChargeAdd(description="Masaj", amount=30, service_date=date_value, service_time=time_value)
+
+
+def test_legacy_extra_charge_can_omit_service_time_without_inventing_one():
+    payload = reservation_detail.ExtraChargeAdd(description="Eski kayıt", amount=30)
+    assert payload.service_date is None and payload.service_time is None
+
+
 @pytest.mark.asyncio
 async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance(monkeypatch):
     extra_charges = SimpleNamespace(insert_one=AsyncMock())
@@ -489,7 +500,10 @@ async def test_extra_charge_converts_entered_currency_to_booking_currency(monkey
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
-    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock())
+    async def stamp_business_date(_database, tenant_id, charge):
+        assert tenant_id == "tenant-a"
+        charge["business_date"] = "2026-10-26"
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", stamp_business_date)
     monkeypatch.setattr(reservation_detail, "_gb_cache", None)
     from routers import webhook_retry_service
     monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", lambda *_args, **_kwargs: None)
@@ -502,6 +516,8 @@ async def test_extra_charge_converts_entered_currency_to_booking_currency(monkey
             quantity=1,
             input_currency="TRY",
             exchange_rate=0.02,
+            service_date="2026-10-24",
+            service_time="19:30",
         ),
         current_user=SimpleNamespace(
             id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
@@ -515,6 +531,12 @@ async def test_extra_charge_converts_entered_currency_to_booking_currency(monkey
     assert charge["entered_total"] == 390
     assert charge["entered_currency"] == "TRY"
     assert charge["exchange_rate"] == 0.02
+    assert charge["service_date"] == "2026-10-24"
+    assert charge["service_time"] == "19:30"
+    assert charge["service_timing_source"] == "manual_entry"
+    assert charge["business_date"] == "2026-10-26"
+    assert extra_charges.insert_one.await_args.args[0]["service_date"] == "2026-10-24"
+    assert reservation_detail._log_activity.await_args.args[4]["service_time"] == "19:30"
 
 
 @pytest.mark.asyncio

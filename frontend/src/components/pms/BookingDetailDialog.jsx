@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { DollarSign, FileText, Loader2, LogIn, Save, UserX, X, XCircle } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCancellationPolicy } from '@/lib/cancellationPolicy';
 
 const toDateInput = (val) => {
   if (!val) return '';
@@ -261,7 +262,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
                     <div className="text-[11px] font-semibold text-gray-700">Tarife Detayları</div>
                     <div className="text-[11px] text-gray-600">Sözleşmeli Fiyat: <span className="font-medium">{booking.contracted_rate || 'YOK'}</span></div>
                     <div className="text-[11px] text-gray-600">Segment: <span className="font-medium">{booking.market_segment || 'kurumsal'}</span></div>
-                    <div className="text-[11px] text-gray-600">Politika: <span className="font-medium">{booking.cancellation_policy || 'standart'}</span></div>
+                    <div className="text-[11px] text-gray-600">Politika: <span className="font-medium">{formatCancellationPolicy(booking.cancellation_policy)}</span></div>
                   </div>
                 </div>
               )}

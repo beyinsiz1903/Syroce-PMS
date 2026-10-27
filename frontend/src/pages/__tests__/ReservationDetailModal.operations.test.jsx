@@ -70,6 +70,15 @@ describe('ReservationDetailModal operation URLs', () => {
 
   afterEach(() => cleanup());
 
+  it('opens the real reservation workspace with a structured agency cancellation policy', async () => {
+    get.mockResolvedValue({ data: { ...detail, booking: { ...detail.booking, cancellation_policy: {
+      free_until_days_before: 7, penalty_pct: 50, no_show_penalty_pct: 100,
+    } } } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    expect(await screen.findByText(/Girişten 7 gün öncesine kadar ücretsiz iptal/)).toHaveTextContent('İptal kesintisi: %50');
+    expect(screen.getByTestId('reservation-workspace-overview')).toBeInTheDocument();
+  });
+
   it('sol kartta konaklama, ekstralar, genel toplam ve ön ödemeyi ayrı gösterir', async () => {
     get.mockResolvedValue({
       data: {

@@ -8,6 +8,13 @@ const configuredWhatsApp = {
 };
 
 describe('getMessagingReadiness', () => {
+  it('recognizes the HTTPS email transport without requiring an SMTP host', () => {
+    const provider = { enabled: true, is_sandbox: false, health_status: 'healthy', credentials: {
+      email_transport: 'zoho_api', from_email: 'hotel@example.com', zoho_account_id: '123', zoho_client_id: 'id', zoho_client_secret: '********', zoho_refresh_token: '********',
+    } };
+    expect(getMessagingReadiness(provider, 'email').state).toBe('ready');
+    expect(getMessagingReadiness({ ...provider, credentials: { ...provider.credentials, zoho_refresh_token: '' } }, 'email').state).toBe('setup_required');
+  });
   it('does not treat a missing provider as ready to send', () => {
     expect(getMessagingReadiness(null).state).toBe('setup_required');
   });

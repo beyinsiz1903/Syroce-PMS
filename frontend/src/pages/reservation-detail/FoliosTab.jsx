@@ -21,7 +21,8 @@ import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import FolioWindowsPanel from '@/components/folio/FolioWindowsPanel';
 import FolioAllocationPanel from '@/components/folio/FolioAllocationPanel';
-import PrintableFolio from '@/components/PrintableFolio';
+import FolioPrintOptions from '@/components/folio/FolioPrintOptions';
+import { folioCategoryLabel, folioItemInScope, folioPayorLabel, serviceTimingLabel } from '@/lib/folioPresentation';
 import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
@@ -76,7 +77,7 @@ export function summarizeReceivedPayments(payments, fallbackAmount, fallbackCurr
     : [];
 }
 
-export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
+export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, property, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
   const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -101,7 +102,6 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [enterpriseLocked, setEnterpriseLocked] = useState(false);
   const [windowRevision, setWindowRevision] = useState(0);
   const [showPrintableFolio, setShowPrintableFolio] = useState(false);
-  const [printFolioId, setPrintFolioId] = useState('all');
   const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -154,6 +154,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   }, [useCurrencyConverter, manualExchangeRate, payForm.amount, currency, foreignCurrency, tcmbRates]);
 
   const folioList = useMemo(() => (Array.isArray(folios) ? folios : []), [folios]);
+  const viewedFolio = folioList.find(f => f.id === targetFolioId);
   const targetFolio = folioList.find(f => f.id === targetFolioId && f.status === 'open');
   const selectTargetFolio = id => {
     setTargetFolioId(id);
@@ -304,8 +305,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).sort((a, b) => new Date(b.created_at || b.processed_at || 0) - new Date(a.created_at || a.processed_at || 0));
-  }, [charges, extra_charges, payments]);
+    }).filter(item => !targetFolioId || folioItemInScope(item, folioList, [targetFolioId]))
+      .sort((a, b) => new Date(b.service_date || b.posted_at || b.created_at || b.processed_at || 0) - new Date(a.service_date || a.posted_at || a.created_at || a.processed_at || 0));
+  }, [charges, extra_charges, payments, targetFolioId, folioList]);
   const allocatedPrepaymentReceipts = useMemo(
     () => summarizeReceivedPayments(payments, Math.abs(rawFolioBalance), currency),
     [payments, rawFolioBalance, currency],
@@ -357,25 +359,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       if (isNonCashPayment(item)) return folioPaymentLabel(item);
       return String(item.payment_type || '').toLowerCase() === 'prepayment' ? 'Ön ödeme' : 'Tahsilat';
     }
-    const category = String(item.category || item.charge_category || '').toLowerCase();
-    const categoryLabels = {
-      food_beverage: 'Yiyecek & İçecek',
-      food_and_beverage: 'Yiyecek & İçecek',
-      restaurant: 'Yiyecek & İçecek',
-      minibar: 'Minibar',
-      spa: 'Spa',
-      laundry: 'Çamaşırhane',
-      transfer: 'Transfer',
-      other: 'Diğer ekstra',
-    };
-    if (item._source === 'extra') return categoryLabels[category] || item.category || item.charge_category || 'Ekstra hizmet';
-    if (item.charge_type === 'room_charge' || item.charge_category === 'room') return 'Konaklama';
-    if (item.charge_type === 'tax' || ['tax', 'city_tax'].includes(item.charge_category)) return 'Vergi';
-    return categoryLabels[category] || item.category || item.charge_category || 'Ekstra hizmet';
+    return folioCategoryLabel(item);
   };
 
   return (
     <div data-testid="folios-tab" className="space-y-4">
+      <h3 className="text-sm font-semibold text-slate-700">Rezervasyonun genel hesap özeti</h3>
       {actionError && <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"><span><b>İşlem tamamlanamadı:</b> {actionError}</span><button type="button" className="font-semibold text-rose-700 hover:text-rose-900" onClick={() => setActionError('')} aria-label="Hata mesajını kapat">×</button></div>}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard currency={currency} label="Konaklama" value={accommodationTotal} color="blue" />
@@ -423,16 +412,16 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           )}
         </div>
       )}
-      <FolioWindowsPanel key={booking.id} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio}
+      <FolioWindowsPanel key={`windows:${booking.id}`} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio}
         revision={`${windowRevision}:${folioList.map(f => `${f.id}:${f.status}:${f.balance}`).join('|')}`} />
       <Button type="button" variant="outline" disabled={enterpriseLocked} onClick={() => setShowEnterprise(value => !value)}>Kurumsal ödeme / ikram kontrolleri</Button>
-      {showEnterprise && <Suspense fallback={<p>Kontroller yükleniyor…</p>}><EnterpriseBillingPanel key={booking.id} bookingId={booking.id} currency={normalizeCurrency(currency)} folios={folioList} charges={charges || []} readOnly={readOnly} onChanged={onRefresh} onLockChange={setEnterpriseLocked} /></Suspense>}
-      {!readOnly && showAllocation && <FolioAllocationPanel key={booking.id} bookingId={booking.id} currency={currency} folios={folioList} charges={charges || []}
+      {showEnterprise && <Suspense fallback={<p>Kontroller yükleniyor…</p>}><EnterpriseBillingPanel key={`enterprise:${booking.id}`} bookingId={booking.id} currency={normalizeCurrency(currency)} folios={folioList} charges={charges || []} readOnly={readOnly} onChanged={onRefresh} onLockChange={setEnterpriseLocked} /></Suspense>}
+      {!readOnly && showAllocation && <FolioAllocationPanel key={`allocation:${booking.id}`} bookingId={booking.id} currency={currency} folios={folioList} charges={charges || []}
         onClose={() => setShowAllocation(false)} onChanged={async id => { setWindowRevision(previous => previous + 1); await onRefresh?.(); setTargetFolioId(id); }} />}
       {!readOnly && <label className="block text-sm font-medium">Ödeme / cari aktarım hedefi
         <select aria-label="İşlem hedef folyo" value={targetFolioId} onChange={e => selectTargetFolio(e.target.value)} className="ml-2 rounded border p-2">
           <option value="">{folioList.filter(f => f.status === 'open').length > 1 ? 'Hedef folyoyu seçin' : 'Tek açık folyo (otomatik)'}</option>
-          {folioList.filter(f => f.status === 'open').map(f => <option key={f.id} value={f.id}>{f.folio_number} · {f.folio_type} · {fmtCurrency(f.balance, currency)}</option>)}
+          {folioList.filter(f => f.status === 'open').map(f => <option key={f.id} value={f.id}>{f.folio_number} · {folioPayorLabel(f)} · {fmtCurrency(f.balance, f.currency || currency)}</option>)}
         </select>
         <p className="mt-1 text-xs font-normal text-slate-600">Birden fazla açık hesapta hedef seçimi zorunludur. Cari aktarımı tahsilat değil, alacağın ilgili cari hesaba devridir.</p>
         <p className="mt-1 text-xs font-normal text-slate-600">Folyo Böl mevcut kalemleri/tutarı ayırır. Sonraki gece ücretleri için otomatik yönlendirme bu ekrandan henüz tanımlanmaz; yeni tahakkukları ayrıca kontrol edin.</p>
@@ -440,6 +429,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       <div className="flex flex-wrap gap-2">
         {!readOnly && <>
           <Button size="sm" disabled={pricingReconciliationRequired} onClick={openPaymentForm} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
+          <details className="order-last w-full rounded-lg border bg-slate-50 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-slate-700">Diğer hesap işlemleri</summary>
+          <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={openCariForm} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
           <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setAgencyForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowAgency(!showAgency); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
           <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
@@ -452,17 +444,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           {summarizeReceivedPayments(payments, 0, currency).some(receipt => normalizeCurrency(receipt.currency) !== 'TRY') && (
             <Button size="sm" variant="outline" onClick={openCashExchange} className="h-8 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50" data-testid="btn-currency-exchange"><ArrowRightLeft className="w-3 h-3 mr-1" /> Döviz Bozdur</Button>
           )}
+          </div>
+          </details>
         </>}
-        {folioList.length > 1 && (
-          <UiSelect value={printFolioId} onValueChange={setPrintFolioId}>
-            <SelectTrigger className="h-8 w-auto min-w-44 text-xs" aria-label="Yazdırılacak folyo"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tüm folyolar (konsolide)</SelectItem>
-              {folioList.map(item => <SelectItem key={item.id} value={item.id}>{item.folio_number || item.id}</SelectItem>)}
-            </SelectContent>
-          </UiSelect>
-        )}
-        <Button size="sm" variant="outline" onClick={() => setShowPrintableFolio(true)} className="h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-50" data-testid="btn-folyo-yazdir"><Printer className="w-3 h-3 mr-1" /> Folyo Yazdır</Button>
+        <Button size="sm" variant="outline" onClick={() => setShowPrintableFolio(value => !value)} className="h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-50" data-testid="btn-folyo-yazdir"><Printer className="w-3 h-3 mr-1" /> Folyo Yazdır</Button>
         <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
           <FileText className="w-3 h-3 mr-1" /> {readOnly ? 'Faturayı Görüntüle' : 'Fatura Oluştur'}
         </Button>
@@ -796,40 +781,25 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
 
       {showPrintableFolio && (
-        <PrintableFolio
-          folioData={{
-            ...((printFolioId === 'all' ? folioList[0] : folioList.find(item => item.id === printFolioId)) || {}),
-            document_title: printFolioId === 'all' && folioList.length > 1 ? 'Konsolide Misafir Folyosu' : 'Misafir Folyosu',
-            folio_number: printFolioId === 'all'
-              ? folioList.map(item => item.folio_number).filter(Boolean).join(', ') || undefined
-              : folioList.find(item => item.id === printFolioId)?.folio_number,
-            booking,
-            charges: printFolioId === 'all' ? charges : (charges || []).filter(item => item.folio_id === printFolioId),
-            extra_charges: printFolioId === 'all' ? extra_charges : (extra_charges || []).filter(item => item.folio_id === printFolioId),
-            payments: printFolioId === 'all' ? payments : (payments || []).filter(item => !item.folio_id || item.folio_id === printFolioId),
-            currency,
-            balance: printFolioId === 'all'
-              ? reservationTotalDue
-              : folioList.find(item => item.id === printFolioId)?.balance,
-          }}
-          guest={guest}
-          room={room}
-          onClose={() => setShowPrintableFolio(false)}
-        />
+        <FolioPrintOptions key={`print:${booking.id}`} folios={folioList} charges={charges || []} extraCharges={extra_charges || []} payments={payments || []} booking={booking} property={property} guest={guest} room={room} currentFolioId={targetFolioId} onClose={() => setShowPrintableFolio(false)} />
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-3 rounded-xl border bg-white p-4">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold text-gray-500 uppercase">İşlem Geçmişi</div>
-          <Button variant="link" size="sm" className="h-auto p-0 text-indigo-600 hover:text-indigo-700" onClick={() => navigate(`/folio-detail/${folios?.[0]?.id}`)} disabled={!folios || folios.length === 0}>
-            Gelişmiş Folyo Yönetimi &rarr;
+          <div><h3 className="text-sm font-semibold text-slate-900">Hesap hareketleri</h3><p className="mt-1 text-xs text-slate-500">{viewedFolio ? `${viewedFolio.folio_number} · ${folioPayorLabel(viewedFolio)}` : 'Rezervasyona ait tüm hesaplar'} · Hizmet zamanı ile kayda alınma zamanı ayrı gösterilir.</p></div>
+          <Button variant="link" size="sm" className="h-auto p-0 text-indigo-600 hover:text-indigo-700" onClick={() => navigate(`/folio-detail/${targetFolioId || folios?.[0]?.id}`)} disabled={!folios || folios.length === 0}>
+            Ayrıntılı hesap yönetimi &rarr;
           </Button>
         </div>
-        {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Henüz işlem bulunmuyor</div> : (
+        {targetFolioId && <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <p>Yalnız seçili hesap gösteriliyor. Hesaba bağlanmamış eski kalemler, birden fazla hesap varsa bu listede ve misafir çıktısında gösterilmez.</p>
+          <Button size="sm" variant="ghost" onClick={() => selectTargetFolio('')}>Tüm hareketleri göster</Button>
+        </div>}
+        {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Bu kapsamda işlem bulunmuyor</div> : (
           allItems.map((item, i) => {
             const received = item._type === 'payment' ? parseReceivedCurrency(item.notes, item) : null;
             return (
-            <div key={item.id || i} className={`flex items-center gap-3 p-3 rounded-lg border ${item.voided ? 'opacity-60 bg-gray-50' : 'bg-white'}`}>
+            <div key={item.id || i} className={`flex flex-wrap items-start gap-3 border-t pt-3 ${item.voided ? 'opacity-60 bg-gray-50' : 'bg-white'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${item._type === 'payment' ? 'bg-emerald-100' : 'bg-amber-100'}`}>
                 {item._type === 'payment' ? <CreditCard className="w-4 h-4 text-emerald-600" /> : <Receipt className="w-4 h-4 text-amber-600" />}
               </div>
@@ -838,19 +808,20 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                   {item.description || item.charge_name || (item._type === 'payment' ? folioPaymentLabel(item) : item.method || item.payment_type || '-')}
                   {item.voided && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">İPTAL</span>}
                 </div>
-                <div className="text-xs text-gray-400">
+                <div className="mt-1 text-xs text-slate-500">
                   <span className="font-medium text-slate-500">{itemKind(item)}</span>
-                  <span className="mx-1">·</span>{fmtTs(item.created_at || item.processed_at)}
+                  {item._type !== 'payment' && <span className="ml-2">{serviceTimingLabel(item)}</span>}
                   {item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}
                 </div>
+                {(item.created_at || item.posted_at || item.processed_at) && <p className="mt-1 text-[11px] text-slate-500">Kayda alınma: {fmtTs(item.created_at || item.posted_at || item.processed_at)}</p>}
                 {received && !item.voided && (
                   <div className="mt-1 text-xs font-semibold text-emerald-700" data-testid={`received-currency-${item.id || i}`}>
                     Alınan: {fmtCurrency(received.amount, received.currency)}
                   </div>
                 )}
               </div>
-              <div className={`text-sm font-bold ${item._type === 'payment' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                {item._type === 'payment' ? '-' : '+'}{fmtCurrency(item.total ?? item.charge_amount ?? item.amount, currency)}
+              <div className={`ml-auto shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums ${item._type === 'payment' ? 'text-emerald-700' : 'text-slate-900'}`}>
+                {item._type === 'payment' ? '-' : '+'}{fmtCurrency(item.total ?? item.charge_amount ?? item.amount, item.currency || currency)}
               </div>
             </div>
           );

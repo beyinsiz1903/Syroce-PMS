@@ -17,7 +17,7 @@ export function guestStaffRoutes({ p }) {
     // ── Staff & OTA ────────────────────────────────────
     { path: "/staff/mobile", ...p(StaffMobileApp) },
     { path: "/staff/room-service", ...p(StaffRoomServiceOrders), wrapLayout: true, layoutModule: "pos" },
-    { path: "/ota-messaging-hub", ...p(OTAMessagingHub) },
+    { path: "/ota-messaging-hub", ...p(OTAMessagingHub), wrapLayout: true, layoutModule: "messaging" },
     { path: "/messaging-center", ...p(MessagingCenter), wrapLayout: true, layoutModule: "messaging" },
     { path: "/sales", ...p(SalesModule), wrapLayout: true, layoutModule: "sales" },
     { path: "/travel-agent-arap", ...p(TravelAgentARAP), wrapLayout: true },

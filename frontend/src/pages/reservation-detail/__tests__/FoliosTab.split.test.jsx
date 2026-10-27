@@ -494,7 +494,7 @@ describe('FoliosTab — sade ödeme akışı', () => {
     expect(screen.getByText('Genel Toplam')).toBeInTheDocument();
     expect(screen.getByTestId('prepayment-summary')).toHaveTextContent('Ön ödeme alındı');
     expect(screen.getByText('Akşam Yemeği')).toBeInTheDocument();
-    expect(screen.getByText('Yiyecek & İçecek')).toBeInTheDocument();
+    expect(screen.getByText('Yiyecek ve içecek')).toBeInTheDocument();
     expect(screen.getAllByText('Ön ödeme').length).toBeGreaterThan(0);
   });
 

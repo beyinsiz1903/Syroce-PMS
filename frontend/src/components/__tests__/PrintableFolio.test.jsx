@@ -22,7 +22,7 @@ describe('PrintableFolio', () => {
 
     expect(screen.getByText('Misafir Folyosu')).toBeInTheDocument();
     expect(screen.getByText('Türk kahvesi')).toBeInTheDocument();
-    expect(screen.getByText('Yiyecek & İçecek')).toBeInTheDocument();
+    expect(screen.getByText('Yiyecek ve içecek')).toBeInTheDocument();
     expect(screen.getAllByText(/₺/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/GUEST FOLIO|No charges|USD/)).toBeNull();
     fireEvent.click(screen.getByTestId('print-folio'));

@@ -21,7 +21,7 @@ const PAYOR_OPTIONS = [{
   Icon: Briefcase
 }, {
   value: "master",
-  label: "Master",
+  label: "Ana hesap",
   Icon: Crown
 }];
 function payorMeta(type) {
@@ -99,7 +99,7 @@ export default function FolioWindowsPanel({
       await fetchWindows();
       onChanged?.();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Window açılamadı");
+      toast.error(e.response?.data?.detail || "Folyo hesabı açılamadı");
     } finally {
       setAdding(false);
     }
@@ -116,11 +116,11 @@ export default function FolioWindowsPanel({
             </h3>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={fetchWindows} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={fetchWindows} disabled={loading} aria-label="Folyo hesaplarını yenile">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             </Button>
             {!readOnly && <Button size="sm" onClick={() => { setEditingId(''); setAccountId(''); setNewPayor('guest'); setShowAdd(v => !v); }} disabled={!canAdd} className="bg-blue-600 hover:bg-blue-700 text-white" data-testid="window-add-btn">
-              <Plus className="w-3.5 h-3.5 mr-1" /> {t('cm.components_folio_FolioWindowsPanel.window_ekle')}
+              <Plus className="w-3.5 h-3.5 mr-1" /> Yeni hesap
             </Button>}
           </div>
         </div>
@@ -138,48 +138,48 @@ export default function FolioWindowsPanel({
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)}>{t('cm.components_folio_FolioWindowsPanel.iptal')}</Button>
           </div>}
 
-        {!canAdd && <p className="text-xs text-amber-600 mb-3">Window limiti doldu (8/8).</p>}
+        {!canAdd && <p className="text-xs text-amber-600 mb-3">En fazla 8 ayrı hesap açılabilir.</p>}
 
         {windowError && <p role="alert" className="text-sm text-destructive">{windowError}</p>}
-        {windows.length === 0 && !loading && !windowError && <p className="text-sm text-gray-500 py-6 text-center">{t('cm.components_folio_FolioWindowsPanel.henuz_window_yok')}</p>}
+        {windows.length === 0 && !loading && !windowError && <p className="text-sm text-gray-500 py-6 text-center">Henüz folyo hesabı açılmamış.</p>}
 
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-3">
           {windows.map(w => {
-          const meta = payorMeta(w.payor_type);
+          const meta = payorMeta(w.payor_type || w.folio_type);
           const isCurrent = w.folio_id === currentFolioId;
-          return <div key={w.folio_id} className={`border rounded-md p-3 flex items-center justify-between ${isCurrent ? "border-blue-400 bg-blue-50" : "border-gray-200 bg-white"}`} data-testid={`window-row-${w.window_number || 0}`}>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
+          return <div key={w.folio_id} className={`rounded-xl border p-4 ${isCurrent ? "border-blue-400 bg-blue-50" : "border-gray-200 bg-white"}`} data-testid={`window-row-${w.window_number || 0}`}>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="h-8 w-8 shrink-0 rounded-lg bg-slate-100 flex items-center justify-center text-sm font-semibold text-slate-600">
                     {w.window_number || "—"}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <meta.Icon className="w-3.5 h-3.5 text-gray-500" />
                       <span className="text-sm font-medium text-gray-800">{meta.label}</span>
-                      <Badge variant="outline" className="text-xs">{w.folio_number}</Badge>
+                      <span className="whitespace-nowrap text-xs text-slate-500">{w.folio_number}</span>
                       <Badge className={w.status === "open" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}>
-                        {w.status}
+                        {w.status === 'open' ? 'Açık' : w.status === 'closed' ? 'Kapalı' : 'Arşiv'}
                       </Badge>
-                      {isCurrent && <Badge className="bg-blue-100 text-blue-700 text-xs">aktif</Badge>}
+                      {isCurrent && <Badge className="bg-blue-100 text-blue-700 text-xs">Seçili hesap</Badge>}
                     </div>
                     {w.cari_account_name && <p className="text-xs font-medium">{w.cari_account_name}</p>}
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {w.charges_count} masraf · {w.payments_count} {t('cm.components_folio_FolioWindowsPanel.odeme')}
+                      {w.charges_count || 0} hizmet kaydı · {w.payments_count || 0} ödeme hareketi
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
+                  <div className="ml-auto shrink-0 text-right">
                     <p className="text-xs text-gray-500">{t('cm.components_folio_FolioWindowsPanel.bakiye')}</p>
-                    <p className={`text-sm font-bold ${w.balance > 0 ? "text-red-600" : "text-emerald-600"}`}>
-                      {formatCurrency(w.balance || 0, w.currency || cachedTenantCurrency())}
+                    <p className={`mt-1 whitespace-nowrap text-lg font-semibold tabular-nums ${w.balance > 0 ? "text-slate-900" : "text-emerald-700"}`}>
+                      {formatCurrency(w.balance || 0, w.currency || cachedTenantCurrency(), { locale: 'tr-TR', decimals: 2, compactDecimals: false })}
                     </p>
                   </div>
-                  {!readOnly && w.status === 'open' && <div className="flex flex-col gap-1">
-                    {onSelect && <Button size="sm" variant="outline" onClick={() => onSelect(w.folio_id)}>Bu folyoyu seç</Button>}
-                    <Button size="sm" variant="outline" onClick={() => { setEditingId(w.folio_id); setNewPayor(w.payor_type || w.folio_type || 'guest'); setAccountId(w.cari_account_id || ''); setShowAdd(true); }}>Ödeyeni düzenle</Button>
+              </div>
+                  {(onSelect || (!readOnly && w.status === 'open')) && <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
+                    {onSelect && (readOnly || w.status === 'open') && <Button size="sm" variant="outline" aria-pressed={isCurrent} className={isCurrent ? 'border-blue-300 bg-white text-blue-700' : ''} onClick={() => onSelect(w.folio_id)}>{isCurrent ? 'Seçili hesap' : 'Bu folyoyu seç'}</Button>}
+                    {!readOnly && w.status === 'open' && <Button size="sm" variant="outline" onClick={() => { setEditingId(w.folio_id); setNewPayor(w.payor_type || w.folio_type || 'guest'); setAccountId(w.cari_account_id || ''); setShowAdd(true); }}>Ödeyeni düzenle</Button>}
                   </div>}
-                </div>
               </div>;
         })}
         </div>

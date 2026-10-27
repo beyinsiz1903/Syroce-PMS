@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatCancellationPolicy } from '@/lib/cancellationPolicy';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -258,7 +259,7 @@ export function GeneralInfoTab({
               {translateView(room?.view) && <InfoLine label="Manzara" value={translateView(room.view)} />}
               {room?.bed_type && <InfoLine label="Yatak Tipi" value={room.bed_type} />}
               <InfoLine label="Konaklama Türü" value={translateValue(booking?.rate_plan) || 'Standart'} />
-              <InfoLine label={t('common.cancellationPolicy')} value={translateValue(booking?.cancellation_policy) || t('common.flexible')} />
+              <InfoLine label={t('common.cancellationPolicy')} value={formatCancellationPolicy(booking?.cancellation_policy)} />
             </div>
             {roomImg && <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm min-h-[10rem]">
                 <img src={roomImg} alt={room?.room_type || 'Oda'} className="w-full h-full max-h-52 object-cover" onError={e => {
