@@ -8,15 +8,17 @@ set -e
 
 echo "Verifying..."
 python3 -c "
-import litellm, openai, pydantic_settings
+import litellm, openai, pydantic_settings, msgpack
 from importlib.metadata import version
 from packaging.version import Version
 
-assert Version(version('litellm')) >= Version('1.96.2')
+assert Version(version('litellm')) == Version('1.100.4')
 assert Version(openai.__version__) >= Version('2.20.0')
+assert Version(version('msgpack')) >= Version('1.2.3')
 print(f'litellm: OK')
 print(f'openai: {openai.__version__}')
 print('pydantic-settings: OK')
+print('msgpack: OK')
 print('All imports OK')
 "
 

@@ -35,7 +35,8 @@ jsonschema-specifications==2025.9.1
 librt==0.8.1
 MarkupSafe==3.0.3
 motor==3.7.1
-msgpack==1.2.1
+# CVE-2026-114613: strict-map-key C-extension leak and stale parser references.
+msgpack==1.2.3
 oauthlib==4.0.0
 orjson==3.11.7
 packaging==26.0
