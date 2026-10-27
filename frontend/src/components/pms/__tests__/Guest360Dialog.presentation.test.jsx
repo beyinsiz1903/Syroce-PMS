@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key, fallback) => fallback || 'Ekle' }),
@@ -22,8 +22,17 @@ import Guest360Dialog from '@/components/pms/Guest360Dialog';
 
 afterEach(() => cleanup());
 const renderDialog = (ui) => render(<MemoryRouter>{ui}</MemoryRouter>);
+function Location() { const location = useLocation(); return <output data-testid="destination">{location.pathname}{location.search}</output>; }
 
 describe('Guest360Dialog sunum tutarlılığı', () => {
+  it.each([['Teklif Gönder', 'offer'], ['Mesaj Gönder', 'message']])('opens %s with only the exact guest id in the URL', (button, action) => {
+    render(<MemoryRouter><Location /><Guest360Dialog open selectedGuest360="guest/1" guest360Data={{ guest: { id: 'guest/1', name: 'Deniz Kaya', email: 'private@example.com' }, profile: {}, stats: {}, stay_history: [] }} /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: button }));
+    expect(screen.getByTestId('destination')).toHaveTextContent(`/messaging-dashboard?guest=guest%2F1&action=${action}`);
+    expect(screen.getByTestId('destination')).not.toHaveTextContent('private');
+    expect(screen.queryByText('Yaşam Boyu Değer')).not.toBeInTheDocument();
+    expect(screen.getByText('Konaklama tutarı toplamı')).toBeInTheDocument();
+  });
   it('reports a failed guest read and retries the same identity and section', () => {
     const loadGuest360 = vi.fn();
     renderDialog(<Guest360Dialog open onClose={vi.fn()} selectedGuest360="missing-guest" loadGuest360={loadGuest360} initialSection="history" error="Misafir profili yüklenemedi." />);

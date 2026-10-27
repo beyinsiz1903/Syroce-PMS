@@ -1,0 +1,110 @@
+Misafir kartı, hizmet zamanı ve seçili hesap çıktısı - 27 Ekim 2026
+================================================================
+
+Kapsam ve yayın durumu
+--------------------
+PR #1442'nin f16740c80dc9150d70874aa645131345a47426e9 sürümü canlıda
+doğrulandı. Bu kabulde iki ek sorun bulundu: eski No-Show kayıtlarının
+on yıllara uzayan planlı tarih aralığı güncel konaklama gibi sıralanıyordu;
+nesne biçimindeki acente iptal politikası gerçek rezervasyon kartında
+React render hatasına yol açıyordu. Bu dal bu iki regresyonu da düzeltir.
+Bu dosyadaki yeni misafir/folyo düzenlemeleri ayrı PR kapsamındadır;
+canlıya otomatik merge veya deploy yapılmamıştır.
+
+Misafir kartı
+-------------
+Folyo hesapları tam genişlikte, ödeyen türü ve durum Türkçe, bakiye tek
+satırda iki ondalık basamakla gösterilir. Seçilen hesap hareketleri açıkça
+etiketlenir. Genel rezervasyon özeti, tek hesabın bakiyesiyle karıştırılmaz.
+Ödeme/yazdırma/fatura birincil; diğer finansal işlemler açılır bölümde.
+Kapalı rezervasyonda hesap seçimi salt okunurdur; ödeyen düzenleme açılmaz.
+Geçmiş kaydın tarihi veya tutarı bu sunum değişikliğiyle değiştirilmez.
+
+Hizmet tarihi ve saati
+---------------------
+Yeni manuel ek ücretlerde hizmet günü girilir; spa için saat de zorunludur.
+Backend geçerli takvim gününü ve HH:MM biçimini doğrular; tarihsiz saat
+kabul etmez. Eski istemciler tarih göndermeden çalışabilir; bilinmeyen
+tarih/saat uydurulmaz. Hizmet günü açık muhasebe iş gününden ayrıdır.
+Girilen hizmet zamanı ücret kaydı ve mevcut işlem günlüğünde saklanır.
+
+GET full-detail, yalnız yanıt üzerinde ve tenant-sınırlı kaynak sorgusuyla
+bağlı spa randevusunun starts_at veya POS siparişinin created_at zamanını
+okur. Bunlar sırasıyla '(randevu)' ve '(sipariş)' diye etiketlenir; yemek
+servis edildiği ya da masajın fiilen başladığı an olduğu iddia edilmez.
+Tesisin saat dilimi uygulanır; geçersiz dilimde UTC açıkça etiketlenir.
+Kaynak yoksa 'Hizmet tarihi belirtilmemiş' yazılır. created_at/posted_at
+yalnız 'Kayda alınma' bilgisidir. Kaynak belge, ücret, vergi, kur, miktar,
+muhasebe kaydı veya kapalı iş günü değiştirilmez.
+
+Çıktı kapsamı ve ödeyen mahremiyeti
+---------------------------------
+Yazdırma öncesi çıktı alıcısı, hesap ve hizmet türü seçilir. Varsayılan
+misafir çıktısı acente/şirket/ana hesap veya bilinmeyen ödeyen tutarlarını
+almaz. İç kullanım tüm hesap çıktısı ancak açık seçimle ve uyarıyla açılır.
+Tek folyo, tüm misafir folyoları, yiyecek-içecek, spa, minibar, konaklama
+ve tek tek kalem seçimi desteklenir. Bu yalnız görünüm seçimidir; masraf
+taşıma/bölme veya otomatik yönlendirme işlemi değildir.
+
+Birden fazla hesapta sahibi belirsiz eski kalemler tahminle bir ödeyene
+atanmaz; çıktıdan çıkarılır ve uyarı gösterilir. Tek ve açıkça seçili hesap
+varsa rezervasyon kapsamlı eski kalemler belirsiz değildir. Farklı dövizler
+tek toplamda birleştirilmez. İptal kalemleri ve etkisiz ödemeler ayıklanır.
+
+Daraltılmış hizmet çıktısı genel bakiye, devir bakiyesi, diğer hesapların
+ücreti veya ödeme tablosunu içermez; makbuz/tahsilat belgesi gibi sunulmaz.
+Fatura modülü ayrıdır. Açılış bakiyeli tam hesap çıktısı korunur.
+Önizleme body portalında, baskı normal sayfa akışındadır; modal kaydırma
+alanı PDF'yi kesmez. Uzun tabloda başlıklar yinelenir, satırlar bölünmez.
+Koyu temada da kağıt beyaz, metin okunaklı koyu renktedir. PMS ve takvim
+kartı, tesis adını yalnız rezervasyonun tenant kimliğiyle eşleşen aktif
+tesis bilgisinden tamamlar; başka otelin adı tahminle belgeye basılmaz.
+
+Misafir 360 ve teklif taslağı
+----------------------------
+'Yaşam Boyu Değer' yerine 'Konaklama tutarı toplamı', ADR yerine anlaşılır
+oda bedeli açıklaması kullanılır. Onaylı/gerçekleşen rezervasyon tutarı
+tahsilat gibi sunulmaz; dövizler ayrı satırlardadır. Saklanan sadakat
+puanı/seviyesi korunur; tanımlı olduğu doğrulanmayan indirim/ayrıcalık ve
+sabit eşik vaatleri kaldırılır. Not ekleme gerçek Türkçe alana odaklanır.
+
+Teklif/Mesaj düğmeleri gerçek MessagingDashboard'a yalnız guest id ve
+action ile gider; e-posta/telefon/ad URL'ye yazılmaz. Hedef ekran aynı
+misafiri API'den doğrular; eski/gecikmiş veya hatalı kimlik yanıtını
+kullanmaz. Placeholder adres otomatik alıcı olmaz. Fiyat/indirim veya
+iletişim izni uydurulmaz; mesaj otomatik gönderilmez. Boş teklif gönderim
+düğmesi kapalıdır. Bağlantı durumu ve deneme modu açıkça ayrılır; eksik/
+kapalı/doğrulanmamış sağlayıcıda gönderim açılmaz. Zoho HTTPS kurulumu
+SMTP host zorunluluğuyla yanlış engellenmez. Mevcut backend izin/consent
+kontrolleri değiştirilmez. Başarısız istek başarılı teslim gibi gösterilmez.
+Üst menü rota yerleşiminde korunur; ön büroya dönüş ve mobil sekmeler nettir.
+
+Yerel doğrulamalar
+------------------
+Backend: 65 test geçti (hizmet kaynak projeksiyonu, tenant sınırı, tarih/
+saat girdileri, iş günü ile hizmet günü ayrımı, ücret/kur/ikram regresyonu,
+folio oluşturma sınırı ve rezervasyon takvim günü).
+Frontend: son tam tur 408 dosya / 2209 test, sıfır skip. Coverage turu
+408 dosya / 2208 test; statements %32,38, branches %29,37, functions
+%25,67, lines %33,09. Eşikler azaltılmaz. Son tesis kimliği ve sunum
+değişiklikleri ardından tam tur ve 21 hedefli sözleşme testi geçti.
+Üretim Vite build, değişen kaynaklar ESLint, backend Ruff, tema/yerleşim
+korumaları, diff ve test skip bütçesi başarılıdır.
+6 Playwright senaryosu: masaüstü/tablet/telefon, gerçek modal, seçili hesap,
+hizmet zamanı, yalnız yemek çıktısı, bağlamlı taslak ve yakın/uzak sıralama.
+Yerel yapay fixture tüm API okumalarını bellekte karşılar, yazıları reddeder.
+Gerçek misafire e-posta/WhatsApp veya üretim mali işlem gönderilmemiştir.
+
+PDF kabulü: kısa yemek dökümü 2 kalem / 16,40 USD; uzun örnek 102 kalem /
+116,40 USD / 5 sayfa. 001-100 numaralı örnek satırların hepsi metinde,
+son kalem ve toplam son sayfada doğrulandı. Acente, oda fiyatı ve genel
+bakiye çıktıda yok. Beş sayfanın tamamı PNG olarak görsel kontrol edildi.
+Test PDF/PNG'leri frontend/test-results-pms-overview/ altında yereldir ve
+Git'e eklenmez. Kalıcı regresyon fixture/test dosyaları repoya dahildir.
+
+Sınır
+-----
+Bu sonuç, tanımlanan senaryoların yerel kabulüdür; yeni PR'ın merge/deploy
+sonrası canlı kabulünün veya her rol/tesis/kesinti birleşiminde evrensel
+hatasızlığın yerine geçmez. Canlı mali kayıtlar, stoklar, oda sayısı ve
+kanal ayarları bu UI çalışmasında değiştirilmemiştir.

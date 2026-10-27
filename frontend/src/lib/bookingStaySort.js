@@ -8,6 +8,8 @@ const calendarDay = value => {
     ? date.getTime() : null;
 };
 
+const NON_STAYING_STATUSES = new Set(['cancelled', 'canceled', 'checked_out', 'no_show']);
+
 export function sortBookingsByStay(bookings = [], businessDate, order = 'nearest') {
   const reference = calendarDay(businessDate);
   // Without a verified business day, chronological order is the safest fallback.
@@ -17,7 +19,12 @@ export function sortBookingsByStay(bookings = [], businessDate, order = 'nearest
     if (start === null) return null;
     const end = calendarDay(booking.check_out);
     if (reference === null) return start;
-    if (end !== null && end >= start && start <= reference && reference <= end) return 0;
+    // A cancelled/no-show booking never occupied its planned stay interval.
+    // Legacy test data can have a decades-long checkout: it must not outrank
+    // today's actual guests merely because that interval contains today.
+    const status = String(booking.status || '').toLowerCase();
+    if (['cancelled', 'canceled', 'no_show'].includes(status)) return Math.abs(start - reference);
+    if (!NON_STAYING_STATUSES.has(status) && end !== null && end >= start && start <= reference && reference <= end) return 0;
     return Math.min(Math.abs(start - reference), end !== null && end >= start ? Math.abs(end - reference) : Infinity);
   };
 

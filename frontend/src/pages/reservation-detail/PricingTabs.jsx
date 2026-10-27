@@ -8,6 +8,7 @@ import { API, fmtDate, fmtCurrency, fmtTs, FormField, SelectField } from './help
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
 import { calculateFinancialLine, parseMoney, parseQuantity } from '@/lib/financialInput';
+import { serviceTimingLabel } from '@/lib/folioPresentation';
 
 const parseDecimalInput = value => parseMoney(value) ?? Number.NaN;
 
@@ -341,6 +342,7 @@ export function ExtraChargesTab({
     amount: '',
     quantity: '1',
     input_currency: currency === 'TRY' ? 'TRY' : currency,
+    service_date: '', service_time: '',
   });
   const [exchangeRates, setExchangeRates] = useState({});
   const [ratesLoading, setRatesLoading] = useState(false);
@@ -379,6 +381,7 @@ export function ExtraChargesTab({
       amount: '',
       quantity: '1',
       input_currency: currency === 'TRY' ? 'TRY' : currency,
+      service_date: '', service_time: '',
     });
   }, [booking?.id, currency]);
 
@@ -422,6 +425,10 @@ export function ExtraChargesTab({
       toast.error(message);
       return;
     }
+    if (!form.service_date || (form.category === 'spa' && !form.service_time)) {
+      setFormError('Hizmet tarihini girin. Spa hizmetlerinde saat de gereklidir.');
+      return;
+    }
     if (normalizedInputCurrency !== currency && (!Number.isFinite(extraExchangeRate) || extraExchangeRate <= 0)) {
       const message = 'Güncel kur alınmadan farklı para birimiyle ek ücret kaydedilemez';
       setFormError(message);
@@ -437,6 +444,7 @@ export function ExtraChargesTab({
         quantity,
         input_currency: normalizedInputCurrency,
         exchange_rate: extraExchangeRate,
+        service_time: form.service_time || null,
       });
       toast.success(amount === 0 || isFullComp ? 'Komp / ikram kaydı eklendi' : 'Ekstra ücret eklendi');
       setShowAdd(false);
@@ -446,6 +454,7 @@ export function ExtraChargesTab({
         amount: '',
         quantity: '1',
         input_currency: currency === 'TRY' ? 'TRY' : currency,
+        service_date: '', service_time: '',
       });
       onRefresh?.();
     } catch (e) {
@@ -552,6 +561,8 @@ export function ExtraChargesTab({
           ...p,
           quantity: v
         }))} />
+            <FormField label="Hizmet tarihi" type="date" value={form.service_date} onChange={v => setForm(p => ({ ...p, service_date: v }))} />
+            <FormField label="Hizmet saati" type="time" hint="Otelin yerel saati. Spa için zorunlu; bilinmiyorsa diğer hizmetlerde boş bırakın." value={form.service_time} onChange={v => setForm(p => ({ ...p, service_time: v }))} />
           </div>
           {normalizedInputCurrency !== currency && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
             {ratesLoading ? 'Güncel kur alınıyor…' : Number.isFinite(convertedTotal) && convertedTotal > 0 ? `${form.amount || 0} ${inputCurrencyLabel} × ${form.quantity || 1} = ${fmtCurrency(convertedTotal, currency)} olarak folyoya yansır.` : 'Tutar girildiğinde rezervasyon para birimi karşılığı gösterilir.'}
@@ -573,6 +584,7 @@ export function ExtraChargesTab({
                 <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center"><Receipt className="w-4 h-4 text-amber-600" /></div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
+                  <div className="mt-1 text-xs text-slate-600">{serviceTimingLabel(c)}</div>
                   <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtCurrency(c.complimentary_original_amount, currency)}</span>} {c.entered_currency && c.entered_currency !== (c.currency || currency) && <span className="ml-1 text-blue-600">Girilen: {fmtCurrency(c.entered_total ?? c.entered_amount, c.entered_currency)} · Kur: {Number(c.exchange_rate || 0).toFixed(4)}</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
                 <div className="text-sm font-bold text-amber-700">{fmtCurrency(c.total ?? c.charge_amount ?? c.amount, c.currency || currency)}</div>

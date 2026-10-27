@@ -13,7 +13,9 @@ export function getMessagingReadiness(provider, channel = 'whatsapp') {
   const credentials = provider?.credentials || {};
   const hasCredentials = channel === 'whatsapp'
     ? Boolean(credentials.access_token && credentials.phone_number_id)
-    : Boolean(credentials.smtp_host && credentials.from_email);
+    : credentials.email_transport === 'zoho_api'
+      ? Boolean(credentials.from_email && credentials.zoho_account_id && credentials.zoho_client_id && credentials.zoho_client_secret && credentials.zoho_refresh_token)
+      : Boolean(credentials.smtp_host && credentials.from_email);
 
   if (!provider || !hasCredentials) {
     return {

@@ -25,7 +25,7 @@ test('compact exact monetary cards and selectable stay proximity', async ({ page
   const amount = await page.getByTestId('stay-amount-today').boundingBox();
   expect(dates.x + dates.width <= amount.x || amount.x + amount.width <= dates.x || dates.y + dates.height <= amount.y || amount.y + amount.height <= dates.y).toBe(true);
   await page.getByRole('combobox', { name: 'Sıralama' }).selectOption('nearest');
-  await page.getByRole('button', { name: 'Tümü (3)' }).click();
+  await page.getByRole('button', { name: 'Tümü (4)' }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('overview.png'), fullPage: true });
 });

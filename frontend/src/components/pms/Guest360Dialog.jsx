@@ -57,6 +57,7 @@ const Guest360Dialog = ({
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
   const historySectionRef = useRef(null);
+  const notesInputRef = useRef(null);
   const rawStayHistory = guest360Data?.stay_history || guest360Data?.recent_bookings;
   const stayHistory = Array.isArray(rawStayHistory) ? rawStayHistory : [];
   const guestNotes = normalizeGuestNotes(guest360Data?.guest?.notes);
@@ -66,7 +67,7 @@ const Guest360Dialog = ({
   const formatMoneyBreakdown = (breakdown, fallbackValue) => {
     const entries = Object.entries(breakdown || {}).filter(([, amount]) => Number.isFinite(Number(amount)));
     if (!entries.length) return formatMoney(fallbackValue);
-    return entries.map(([currency, amount]) => formatMoney(amount, currency)).join(' • ');
+    return <span className="block space-y-1">{entries.map(([currency, amount]) => <span className="block" key={currency}>{formatMoney(amount, currency)}</span>)}</span>;
   };
   const statusLabels = {
     checked_out: 'Çıkış yapıldı',
@@ -84,6 +85,12 @@ const Guest360Dialog = ({
   };
   const loyaltyLabel = (value) => loyaltyLabels[value] || loyaltyLabels.standard;
   const formatChannel = bookingSourceLabel;
+  const openGuestMessage = action => {
+    const id = guest360Data?.guest?.id || selectedGuest360;
+    if (!id) return;
+    // Resolve contact details in the destination, not in URL/history/logs.
+    navigate(`/messaging-dashboard?${new URLSearchParams({ guest: id, action })}`);
+  };
 
   useEffect(() => {
     if (!open || loadingGuest360 || initialSection !== 'history' || !guest360Data) return;
@@ -157,15 +164,7 @@ const Guest360Dialog = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
           <Button 
             onClick={() => {
-              const g = guest360Data.guest || {};
-              const params = new URLSearchParams({
-                action: 'offer',
-                guest: g.id || selectedGuest360 || '',
-                name: g.name || '',
-                ...(g.email ? { email: g.email } : {}),
-                ...(g.phone ? { phone: g.phone } : {}),
-              }).toString();
-              navigate(`/ota-messaging-hub?${params}`);
+              openGuestMessage('offer');
             }}
             className="flex-1 bg-green-600 hover:bg-green-700"
           >
@@ -174,10 +173,8 @@ const Guest360Dialog = ({
           </Button>
           <Button 
             onClick={() => {
-              // Scroll to notes section or auto-focus note input
-              const noteInput = document.querySelector('textarea[placeholder*="note"]');
-              if (noteInput) noteInput.focus();
-              toast.info('Not alanı hazır; notunuzu aşağıya ekleyebilirsiniz.');
+              notesInputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              notesInputRef.current?.focus();
             }}
             variant="outline"
             className="flex-1 border-blue-400 hover:bg-blue-50"
@@ -206,8 +203,7 @@ const Guest360Dialog = ({
           </Button>
           <Button 
             onClick={() => {
-              // Navigate to messaging center with pre-filled guest
-              navigate(`/ota-messaging-hub?guest=${guest360Data.guest?.id}&name=${guest360Data.guest?.name}`);
+              openGuestMessage('message');
             }}
             variant="outline"
             className="flex-1 border-amber-400 hover:bg-amber-50"
@@ -254,7 +250,7 @@ const Guest360Dialog = ({
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Son Konaklama</div>
+              <div className="text-sm text-gray-600">Son rezervasyonun giriş tarihi</div>
               <div className="font-semibold">
                 {guest360Data.profile?.last_seen_date ? new Date(guest360Data.profile.last_seen_date).toLocaleDateString('tr-TR') : 'Kayıt yok'}
               </div>
@@ -263,8 +259,10 @@ const Guest360Dialog = ({
         </Card>
 
 
-        {/* Loyalty Progress Card */}
-        <Card className="bg-gradient-to-r from-indigo-50 to-pink-50 border-indigo-200">
+        {/* Only stored loyalty facts; no invented benefits or tier thresholds. */}
+        <details className="rounded-xl border bg-white p-4">
+          <summary className="cursor-pointer text-sm font-medium text-slate-700">Sadakat programı ayrıntıları</summary>
+        <Card className="mt-3 border-0 shadow-none">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Crown className="w-5 h-5 text-indigo-600" />
@@ -289,82 +287,14 @@ const Guest360Dialog = ({
               </div>
             </div>
             
-            {/* Progress to Next Tier */}
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-600">Sonraki Seviyeye İlerleme</span>
-                <span className="font-semibold">
-                  {(() => {
-                    const currentPoints = guest360Data.profile?.loyalty_points || guest360Data.guest?.loyalty_points || 0;
-                    const currentStatus = guest360Data.profile?.loyalty_status || guest360Data.guest?.loyalty_tier || 'standard';
-                    const thresholds = { standard: 1000, silver: 2500, gold: 5000, vip: 10000 };
-                    const nextTier = 
-                      currentStatus === 'standard' ? 'silver' :
-                      currentStatus === 'silver' ? 'gold' :
-                      currentStatus === 'gold' ? 'vip' :
-                      null;
-                    
-                    if (!nextTier) return 'En yüksek seviye';
-                    const needed = thresholds[nextTier] - currentPoints;
-                    return needed > 0 ? `${loyaltyLabel(nextTier)} için ${needed} puan` : 'Seviye yükseltmeye uygun';
-                  })()}
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div 
-                  className="bg-gradient-to-r from-indigo-600 to-pink-600 h-3 rounded-full transition-all"
-                  style={{ 
-                    width: `${(() => {
-                      const currentPoints = guest360Data.profile?.loyalty_points || guest360Data.guest?.loyalty_points || 0;
-                      const currentStatus = guest360Data.profile?.loyalty_status || guest360Data.guest?.loyalty_tier || 'standard';
-                      const thresholds = { standard: 1000, silver: 2500, gold: 5000, vip: 10000 };
-                      const current = thresholds[currentStatus] || 0;
-                      const nextTier = 
-                        currentStatus === 'standard' ? 'silver' :
-                        currentStatus === 'silver' ? 'gold' :
-                        currentStatus === 'gold' ? 'vip' :
-                        null;
-                      
-                      if (!nextTier) return 100;
-                      const next = thresholds[nextTier];
-                      const progress = ((currentPoints - current) / (next - current)) * 100;
-                      return Math.min(Math.max(progress, 0), 100);
-                    })()}%` 
-                  }}
-                ></div>
-              </div>
-            </div>
-            
             {/* Tier Benefits */}
             <div className="text-xs space-y-1">
-              <div className="font-semibold mb-2">Mevcut Ayrıcalıklar:</div>
-              {guest360Data.profile?.loyalty_status === 'vip' || guest360Data.guest?.loyalty_tier === 'vip' ? (
-                <>
-                  <div className="flex items-center gap-2">Suit oda yükseltme</div>
-                  <div className="flex items-center gap-2">Karşılama hediyesi</div>
-                  <div className="flex items-center gap-2">Ücretsiz hizmetler</div>
-                  <div className="flex items-center gap-2">Öncelikli giriş ve çıkış</div>
-                </>
-              ) : guest360Data.profile?.loyalty_status === 'gold' || guest360Data.guest?.loyalty_tier === 'gold' ? (
-                <>
-                  <div className="flex items-center gap-2">Ücretsiz oda yükseltme</div>
-                  <div className="flex items-center gap-2">Ücretsiz kahvaltı</div>
-                  <div className="flex items-center gap-2">Geç çıkış</div>
-                </>
-              ) : guest360Data.profile?.loyalty_status === 'silver' || guest360Data.guest?.loyalty_tier === 'silver' ? (
-                <>
-                  <div className="flex items-center gap-2">%10 indirim</div>
-                  <div className="flex items-center gap-2">Konaklamadan puan kazanma</div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">Puan kazanma</div>
-                  <div className="flex items-center gap-2">Özel teklifler</div>
-                </>
-              )}
+              <div className="font-semibold mb-2">Seviye hakkında</div>
+              <p>Ayrıcalık ve indirimler tesisin geçerli sadakat programından doğrulanmalıdır. Bu ekran otomatik indirim uygulamaz.</p>
             </div>
           </CardContent>
         </Card>
+        </details>
 
 
         {/* Stats Dashboard */}
@@ -373,24 +303,27 @@ const Guest360Dialog = ({
             <CardContent className="pt-4 text-center">
               <div className="text-3xl font-bold text-blue-600">{guest360Data.stats?.total_stays || 0}</div>
               <div className="text-sm text-gray-600">Toplam Konaklama</div>
+              <p className="mt-1 text-xs text-slate-500">Girişi yapılmış rezervasyonlar</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
               <div className="text-3xl font-bold text-green-600">{guest360Data.stats?.total_nights || 0}</div>
               <div className="text-sm text-gray-600">Toplam Gece</div>
+              <p className="mt-1 text-xs text-slate-500">Onaylı ve gerçekleşen rezervasyonlar</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-xl sm:text-2xl font-bold text-indigo-600 break-words">{formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}</div>
-              <div className="text-sm text-gray-600">Yaşam Boyu Değer</div>
+              <div className="text-base font-semibold text-slate-900 break-words tabular-nums">{formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}</div>
+              <div className="mt-1 text-sm text-gray-600">Konaklama tutarı toplamı</div>
+              <p className="mt-1 text-xs text-slate-500">Onaylı ve gerçekleşen konaklamalar; tahsilat toplamı değildir.</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-xl sm:text-2xl font-bold text-amber-600 break-words">{formatMoneyBreakdown(guest360Data.stats?.average_adr_by_currency, guest360Data.stats?.average_adr)}</div>
-              <div className="text-sm text-gray-600">Ortalama ADR</div>
+              <div className="text-base font-semibold text-slate-900 break-words tabular-nums">{formatMoneyBreakdown(guest360Data.stats?.average_adr_by_currency, guest360Data.stats?.average_adr)}</div>
+              <div className="mt-1 text-sm text-gray-600">Gecelik ortalama oda bedeli</div>
             </CardContent>
           </Card>
         </div>
@@ -433,6 +366,7 @@ const Guest360Dialog = ({
               </div>
               <div className="flex gap-2">
                 <Textarea 
+                  ref={notesInputRef}
                   placeholder="Not ekle…"
                   value={guestNote}
                   onChange={(e) => setGuestNote(e.target.value)}
@@ -455,7 +389,7 @@ const Guest360Dialog = ({
               Önceki PMS'den taşınan geçmişi aç
             </Button>}
             <CardDescription>
-              {stayHistory.length} rezervasyon kaydı • Toplam değer {formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}
+              {stayHistory.length} rezervasyon kaydı • Konaklama tutarı {formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -463,7 +397,7 @@ const Guest360Dialog = ({
               {stayHistory.length > 0 ? (
                 stayHistory.map((booking, idx) => {
                   const nights = Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24));
-                  const adr = nights > 0 ? (booking.total_amount / nights).toFixed(0) : 0;
+                  const adr = nights > 0 ? booking.total_amount / nights : 0;
                   
                   return (
                     <div key={idx} className="relative pl-8 pb-4 border-l-2 border-blue-300 last:border-0">
@@ -504,7 +438,7 @@ const Guest360Dialog = ({
                             <div className="font-bold text-green-600">{formatMoney(booking.total_amount, booking.currency || statsCurrency)}</div>
                           </div>
                           <div>
-                            <div className="text-gray-600">ADR</div>
+                            <div className="text-gray-600">Gecelik oda bedeli</div>
                             <div className="font-bold">{formatMoney(adr, booking.currency || statsCurrency)}</div>
                           </div>
                           <div>

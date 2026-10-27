@@ -13,6 +13,11 @@ vi.mock('@/api/axios', () => ({
 import { GeneralInfoTab } from '../InfoTabs';
 
 describe('GeneralInfoTab', () => {
+  it('renders a structured agency cancellation policy instead of crashing the reservation', () => {
+    render(<GeneralInfoTab booking={{ id: 'agency-policy', cancellation_policy: { free_until_days_before: 7, penalty_pct: 50, no_show_penalty_pct: 100 } }} />);
+    expect(screen.getByText(/Girişten 7 gün öncesine kadar ücretsiz iptal/)).toHaveTextContent('İptal kesintisi: %50 · Gelmeme kesintisi: %100');
+  });
+
   beforeEach(() => {
     apiGet.mockReset();
     apiGet.mockResolvedValue({ data: {} });

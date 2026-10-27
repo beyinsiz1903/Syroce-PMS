@@ -11,6 +11,7 @@ import '../src/index.css';
 // Local, synthetic presentation fixture. No credentials or property API calls.
 i18n.use(initReactI18next).init({ lng: 'tr', resources: { tr: { translation: tr } }, interpolation: { escapeValue: false } });
 const bookings = [
+  { id: 'legacy-no-show', guest_name: 'Eski No-Show', check_in: '2026-05-13', check_out: '2047-05-23', room_id: 'legacy', room_number: 'V-STD', currency: 'TRY', total_amount: 800, status: 'no_show' },
   { id: 'far', guest_name: 'Ali Kılıç', check_in: '2042-09-27', check_out: '2042-09-29', room_id: '101', room_number: '101', currency: 'TRY', total_amount: 1200, status: 'confirmed' },
   { id: 'tomorrow', guest_name: 'Deniz Kaya', check_in: '2026-10-27', check_out: '2026-10-29', room_id: '102', room_number: '102', currency: 'EUR', total_amount: 500, status: 'confirmed' },
   { id: 'today', guest_name: 'Selin Demir', check_in: '2026-10-26', check_out: '2026-10-28', currency: 'USD', total_amount: 300, status: 'confirmed' },

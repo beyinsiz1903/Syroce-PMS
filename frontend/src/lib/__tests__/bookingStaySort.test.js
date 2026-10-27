@@ -12,6 +12,19 @@ const rows = [
 ];
 
 describe('stay proximity to the PMS business day', () => {
+  it.each(['cancelled', 'canceled', 'checked_out', 'no_show'])('never treats an old %s interval as a current stay', status => {
+    const old = { ...stay('legacy', '2026-05-13', '2047-05-23'), status };
+    expect(ids(sortBookingsByStay([old, ...rows], '2026-10-26'))).toEqual(['in-house', 'tomorrow', 'recent', 'legacy', 'old', 'far-2042']);
+    expect(old.status).toBe(status);
+    expect(old.check_out).toBe('2047-05-23');
+  });
+
+  it.each(['cancelled', 'no_show'])('ranks a %s by the arrival, not its unoccupied checkout', status => {
+    const old = { ...stay('legacy', '2026-05-13', '2026-10-26'), status };
+    expect(ids(sortBookingsByStay([old, rows[1]], '2026-10-26'))).toEqual(['tomorrow', 'legacy']);
+    expect(ids(sortBookingsByStay([old, rows[1]], '2026-10-26', 'farthest'))).toEqual(['legacy', 'tomorrow']);
+  });
+
   it('places current and near stays first without mutating full history', () => {
     expect(ids(sortBookingsByStay(rows, '2026-10-26'))).toEqual(['in-house', 'tomorrow', 'recent', 'old', 'far-2042']);
     expect(rows[0].id).toBe('far-2042');

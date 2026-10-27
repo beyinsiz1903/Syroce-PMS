@@ -225,11 +225,33 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(inputs[1], { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: '0 TL Ekle' }));
 
+    expect(await screen.findByRole('alert')).toHaveTextContent('Hizmet tarihini girin');
+    expect(axiosPost).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-10-24' } });
+    fireEvent.change(screen.getByLabelText('Hizmet saati'), { target: { value: '19:30' } });
+    fireEvent.click(screen.getByRole('button', { name: '0 TL Ekle' }));
+
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
       '/pms/reservations/booking-a/add-extra-charge',
-      expect.objectContaining({ description: 'Kola', amount: 0, quantity: 1 }),
+      expect.objectContaining({ description: 'Kola', amount: 0, quantity: 1, service_date: '2026-10-24', service_time: '19:30' }),
     ));
     expect(toast.success).toHaveBeenCalledWith('Komp / ikram kaydı eklendi');
+  });
+
+  it('requires an explicit service time for a new spa charge', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(<ExtraChargesTab extra_charges={[]} charges={[]} booking={{ id: 'spa-booking', currency: 'USD' }} allBookings={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Masaj' } });
+    fireEvent.change(screen.getByLabelText('Kategori'), { target: { value: 'spa' } });
+    fireEvent.change(screen.getByLabelText('Birim tutar (USD)'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-10-24' } });
+    fireEvent.click(screen.getByRole('button', { name: '30 USD Ekle' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Spa hizmetlerinde saat de gereklidir');
+    expect(axiosPost).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Hizmet saati'), { target: { value: '14:30' } });
+    fireEvent.click(screen.getByRole('button', { name: '30 USD Ekle' }));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/reservations/spa-booking/add-extra-charge', expect.objectContaining({ category: 'spa', service_date: '2026-10-24', service_time: '14:30', amount: 30 })));
   });
 
   it('shows the quantity-adjusted total before adding an extra charge', async () => {
@@ -250,6 +272,7 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(inputs[2], { target: { value: '3' } });
 
     expect(screen.getByTestId('extra-charge-total-preview')).toHaveTextContent('15 TL × 3 = 45 TL');
+    fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-10-24' } });
     fireEvent.click(screen.getByRole('button', { name: '45 TL Ekle' }));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
@@ -299,6 +322,7 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Türk kahvesi' } });
     fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '390' } });
     expect(await screen.findByText(/7,8 EUR olarak folyoya yansır/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-10-24' } });
     fireEvent.click(screen.getByRole('button', { name: '390 TL (7,8 EUR) Ekle' }));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(

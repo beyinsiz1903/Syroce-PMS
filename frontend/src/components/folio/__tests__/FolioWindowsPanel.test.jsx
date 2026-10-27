@@ -47,6 +47,16 @@ describe('folio payee binding', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it('allows read-only selection of a historical folio without exposing payer mutations', async () => {
+    get.mockResolvedValueOnce({ data: [{ folio_id: 'closed', folio_number: 'F-OLD', window_number: 1, status: 'closed', balance: 0, folio_type: 'guest' }] });
+    const onSelect = vi.fn();
+    render(<FolioWindowsPanel bookingId="b" readOnly onSelect={onSelect} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Bu folyoyu seç' }));
+    expect(onSelect).toHaveBeenCalledWith('closed');
+    expect(screen.queryByRole('button', { name: 'Ödeyeni düzenle' })).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('does not expose mutation buttons in a read-only reservation', async () => {
     render(<FolioWindowsPanel bookingId="b" readOnly />);
     await waitFor(() => expect(get).toHaveBeenCalled());
