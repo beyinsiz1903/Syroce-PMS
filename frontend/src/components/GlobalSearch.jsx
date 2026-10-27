@@ -52,6 +52,8 @@ const GlobalSearch = ({ onSelectResult, user }) => {
   }, [query, searchablePages]);
 
   useEffect(() => {
+    let current = true;
+    setLoading(false);
     if (query.length < 2) {
       setResults({ guests: [], bookings: [], rooms: [] });
       return;
@@ -70,19 +72,20 @@ const GlobalSearch = ({ onSelectResult, user }) => {
           canAccessPmsTab(user, 'rooms') ? axios.get(`/pms/rooms?search=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })) : { data: [] }
         ]);
 
+        if (!current) return;
         setResults({
           guests: normalizeSearchResults(guestsRes.data, 'guests').slice(0, 3),
           bookings: normalizeSearchResults(bookingsRes.data, 'bookings').slice(0, 3),
           rooms: normalizeSearchResults(roomsRes.data, 'rooms').slice(0, 3)
         });
       } catch {
-        setResults({ guests: [], bookings: [], rooms: [] });
+        if (current) setResults({ guests: [], bookings: [], rooms: [] });
       } finally {
-        setLoading(false);
+        if (current) setLoading(false);
       }
     }, 300);
 
-    return () => clearTimeout(searchTimeout);
+    return () => { current = false; clearTimeout(searchTimeout); };
   }, [query, user]);
 
   const totalResults =

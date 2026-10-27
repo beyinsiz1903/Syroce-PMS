@@ -172,11 +172,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [selectedGuest360, setSelectedGuest360] = useState(null);
   const [guest360Data, setGuest360Data] = useState(null);
   const [loadingGuest360, setLoadingGuest360] = useState(false);
+  const [guest360Error, setGuest360Error] = useState(null);
+  const guest360RequestRef = useRef(0);
   const [guest360InitialSection, setGuest360InitialSection] = useState('profile');
   const [selectedBookingDetail, setSelectedBookingDetail] = useState(null);
   const [reservationDetailId, setReservationDetailId] = useState(null);
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
+
+  useEffect(() => () => { guest360RequestRef.current += 1; }, []);
   
   const [findRoomCriteria, setFindRoomCriteria] = useState({
     check_in: '', check_out: '', room_type: '', guests: 1
@@ -986,13 +990,57 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const loadGuest360 = async (guestId, initialSection = 'profile') => {
+    const requestId = ++guest360RequestRef.current;
+    setSelectedGuest360(guestId);
+    setGuest360Data(null);
+    setGuest360Error(null);
     setLoadingGuest360(true);
     setGuest360InitialSection(initialSection);
-    try { const response = await axios.get(`/crm/guest/${guestId}`, { timeout: 15000 }); setGuest360Data(response.data); setOpenDialog('guest360');
+    setOpenDialog('guest360');
+    try {
+      const response = await axios.get(`/crm/guest/${encodeURIComponent(guestId)}`, { timeout: 15000 });
+      if (requestId !== guest360RequestRef.current) return;
+      if (response.data?.guest?.id !== guestId) throw new Error('Unexpected guest profile');
+      setGuest360Data(response.data);
     } catch (error) {
-      if (error.code === 'ECONNABORTED') toast.error('İstek zaman aşımına uğradı; misafir profilinde çok fazla veri bulunuyor.');
-      else toast.error(error.response?.data?.detail || 'Misafir profili yüklenemedi');
-    } finally { setLoadingGuest360(false); }
+      if (requestId !== guest360RequestRef.current) return;
+      setGuest360Error(error.code === 'ECONNABORTED'
+        ? 'İstek zaman aşımına uğradı; misafir profilini yeniden yükleyebilirsiniz.'
+        : 'Misafir profili yüklenemedi. Kayıt kaldırılmış veya erişiminiz kısıtlanmış olabilir.');
+    } finally {
+      if (requestId === guest360RequestRef.current) setLoadingGuest360(false);
+    }
+  };
+
+  const closeGuest360 = () => {
+    guest360RequestRef.current += 1;
+    setOpenDialog(null);
+    setGuest360Data(null);
+    setGuest360Error(null);
+    setLoadingGuest360(false);
+  };
+
+  const handleSearchResult = (result) => {
+    if (result?.type === 'page' && result.data?.path) {
+      navigate(result.data.path);
+      return;
+    }
+    const tab = { guest: 'guests', booking: 'bookings', room: 'rooms' }[result?.type];
+    if (!tab || !result.data?.id) {
+      toast.error('Arama sonucu açılamadı. Lütfen yeniden arayın.');
+      return;
+    }
+    if (!validTabKeys.has(tab)) {
+      toast.error('Bu ekrana erişim yetkiniz yok.');
+      return;
+    }
+    // Open the actual entity, even outside the initial 30-day / 100-guest
+    // bootstrap. A tab change alone is not a successful entity navigation.
+    setActiveTab(tab);
+    window.location.hash = tab;
+    if (result.type === 'guest') void loadGuest360(result.data.id);
+    else if (result.type === 'booking') setReservationDetailId(result.data.id);
+    else setSelectedRoom(result.data);
   };
 
   const addGuestTag = async () => {
@@ -1035,17 +1083,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600">{t('pms.subtitle')}</p>
           </div>
           <div className="w-full lg:w-96 lg:shrink-0">
-            <GlobalSearch user={user} onSelectResult={(result) => {
-              if (result.type === 'page' && result.data?.path) {
-                navigate(result.data.path);
-                toast.info(result.data.label || result.data.path);
-                return;
-              }
-              const typeTabMap = { guest: 'frontdesk', booking: 'frontdesk', room: 'rooms', company: 'frontdesk', housekeeping: 'housekeeping' };
-              const tab = typeTabMap[result.type] || 'frontdesk';
-              setActiveTab(tab); window.location.hash = tab;
-              toast.info(`${result.data.name || result.data.room_number || result.data.id} · ilgili ekran açıldı`);
-            }} />
+            <GlobalSearch user={user} onSelectResult={handleSearchResult} />
           </div>
         </div>
 
@@ -1130,7 +1168,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} onGuestsChanged={loadData} t={t} />
           )}
           {activeTab === 'bookings' && (
-            <BookingsTab bookingStats={bookingStats} bookings={bookingListRows} historyLoading={bookingHistory.loading} historyError={bookingHistory.error} retryHistory={bookingHistory.refresh} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} setReservationDetailId={setReservationDetailId} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
+            <BookingsTab bookingStats={bookingStats} bookings={bookingListRows} businessDate={businessDate} historyLoading={bookingHistory.loading} historyError={bookingHistory.error} retryHistory={bookingHistory.refresh} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} setReservationDetailId={setReservationDetailId} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
           )}
           {activeTab === 'cashier' && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
           {activeTab === 'upsell' && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
@@ -1209,13 +1247,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           />
         )}
 
-        {guest360Data && visitedDialogs.has('guest360') && (
+        {visitedDialogs.has('guest360') && (
           <Suspense fallback={null}>
             <Guest360Dialog
               open={openDialog === 'guest360'}
-              onClose={() => { setOpenDialog(null); setGuest360Data(null); }}
+              onClose={closeGuest360}
               guest360Data={guest360Data}
               loadingGuest360={loadingGuest360}
+              error={guest360Error}
               selectedGuest360={selectedGuest360}
               loadGuest360={loadGuest360}
               initialSection={guest360InitialSection}

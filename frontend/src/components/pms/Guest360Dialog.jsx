@@ -46,6 +46,7 @@ const Guest360Dialog = ({
   onClose,
   guest360Data,
   loadingGuest360,
+  error = null,
   selectedGuest360,
   loadGuest360,
   initialSection = 'profile',
@@ -144,6 +145,11 @@ const Guest360Dialog = ({
       <div className="text-center py-12">
         <div className="text-4xl mb-4"></div>
         <div>Misafir profili yükleniyor…</div>
+      </div>
+    ) : error ? (
+      <div role="alert" className="space-y-3 py-8 text-center text-sm text-red-700">
+        <p>{error}</p>
+        <Button variant="outline" onClick={() => loadGuest360(selectedGuest360, initialSection)}>Yeniden dene</Button>
       </div>
     ) : guest360Data ? (
       <div className="space-y-4">
