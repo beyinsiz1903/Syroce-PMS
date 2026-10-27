@@ -42,13 +42,17 @@ describe('Minibar inventory and recovery', () => {
   it('does not send a charge if the exact request cannot be retained before sending', async () => {
     render(<MinibarPage user={staff} />);
     await fillConsumption();
-    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage unavailable'); });
+    const storage = globalThis.sessionStorage;
+    vi.stubGlobal('sessionStorage', {
+      getItem: storage.getItem.bind(storage), removeItem: storage.removeItem.bind(storage), clear: storage.clear.bind(storage),
+      setItem: () => { throw new Error('storage unavailable'); },
+    });
     try {
       fireEvent.click(screen.getByTestId('minibar-submit'));
       expect(await screen.findByText(/Tüketim isteği güvenle saklanamadı/)).toHaveAttribute('role', 'alert');
       expect(api.post).not.toHaveBeenCalled();
       expect(screen.getByTestId('minibar-submit')).toBeDisabled();
-    } finally { storage.mockRestore(); }
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('replays an uncertain request after a full page remount without creating a new key', async () => {
