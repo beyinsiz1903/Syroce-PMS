@@ -23,6 +23,13 @@ SOURCES = {
     'bd6dd709-d7e7-50f7-bd13-0e3de7756525': 'Syroce QA Certification',
     '438a48d7-8f67-4bd6-b0f6-ee0dfe2cbf21': 'Exely Certification Test',
 }
+# These two reviewed legacy queue fixtures have no tenant-owned guest profiles.
+# Their original identity was reviewed through the normal Demo API before any
+# archive write. This is NOT a fallback for arbitrary dangling guest references.
+REVIEWED_SYNTHETIC_ORPHANS = {
+    'queue-test-94d3ffd931': {'guest_id': 'queue-guest-604b5b', 'created_at': '2026-05-30T08:41:45.154995+00:00'},
+    'queue-test-b403202216': {'guest_id': 'queue-guest-e310ef', 'created_at': '2026-05-30T08:41:44.888547+00:00'},
+}
 FINANCIAL = ('payments', 'folio_charges', 'extra_charges', 'deposits', 'security_funds', 'invoices',
              'cari_transactions', 'city_ledger_transactions', 'billing_settlements')
 
@@ -69,10 +76,14 @@ async def plan(db, tid, session=None):
         embedded_name, guest_id = booking.get('guest_name'), booking.get('guest_id')
         linked_guest = await db.guests.find_one({'tenant_id': tid, 'id': guest_id},
             {'_id': 0, 'id': 1, 'name': 1}, session=session) if guest_id else None
+        orphan_source = REVIEWED_SYNTHETIC_ORPHANS.get(bid)
+        reviewed_orphan = bool(not linked_guest and orphan_source and embedded_name == SOURCES[bid]
+            and all(booking.get(key) == value for key, value in orphan_source.items()))
         identity = {'name': SOURCES[bid], 'embedded_name': embedded_name, 'guest_id': guest_id,
-            'linked_guest': linked_guest}
+            'linked_guest': linked_guest, 'basis': 'reviewed_legacy_synthetic_orphan' if reviewed_orphan
+            else 'tenant_guest_profile' if linked_guest else 'embedded_source_name'}
         names = ([embedded_name] if embedded_name else []) + ([linked_guest.get('name')] if linked_guest else [])
-        if not names or any(name != SOURCES[bid] for name in names) or (guest_id and not linked_guest):
+        if not names or any(name != SOURCES[bid] for name in names) or (guest_id and not linked_guest and not reviewed_orphan):
             reasons.append('source_identity_changed')
         if booking.get('status') not in {'confirmed', 'pending', 'guaranteed'}:
             reasons.append('not_a_future_unarrived_reservation')
@@ -154,6 +165,7 @@ async def apply(db, user, data):
             await audit_log(actor_id=actor, tenant_id=tid, entity_type='reservation', entity_id=bid,
                 action='demo_reservation_archived', metadata={'reason': data.reason, 'policy_id': POLICY,
                     'request_id': str(data.request_id), 'before_hash': digest(row), 'released_lock_count': len(row['room_night_locks']),
+                    'identity_basis': row['verified_identity']['basis'],
                     'provider_cancelled': False, 'financial_sources_changed': False}, session=session, require_chain=True)
         return result
 
