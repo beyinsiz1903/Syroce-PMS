@@ -91,7 +91,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
                 **report_period_match(
                     legacy_period("closed_at"), legacy_period("created_at", "closed_at")),
             },
-            {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1, "business_date": 1, "closed_at": 1, "created_at": 1, "tax_amount": 1, "vat_amount": 1, "tax_breakdown": 1, "discount_amount": 1},
+            {"_id": 0, "id": 1, "outlet_id": 1, "total_amount": 1, "grand_total": 1, "currency": 1, "business_date": 1, "closed_at": 1, "created_at": 1, "tax_amount": 1, "vat_amount": 1, "tax_breakdown": 1, "discount_amount": 1},
         ).to_list(None),
     )
     # Finalized POS ledger is authoritative; orders are only a legacy fallback.
@@ -156,12 +156,15 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
                 "vat_amount": row.get("vat_amount"), "tax_breakdown": row.get("tax_breakdown"),
                 "discount_amount": row.get("discount_amount"),
                 "report_refund": value < 0, "source_pos_order_id": order_id,
+                'outlet_id': row.get('outlet_id') or (row.get('source_sale') or {}).get('outlet_id'),
                 '_pos_transaction': row,
                 "currency": row.get("currency") or order_currencies.get(order_id),
                 "business_date": row.get("business_date") or row.get("transaction_date"), "date": row.get("created_at")})
     direct_pos_rows = [
         {
             "id": row.get("id"),
+            'source_pos_order_id': row.get('id'),
+            'outlet_id': row.get('outlet_id'),
             "category": "fnb",
             "total": row.get("grand_total") if row.get("grand_total") is not None else row.get("total_amount", 0),
             "currency": row.get("currency"),

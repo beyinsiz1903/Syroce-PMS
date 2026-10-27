@@ -784,12 +784,33 @@ async def daily_summary(
     )
     items = [d async for d in cur]
     by_status: dict[str, int] = {}
+    completed = {a['id']: a for a in items if a.get('status') == 'completed'}
     revenue: dict = {}
+    catalog_value: dict = {}
+    complimentary: dict = {}
+    unposted_value: dict = {}
+    unposted_count = 0
+    charges = await db.folio_charges.find({'tenant_id': current_user.tenant_id,
+        'source_spa_appointment_id': {'$in': list(completed)}}, {'_id': 0}).to_list(None) if completed else []
+    known_sources = {row['source_spa_appointment_id'] for row in charges}
+    # Include transferred parts (same source appointment, other room), but
+    # never count a voided charge or substitute its original catalog price.
+    for row in charges:
+        if row.get('voided'):
+            continue
+        appt = completed[row['source_spa_appointment_id']]
+        code = row.get('currency') or appt.get('currency') or 'TRY'
+        add_amount(revenue, code, row['total'])
+        if row.get('is_complimentary'):
+            add_amount(complimentary, code, row.get('complimentary_original_amount') or 0)
     for a in items:
         status = a.get("status") or "unknown"
         by_status[status] = by_status.get(status, 0) + 1
         if status == "completed":
-            add_amount(revenue, a.get("currency") or "TRY", a.get("price") or 0)
+            add_amount(catalog_value, a.get('currency') or 'TRY', a.get('price') or 0)
+            if a['id'] not in known_sources:
+                unposted_count += 1
+                add_amount(unposted_value, a.get('currency') or 'TRY', a.get('price') or 0)
     by_currency = rounded_totals(revenue)
     return {
         "date": day.isoformat(),
@@ -800,6 +821,12 @@ async def daily_summary(
         # every completed appointment is in one currency (else null).
         "revenue_by_currency": by_currency,
         "revenue": single_amount(revenue),
+        'revenue_basis': 'active_folio_charges_for_completed_appointments',
+        'catalog_value_by_currency': rounded_totals(catalog_value),
+        'complimentary_value_by_currency': rounded_totals(complimentary),
+        'unposted_value_by_currency': rounded_totals(unposted_value),
+        'unposted_appointments': unposted_count,
+        'revenue_complete': unposted_count == 0,
     }
 
 

@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from modules.pms_core.folio_selection import select_booking_folio
 from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.report_money import currency_code, money
+from shared_kernel.audit_helper import audit_log
 
 
 def public_result(result):
@@ -119,7 +120,7 @@ def partition(row, amount, *, extra=False):
     return left, right
 
 
-async def split_service_charge(database, tenant_id, actor, booking_id, body, operation_id, *, session):
+async def split_service_charge(database, tenant_id, actor, booking_id, body, operation_id, *, session, actor_id=None):
     if session is None:
         raise HTTPException(503, "Masraf aktarımı için transaction desteği gerekli")
     digest = hashlib.sha256(json.dumps(body.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
@@ -186,6 +187,13 @@ async def split_service_charge(database, tenant_id, actor, booking_id, body, ope
     right.update({"id": str(operation_id), "booking_id": target_id, "folio_id": target["id"], "currency": code,
         "charge_category": category, "business_date": day, "split_from_charge_id": body.charge_id,
         "split_from_booking_id": booking_id, "transferred_by": actor, "transferred_at": now})
+    if 'line_no' in charge:
+        # Keep canonical source-line keys unchanged. A transfer is a new
+        # folio partition, NOT a redelivery of that product line. Retain the
+        # order/consumption source so refunds/reporting still find every part.
+        # UUID-namespaced identities do not require weakening any unique index.
+        right['source_line_no'] = charge.get('source_line_no', charge['line_no'])
+        right['line_no'] = 'split:' + str(operation_id)
     right.pop("_id", None)
     changed = await source_collection.update_one(query, {"$set": {key: left[key] for key in ["quantity", "unit_price", "total", "amount", "subtotal", "discount_amount", "tax_amount", "vat_amount", "charge_amount", "tax_breakdown"] if key in left}}, session=session)
     if changed.matched_count != 1:
@@ -203,4 +211,11 @@ async def split_service_charge(database, tenant_id, actor, booking_id, body, ope
         "from_booking_id": booking_id, "to_booking_id": target_id, "from_folio_id": source["id"], "to_folio_id": target["id"],
         "charge_ids": [body.charge_id], "amount": body.split_amount, "currency": code, "reason": body.reason,
         "performed_by": actor, "performed_at": now, "original_charge": charge, "fingerprint": digest, "result": result}, session=session)
+    metadata = {'operation_id': str(operation_id), 'source_booking_id': booking_id, 'target_booking_id': target_id,
+        'source_folio_id': source['id'], 'target_folio_id': target['id'], 'source_charge_id': body.charge_id,
+        'target_charge_id': right['id'], 'amount': body.split_amount, 'currency': code, 'reason': body.reason,
+        'actor_name': actor, 'business_date': day}
+    for bid, action in ((booking_id, 'charge_split'), (target_id, 'charge_received')):
+        await audit_log(actor_id=actor_id or actor, tenant_id=tenant_id, entity_type='reservation', entity_id=bid,
+            action=action, metadata=metadata, session=session, require_chain=True)
     return result

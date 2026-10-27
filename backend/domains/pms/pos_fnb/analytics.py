@@ -86,6 +86,17 @@ async def snapshot(db, tenant_id, first=None, last=None, outlet_id=None, days=30
         for row in await posted_revenue_rows(tenant_id, date.fromisoformat(start), date.fromisoformat(end), database=db)
         if charge_category(row) in FNB_CATEGORIES or (row.get("source_pos_order_id") and charge_category(row) == "service_charge")
     ]
+    # Canonical folio lines retain the source order across room transfers.
+    # Resolve its outlet from tenant-scoped evidence, not a current menu or
+    # arbitrary first outlet. Manual/unresolvable F&B remains "unassigned".
+    outlet_map = {str(row.get('order_id') or row.get('id')): row.get('outlet_id') or (row.get('source_sale') or {}).get('outlet_id') for row in rows}
+    missing = {str(row['source_pos_order_id']) for row in revenue_rows
+               if not row.get('outlet_id') and row.get('source_pos_order_id') and not outlet_map.get(str(row['source_pos_order_id']))}
+    if missing:
+        sources = await db.pos_orders.find({'tenant_id': tenant_id, 'id': {'$in': sorted(missing)}},
+            {'_id': 0, 'id': 1, 'outlet_id': 1}).to_list(None)
+        outlet_map.update({str(row['id']): row.get('outlet_id') for row in sources})
+    revenue_rows = [{**row, 'outlet_id': row.get('outlet_id') or outlet_map.get(str(row.get('source_pos_order_id')))} for row in revenue_rows]
     if outlet_id:
         scoped_ids = {row.get("order_id") or row.get("id") for row in rows}
         revenue_rows = [row for row in revenue_rows if row.get("outlet_id") == outlet_id or row.get("source_pos_order_id") in scoped_ids]

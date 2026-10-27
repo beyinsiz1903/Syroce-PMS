@@ -215,6 +215,8 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
                       'vat_amount', 'tax_amount', 'subtotal', 'discount_amount', 'tax_breakdown')
             if existing and all(existing.get(field) == cdoc.get(field) for field in fields):
                 continue
+            if existing and await _matches_partitioned_source(db, tenant_id, order_id, cdoc):
+                continue
             if inserted:
                 await _recalc_folio_balance(db, tenant_id, folio_id)
                 invalidate_financial_report_caches(tenant_id)
@@ -234,6 +236,52 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
     return True, (f"posted {inserted} charge(s) for order {order_id} to folio {folio_id}; balance={balance}")
 
 
+async def _matches_partitioned_source(db, tenant_id, order_id, source):
+    """Prove a legitimate transfer, never acknowledge an unrelated E11000.
+
+    Require the durable original snapshot AND exact financial conservation
+    across the source line and every transferred part in every room.
+    """
+    from decimal import Decimal
+
+    operations = getattr(db, 'folio_operations', None)
+    if operations is None or not source.get('id'):
+        return False
+    fields = ('booking_id', 'folio_id', 'currency', 'charge_category', 'amount', 'total',
+              'subtotal', 'discount_amount', 'vat_amount', 'tax_amount', 'tax_breakdown')
+    # Later splits have a smaller pre-transfer snapshot. Find the exact
+    # original source, independent of query-plan/natural insertion order.
+    proof = await operations.find_one({'tenant_id': tenant_id, 'operation_type': 'split',
+        'original_charge.id': source['id'], 'original_charge.source_pos_order_id': order_id,
+        'original_charge.line_no': source.get('line_no'),
+        **{'original_charge.' + field: source.get(field) for field in fields}})
+    if not proof:
+        return False
+    original = proof['original_charge']
+    parts = await db.folio_charges.find({'tenant_id': tenant_id, 'source_pos_order_id': order_id,
+        'voided': {'$ne': True}, '$or': [{'line_no': source.get('line_no')},
+                                      {'source_line_no': source.get('line_no')}]}, {'_id': 0}).to_list(None)
+    if not parts or any(row.get('currency') != source.get('currency') or row.get('charge_category') != source.get('charge_category') for row in parts):
+        return False
+    try:
+        for field in ('amount', 'total', 'subtotal', 'discount_amount', 'vat_amount', 'tax_amount'):
+            value = original.get(field)
+            if value is None:
+                if any(row.get(field) is not None for row in parts):
+                    return False
+            elif sum((Decimal(str(row[field])) for row in parts), Decimal(0)) != Decimal(str(value)):
+                return False
+        taxes = original.get('tax_breakdown')
+        if taxes is None:
+            return all(row.get('tax_breakdown') is None for row in parts)
+        if any(set(row.get('tax_breakdown', {})) != set(taxes) for row in parts):
+            return False
+        return all(sum((Decimal(str(row['tax_breakdown'][name])) for row in parts), Decimal(0)) == Decimal(str(value))
+                   for name, value in taxes.items())
+    except (ArithmeticError, ValueError, TypeError, KeyError):
+        return False
+
+
 async def _apply_reversed(event: dict[str, Any]) -> tuple[bool, str]:
     payload = event.get("payload") or {}
     tenant_id = event.get("tenant_id") or payload.get("tenant_id")
@@ -246,6 +294,14 @@ async def _apply_reversed(event: dict[str, Any]) -> tuple[bool, str]:
 
     db = get_system_db()
     now = _now_iso()
+
+    # A service split can move debt to several other rooms. Reversing the
+    # source order must refresh EVERY affected folio, not only the first one.
+    affected = await db.folio_charges.find({'tenant_id': tenant_id, 'source_pos_order_id': order_id},
+        {'_id': 0, 'folio_id': 1}).to_list(None)
+    folio_ids = {row['folio_id'] for row in affected if row.get('folio_id')}
+    if folio_id:
+        folio_ids.add(folio_id)
 
     if not folio_id:
         charge = await db.folio_charges.find_one({'tenant_id': tenant_id, 'source_pos_order_id': order_id})
@@ -264,8 +320,11 @@ async def _apply_reversed(event: dict[str, Any]) -> tuple[bool, str]:
         {"$set": {"status": "reversed", "reversed_at": now, "reverse_reason": reason}},
     )
 
+    balances = {fid: await _recalc_folio_balance(db, tenant_id, fid) for fid in sorted(folio_ids)}
+    if res.modified_count:
+        invalidate_financial_report_caches(tenant_id)
     if folio_id:
-        balance = await _recalc_folio_balance(db, tenant_id, folio_id)
+        balance = balances.get(folio_id, 0)
         return True, (f"reversed {res.modified_count} charge(s) for order {order_id}; folio {folio_id} balance={balance}")
     return True, f"reversed {res.modified_count} charge(s) for order {order_id}"
 
