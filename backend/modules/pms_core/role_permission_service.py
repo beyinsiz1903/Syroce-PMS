@@ -35,6 +35,9 @@ OPERATION_PERMISSIONS = {
     # It contains no financial totals, so reception may read it without access
     # to financial reports or the ability to run night audit.
     "view_business_date": [Permission.VIEW_BOOKINGS],
+    # Internal sellable capacity is available to booking readers, not guest or
+    # agency portal identities. Reconciliation keeps its stronger admin guard.
+    "view_room_inventory": [Permission.VIEW_BOOKINGS],
     "view_night_audit": [Permission.RUN_NIGHT_AUDIT],
     "run_night_audit": [Permission.RUN_NIGHT_AUDIT],
     # Admin

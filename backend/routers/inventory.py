@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.database import db
+from core.security import get_current_user
 from modules.pms_core.role_permission_service import require_op  # v92.2 DW
 
 logger = logging.getLogger("routers.inventory")
@@ -22,11 +23,29 @@ logger = logging.getLogger("routers.inventory")
 router = APIRouter(prefix="/api/inventory")
 
 
+def _inventory_tenant(
+    tenant_id: str | None = Query(None, min_length=1, max_length=128, pattern=r".*\S.*"),
+    current_user=Depends(get_current_user),
+) -> str:
+    """These operational endpoints always belong to the signed-in hotel.
+
+    Preserve the optional legacy query parameter only as an exact assertion,
+    never as a tenant selector (including for platform administrators).
+    """
+    current_tenant = getattr(current_user, "tenant_id", None)
+    if not isinstance(current_tenant, str) or not current_tenant.strip():
+        raise HTTPException(status_code=403, detail="INVENTORY_TENANT_CONTEXT_REQUIRED")
+    if tenant_id is not None and tenant_id != current_tenant:
+        raise HTTPException(status_code=403, detail="INVENTORY_TENANT_SCOPE_MISMATCH")
+    return current_tenant
+
+
 @router.get("/room-types", tags=["Room-Type Inventory"])
 async def get_room_type_inventory(
     date: str | None = Query(None, description="Date in YYYY-MM-DD format (default: today)"),
     room_type: str | None = Query(None, description="Filter by room type"),
-    tenant_id: str | None = Query(None, description="Tenant ID (auto-detected if omitted)"),
+    tenant_id: str = Depends(_inventory_tenant),
+    _perm=Depends(require_op("view_room_inventory")),
 ):
     """
     Get room-type inventory for a specific date.
@@ -42,18 +61,6 @@ async def get_room_type_inventory(
         datetime.fromisoformat(date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-
-    # Auto-detect tenant
-    if not tenant_id:
-        tenant = await db.organizations.find_one({}, {"_id": 0, "id": 1})
-        if not tenant:
-            room = await db.rooms.find_one({}, {"_id": 0, "tenant_id": 1})
-            tenant_id = room.get("tenant_id") if room else None
-        else:
-            tenant_id = tenant.get("id")
-
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required")
 
     from core.room_type_inventory_service import get_room_type_inventory as get_inv
 
@@ -80,7 +87,8 @@ async def get_room_type_inventory(
 async def get_inventory_summary(
     start_date: str | None = Query(None, description="Start date YYYY-MM-DD (default: today)"),
     end_date: str | None = Query(None, description="End date YYYY-MM-DD (default: today + 30 days)"),
-    tenant_id: str | None = Query(None, description="Tenant ID"),
+    tenant_id: str = Depends(_inventory_tenant),
+    _perm=Depends(require_op("view_room_inventory")),
 ):
     """Get aggregated inventory summary for a date range."""
     # Tur 3: default range = today .. today + 30
@@ -95,17 +103,6 @@ async def get_inventory_summary(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-    if not tenant_id:
-        tenant = await db.organizations.find_one({}, {"_id": 0, "id": 1})
-        if not tenant:
-            room = await db.rooms.find_one({}, {"_id": 0, "tenant_id": 1})
-            tenant_id = room.get("tenant_id") if room else None
-        else:
-            tenant_id = tenant.get("id")
-
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required")
-
     from core.room_type_inventory_service import get_inventory_summary as get_summary
 
     return await get_summary(tenant_id, start_date, end_date)
@@ -115,7 +112,7 @@ async def get_inventory_summary(
 async def trigger_reconciliation(
     start_date: str | None = Query(None, description="Start date (default: today)"),
     end_date: str | None = Query(None, description="End date (default: today + 30 days)"),
-    tenant_id: str | None = Query(None, description="Tenant ID"),
+    tenant_id: str = Depends(_inventory_tenant),
     _perm=Depends(require_op("view_system_diagnostics")),  # v92.2 DW
 ):
     """
@@ -136,17 +133,6 @@ async def trigger_reconciliation(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-    if not tenant_id:
-        tenant = await db.organizations.find_one({}, {"_id": 0, "id": 1})
-        if not tenant:
-            room = await db.rooms.find_one({}, {"_id": 0, "tenant_id": 1})
-            tenant_id = room.get("tenant_id") if room else None
-        else:
-            tenant_id = tenant.get("id")
-
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required")
-
     from core.room_type_inventory_service import reconcile_date_range
 
     result = await reconcile_date_range(tenant_id, start_date, end_date)
@@ -164,22 +150,12 @@ async def trigger_reconciliation(
 
 @router.get("/room-types/health", tags=["Room-Type Inventory"])
 async def inventory_health(
-    tenant_id: str | None = Query(None, description="Tenant ID"),
+    tenant_id: str = Depends(_inventory_tenant),
+    _perm=Depends(require_op("view_room_inventory")),
 ):
     """
     Quick health check: Does the materialized view exist and is it recent?
     """
-    if not tenant_id:
-        tenant = await db.organizations.find_one({}, {"_id": 0, "id": 1})
-        if not tenant:
-            room = await db.rooms.find_one({}, {"_id": 0, "tenant_id": 1})
-            tenant_id = room.get("tenant_id") if room else None
-        else:
-            tenant_id = tenant.get("id")
-
-    if not tenant_id:
-        return {"status": "no_tenant", "healthy": False}
-
     today = datetime.now(UTC).date().isoformat()
 
     # Check if we have data for today
