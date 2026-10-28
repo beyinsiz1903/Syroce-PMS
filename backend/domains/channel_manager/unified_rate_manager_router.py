@@ -825,7 +825,10 @@ def _extract_hr_room_types(cached_rooms):
 
 
 async def _get_room_counts(tenant_id):
-    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}).to_list(500)
+    rooms = await db.rooms.find(
+        {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}},
+        {"_id": 0, "id": 1, "room_type": 1, "status": 1},
+    ).to_list(500)
     room_counts = {}
     room_ids_by_type = {}
     for r in rooms:
