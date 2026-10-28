@@ -14,6 +14,7 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
+from domains.channel_manager.providers.exely import archived_cancellation
 from domains.channel_manager.providers.exely.lifecycle import (
     ACK_NOT_READY,
     ACK_PENDING,
@@ -225,6 +226,13 @@ def _booking_fence_query(
     return query
 
 
+def _unarchived_fence(query: dict[str, Any]) -> dict[str, Any]:
+    # Close the race where a local archive commits after the worker's read.
+    return {**query, "status": {"$ne": "archived_demo"},
+        "presentation_archive": {"$in": [None, {}]},
+        "allocation_source": {"$ne": "archived_demo_cleanup"}}
+
+
 def _stable_id(kind: str, tenant_id: str, property_id: str, external_id: str, slot: int | None = None) -> str:
     parts = ("exely", kind, tenant_id, property_id, external_id, str(slot) if slot is not None else "")
     return str(uuid.uuid5(uuid.NAMESPACE_URL, "\x1f".join(parts)))
@@ -434,6 +442,9 @@ async def _upsert_booking(
             "inventory_release_pending": 1,
             "provider_version_key": 1,
             "exely_processing_generation": 1,
+            "status": 1,
+            "presentation_archive": 1,
+            "allocation_source": 1,
         },
     )
     if not existing:
@@ -454,6 +465,9 @@ async def _upsert_booking(
                     "inventory_release_pending": 1,
                     "provider_version_key": 1,
                     "exely_processing_generation": 1,
+                    "status": 1,
+                    "presentation_archive": 1,
+                    "allocation_source": 1,
                 },
             )
             if not existing:
@@ -461,6 +475,8 @@ async def _upsert_booking(
         else:
             return "created"
 
+    if archived_cancellation.is_archived(existing):
+        raise RuntimeError(archived_cancellation.BLOCKED)
     existing_version_key = str(existing.get("provider_version_key") or "") if existing else ""
     if existing_version_key and _compare_versions(booking_doc["provider_version_key"], existing_version_key) < 0:
         raise ProcessingClaimLostError("PROCESSING_CLAIM_STALE_VERSION")
@@ -481,13 +497,13 @@ async def _upsert_booking(
     if release_needed:
         update_fields["inventory_release_pending"] = True
     updated = await db.bookings.update_one(
-        _booking_fence_query(
+        _unarchived_fence(_booking_fence_query(
             tenant_id,
             booking_id,
             claim,
             existing_version_key or None,
             booking_doc["provider_version_key"],
-        ),
+        )),
         {"$set": update_fields},
     )
     if _result_matched(updated) != 1:
@@ -515,7 +531,7 @@ async def _cancel_booking(
     booking_id: str,
     version_key: str,
     claim: ProcessingClaim,
-) -> bool:
+) -> dict[str, Any] | None:
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
         {
@@ -525,13 +541,18 @@ async def _cancel_booking(
             "provider_version_key": 1,
             "inventory_release_pending": 1,
             "exely_processing_generation": 1,
+            "presentation_archive": 1,
+            "allocation_source": 1,
         },
     )
     if not booking:
-        return False
+        return None
     existing_version_key = str(booking.get("provider_version_key") or "")
     if existing_version_key and _compare_versions(version_key, existing_version_key) < 0:
         raise ProcessingClaimLostError("PROCESSING_CLAIM_STALE_VERSION")
+    if archived_cancellation.is_archived(booking):
+        return await archived_cancellation.record_cancellation(
+            db, tenant_id, booking_id, version_key, _owned_claim_query(claim))
     update_fields: dict[str, Any] = {"exely_processing_generation": claim.generation}
     cancellation_needed = booking.get("status") != "cancelled" or existing_version_key != version_key
     if cancellation_needed:
@@ -546,13 +567,13 @@ async def _cancel_booking(
             }
         )
     fenced = await db.bookings.update_one(
-        _booking_fence_query(
+        _unarchived_fence(_booking_fence_query(
             tenant_id,
             booking_id,
             claim,
             existing_version_key or None,
             version_key,
-        ),
+        )),
         {"$set": update_fields},
     )
     if _result_matched(fenced) != 1:
@@ -572,13 +593,17 @@ async def _cancel_booking(
         )
         if _result_matched(released) != 1:
             raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
-    return True
+    return {"pms_booking_id": booking_id, "status": "cancelled"}
 
 
 async def _readback_expectations(tenant_id: str, version_key: str, expectations: list[dict[str, Any]]) -> bool:
     if not expectations:
         return False
     for expected in expectations:
+        if expected.get("status") == "archived_demo":
+            if not await archived_cancellation.readback(db, tenant_id, version_key, expected):
+                return False
+            continue
         booking = await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": expected["pms_booking_id"]},
             {"_id": 0, "status": 1, "provider_version_key": 1, "inventory_release_pending": 1},
@@ -695,7 +720,7 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                         raise RuntimeError("PMS_BOOKING_NOT_FOUND")
                     cancelled += 1
                     item["active"] = False
-                    expectations.append({"pms_booking_id": booking_id, "status": "cancelled"})
+                    expectations.append(cancelled_booking)
                     confirmations.append(
                         {
                             "pms_booking_id": booking_id,
@@ -713,6 +738,17 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             indexes = [str(room.get("index_number") or "") for room in rooms if str(room.get("index_number") or "")]
             if len(indexes) != len(set(indexes)):
                 raise RuntimeError("ROOM_STAY_INDEX_DUPLICATE")
+            # Check every existing/stable target before _ensure_guest or any
+            # room mutation, not only after the first archived room is reached.
+            assigned, removed = _assign_slots(previous_lineage, rooms)
+            targets = {str(row.get("pms_booking_id") or _stable_id(
+                "booking", tenant_id, property_id, external_id, int(row["slot_ordinal"])))
+                for row in [*assigned, *removed]}
+            for target in targets:
+                existing = await db.bookings.find_one({"tenant_id": tenant_id, "id": target},
+                    {"_id": 0, "status": 1, "presentation_archive": 1, "allocation_source": 1})
+                if archived_cancellation.is_archived(existing):
+                    raise RuntimeError(archived_cancellation.BLOCKED)
             mappings = []
             for room in rooms:
                 mapping = await _load_mapping(tenant_id, room)
@@ -720,7 +756,6 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                     raise RuntimeError("ROOM_RATE_MAPPING_MISSING")
                 mappings.append(mapping)
 
-            assigned, removed = _assign_slots(previous_lineage, rooms)
             assigned_slots = {int(row["slot_ordinal"]) for row in assigned}
             new_lineage = [{**row, "active": False} for row in previous_lineage if int(row.get("slot_ordinal", 0)) not in assigned_slots]
             for row, mapping in zip(assigned, mappings, strict=True):
@@ -782,7 +817,7 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                 if not cancelled_booking:
                     raise RuntimeError("PMS_BOOKING_NOT_FOUND")
                 cancelled += 1
-                expectations.append({"pms_booking_id": booking_id, "status": "cancelled"})
+                expectations.append(cancelled_booking)
             pms_status = "imported"
 
         if not await _readback_expectations(tenant_id, version_doc["provider_version_key"], expectations):
@@ -890,6 +925,7 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                 "ROOM_STAYS_MISSING",
                 "ROOM_STAY_INDEX_MISSING",
                 "ROOM_STAY_INDEX_DUPLICATE",
+                archived_cancellation.BLOCKED,
             }
             else type(exc).__name__
         )

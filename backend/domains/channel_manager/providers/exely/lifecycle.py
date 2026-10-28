@@ -401,6 +401,13 @@ async def _durable_readback(version_doc: dict[str, Any]) -> bool:
     if not expectations:
         return False
     for expected in expectations:
+        if expected.get("status") == "archived_demo":
+            # A local archive by itself is never proof of provider cancellation.
+            # Require the exact cancellation receipt and unchanged archive source.
+            from .archived_cancellation import readback
+            if not await readback(db, version_doc["tenant_id"], version_doc["provider_version_key"], expected):
+                return False
+            continue
         booking = await db.bookings.find_one(
             {
                 "tenant_id": version_doc["tenant_id"],

@@ -241,6 +241,56 @@ async def _persist(database, canonical, payload_hash="hash", event_type="reserva
     return result, current
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status,event_type", [("confirmed", "reservation"), ("cancelled", "cancellation")])
+async def test_unreviewed_archived_source_never_changes_booking_guest_or_ack(fake_db, status, event_type):
+    await _add_mapping(fake_db)
+    _, current = await _persist(fake_db, _canonical())
+    assert (await pms_lifecycle.process_reservation_version("tenant", current))["success"]
+    booking = fake_db.bookings.documents[0]
+    booking.update(status="archived_demo", allocation_source="archived_demo_cleanup",
+                   presentation_archive={"policy_id": "not-a-reviewed-policy", "request_id": "original"})
+    original_bookings = deepcopy(fake_db.bookings.documents)
+    original_guests = deepcopy(fake_db.guests.documents)
+    _, incoming = await _persist(fake_db, _canonical("2030-01-01T11:00:00Z", status=status),
+                                 payload_hash="new-event", event_type=event_type)
+    result = await pms_lifecycle.process_reservation_version("tenant", incoming)
+    assert result["success"] is False
+    assert result["reason"] == "PMS_ARCHIVED_SOURCE_REQUIRES_REVIEW"
+    assert fake_db.bookings.documents == original_bookings
+    assert fake_db.guests.documents == original_guests
+    provider = SimpleNamespace(confirm_delivery=AsyncMock())
+    latest = await fake_db.exely_reservations.find_one({"provider_version_identity": incoming["provider_version_identity"]})
+    assert (await lifecycle.acknowledge_durable_version(provider, latest))["provider_write_count"] == 0
+    provider.confirm_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["update", "cancel"])
+async def test_archive_committing_after_read_fences_the_booking_write(fake_db, monkeypatch, operation):
+    await _add_mapping(fake_db)
+    _, current = await _persist(fake_db, _canonical())
+    assert (await pms_lifecycle.process_reservation_version("tenant", current))["success"]
+    original = deepcopy(fake_db.bookings.documents[0])
+    update = fake_db.bookings.update_one
+    marker = {"policy_id": "local-archive", "request_id": "reviewed"}
+    async def race(query, changes, **kwargs):
+        if "presentation_archive" in query:
+            fake_db.bookings.documents[0].update(status="archived_demo", presentation_archive=marker,
+                                                allocation_source="archived_demo_cleanup")
+        return await update(query, changes, **kwargs)
+    monkeypatch.setattr(fake_db.bookings, "update_one", race)
+    claim = pms_lifecycle.ProcessingClaim("new", "owner", 2)
+    with pytest.raises(pms_lifecycle.ProcessingClaimLostError):
+        if operation == "update":
+            await pms_lifecycle._upsert_booking("tenant", {**original, "total_amount": 999,
+                "provider_version_key": "2030-01-01T11:00:00Z"}, claim)
+        else:
+            await pms_lifecycle._cancel_booking("tenant", original["id"], "2030-01-01T11:00:00Z", claim)
+    assert fake_db.bookings.documents[0] == {**original, "status": "archived_demo", "presentation_archive": marker,
+                                            "allocation_source": "archived_demo_cleanup"}
+
+
 def test_notif_report_contract_uses_exact_version_context_and_roomstay_indexes():
     xml = build_notif_report_rq(
         "user",
