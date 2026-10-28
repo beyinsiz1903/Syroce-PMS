@@ -154,9 +154,15 @@ async def list_outbox_events(
     provider: str | None = Query(None, description="Filter by provider"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    tenant_id: str | None = Query(
+        None, min_length=1, max_length=128, pattern=r"\S",
+        description="Exact tenant filter; omitted only for the global super-admin view",
+    ),
 ):
-    """List outbox events with optional filters."""
+    """Inspect events without dispatching them; preserve an explicit tenant scope."""
     query = {}
+    if tenant_id is not None:
+        query["tenant_id"] = tenant_id
     if status:
         query["status"] = status
     if provider:
