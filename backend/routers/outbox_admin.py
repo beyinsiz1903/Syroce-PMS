@@ -20,7 +20,16 @@ from pydantic import BaseModel
 from cache_manager import cached
 from core.database import db
 from core.helpers import require_super_admin_guard
-from core.outbox_configuration import BOOKING_AVAILABILITY_EVENTS, CONFIGURATION_ERROR_PATTERN, booking_configuration_readiness, is_configuration_failure
+from core.outbox_configuration import (
+    AGENCY_CONFIGURATION_ERROR_PATTERN,
+    AGENCY_CONFIGURATION_EVENTS,
+    BOOKING_AVAILABILITY_EVENTS,
+    CONFIGURATION_ERROR_PATTERN,
+    agency_configuration_readiness,
+    booking_configuration_readiness,
+    is_agency_configuration_failure,
+    is_configuration_failure,
+)
 from core.outbox_service import STATUS_FAILED, STATUS_PENDING, STATUS_RETRY
 
 logger = logging.getLogger("routers.outbox_admin")
@@ -187,12 +196,18 @@ async def outbox_requeue_readiness(event_id: str):
     event = await db.outbox_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Outbox olayı bulunamadı")
-    readiness = await booking_configuration_readiness(event) if is_configuration_failure(event) else {
-        "ready": True, "issues": [], "providers": [],
-    }
+    readiness = await _configuration_readiness(event)
     return {"event_id": event_id, **readiness,
             "can_requeue": readiness["ready"] and event.get("status") in {STATUS_FAILED, STATUS_RETRY},
             "note": "Bu kontrol mesaj göndermez ve teslimat kanıtı değildir; yalnız kayıtlı yapılandırmayı kontrol eder."}
+
+
+async def _configuration_readiness(event: dict) -> dict:
+    if is_agency_configuration_failure(event):
+        return await agency_configuration_readiness(event)
+    if is_configuration_failure(event):
+        return await booking_configuration_readiness(event)
+    return {"ready": True, "issues": [], "providers": []}
 
 
 @outbox_admin_router.post("/{event_id}/requeue", response_model=RequeueResponse)
@@ -202,10 +217,9 @@ async def requeue_event(event_id: str):
     event = await db.outbox_events.find_one({"id": event_id, "status": {"$in": [STATUS_FAILED, STATUS_RETRY]}}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Outbox olayı bulunamadı veya yeniden denemeye uygun değil")
-    if is_configuration_failure(event):
-        readiness = await booking_configuration_readiness(event)
-        if not readiness["ready"]:
-            raise HTTPException(409, "Önce kanal/oda eşleştirmesini düzeltin: " + ", ".join(readiness["issues"]))
+    readiness = await _configuration_readiness(event)
+    if not readiness["ready"]:
+        raise HTTPException(409, "Önce teslimat yapılandırmasını düzeltin: " + ", ".join(readiness["issues"]))
 
     result = await db.outbox_events.find_one_and_update(
         {
@@ -260,8 +274,10 @@ async def replay_failed_events(
     # failures until an operator repairs and explicitly checks each one.
     configuration_failures = {"event_type": {"$in": list(BOOKING_AVAILABILITY_EVENTS)},
                               "last_error": {"$regex": CONFIGURATION_ERROR_PATTERN}}
-    blocked_count = await db.outbox_events.count_documents({**query, **configuration_failures})
-    query["$nor"] = [configuration_failures]
+    agency_failures = {"event_type": {"$in": list(AGENCY_CONFIGURATION_EVENTS)},
+                       "last_error": {"$regex": AGENCY_CONFIGURATION_ERROR_PATTERN}}
+    blocked_count = await db.outbox_events.count_documents({**query, "$or": [configuration_failures, agency_failures]})
+    query["$nor"] = [configuration_failures, agency_failures]
     result = await db.outbox_events.update_many(
         query,
         {

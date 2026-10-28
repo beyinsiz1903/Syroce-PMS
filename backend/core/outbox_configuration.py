@@ -1,5 +1,6 @@
-"""Read-only configuration preflight for failed booking availability events."""
+"""Read-only configuration preflight for failed delivery events."""
 
+import re
 from datetime import date
 
 from core.database import db
@@ -17,12 +18,58 @@ BOOKING_AVAILABILITY_EVENTS = (
     "reservation.created.v1", "reservation.cancelled.v1", "reservation.modified.v1",
     "inventory.availability.updated.v1",
 )
+AGENCY_CONFIGURATION_EVENTS = (
+    "agency.inventory.availability.updated.v1", "agency.rate.updated.v1",
+    "agency.restriction.updated.v1",
+)
+AGENCY_CONFIGURATION_ERRORS = (
+    "permanent: missing tenant_id/agency_id",
+    "permanent: no active agency contract",
+    "permanent: agency contract has no webhook_url",
+    "permanent: agency signing secret not_configured",
+)
+AGENCY_CONFIGURATION_ERROR_PATTERN = "^(?:" + "|".join(map(re.escape, AGENCY_CONFIGURATION_ERRORS)) + ")$"
 
 
 def is_configuration_failure(event: dict) -> bool:
     return event.get("event_type") in BOOKING_AVAILABILITY_EVENTS and any(
         code in (event.get("last_error") or "") for code in CONFIGURATION_ERRORS
     )
+
+
+def is_agency_configuration_failure(event: dict) -> bool:
+    return event.get("event_type") in AGENCY_CONFIGURATION_EVENTS and event.get("last_error") in AGENCY_CONFIGURATION_ERRORS
+
+
+async def agency_configuration_readiness(event: dict) -> dict:
+    """Check the dispatcher's current contract/signing configuration, not delivery.
+
+    Do not expose the URL or signing material, make HTTP calls, create secrets,
+    edit contracts, or reset the event. Repaired failures still need an explicit
+    single-event operator requeue; a bulk replay cannot infer the repair.
+    """
+    from core.agency_webhook import _resolve_outbound_secret
+    from core.tenant_db import get_system_db
+    from routers.agency_contracts import has_active_contract
+
+    payload = event.get("payload") or {}
+    tenant_id = event.get("tenant_id")
+    agency_id = (payload.get("agency_id") or event.get("agency_id")) if isinstance(payload, dict) else None
+    issues = []
+    if not tenant_id or not agency_id:
+        issues.append("agency_webhook_payload_incomplete")
+    else:
+        contract = await has_active_contract(agency_id, tenant_id)
+        if not contract:
+            issues.append("agency_contract_inactive")
+        elif not str(contract.get("webhook_url") or "").strip():
+            issues.append("agency_webhook_url_missing")
+        else:
+            resolved = await _resolve_outbound_secret(get_system_db(), tenant_id, agency_id)
+            if not (resolved and resolved.get("tenant_id") == tenant_id
+                    and resolved.get("agency_id") == agency_id and resolved.get("shared_secret")):
+                issues.append("agency_signing_secret_not_configured")
+    return {"ready": not issues, "issues": issues, "providers": ["agency"]}
 
 
 async def booking_configuration_readiness(event: dict) -> dict:
