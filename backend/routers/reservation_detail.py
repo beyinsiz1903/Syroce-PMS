@@ -4823,6 +4823,16 @@ async def apply_demo_presentation_archive(data: DemoPresentationArchiveIn, curre
     return await apply(db, current_user, data)
 
 
+@router.get('/demo-presentation-archive/provider-cancellation-preview')
+async def preview_demo_archive_provider_cancellation(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op('manage_city_ledger')), _admin=Depends(require_op('manage_night_audit'))):
+    _enforce_perm(current_user, 'manage_city_ledger')
+    _enforce_perm(current_user, 'manage_night_audit')
+    _ensure_hotel_context(current_user)
+    from domains.channel_manager.providers.exely.archived_cancellation import preview
+    return await preview(db, current_user.tenant_id)
+
+
 @router.get("/demo-accounting-review/preview")
 async def preview_demo_accounting_review(current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):
