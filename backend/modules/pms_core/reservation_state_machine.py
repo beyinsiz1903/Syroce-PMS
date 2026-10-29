@@ -116,28 +116,12 @@ class ReservationStateMachine:
                 pass  # checked_in cannot be cancelled
             # For non-checked-in bookings, room doesn't need status change (it's not occupied yet)
 
-        # Restore availability in rate_calendar if applicable
-        try:
-            check_in = booking.get("check_in", "")[:10]
-            check_out = booking.get("check_out", "")[:10]
-            room_doc = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0, "room_type": 1}) if room_id else None
-            if room_doc and check_in and check_out:
-                room_type = room_doc.get("room_type", "")
-                # Find matching exely mapping for room_type_code
-                mapping = await db.exely_room_mappings.find_one({"tenant_id": tenant_id, "pms_room_type": room_type}, {"_id": 0, "exely_room_code": 1})
-                if mapping:
-                    room_type_code = mapping["exely_room_code"]
-                    await db.rate_calendar.update_many(
-                        {
-                            "tenant_id": tenant_id,
-                            "room_type_code": room_type_code,
-                            "date": {"$gte": check_in, "$lt": check_out},
-                            "availability": {"$exists": True},
-                        },
-                        {"$inc": {"availability": 1}},
-                    )
-        except Exception:
-            pass  # Non-critical: availability update failure should not block cancellation
+        # rate_calendar.availability is the operator's base sales ceiling, not
+        # a remaining-stock counter. Creation does not decrement it. Cancelling
+        # removes this booking from the active occupancy projection and releases
+        # its room-night locks above; the existing automatic OTA path publishes
+        # that recalculated availability. Incrementing calendar rows here would
+        # raise the ceiling (including zero caps and unrelated rate plans).
 
         # Create notification for cancellation
         try:
