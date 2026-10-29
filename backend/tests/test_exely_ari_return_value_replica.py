@@ -13,7 +13,7 @@ from domains.channel_manager.ari import repositories as repo
 
 @pytest_asyncio.fixture
 async def database(monkeypatch):
-    uri = os.environ.get('EXELY_INVENTORY_TEST_MONGO_URI')
+    uri = os.environ.get('EXELY_INVENTORY_TEST_MONGO_URI') or os.environ.get('POS_TEST_MONGO_URI')
     assert uri and urlparse(uri).hostname in {'localhost', '127.0.0.1'}, 'Explicit LOCAL Mongo required'
     client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=3000)
     database = client['exely_ari_dedup_test_' + uuid.uuid4().hex]
