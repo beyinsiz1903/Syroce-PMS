@@ -21,6 +21,7 @@ from domains.channel_manager.rate_utils import (
     RoomTypeValuesItem,
     StopSaleScheduleCreate,
     StopSaleScheduleUpdate,
+    group_consecutive_dates,
 )
 from domains.channel_manager.rate_utils import (
     get_holiday_periods as _get_holiday_periods,
@@ -65,6 +66,19 @@ def _mapping_values(mapping: dict | None, update: RateUpdateRequest) -> dict:
         "cta": update.cta if restrictions_enabled else None,
         "ctd": update.ctd if restrictions_enabled else None,
     }
+
+
+def _wire_codes(mapping: dict | None) -> tuple[str, str] | None:
+    """An exact panel pair authorizes its complete PMSConnect alias pair only."""
+    if not mapping:
+        return None
+    api_room = str(mapping.get("pms_api_room_code") or "").strip()
+    api_rate = str(mapping.get("pms_api_rate_plan_code") or "").strip()
+    if bool(api_room) != bool(api_rate):
+        return None
+    room = api_room or str(mapping.get("exely_room_code") or "").strip()
+    rate = api_rate or str(mapping.get("exely_rate_plan_code") or "").strip()
+    return (room, rate) if room and rate else None
 
 
 @router.get("/grid")
@@ -275,6 +289,9 @@ async def update_rates(
                 set_fields["min_stay"] = upd.min_stay
             if upd.stop_sell is not None:
                 set_fields["stop_sell"] = upd.stop_sell
+            for field in ("max_stay", "cta", "ctd"):
+                if getattr(upd, field) is not None:
+                    set_fields[field] = getattr(upd, field)
 
             bulk_ops.append(
                 UpdateOne(
@@ -291,11 +308,10 @@ async def update_rates(
             saved += 1
             d += timedelta(days=1)
 
-        mapped_values = _mapping_values(
-            mapping_controls.get((str(upd.room_type_code), str(upd.rate_plan_code))),
-            upd,
-        )
-        if not mapped_values or all(value is None for value in mapped_values.values()):
+        mapping = mapping_controls.get((str(upd.room_type_code), str(upd.rate_plan_code)))
+        mapped_values = _mapping_values(mapping, upd)
+        wire_codes = _wire_codes(mapping)
+        if not wire_codes or not mapped_values or all(value is None for value in mapped_values.values()):
             push_results.append(
                 {
                     "accepted": False,
@@ -306,13 +322,13 @@ async def update_rates(
             )
             continue
 
-        async def _queue(u=upd, values=mapped_values):
+        async def _queue(u=upd, values=mapped_values, codes=wire_codes):
             try:
                 return await enqueue_exely_ari_update(
                     tenant_id,
                     hotel_code,
-                    room_type_code=u.room_type_code,
-                    rate_plan_code=u.rate_plan_code,
+                    room_type_code=codes[0],
+                    rate_plan_code=codes[1],
                     start_date=u.start_date,
                     end_date=u.end_date,
                     source_service="rate_manager",
@@ -448,6 +464,7 @@ async def bulk_grid_update(
 
         d = datetime.strptime(request.start_date, "%Y-%m-%d").date()
         end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
+        saved_dates = []
 
         while d <= end:
             js_dow = d.isoweekday() % 7
@@ -493,9 +510,17 @@ async def bulk_grid_update(
                 )
             )
             saved += 1
+            saved_dates.append(ds)
             d += timedelta(days=1)
 
         controls = mapping_controls.get((str(rt_code), str(rp_code)))
+        wire_codes = _wire_codes(controls)
+        if not wire_codes:
+            _push_results.append({
+                "accepted": False, "delivery_state": "blocked", "provider_write_count": 0,
+                "error_code": "EXELY_ROOM_RATE_MAPPING_OR_SYNC_REQUIRED",
+            })
+            continue
         availability_enabled = bool(controls and controls.get("sync_availability", True))
         rate_enabled = bool(controls and controls.get("sync_price", True))
         restrictions_enabled = bool(controls and controls.get("sync_restrictions", True))
@@ -510,8 +535,9 @@ async def bulk_grid_update(
         push_currency = conn.get("currency") or _cur_code
 
         async def _queue(
-            rt=rt_code,
-            rp=rp_code,
+            codes=wire_codes,
+            range_start=None,
+            range_end=None,
             rate=push_rate,
             avail=push_avail,
             stop=push_stop,
@@ -525,10 +551,10 @@ async def bulk_grid_update(
                 return await enqueue_exely_ari_update(
                     tenant_id,
                     hotel_code,
-                    room_type_code=rt,
-                    rate_plan_code=rp,
-                    start_date=request.start_date,
-                    end_date=request.end_date,
+                    room_type_code=codes[0],
+                    rate_plan_code=codes[1],
+                    start_date=range_start,
+                    end_date=range_end,
                     source_service="rate_manager_bulk",
                     availability=avail,
                     rate_amount=rate,
@@ -545,13 +571,14 @@ async def bulk_grid_update(
                 return {"accepted": False, "delivery_state": "blocked", "provider_write_count": 0}
 
         if any(value is not None for value in (push_rate, push_avail, push_stop, push_min, push_max, push_cta, push_ctd)):
-            push_tasks.append(_queue())
+            for range_start, range_end in group_consecutive_dates(saved_dates):
+                push_tasks.append(_queue(range_start=range_start, range_end=range_end))
 
     # Execute DB bulk write in one batch
     if bulk_ops:
         await db.rate_calendar.bulk_write(bulk_ops, ordered=False)
 
-    queue_results = []
+    queue_results = _push_results[:]
     if push_tasks:
         for task in push_tasks:
             queue_results.append(await task)
