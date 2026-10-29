@@ -682,6 +682,7 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
     created = 0
     updated = 0
     cancelled = 0
+    inventory_before = None
 
     try:
         current = await db.exely_reservations.find_one(
@@ -695,11 +696,16 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
         property_id = str(current.get("property_id") or "")
         external_id = str(current.get("external_id") or "")
         previous_lineage = list(current.get("room_stay_lineage") or [])
+        from .reservation_inventory import capture_before, finish_plan
+
         if version_doc.get("event_type") == "cancellation" or current.get("state") == "cancelled":
             active = [row for row in previous_lineage if row.get("active", True) and row.get("pms_booking_id")]
             if not active:
                 raise RuntimeError("NO_DURABLE_PMS_BOOKING_FOR_CANCELLATION")
             cancel_assignments, _ = _assign_slots(previous_lineage, list(current.get("rooms") or []))
+            inventory_before = await _run_claimed(capture_before(db, tenant_id, identity, property_id,
+                [row["pms_booking_id"] for row in previous_lineage if row.get("pms_booking_id")],
+                _owned_claim_query(claim)), claim, claim_lost)
             cancel_index_by_slot = {int(row["slot_ordinal"]): str(row["room"].get("index_number") or "") for row in cancel_assignments}
             new_lineage = []
             for row in previous_lineage:
@@ -755,6 +761,9 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                 if not mapping:
                     raise RuntimeError("ROOM_RATE_MAPPING_MISSING")
                 mappings.append(mapping)
+
+            inventory_before = await _run_claimed(capture_before(db, tenant_id, identity, property_id,
+                sorted(targets), _owned_claim_query(claim)), claim, claim_lost)
 
             assigned_slots = {int(row["slot_ordinal"]) for row in assigned}
             new_lineage = [{**row, "active": False} for row in previous_lineage if int(row.get("slot_ordinal", 0)) not in assigned_slots]
@@ -848,6 +857,8 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             if not release.get("released"):
                 raise RuntimeError("HOLD_RELEASE_FAILED")
 
+        inventory_targets = await _run_claimed(finish_plan(db, tenant_id, inventory_before), claim, claim_lost)
+        inventory_state = "PENDING" if inventory_targets else "SKIPPED"
         persisted = await _run_claimed(
             db.exely_reservations.update_one(
                 {
@@ -868,6 +879,7 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                         "delivery_state": ACK_PENDING,
                         "delivery_confirmed": False,
                         "processing_generation": claim.generation,
+                        "inventory_outbox_state": inventory_state,
                         "updated_at": _now(),
                     },
                     "$unset": {"hold_booking_id": ""},
@@ -889,6 +901,8 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             durable_expectations=expectations,
             failure_code=None,
             pms_durable_at=_now(),
+            inventory_targets_v1=inventory_targets,
+            inventory_outbox_state=inventory_state,
         )
         if not finished:
             raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")

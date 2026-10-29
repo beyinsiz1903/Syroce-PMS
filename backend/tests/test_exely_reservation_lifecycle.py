@@ -133,6 +133,8 @@ class _DB:
         self.exely_room_mappings = _Collection()
         self.bookings = _Collection()
         self.guests = _Collection()
+        self.exely_connections = _Collection()
+        self.rooms = _Collection()
 
 
 @pytest.fixture
@@ -810,6 +812,33 @@ async def test_durable_multiroom_ack_is_exact_and_sent_once(fake_db):
     second = await lifecycle.acknowledge_durable_version(provider, current)
     assert second["provider_write_count"] == 0
     provider.confirm_delivery.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_provider_ack_schedules_unassigned_category_inventory_once(fake_db, monkeypatch):
+    """A provider-origin booking has no physical room; its ACK must not lose ARI."""
+    fake_db.exely_connections = _Collection()
+    await fake_db.exely_connections.insert_one({
+        "tenant_id": "tenant", "hotel_code": "property", "is_active": True,
+        "ari_write_enabled": True,
+    })
+    await _add_mapping(fake_db)
+    queued = AsyncMock(return_value={"id": "inventory-outbox"})
+    monkeypatch.setattr("domains.channel_manager.providers.exely.reservation_inventory.enqueue_outbox_event", queued)
+    _, current = await _persist(fake_db, _canonical())
+    assert (await pms_lifecycle.process_reservation_version("tenant", current))["success"]
+    queued.assert_not_awaited()  # Never before successful Reserved ACK.
+    current = await fake_db.exely_reservations.find_one(
+        {"provider_version_identity": current["provider_version_identity"]}, {"_id": 0})
+    provider = SimpleNamespace(confirm_delivery=AsyncMock(return_value=SimpleNamespace(success=True)))
+    assert (await lifecycle.acknowledge_durable_version(provider, current))["success"]
+    queued.assert_awaited_once()
+    assert queued.await_args.kwargs["provider"] == "exely"
+    assert queued.await_args.kwargs["payload"]["targets"] == [
+        {"room_type": "Standard", "date_from": "2030-01-01", "date_to": "2030-01-03"}]
+    assert all(b["room_id"] is None for b in fake_db.bookings.documents)
+    await lifecycle.acknowledge_durable_version(provider, current)
+    queued.assert_awaited_once()
 
 
 @pytest.mark.asyncio

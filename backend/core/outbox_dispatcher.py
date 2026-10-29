@@ -53,6 +53,13 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
     if not tenant_id:
         return False, "permanent: missing tenant_id"
 
+    from core.outbox_service import EXELY_RESERVATION_INVENTORY
+
+    if event_type == EXELY_RESERVATION_INVENTORY:
+        from domains.channel_manager.providers.exely.reservation_inventory import dispatch
+
+        return await dispatch(event)
+
     # Internal-Consistency (IC) events — Task #389. These drive the async
     # POS -> folio posting (Outbox/Compensation) ENTIRELY inside this system and
     # MUST be routed here BEFORE any channel-manager mapping so they never reach

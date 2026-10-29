@@ -45,6 +45,7 @@ INVENTORY_BLOCKED = "inventory.blocked.v1"
 INVENTORY_RELEASED = "inventory.released.v1"
 RESTRICTION_UPDATED = "restriction.updated.v1"
 RATE_UPDATED = "rate.updated.v1"
+EXELY_RESERVATION_INVENTORY = "exely.reservation.inventory.updated.v1"
 
 # ── Internal-Consistency (IC) event types — Task #389 ────────────────
 # These NEVER reach the channel manager / OTA / EventSyncService. They drive
@@ -61,6 +62,7 @@ IC_OUTBOX_EVENT_TYPES = {
 }
 
 OTA_OUTBOX_EVENT_TYPES = {
+    EXELY_RESERVATION_INVENTORY,
     BOOKING_CREATED,
     BOOKING_CANCELLED,
     BOOKING_NOSHOW,

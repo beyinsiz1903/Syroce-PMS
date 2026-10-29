@@ -7,6 +7,8 @@ from core.database import db
 from core.tenant_db import tenant_context
 
 CONFIGURATION_ERRORS = {
+    "exely_ari_write_disabled", "exely_inventory_source_invalid", "exely_inventory_source_archived",
+    "exely_inventory_range_requires_review",
     "exely_room_mapping_missing", "exely_property_mapping_missing",
     "exely_room_mapping_incomplete", "exely_multiple_availability_mappings",
     "hotelrunner_room_mapping_missing", "hotelrunner_room_mapping_incomplete",
@@ -14,6 +16,7 @@ CONFIGURATION_ERRORS = {
 }
 CONFIGURATION_ERROR_PATTERN = "|".join(sorted(CONFIGURATION_ERRORS))
 BOOKING_AVAILABILITY_EVENTS = (
+    "exely.reservation.inventory.updated.v1",
     "booking.created.v1", "booking.cancelled.v1", "booking.modified.v1", "booking.no_show.v1",
     "reservation.created.v1", "reservation.cancelled.v1", "reservation.modified.v1",
     "inventory.availability.updated.v1",
@@ -80,6 +83,19 @@ async def booking_configuration_readiness(event: dict) -> dict:
     """
     from core.outbox_dispatcher import _build_cm_payload
     from domains.channel_manager.availability_auto_sync import _exely_wire_pair
+
+    if event.get("event_type") == "exely.reservation.inventory.updated.v1":
+        from domains.channel_manager.providers.exely.reservation_inventory import check_mappings, checked_event
+
+        try:
+            with tenant_context(event["tenant_id"]):
+                targets = await checked_event(db, event)
+                await check_mappings(db, event["tenant_id"], targets)
+            return {"ready": True, "issues": [], "providers": ["exely"]}
+        except (ValueError, KeyError) as exc:
+            code = str(exc)
+            return {"ready": False, "issues": [code if code in CONFIGURATION_ERRORS else
+                "exely_inventory_source_invalid"], "providers": ["exely"]}
 
     tenant_id = event.get("tenant_id")
     previous_error = event.get("last_error") or ""
