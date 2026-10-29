@@ -35,6 +35,7 @@ async def phase_g_channels_and_audit(app):
         from domains.channel_manager.ari.adapters.exely_ari_adapter import ExelyARIAdapter
         from domains.channel_manager.ari.adapters.hotelrunner_ari_adapter import HotelRunnerARIAdapter
         from domains.channel_manager.ari.outbound_service import register_provider_adapter
+        from domains.channel_manager.ari.repositories import ensure_current_ack_index
 
         register_provider_adapter("hotelrunner", HotelRunnerARIAdapter())
         register_provider_adapter("exely", ExelyARIAdapter())
@@ -42,6 +43,7 @@ async def phase_g_channels_and_audit(app):
         await _raw_db["ari_change_sets"].create_index([("tenant_id", 1), ("status", 1), ("created_at", 1)])
         await _raw_db["ari_change_sets"].create_index([("coalescing_key", 1), ("status", 1)])
         await _raw_db["ari_change_sets"].create_index([("provider", 1), ("property_id", 1), ("provider_delta_hash", 1)])
+        await ensure_current_ack_index(_raw_db)
         await _raw_db["ari_outbound_logs"].create_index([("tenant_id", 1), ("property_id", 1), ("pushed_at", -1)])
         await _raw_db["ari_drift_state"].create_index([("tenant_id", 1), ("property_id", 1), ("provider", 1)])
         await _raw_db["hotelrunner_ari_deliveries"].create_index([("tenant_id", 1), ("state", 1), ("created_at", 1)])

@@ -1,0 +1,51 @@
+EXELY CURRENT-STATE DEDUPLICATION — 29 OCTOBER 2026
+
+Live TEST501694 acceptance found a reproducible A -> B -> A failure.
+The source version and original PMS room IDs were updated and ACKed normally,
+but all four newly planned inventory change sets became skipped with zero
+provider writes. A historical matching hash from the previous hour was treated
+as current state even though a different value had been ACKed in between.
+The old query also lacked tenant scope. Five offline regression cases failed
+before the fix (13 passed). This was not a provider transport failure.
+
+FIX
+Exely duplicate detection now requires an exact tenant-scoped change set.
+It compares the newest successfully ACKed overlapping cell state, not any old
+matching hash. Overlapping partial periods and stock sent through another rate
+invalidate old availability. Rates stay rate-plan scoped; restrictions remain
+operation scoped. Conflicting tied ACK timestamps cannot prove a duplicate.
+Both push paths pass the full change set. Unchanged A -> A is still suppressed.
+Other providers keep their existing deduplication contract. A partial index
+supports the tenant/provider/property/room/scope/current-ACK query.
+
+NO BYPASS OR REPLAY
+No force push, skipped-event replay, direct production DB write, automatic
+merge/deploy or weakening of the operation-identity/ambiguous-write protections.
+ARI and scheduled reservation pulling remain off. Open business day stays
+2026-10-26. The two expressly approved synthetic sources remain active while
+the acceptance is stopped. Do not claim their final cancellation is complete.
+Deploying this patch does not automatically repair already skipped change sets.
+Any recovery needs a reviewed fresh normal-API current-state reconciliation,
+with the old request/result files and source versions preserved.
+
+VERIFICATION
+295 tests passed on main including PR1455, with 38 new offline regressions and four real localhost
+Mongo current-state/index tests, plus three existing durable inventory tests.
+Earlier 18/38/272/279 results overlap this selection and must not be added to it.
+Provider transport was mocked; real Mongo was disposable localhost only and
+was stopped afterward. Target Ruff and git diff checks passed.
+This does not replace post-deploy live acceptance or official Exely approval.
+
+LIVE PROTECTION CHECKPOINT
+60 financial guest details, 31 physical rooms, old reservations, seven archives,
+forecast/occupancy, journals, revenue, POS/GL and central minibar stock match
+the persisted baseline, excluding only the four approved new synthetic room
+bookings. Minibar remains 32 consumptions / 64 lines. Audit checked 10225,
+zero breaks/unverifiable, GL healthy. No receipt/card/bank/fiscal/day-close action.
+
+LOCAL IMMUTABLE EVIDENCE
+exely-kabul-20261027.jC7lde/remaining-six-return-dedup-before-v2.xml
+exely-kabul-20261027.jC7lde/remaining-six-return-dedup-final-main.xml
+exely-kabul-20261027.jC7lde/remaining-six-seriesab-blocked-protected-acceptance.json
+exely-kabul-20261027.jC7lde/remaining-six-seriesab-category-restored-block-channel.json
+exely-kabul-20261027.jC7lde/remaining-six-seriesab-provider-category-restored-block.json
