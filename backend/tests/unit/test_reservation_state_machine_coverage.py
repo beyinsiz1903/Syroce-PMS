@@ -105,7 +105,6 @@ async def test_cancellation_releases_inventory_notifies_audits_and_enqueues(mach
         find_one=AsyncMock(
             side_effect=[
                 {"status": "clean"},
-                {"room_type": "Deluxe"},
                 {"room_number": "204"},
             ]
         )
@@ -145,10 +144,10 @@ async def test_cancellation_releases_inventory_notifies_audits_and_enqueues(mach
         reason="cancelled:Guest request",
         correlation_id="corr-1",
     )
-    fake_db.rate_calendar.update_many.assert_awaited_once()
-    availability_query = fake_db.rate_calendar.update_many.await_args.args[0]
-    assert availability_query["room_type_code"] == "DLX"
-    assert availability_query["date"] == {"$gte": "2026-09-01", "$lt": "2026-09-03"}
+    # Cancellation releases occupancy; it must not increase the operator's
+    # configured calendar ceiling or consult an arbitrary provider mapping.
+    fake_db.rate_calendar.update_many.assert_not_awaited()
+    fake_db.exely_room_mappings.find_one.assert_not_awaited()
     notification = fake_db.notifications.insert_one.await_args.args[0]
     assert notification["title"].endswith("Oda 204")
     assert "Ada Lovelace" in notification["message"]
