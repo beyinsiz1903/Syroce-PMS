@@ -47,3 +47,38 @@ export async function reportDownloadError(error) {
   if (Array.isArray(data?.detail)) return data.detail.map(item => item.msg).filter(Boolean).join(' · ');
   return 'Rapor indirilemedi. Lütfen tekrar deneyin.';
 }
+
+// A download owns its browser API and timer, rather than looking up `window`
+// again after its page (or test DOM) has gone away. The owner can release it
+// early on unmount; the delayed callback is safe even if it was already queued.
+export function saveReportFile(blob, filename, browser = window, onRelease) {
+  const urlApi = browser.URL;
+  const revoke = urlApi.revokeObjectURL.bind(urlApi);
+  const schedule = browser.setTimeout.bind(browser);
+  const cancel = browser.clearTimeout.bind(browser);
+  const document = browser.document;
+  const url = urlApi.createObjectURL(blob);
+  let timer;
+  let released = false;
+  let link;
+  const release = () => {
+    if (released) return;
+    released = true;
+    if (timer !== undefined) cancel(timer);
+    try { revoke(url); } finally { onRelease?.(release); }
+  };
+  try {
+    link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    timer = schedule(release, 1000);
+    return release;
+  } catch (error) {
+    release();
+    throw error;
+  } finally {
+    link?.remove();
+  }
+}
