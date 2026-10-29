@@ -37,6 +37,50 @@ vi.mock('react-i18next', () => ({
 afterEach(() => cleanup());
 
 describe('PMS manually discovered operation regressions', () => {
+  const mountFrontdesk = (props) => render(<MemoryRouter><Tabs defaultValue="frontdesk"><FrontdeskTab
+    arrivals={[]} departures={[]} inhouse={[]} bookings={[]} rooms={[]} guests={[]}
+    handleCheckIn={vi.fn()} handleCheckOut={vi.fn()} loadFolio={vi.fn()} loading={false} {...props}
+  /></Tabs></MemoryRouter>);
+
+  it('keeps TRY, EUR and USD amounts separate in every financial pulse card', () => {
+    const rows = [{ id: 'try', currency: 'TL', total_amount: 1000.25, balance: 900.25 },
+      { id: 'usd', currency: 'USD', total_amount: 560, balance: 638.8 },
+      { id: 'eur', currency: 'EUR', total_amount: 200, balance: 150 }];
+    mountFrontdesk({ arrivals: rows, departures: rows, inhouse: rows, tenant: { currency: 'TRY' } });
+    expect(screen.getByTestId('frontdesk-expected-revenue')).toHaveTextContent(/EUR.*200,00.*TRY.*1.000,25.*USD.*560,00/);
+    expect(screen.getByTestId('frontdesk-inhouse-outstanding')).toHaveTextContent(/EUR.*150,00.*TRY.*900,25.*USD.*638,80/);
+    expect(screen.getByTestId('frontdesk-expected-collections')).not.toHaveTextContent('1.689,05');
+  });
+
+  it('labels quick payment in the booking currency and prevents even a one-cent overcollection', async () => {
+    mountFrontdesk({ departures: [{ id: 'usd', currency: 'USD', balance: 638.8, status: 'checked_in', guest_name: 'Synthetic USD', check_out: '2026-10-26' }], tenant: { currency: 'TRY' } });
+    fireEvent.click(screen.getByTestId('departure-payment-usd'));
+    expect(screen.getByTestId('frontdesk-quick-payment-amount')).toHaveValue('638.80');
+    expect(screen.getByText('Tutar (USD)')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('₺638');
+    expect(screen.getByTestId('frontdesk-quick-payment-submit')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('frontdesk-quick-payment-cashier-rate'), { target: { value: '40,123456' } });
+    expect(screen.getByTestId('frontdesk-quick-payment-submit')).toBeEnabled();
+    fireEvent.change(screen.getByTestId('frontdesk-quick-payment-amount'), { target: { value: '638.81' } });
+    expect(screen.getByTestId('frontdesk-quick-payment-submit')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-submit'));
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('sends an explicit booking currency and operator-entered cashier rate, never an invented 1:1 rate', async () => {
+    mountFrontdesk({ departures: [{ id: 'fx', currency: 'USD', balance: 56, status: 'checked_in', guest_name: 'Synthetic FX', check_out: '2026-10-26' }], tenant: { currency: 'TRY' } });
+    fireEvent.click(screen.getByTestId('departure-payment-fx'));
+    expect(screen.getByTestId('frontdesk-quick-payment-submit')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('frontdesk-quick-payment-cashier-rate'), { target: { value: '40,123456' } });
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-submit'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/frontdesk/folio/fx/payment', expect.objectContaining({ amount: 56, currency: 'USD', received_to_try_rate: 40.123456 }), expect.any(Object)));
+  });
+
+  it('does not mark a same-business-day stay overdue just because the browser date is later', () => {
+    mountFrontdesk({ businessDate: '2026-10-26', inhouse: [{ id: 'same-day', check_out: '2026-10-26', status: 'checked_in' }], bookings: [{ id: 'arrival', check_in: '2026-10-26', status: 'confirmed' }] });
+    expect(screen.queryByText('Overstay')).not.toBeInTheDocument();
+  });
+
   beforeEach(() => {
     get.mockReset();
     get.mockResolvedValue({ data: {} });
@@ -402,6 +446,7 @@ describe('PMS manually discovered operation regressions', () => {
       '/frontdesk/folio/booking-payment/payment',
       {
         amount: 125,
+        currency: 'TRY',
         method: 'card',
         payment_type: 'final',
         reference: null,

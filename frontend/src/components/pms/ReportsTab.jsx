@@ -12,6 +12,7 @@ import ReservationReportsTab from './ReservationReportsTab';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
+import CurrencySummary from './CurrencySummary';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 const fmtCurrency = (n, currency = cachedTenantCurrency()) => formatCurrency(n, currency, {
   decimals: 2,
@@ -152,7 +153,7 @@ const ReportsTab = () => {
       <p className="text-xs text-slate-500">Gerçekleşen dönem: {`${businessDate.slice(0, 7)}-01`} – {businessDate} (PMS iş günü)</p>
       {revenue?.mixed_currency && <p className="text-xs text-slate-500">ADR ve RevPAR tutarları, her para biriminin toplam oda-geceye katkısını ayrı gösterir. Kur dönüşümü yapılmadığından tek bir birleşik ADR değildir.</p>}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 [&>*]:min-w-0">
         <Card className="border-l-4 border-l-blue-500">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
@@ -167,7 +168,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <DollarSign className="w-4 h-4" /> ADR
             </div>
-            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.adr_by_currency, adr) : loading ? '...' : 'Alınamadı'}</p>
+            {revenue ? <CurrencySummary data-testid="reports-adr" breakdown={revenue.adr_by_currency} fallbackAmount={adr} /> : <p>{loading ? '...' : 'Alınamadı'}</p>}
             <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.ortalama_gunluk_oda_fiyati')}</p>
           </CardContent>
         </Card>
@@ -176,7 +177,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <TrendingUp className="w-4 h-4" /> RevPAR
             </div>
-            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.rev_par_by_currency, revpar) : loading ? '...' : 'Alınamadı'}</p>
+            {revenue ? <CurrencySummary data-testid="reports-revpar" breakdown={revenue.rev_par_by_currency} fallbackAmount={revpar} /> : <p>{loading ? '...' : 'Alınamadı'}</p>}
             <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.oda_basina_gelir')}</p>
           </CardContent>
         </Card>
@@ -185,7 +186,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <BarChart3 className="w-4 h-4" /> {t('cm.components_pms_ReportsTab.toplam_gelir')}
             </div>
-            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.total_revenue_by_currency, totalRevenue) : loading ? '...' : 'Alınamadı'}</p>
+            {revenue ? <CurrencySummary data-testid="reports-revenue" breakdown={revenue.total_revenue_by_currency} fallbackAmount={totalRevenue} /> : <p>{loading ? '...' : 'Alınamadı'}</p>}
             <p className="text-xs text-gray-400">Folyoya işlenen · Bu ay {revenue?.bookings_count ?? 0} rezervasyon</p>
           </CardContent>
         </Card>

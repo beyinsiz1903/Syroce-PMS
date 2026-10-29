@@ -30,6 +30,9 @@ describe('ReportsTab reporting contracts', () => {
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/reports/occupancy?start_date=2026-09-01&end_date=2026-09-15'));
     expect(axios.get).toHaveBeenCalledWith('/reports/revenue?start_date=2026-09-01&end_date=2026-09-15');
     expect(await screen.findByText(/Gerçekleşen dönem: 2026-09-01 – 2026-09-15/)).toBeInTheDocument();
+    expect(screen.getByTestId('reports-revenue')).toHaveClass('text-sm');
+    expect(screen.getByTestId('reports-revenue')).toHaveTextContent(/EUR.*25,75.*TRY.*1.000,49/);
+    expect(screen.getByTestId('reports-revenue')).not.toHaveClass('text-2xl');
   });
 
   it('renders each market currency and does not compare them in one pie', async () => {

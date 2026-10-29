@@ -331,6 +331,10 @@ describe('ReservationDetailModal operation URLs', () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
     expect(await screen.findByTestId('btn-late-checkout')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('btn-late-checkout'));
+    expect(await screen.findByRole('heading', { name: 'Geç Çıkış Ek Ücreti' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Hizmet tarihi')).toHaveValue('2026-08-14');
+    expect(post).not.toHaveBeenCalled();
     expect(screen.queryByTestId('btn-early-checkin')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();

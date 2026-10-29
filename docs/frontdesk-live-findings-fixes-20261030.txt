@@ -1,0 +1,107 @@
+ÖN BÜRO BULGU DÜZELTMELERİ VE YEREL İŞLEM KABULÜ — 30 EKİM 2026
+
+KAPSAM VE DURUM
+29 Ekim canlı ön büro incelemesindeki FD-01–08 bulguları için kod düzeltmesi.
+Dal: fix/frontdesk-live-acceptance. Temel: d1163ef584fa43dc8bb36e76c1ffb65e90ed6e56.
+Bu çalışma üretim yayını değildir; PR incelemesi/CI ve deploy sonrası canlı
+salt okunur son kabul ayrıca gerekir. Evrensel “her modül hatasız” onayı değildir.
+
+DÜZELTMELER
+FD-01: Günlük hesap özeti, farklı dövizleri TL gibi toplamaz. Beklenen ciro,
+tahsilat ve içerideki bakiye TRY/EUR/USD bazında ayrı ve tam tutarla gösterilir.
+Kaynak rezervasyon/folyo tutarları veya kurları değiştirilmez.
+
+FD-02: Hızlı ödeme, borcu rezervasyonun para birimiyle gösterir ve aynı para
+birimini API'ye açıkça gönderir. Bakiye üstü bir kuruş dahi formda engellenir.
+Yerel kabul testi ilave eksikliği ortaya çıkardı: dövizli ödemede sunucunun
+zorunlu TL kasa kuru için alan yoktu. Yeni alan operatörün girdiği pozitif
+kuru (altı ondalığa kadar) gönderir; 1:1 veya piyasa kuru uydurulmaz.
+Bu basit akışta alınan para rezervasyon dövizidir. Başka dövizle ödeme için
+tam Folyo ekranına yönlendiren açıklama vardır. Cari aktarım nakit değildir;
+bu alana zorlanmaz. Mevcut API idempotency anahtarı korunur.
+
+FD-03: Geç çıkış hesaplaması, eksik/eski nights önbelleği yerine giriş-çıkış
+tarihlerini kullanır. Beş gece / 560 USD -> 112 USD/gece -> %50 için 56 USD.
+Tarih yoksa yalnız geçerli pozitif tam sayı nights kabul edilir. Bozuk veya
+ters tarih, bilinmeyen/negatif/sonlu olmayan fiyat 422 ile durur. Sıfır subtotal
+korunur. Decimal/ROUND_HALF_UP ile son tutar kuruşa yuvarlanır.
+Sabit tesis ücretinin başka rezervasyon dövizine aynen etiketlenmesi de
+engellendi; böyle durumda Ek Ücret Ekle'de açık tutar/kur girişi gerekir.
+
+FD-04: Ön büro giriş/çıkış listeleri ve No-show/Overstay değerlendirmesi PMS
+iş gününü kullanır. API'ye açık gün geçirilir; API'nin tarihsiz varsayılanı da
+tenant iş günüdür. Tarih-only eski satırlar dahil edilir. Eski günün yavaş
+yanıtı yeni gün panosunu ezemez. Geçersiz sorgu tarihi 400 döner.
+
+FD-05: Misafir kartındaki Geç Çıkış artık tek tıklamayla late_checkout=true
+işaretlemez. Ek Ücretler ile aynı hesapla/onayla formunu açar. Form açıkça
+yalnız ücret kaydettiğini, operasyonel giriş/çıkış yapmadığını belirtir.
+Doğru /pms/reservations/{id}/add-extra-charge yolu kullanılır.
+Hizmet tarihi ve saati kaydedilir; saat değişince eski teklif temizlenir;
+yavaş eski teklif yok sayılır. Tutar düzeltmesi için hesap ve gerekçe gerekir.
+Çift tıklama tek POST üretir; belirsiz ağ/5xx sonucunda kör tekrar engellenir
+ve folyo/geçmiş kontrolü istenir. Ayrı Çıkış akışı ve borç koruması korunur.
+API ayrıca tamamlanmış/iptal/no-show rezervasyona yeni ek ücreti 409 ile reddeder.
+Bu, bütün tahsilat/çıkış eşzamanlılık kombinasyonlarının atomiklik kanıtı değildir.
+
+FD-06: Misafir 360, odaları tek tenant-sınırlı toplu sorguyla geçmişe ekler.
+room_id mevcutken oda çözülemiyorsa “Bilgi alınamadı”; gerçekten oda atanmamışsa
+“Atanmamış” yazar. Oda ataması veya geçmiş kaynak kayıtları yeniden yazılmaz.
+
+FD-07: Rezervasyonlar, ön büro ve raporlardaki çoklu döviz tutarları ortak,
+küçük ve düzenli satır bileşeniyle gösterilir. Büyük ADR/RevPAR/gelir metin
+blokları kaldırılır; kuruşlar veya para birimi ayrımı kısaltılmaz.
+
+FD-08: Yeni Misafir ve oda arama için eksik Türkçe/İngilizce çeviriler eklendi.
+Oda aramanın üst ekrandaki yanlış prop isimleri ve eksik seçim geri çağrısı
+da düzeltildi. Tarihler değişir, oda araması çalışır; seçilen oda/tarihler
+rezervasyon taslağına aktarılır. Seçim tek başına rezervasyon oluşturmaz.
+Sıfır/ters gece sorgusu engellenir, eski arama yanıtı silinir, kapasite süzülür;
+baz fiyat hard-coded dolar yerine oda/tesis döviziyle gösterilir.
+
+SON DOĞRULAMA
+- Backend: 101 geçti. İçinde 11 gerçek ASGI API / localhost Mongo kabul testi var.
+- Arayüz: 14 dosya, 113 test geçti. Bunlar mock API ile bileşen/regresyon
+  testleridir; 113 ayrı canlı tarayıcı senaryosu olarak sunulmaz.
+- Değişen backend dosyalarında Ruff temiz.
+- Değişen arayüz dosyalarında ESLint temiz; git diff --check temiz.
+- Vite üretim derlemesi başarılı. Bağımlılık, güvenlik ignore veya CI gate değişmedi.
+
+GERÇEK API İŞLEM DÖNGÜSÜ / YEREL KABUL
+Auth kimliği test uygulamasına enjekte edilir; normal route RBAC ve iş
+korumaları çalışır. Yalnız açıkça seçilmiş loopback replica ve UUID isimli
+frontdesk_acceptance_* veritabanları kullanılır; her fixture kendi DB'sini siler.
+Gerçek sağlayıcı/KBS/banka/loyalty gönderimleri devre dışı test hand-off'larıdır.
+
+1. Sentetik checked_in USD konaklama: tarih kaynaklı 56 USD hesaplama.
+2. Normal API'den hizmet günü/saatli ücret ekleme ve aktörlü geçmiş kaydı.
+3. Yerel kayıt olarak 600 USD kısmi ödeme; aynı idempotency anahtarıyla
+   tekrar okuma aynı payment ID'sini döndürür, ikinci ödeme oluşturmaz.
+4. Kalan 16 USD nedeniyle çıkış 402 ile durur, checked_in korunur.
+5. 16 USD test ödemesi sonrası çıkış tamamlanır; folyo kapanır, oda dirty,
+   tek temizlik görevi oluşur. İkinci çıkış yeni görev üretmez.
+6. İlk 560 USD oda ücreti/vergi/para birimi satırı birebir korunur;
+   iş günü 26 Ekim kalır; stok hareketi üretilmez.
+7. Başka tenant 404, housekeeping rolü 403; terminal rezervasyon 409;
+   geçersiz ücret/saat/kur 422. Eksik TL kasa kuru ödeme yazısından önce durur.
+
+40 TRY/USD yalnız sentetik test verisidir; piyasa kuru veya canlı kayıt değildir.
+Gerçek kart yetkilendirmesi, banka tahsilatı veya mali belge üretilmemiştir.
+
+KANITLAR
+Önceki canlı inceleme/başarısız ürün kabulü ve değişmeyen finansal kaynaklar:
+  frontdesk-acceptance-20261029.F3e20S/on-buro-test-raporu.txt
+  frontdesk-acceptance-20261029.F3e20S/comparison-acceptance.json
+Yeni son test sonuçları (çalışma alanında, repoya özel veri eklenmeden):
+  frontdesk-fixes-20261030/backend-final.xml
+  frontdesk-fixes-20261030/frontend-final.json
+Bu göreli yollar workspace köküne göredir; repo klonunda bulunmaları beklenmez.
+Eski kanıtlar, seed/operations sürücüleri veya stok/arşiv fazları tekrar edilmedi.
+
+YEREL KABULÜ TEKRARLAMA
+FRONTDESK_TEST_MONGO_URI yalnız 127.0.0.1/localhost replica URI olmalıdır.
+MONGO_URL da açıkça aynı yerel URI'ye, DB_NAME ayrı test adına ayarlanmalıdır.
+E2E_EXTERNAL_DRY_RUN=true ile backend/tests/test_frontdesk_acceptance_replica.py
+pytest üzerinden çalıştırılır. Bu testi üretim bağlantısıyla çalıştırmayın.
+Bu turda canlı API'ye yazı, gerçek misafir çıkışı, gün kapatma, Exely açma,
+merge veya deploy yapılmadı. Önceki canlı not/late_checkout işaretleri gizlenmedi.

@@ -420,7 +420,7 @@ const Guest360Dialog = ({
                               })}
                             </div>
                             <div className="text-xs text-gray-600">
-                              {nights} gece • Oda {booking.room_number || 'Atanmamış'}
+                              {nights} gece • Oda {booking.room_number || (booking.room_id ? 'Bilgi alınamadı' : 'Atanmamış')}
                             </div>
                           </div>
                           <Badge variant={

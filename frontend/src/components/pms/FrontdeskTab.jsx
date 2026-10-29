@@ -23,6 +23,22 @@ import { isMoneyInput, moneyInputProps, parseMoneyInput } from '@/lib/moneyInput
 import { bookingSourceLabel } from '@/utils/bookingSource';
 
 import { confirmDialog } from '@/lib/dialogs';
+import CurrencySummary from './CurrencySummary';
+import { localIsoDate } from '@/hooks/useBusinessDate';
+
+const currencyOf = (booking, fallback) => {
+  const code = String(booking?.currency || fallback || 'TRY').trim().toUpperCase();
+  return code === 'TL' ? 'TRY' : code;
+};
+const parseCashierRate = value => /^\d+(?:[.,]\d{1,6})?$/.test(String(value).trim())
+  ? Number(String(value).trim().replace(',', '.')) : Number.NaN;
+export const sumByBookingCurrency = (rows, amountOf, fallback) => rows.reduce((totals, booking) => {
+  const code = currencyOf(booking, fallback);
+  const value = Number(amountOf(booking));
+  if (Number.isFinite(value)) totals[code] = Math.round(((totals[code] || 0) + value) * 100) / 100;
+  return totals;
+}, {});
+
 const FrontdeskTab = ({
   arrivals,
   departures,
@@ -40,16 +56,19 @@ const FrontdeskTab = ({
   loading,
   error,
   tenant,
+  businessDate,
   setReservationDetailId,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const tenantCurrency = currencyOf(tenant, cachedTenantCurrency());
   const tf = useCallback((k, opts) => t(`pmsComponents.frontdesk.${k}`, opts), [t]);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
   const [groupCheckinIds, setGroupCheckinIds] = useState(new Set());
   const [checkoutInProgress, setCheckoutInProgress] = useState(null);
   const [quickPaymentBooking, setQuickPaymentBooking] = useState(null);
   const [quickPaymentAmount, setQuickPaymentAmount] = useState('');
+  const [quickPaymentCashierRate, setQuickPaymentCashierRate] = useState('');
   const [quickPaymentMethod, setQuickPaymentMethod] = useState('card');
   const [quickPaymentCariAccounts, setQuickPaymentCariAccounts] = useState([]);
   const [quickPaymentCariAccountId, setQuickPaymentCariAccountId] = useState('');
@@ -76,15 +95,14 @@ const FrontdeskTab = ({
 
   // Today's financial pulse (computed client-side from already-loaded data)
   const financialPulse = useMemo(() => {
-    const sumNum = (arr, key) => arr.reduce((acc, b) => acc + (Number(b?.[key]) || 0), 0);
-    const expectedRevenue = sumNum(arrivals, 'total_amount');
-    const expectedCollections = departures.reduce((acc, booking) => acc + effectiveBookingBalance(booking), 0);
-    const inhouseOutstanding = inhouse.reduce((acc, booking) => acc + effectiveBookingBalance(booking), 0);
+    const expectedRevenue = sumByBookingCurrency(arrivals, b => b.total_amount, tenantCurrency);
+    const expectedCollections = sumByBookingCurrency(departures, effectiveBookingBalance, tenantCurrency);
+    const inhouseOutstanding = sumByBookingCurrency(inhouse, effectiveBookingBalance, tenantCurrency);
     const occRooms = rooms.filter(r => ['occupied', 'reserved'].includes(r.status)).length;
     const totalRooms = rooms.length || 0;
     const occupancyPct = totalRooms > 0 ? Math.round((occRooms / totalRooms) * 100) : 0;
     return { expectedRevenue, expectedCollections, inhouseOutstanding, occupancyPct, occRooms, totalRooms };
-  }, [arrivals, departures, effectiveBookingBalance, inhouse, rooms]);
+  }, [arrivals, departures, effectiveBookingBalance, inhouse, rooms, tenantCurrency]);
 
   // VIP & special-request alerts: scan today's arrivals + in-house
   const guestById = useMemo(() => {
@@ -119,13 +137,13 @@ const FrontdeskTab = ({
     return items.slice(0, 12); // cap to prevent overflow
   }, [arrivals, inhouse, guestById, tf]);
 
-  const formatMoney = useCallback((value) => (
-    formatCurrency(value, cachedTenantCurrency(), { decimals: 2 })
-  ), []);
+  const formatMoney = useCallback((value, booking) => (
+    formatCurrency(value, currencyOf(booking, tenantCurrency), { decimals: 2, compactDecimals: false })
+  ), [tenantCurrency]);
 
   const formatBookingChannel = bookingSourceLabel;
 
-  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const today = String(businessDate || localIsoDate()).slice(0, 10);
 
   const overstays = useMemo(() => {
     return (inhouse || []).filter(b => {
@@ -171,7 +189,7 @@ const FrontdeskTab = ({
     const balance = effectiveBookingBalance(booking);
     if (balance > 0.01) {
       setReservationDetailId?.(booking.id);
-      toast.warning(`${tf('balance')}: ${formatMoney(balance)} · ${tf('collectFirst')}`);
+      toast.warning(`${tf('balance')}: ${formatMoney(balance, booking)} · ${tf('collectFirst')}`);
       return;
     }
 
@@ -195,6 +213,7 @@ const FrontdeskTab = ({
     if (!booking?.id || balance <= 0.01) return;
     setQuickPaymentBooking(booking);
     setQuickPaymentAmount(balance.toFixed(2));
+    setQuickPaymentCashierRate('');
     setQuickPaymentMethod('card');
     setQuickPaymentCariAccountId('');
     setQuickPaymentError('');
@@ -237,11 +256,17 @@ const FrontdeskTab = ({
       toast.error('Ödeme tutarı sıfırdan büyük olmalı.');
       return;
     }
-    if (amount > balance + 0.01) {
+    if (amount > balance + 0.005) {
       toast.error('Ödeme tutarı kalan bakiyeyi aşamaz.');
       return;
     }
     const isCariTransfer = quickPaymentMethod === 'city_ledger';
+    const paymentCurrency = currencyOf(quickPaymentBooking, tenantCurrency);
+    const cashierRate = parseCashierRate(quickPaymentCashierRate);
+    if (!isCariTransfer && paymentCurrency !== 'TRY' && (!Number.isFinite(cashierRate) || cashierRate <= 0 || cashierRate > 1e9)) {
+      toast.error('Dövizli tahsilat için geçerli TL kasa kurunu girin.');
+      return;
+    }
     if (isCariTransfer && !quickPaymentCariAccountId) {
       toast.error('Aktarım yapılacak cari hesabı seçin.');
       return;
@@ -266,10 +291,12 @@ const FrontdeskTab = ({
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
-        toast.success(`Bakiye cari hesaba aktarıldı: ${formatMoney(amount)}`);
+        toast.success(`Bakiye cari hesaba aktarıldı: ${formatMoney(amount, quickPaymentBooking)}`);
       } else {
         response = await axios.post(`/frontdesk/folio/${quickPaymentBooking.id}/payment`, {
           amount,
+          currency: paymentCurrency,
+          ...(paymentCurrency !== 'TRY' ? { received_to_try_rate: cashierRate } : {}),
           method: quickPaymentMethod,
           payment_type: amount >= balance - 0.01 ? 'final' : 'interim',
           reference: null,
@@ -277,7 +304,7 @@ const FrontdeskTab = ({
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
-        toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount)}`);
+        toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount, quickPaymentBooking)}`);
       }
       const apiRemaining = Number(response?.data?.remaining_balance);
       const remainingBalance = Number.isFinite(apiRemaining)
@@ -309,7 +336,7 @@ const FrontdeskTab = ({
       quickPaymentSubmittingRef.current = false;
       setQuickPaymentInProgress(false);
     }
-  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod]);
+  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCashierRate, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod, tenantCurrency]);
 
   if (loading) {
     return (
@@ -326,7 +353,7 @@ const FrontdeskTab = ({
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <p className="text-red-600 font-medium mb-2">{tf('dataLoadError')}</p>
           <p className="text-sm text-gray-500 mb-4">{error}</p>
-          <Button variant="outline" onClick={loadFrontDeskData}>{tf('retry')}</Button>
+          <Button variant="outline" onClick={() => loadFrontDeskData?.()}>{tf('retry')}</Button>
         </div>
       </TabsContent>
     );
@@ -502,7 +529,7 @@ const FrontdeskTab = ({
                           )}
                           {balance > 0 && (
                             <Badge variant="outline" className="text-[9px] border-red-300 text-red-700 ml-auto">
-                              {tf('balance')}: {formatMoney(balance)}
+                              {tf('balance')}: {formatMoney(balance, b)}
                             </Badge>
                           )}
                         </div>
@@ -527,23 +554,17 @@ const FrontdeskTab = ({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="rounded-md bg-emerald-50 border border-emerald-100 p-3">
               <p className="text-[11px] text-emerald-700 font-medium">{tf('expectedRevenueToday')}</p>
-              <p className="text-xl font-bold text-emerald-800 mt-1">
-                {formatMoney(financialPulse.expectedRevenue)}
-              </p>
+              <CurrencySummary data-testid="frontdesk-expected-revenue" breakdown={financialPulse.expectedRevenue} fallbackCurrency={tenantCurrency} className="text-emerald-800" />
               <p className="text-[10px] text-emerald-600 mt-0.5">{tf('fromArrivals', { count: arrivals.length })}</p>
             </div>
             <div className="rounded-md bg-amber-50 border border-amber-100 p-3">
               <p className="text-[11px] text-amber-700 font-medium">{tf('expectedCollectionsToday')}</p>
-              <p className="text-xl font-bold text-amber-800 mt-1">
-                {formatMoney(financialPulse.expectedCollections)}
-              </p>
+              <CurrencySummary data-testid="frontdesk-expected-collections" breakdown={financialPulse.expectedCollections} fallbackCurrency={tenantCurrency} className="text-amber-800" />
               <p className="text-[10px] text-amber-600 mt-0.5">{tf('fromDepartures', { count: departures.length })}</p>
             </div>
             <div className="rounded-md bg-rose-50 border border-rose-100 p-3">
               <p className="text-[11px] text-rose-700 font-medium">{tf('inhouseOutstanding')}</p>
-              <p className="text-xl font-bold text-rose-800 mt-1">
-                {formatMoney(financialPulse.inhouseOutstanding)}
-              </p>
+              <CurrencySummary data-testid="frontdesk-inhouse-outstanding" breakdown={financialPulse.inhouseOutstanding} fallbackCurrency={tenantCurrency} className="text-rose-800" />
               <p className="text-[10px] text-rose-600 mt-0.5">{tf('inhouseGuestsCount', { count: inhouse.length })}</p>
             </div>
             <div className="rounded-md bg-indigo-50 border border-indigo-100 p-3">
@@ -812,7 +833,7 @@ const FrontdeskTab = ({
                         )}
                         {balance > 0.01 && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                            {tf('balance')}: {formatMoney(balance)}
+                            {tf('balance')}: {formatMoney(balance, booking)}
                           </span>
                         )}
                       </div>
@@ -860,7 +881,7 @@ const FrontdeskTab = ({
                       <div className="text-xs text-slate-400 mt-0.5">{tf('checkout')}: {new Date(booking.check_out).toLocaleDateString()}</div>
                       {hasBalance && (
                         <div className="mt-2 inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                          <span className="font-semibold">{tf('balance')}: {formatMoney(balance)}</span>
+                          <span className="font-semibold">{tf('balance')}: {formatMoney(balance, booking)}</span>
                           — {tf('collectFirst')}
                         </div>
                       )}
@@ -929,7 +950,7 @@ const FrontdeskTab = ({
                 <div className="mt-1 flex items-center justify-between text-sm text-slate-600">
                   <span>{tf('room')} {quickPaymentBooking.room_number || quickPaymentBooking.room?.room_number || '-'}</span>
                   <span className="font-semibold text-red-700">
-                    {tf('balance')}: {formatMoney(effectiveBookingBalance(quickPaymentBooking))}
+                    {tf('balance')}: {formatMoney(effectiveBookingBalance(quickPaymentBooking), quickPaymentBooking)}
                   </span>
                 </div>
                 <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-sm">
@@ -944,7 +965,7 @@ const FrontdeskTab = ({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="frontdesk-quick-payment-amount">Tutar</Label>
+                <Label htmlFor="frontdesk-quick-payment-amount">Tutar ({currencyOf(quickPaymentBooking, tenantCurrency)})</Label>
                 <Input
                   id="frontdesk-quick-payment-amount"
                   data-testid="frontdesk-quick-payment-amount"
@@ -975,6 +996,13 @@ const FrontdeskTab = ({
                   </SelectContent>
                 </Select>
               </div>
+              {quickPaymentMethod !== 'city_ledger' && currencyOf(quickPaymentBooking, tenantCurrency) !== 'TRY' && <div className="space-y-2">
+                <Label htmlFor="frontdesk-quick-payment-cashier-rate">TL kasa kuru (1 {currencyOf(quickPaymentBooking, tenantCurrency)} = kaç TL?)</Label>
+                <Input id="frontdesk-quick-payment-cashier-rate" data-testid="frontdesk-quick-payment-cashier-rate" {...moneyInputProps}
+                  value={quickPaymentCashierRate} disabled={quickPaymentInProgress} placeholder="Uygulanan kuru girin"
+                  onChange={event => { if (/^\d*(?:[.,]\d{0,6})?$/.test(event.target.value)) setQuickPaymentCashierRate(event.target.value); }} />
+                <p className="text-xs text-slate-500">Bu hızlı işlemde tahsil edilen para birimi {currencyOf(quickPaymentBooking, tenantCurrency)}. Kur yalnız TL kasa karşılığını kaydeder; misafirin folyo tutarını değiştirmez. Farklı dövizle ödeme için rezervasyonun Folyo ekranını kullanın.</p>
+              </div>}
               {quickPaymentMethod === 'city_ledger' && (
                 <div className="space-y-2">
                   <Label>Cari Hesap</Label>
@@ -1019,7 +1047,7 @@ const FrontdeskTab = ({
                 <Button
                   type="button"
                   onClick={submitQuickPayment}
-                  disabled={quickPaymentInProgress || !Number.isFinite(parseMoneyInput(quickPaymentAmount)) || parseMoneyInput(quickPaymentAmount) <= 0 || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId)}
+                  disabled={quickPaymentInProgress || !Number.isFinite(parseMoneyInput(quickPaymentAmount)) || parseMoneyInput(quickPaymentAmount) <= 0 || parseMoneyInput(quickPaymentAmount) > effectiveBookingBalance(quickPaymentBooking) + 0.005 || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId) || (quickPaymentMethod !== 'city_ledger' && currencyOf(quickPaymentBooking, tenantCurrency) !== 'TRY' && !(parseCashierRate(quickPaymentCashierRate) > 0 && parseCashierRate(quickPaymentCashierRate) <= 1e9))}
                   data-testid="frontdesk-quick-payment-submit"
                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                 >

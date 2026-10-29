@@ -20,6 +20,7 @@ import { API, fmtTL, fmtCurrency, fmtDate, fmtDateTime, statusLabel, translateVi
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
+import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { RoomChangeTab, CancelTab } from './reservation-detail/OperationTabs';
 import { CommunicationTab, NotesTab, HistoryTab } from './reservation-detail/GuestServiceTabs';
 import { DepositsTab, VoucherTab, InvoiceTab } from './reservation-detail/DocumentTabs';
@@ -118,6 +119,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [propertyTransferOptions, setPropertyTransferOptions] = useState([]);
   const [propertyTransferForm, setPropertyTransferForm] = useState({ targetPropertyId: '', roomType: '', reason: '', financialHandling: 'reject' });
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [earlyLateDirection, setEarlyLateDirection] = useState(null);
+  useEffect(() => { setEarlyLateDirection(null); }, [bookingId]);
   const loadGenerationRef = useRef(0);
   const tabsListRef = useRef(null);
   const openedAtRef = useRef(Date.now());
@@ -824,7 +827,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   </Button>
                 )}
                 {canLateCheckout && (
-                  <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-late-checkout">
+                  <Button size="sm" variant="outline" onClick={() => setEarlyLateDirection('late_checkout')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-late-checkout">
                     <LogOut className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.gec_cikis')}
                   </Button>
                 )}
@@ -1098,7 +1101,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} property={property} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} summary={summary} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
-                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} readOnly={readOnly} onOpenEarlyLate={setEarlyLateDirection} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={handleClose} /></TabsContent>
                 <TabsContent value="voucher" className="mt-0"><VoucherTab booking={booking} bookingId={bookingId} /></TabsContent>
@@ -1291,6 +1294,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EarlyLateChargeModal open={!!earlyLateDirection && !readOnly} onClose={() => setEarlyLateDirection(null)} bookingId={bookingId} direction={earlyLateDirection || 'late_checkout'} defaultHour={earlyLateDirection === 'late_checkout' ? 14 : 10} serviceDate={String(earlyLateDirection === 'early_checkin' ? booking.check_in || '' : booking.check_out || '').slice(0, 10)} onApplied={() => finishOperation('extra_charge_added')} />
 
       <GuestAlertModal
         guestId={guest?.id || booking?.guest_id}

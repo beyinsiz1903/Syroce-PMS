@@ -140,6 +140,14 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
 
     # Get all bookings
     bookings = await db.bookings.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("check_in", -1).to_list(100)
+    room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
+    if room_ids:
+        rooms = await db.rooms.find(
+            {"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1},
+        ).to_list(len(room_ids))
+        room_numbers = {room["id"]: room.get("room_number") for room in rooms}
+        bookings = [{**b, "room_number": room_numbers.get(b.get("room_id")) or b.get("room_number")} for b in bookings]
 
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     tenant_currency = _normalize_currency(tenant_currency)

@@ -3253,6 +3253,7 @@ async def add_extra_charge_detail(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     booking_currency = str(booking.get("currency") or "TRY").upper()
     if booking_currency == "TL":
