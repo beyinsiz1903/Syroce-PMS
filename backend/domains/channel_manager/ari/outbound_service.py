@@ -178,7 +178,9 @@ async def push_pending_changes(
             continue
 
         # Outbound idempotency check
-        is_dupe = await repo.check_outbound_idempotency(prov, prop_id, cs["provider_delta_hash"])
+        is_dupe = await repo.check_outbound_idempotency(
+            prov, prop_id, cs["provider_delta_hash"], change_set=cs,
+        )
         if is_dupe:
             await repo.update_change_set_status(cs["id"], "skipped")
             results["skipped"] += 1

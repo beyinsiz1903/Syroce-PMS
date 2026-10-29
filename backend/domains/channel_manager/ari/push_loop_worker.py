@@ -201,6 +201,7 @@ class PushLoopWorker:
                 provider,
                 property_id,
                 cs["provider_delta_hash"],
+                change_set=cs,
             )
             if is_dupe:
                 await repo.update_change_set_status(cs["id"], "skipped")

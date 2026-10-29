@@ -201,11 +201,70 @@ async def update_change_set_status(
     await db[COLL_ARI_CHANGE_SETS].update_one({"id": cs_id}, update)
 
 
-async def check_outbound_idempotency(provider: str, property_id: str, delta_hash: str) -> bool:
-    """Return True if this exact delta was already pushed recently (within last hour)."""
-    from datetime import timedelta
+async def ensure_current_ack_index(database) -> None:
+    """Keep current-cell ACK reads bounded to one tenant/provider/room/scope."""
+    await database[COLL_ARI_CHANGE_SETS].create_index(
+        [("tenant_id", 1), ("provider", 1), ("property_id", 1),
+         ("room_type_code", 1), ("change_scope", 1), ("last_provider_ack_at", -1)],
+        partialFilterExpression={"status": "acked"},
+        name="ix_ari_current_cell_ack",
+    )
+
+
+async def check_outbound_idempotency(
+    provider: str, property_id: str, delta_hash: str, *, change_set: dict | None = None,
+) -> bool:
+    """Suppress an equal *current* state, never a historical A in A -> B -> A.
+
+    Exely requires the full tenant/cell context. Its last successful overlapping
+    write establishes the state; finding any matching hash in the past hour
+    does not. Other providers retain their existing deduplication behavior.
+    """
+    from datetime import date, timedelta
 
     cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    if provider == "exely":
+        cs = change_set or {}
+        if (cs.get("provider") != provider or cs.get("property_id") != property_id
+                or cs.get("provider_delta_hash") != delta_hash
+                or not isinstance(cs.get("tenant_id"), str) or not cs["tenant_id"].strip()
+                or not isinstance(cs.get("room_type_code"), str) or not cs["room_type_code"].strip()
+                or cs.get("change_scope") not in {"availability", "rate", "restriction"}):
+            raise ValueError("Exely deduplication requires an exact tenant-scoped change set")
+        start, end = str(cs.get("date_from", "")), str(cs.get("date_to", ""))
+        if date.fromisoformat(start) > date.fromisoformat(end):
+            raise ValueError("Exely deduplication requires an ordered date interval")
+        query = {
+            "tenant_id": cs["tenant_id"], "provider": provider, "property_id": property_id,
+            "room_type_code": cs["room_type_code"], "change_scope": cs["change_scope"],
+            "date_from": {"$lte": end}, "date_to": {"$gte": start},
+            "status": "acked", "last_provider_ack_at": {"$gte": cutoff},
+        }
+        # Availability is room inventory, even if published under another rate.
+        # Prices and restrictions belong to their own mapped rate plan.
+        if cs["change_scope"] != "availability":
+            if not isinstance(cs.get("rate_plan_code"), str) or not cs["rate_plan_code"].strip():
+                raise ValueError("Exely rate/restriction deduplication requires a rate plan")
+            query["rate_plan_code"] = cs["rate_plan_code"]
+        if cs["change_scope"] == "restriction":
+            operation = (cs.get("compacted_payload") or {}).get("operation")
+            if operation not in {"stop_sell", "min_los", "min_los_arrival", "max_los", "cta", "ctd"}:
+                raise ValueError("Exely restriction deduplication requires an explicit operation")
+            query["$or"] = [
+                {"compacted_payload.operation": operation},
+                {"compacted_payload.operation": {"$exists": False}},
+            ]
+        latest = await db[COLL_ARI_CHANGE_SETS].find_one(
+            query, {"_id": 0}, sort=[("last_provider_ack_at", -1)],
+        )
+        if not latest or latest.get("provider_delta_hash") != delta_hash:
+            return False
+        # Tied ACK timestamps do not establish an order between different values.
+        conflict = await db[COLL_ARI_CHANGE_SETS].find_one({
+            **query, "provider_delta_hash": {"$ne": delta_hash},
+            "last_provider_ack_at": {"$gte": latest["last_provider_ack_at"]},
+        }, {"_id": 0, "id": 1})
+        return conflict is None
     existing = await db[COLL_ARI_CHANGE_SETS].find_one(
         {
             "provider": provider,
