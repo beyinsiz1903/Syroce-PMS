@@ -21,6 +21,7 @@ from core.room_type_inventory_service import (
     reconcile_date_range,
 )
 from core.tenant_db import clear_tenant_context, set_tenant_context
+from domains.channel_manager.calendar_inventory import exely_publishable_availability
 
 logger = logging.getLogger("channel_manager.availability_auto_sync")
 
@@ -211,10 +212,6 @@ async def _push_to_exely(
             return {"configured": True, "queued_operations": 0, "errors": ["exely_property_mapping_missing"]}
         from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 
-        # Tarihleri ardışık gruplara ayır
-        sorted_dates = sorted(date_availability.keys())
-        date_groups = _group_consecutive_dates_with_same_avail(sorted_dates, date_availability)
-
         # PMSConnect's wire identifiers can differ from the Exely room/rate
         # identifiers shown on the rate-plan pages.  The certification tenant
         # explicitly confirmed 5001574/10003870 for Standard but returned
@@ -245,6 +242,14 @@ async def _push_to_exely(
             exely_room_code, rp_code = _exely_wire_pair(mapping)
             if not exely_room_code or not rp_code:
                 continue
+
+            # A booking event must not replace a smaller configured commercial
+            # allotment with the entire physical capacity. Keep canonical locks
+            # as an upper bound, and use the same category occupancy as the grid.
+            publishable = await exely_publishable_availability(
+                db, tenant_id, pms_room_type, mapping, date_availability,
+            )
+            date_groups = _group_consecutive_dates_with_same_avail(sorted(publishable), publishable)
 
             for group_start, group_end, avail in date_groups:
                 try:

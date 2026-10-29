@@ -20,6 +20,18 @@ class _Cursor:
         return self.values
 
 
+def _calendar_projection_collections():
+    # A real Exely booking publish also reads the calendar sales ceiling. These
+    # existing mapping tests have no saved cap/bookings and retain physical7.
+    return {
+        'rooms': type('Rooms', (), {'find': lambda self, *_a, **_k: _Cursor([
+            {'id': f'room-{i}', 'room_type': 'standard'} for i in range(7)
+        ])})(),
+        'bookings': type('Bookings', (), {'find': lambda self, *_a, **_k: _Cursor([])})(),
+        'rate_calendar': type('Calendar', (), {'find': lambda self, *_a, **_k: _Cursor([])})(),
+    }
+
+
 @pytest.mark.asyncio
 async def test_authoritative_availability_reconciles_then_reads_each_stay_night(monkeypatch):
     reconcile = AsyncMock(return_value={"drift_detected": 0})
@@ -99,6 +111,7 @@ async def test_exely_booking_sync_uses_only_explicit_mapping_rate_plan(monkeypat
         "FakeDb",
         (),
         {
+            **_calendar_projection_collections(),
             "exely_connections": type(
                 "Connections",
                 (),
@@ -147,6 +160,7 @@ async def test_exely_booking_sync_uses_complete_pms_api_pair_when_configured(mon
         "sync_availability": True,
     }
     database = type("FakeDb", (), {
+        **_calendar_projection_collections(),
         "exely_connections": type("Connections", (), {"find_one": AsyncMock(return_value={"hotel_code": "501694"})})(),
         "exely_room_mappings": type("Mappings", (), {"find": lambda self, *_args, **_kwargs: _Cursor([mapping])})(),
     })()
