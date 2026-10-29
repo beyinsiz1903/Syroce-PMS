@@ -100,8 +100,18 @@ Eski kanıtlar, seed/operations sürücüleri veya stok/arşiv fazları tekrar e
 
 YEREL KABULÜ TEKRARLAMA
 FRONTDESK_TEST_MONGO_URI yalnız 127.0.0.1/localhost replica URI olmalıdır.
+Verilmezse CI'ın mevcut POS_TEST_MONGO_URI izole loopback replica adresi
+kullanılır. İkisi de yoksa veya adres yerel değilse test atlanmaz; açık hata verir.
 MONGO_URL da açıkça aynı yerel URI'ye, DB_NAME ayrı test adına ayarlanmalıdır.
 E2E_EXTERNAL_DRY_RUN=true ile backend/tests/test_frontdesk_acceptance_replica.py
 pytest üzerinden çalıştırılır. Bu testi üretim bağlantısıyla çalıştırmayın.
 Bu turda canlı API'ye yazı, gerçek misafir çıkışı, gün kapatma, Exely açma,
 merge veya deploy yapılmadı. Önceki canlı not/late_checkout işaretleri gizlenmedi.
+
+CI TAKİBİ / İLK HEAD 457a56654
+İlk GitHub çalışmasında her iki workflow aynı check_skip_budget adımında
+durdu: yeni fixture içindeki pytest.skip, backend_skip_constructs sayısını
+703 -> 704 yükseltmişti. Uygulama test/derleme hatası değildi; frontend-unit,
+frontend-build ve E2E smoke başarılıydı, tam backend paketi henüz çalışmamıştı.
+Fixture artık mevcut CI yerel replica adresini kullanır; ortam yoksa fail-closed
+durur. Bütçe, JUnit skip sınırı, test envanteri ve workflow gate'leri gevşetilmedi.

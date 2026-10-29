@@ -22,10 +22,13 @@ from routers import early_late_pricing, reservation_detail, webhook_retry_servic
 
 @pytest_asyncio.fixture
 async def acceptance(monkeypatch):
-    uri = os.getenv("FRONTDESK_TEST_MONGO_URI")
-    if not uri:
-        pytest.skip("Set FRONTDESK_TEST_MONGO_URI to an isolated LOCAL replica")
-    assert urlparse(uri).hostname in {"127.0.0.1", "localhost"}, "LOCAL database required"
+    # The complete offline CI job already provisions POS_TEST_MONGO_URI as a
+    # loopback replica. Run here too; never turn missing infrastructure green
+    # by skipping the lifecycle acceptance tests.
+    uri = os.getenv("FRONTDESK_TEST_MONGO_URI") or os.getenv("POS_TEST_MONGO_URI")
+    assert uri and urlparse(uri).hostname in {"127.0.0.1", "localhost"}, (
+        "Set FRONTDESK_TEST_MONGO_URI or POS_TEST_MONGO_URI to an isolated LOCAL replica; acceptance must not silently skip"
+    )
     client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=3000)
     database = client["frontdesk_acceptance_" + uuid.uuid4().hex]
     assert (await client.admin.command("hello")).get("setName"), "Replica set required"
