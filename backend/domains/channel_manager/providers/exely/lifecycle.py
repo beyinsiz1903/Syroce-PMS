@@ -508,6 +508,17 @@ async def acknowledge_durable_version(provider, reservation: dict[str, Any]) -> 
     if not version_doc or version_doc.get("processing_state") != PMS_DURABLE:
         return {"success": False, "provider_write_count": 0, "reason": "PMS_NOT_DURABLE"}
     if version_doc.get("ack_state") == ACKED:
+        if version_doc.get("inventory_targets_v1"):
+            # Repair only this new flow's local ACK marker after a crash
+            # between definitive version ACK and the current-row update.
+            await db.exely_reservations.update_one(
+                {"tenant_id": version_doc["tenant_id"], "provider_version_identity": identity,
+                 "delivery_state": {"$in": [ACK_PENDING, ACK_SENDING, ACKED]}},
+                {"$set": {"delivery_state": ACKED, "delivery_confirmed": True,
+                    "delivery_confirmed_version": version_doc["provider_version_key"],
+                    "delivery_confirmed_at": version_doc.get("acked_at")}},
+            )
+        await _enqueue_acked_inventory(version_doc)
         return {"success": True, "provider_write_count": 0, "reason": "ALREADY_ACKED"}
     if version_doc.get("ack_state") != ACK_PENDING:
         return {"success": False, "provider_write_count": 0, "reason": "ACK_NOT_PENDING"}
@@ -603,12 +614,25 @@ async def acknowledge_durable_version(provider, reservation: dict[str, Any]) -> 
             }
         },
     )
+    await _enqueue_acked_inventory({**version_doc, "ack_state": ACKED})
     return {"success": True, "provider_write_count": 1, "reason": "ACKED"}
+
+
+async def _enqueue_acked_inventory(version_doc):
+    from .reservation_inventory import enqueue_after_ack
+
+    try:
+        await enqueue_after_ack(db, version_doc)
+    except Exception as exc:
+        # ACK is already definitive. Retain the durable pending marker so the
+        # next normal pull retries only LOCAL enqueue, never the provider ACK.
+        logger.error("[EXELY-LIFECYCLE] inventory_enqueue=pending exception_class=%s", type(exc).__name__)
 
 
 async def acknowledge_pending_versions(provider, tenant_id: str, limit: int = 50) -> dict[str, int]:
     reservations = await db.exely_reservations.find(
-        {"tenant_id": tenant_id, "delivery_state": ACK_PENDING},
+        {"tenant_id": tenant_id, "$or": [{"delivery_state": ACK_PENDING},
+            {"delivery_state": {"$in": [ACKED, ACK_SENDING]}, "inventory_outbox_state": "PENDING"}]},
         {"_id": 0},
     ).to_list(limit)
     acked = 0
