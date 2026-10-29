@@ -30,17 +30,29 @@ import {
 import { normalizeFeatures } from '@/utils/featureFlags';
 import { useTranslation } from 'react-i18next';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
-import { defaultReportDates, reportDownloadError, reportDownloadUrl } from '@/utils/reportExports';
+import { defaultReportDates, reportDownloadError, reportDownloadUrl, saveReportFile } from '@/utils/reportExports';
 
 const Reports = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(false);
   const downloadBusy = useRef(false);
+  const mounted = useRef(true);
+  const downloadCleanups = useRef(new Set());
   const navigate = useNavigate();
   const [selectedReports, setSelectedReports] = useState([]);
   const [showSelector, setShowSelector] = useState(false);
   const [activeSection, setActiveSection] = useState('excel'); // 'excel' | 'night_audit'
   const businessDate = useBusinessDate();
+
+  useEffect(() => {
+    mounted.current = true;
+    const cleanups = downloadCleanups.current;
+    return () => {
+      mounted.current = false;
+      cleanups.forEach(release => release());
+      cleanups.clear();
+    };
+  }, []);
 
   const plan =
     tenant?.subscription_plan ||
@@ -189,6 +201,7 @@ const Reports = ({ user, tenant, onLogout }) => {
   const downloadReport = async (report, url) => {
     try {
       const response = await axios.get(url, { responseType: 'blob' });
+      if (!mounted.current) return;
       const type = response.headers?.['content-type'] || response.data?.type || '';
       if (/json|text\/html/i.test(type)) {
         const error = new Error('Invalid report response');
@@ -198,23 +211,23 @@ const Reports = ({ user, tenant, onLogout }) => {
       const blob = new Blob([response.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
       const contentDisposition = response.headers?.['content-disposition'];
       let filename = `${report.name.replace(/\s+/g, '_')}.xlsx`;
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
         if (filenameMatch && filenameMatch[1]) filename = filenameMatch[1].replace(/['"]/g, '');
       }
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000);
-      toast.success(`${report.name} ${t('reports.downloadSuccess')}!`);
+      const release = saveReportFile(blob, filename, window,
+        cleanup => downloadCleanups.current.delete(cleanup));
+      if (mounted.current) {
+        downloadCleanups.current.add(release);
+        toast.success(`${report.name} ${t('reports.downloadSuccess')}!`);
+      } else {
+        release();
+      }
     } catch (error) {
-      toast.error(`${report.name}: ${await reportDownloadError(error)}`);
+      const message = await reportDownloadError(error);
+      if (mounted.current) toast.error(`${report.name}: ${message}`);
     }
   };
 
@@ -230,10 +243,13 @@ const Reports = ({ user, tenant, onLogout }) => {
     downloadBusy.current = true;
     setLoading(true);
     try {
-      for (const { report, url } of downloads) await downloadReport(report, url);
+      for (const { report, url } of downloads) {
+        if (!mounted.current) break;
+        await downloadReport(report, url);
+      }
     } finally {
       downloadBusy.current = false;
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   };
 

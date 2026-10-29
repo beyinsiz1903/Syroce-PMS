@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Reports from '../Reports';
@@ -32,6 +32,13 @@ beforeEach(() => {
   window.URL.createObjectURL = vi.fn(() => 'blob:isolated-report');
   window.URL.revokeObjectURL = vi.fn();
   vi.spyOn(window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  if (vi.isFakeTimers()) {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  }
 });
 
 describe('Report exports', () => {
@@ -114,5 +121,36 @@ describe('Report exports', () => {
     expect(() => reportDownloadUrl({ endpoint: '/test', singleDateParam: 'date', reportDate: '2026-02-30' })).toThrow();
     expect(reportDownloadUrl({ endpoint: '/test', singleDateParam: 'date_str', reportDate: '2026-10-07' })).toBe('/test?date_str=2026-10-07');
     expect(await reportDownloadError({ response: { data: { detail: [{ msg: 'Invalid date' }] } } })).toBe('Invalid date');
+  });
+
+  it('releases its pending object URL and timer exactly once on unmount', async () => {
+    vi.useFakeTimers();
+    const { unmount } = render(<Reports tenant={{}} />);
+    addReport('company-aging');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'İndir' })));
+    const revoke = window.URL.revokeObjectURL;
+    expect(toast.success).toHaveBeenCalledOnce();
+    expect(revoke).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:isolated-report');
+    expect(vi.getTimerCount()).toBe(0);
+    vi.runOnlyPendingTimers();
+    expect(revoke).toHaveBeenCalledOnce();
+  });
+
+  it('does not create a download or start the rest of a batch after unmount', async () => {
+    let resolve;
+    axios.get.mockImplementationOnce(() => new Promise(finish => { resolve = finish; }));
+    const { unmount } = render(<Reports tenant={{}} />);
+    addReport('company-aging');
+    addReport('forecast-detail');
+    fireEvent.click(screen.getByRole('button', { name: 'reports.downloadAll' }));
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    unmount();
+    await act(async () => resolve(fileResponse));
+    expect(window.URL.createObjectURL).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(axios.get).toHaveBeenCalledTimes(1);
   });
 });
