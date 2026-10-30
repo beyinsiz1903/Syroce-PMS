@@ -1,0 +1,138 @@
+REMAINING NATIVE SERVICES AND FRONT-OFFICE REPORTS — 30 October2026
+
+Base release951cb3fd74ebd7ee69966295b1afdd1aebe55588 (PR1462).
+PR1462 merged during this continuation; its18 checks completed:15 success,
+3 expected build/deploy skips. Actual separate server deploy job124034108529
+in run41047207794 succeeded, including Deploy to Server. Health matched951cb3.
+The changes described below are a NEW follow-up, not live acceptance of them.
+No automatic merge/deploy. Previous PR1461 live writes MUST NOT be repeated.
+
+Reproduced defects, corrected without live financial failures
+1. Authenticated legacy room service trusted browser price, had incomplete
+   debt/tax posting and created duplicate orders for concurrent same-intent calls.
+2. Activity scheduling could reserve a capacity-one resource twice concurrently.
+3. Function-space comparisons missed equal instants written with different
+   timezone offsets; overnight bookings disappeared from next-day lists/grids.
+4. Native activity/function-space schedules lacked a source-owned folio handoff.
+5. POS summary selected business_date, while history selected created_at.
+   A displayed day could consequently have different summary/list populations.
+6. POS scalars summed unlike currencies; averages used all currency counts.
+7. The front-office manager report divided nominal booking totals by nights,
+   labelled that amount as daily revenue, and displayed it in the tenant currency.
+8. Room lookup searched only embedded room_number; canonical room_id-only
+   active stays were invisible to service folio selection. The financial helper
+   could also fall back to a closed/arbitrary folio.
+
+Source-owned fixes
+Legacy room service reads persisted menu prices/currency/optional inclusive VAT.
+Missing product/currency, changed quoted price, invalid quantity and missing
+charge consent stop. Structured QR F&B products may be read only through the
+same-tenant property's explicit booking/room link; no property is guessed.
+Whole order, all line charges, balances and sealed audit are one transaction.
+Stable source identity + same-intent locks prevent duplicate debt; changed
+intent409. Guest ownership is checked, including the linked guest inside the
+transaction; staff needs financial authority. Unknown VAT stays null, not0%.
+Requested service date/time is explicit and hotel-local; actual delivered_at is
+separate, stamped once through a forward-only audited transition. A charged
+order cannot be hidden by cancellation before authorised charge void/refund.
+
+Activity/function-space creation serializes capacity under resource locks.
+Intervals compare instants, use half-open bounds and hotel timezone, include
+overnight carry-ins and fractional hours. Ambiguous/bad source times fail closed.
+Native completion requires a current persisted-tariff quote_hash, a reason,
+matching currency and explicit same-tenant open folio. Activity guest must match
+the target stay. Hourly/daily function tariffs are explicitly selected and UI
+labels their proportional elapsed-hour/24h calculation. A tariff/calendar change
+invalidates the quote. Completion, canonical charge, balances and sealed audit
+are atomic; exact retry reuses the immutable snapshot, not a new tariff.
+No implicit refund or old completed-source migration. Paid/completed schedules
+have disabled cancellation controls; pending bookings may be cancelled normally.
+Room lookup now joins the same-tenant physical room and canonical room_id,
+rejects multiple active stays and never uses a conflicting legacy room number.
+Read-only lookup reports multiple open windows without choosing one. Financial
+callers require one unambiguous OPEN folio; no closed-folio fallback.
+
+Mobile room service explicitly selects one of multiple active stays. Cart money
+uses the product currency, never a silent TRY fallback; unknown/mixed currency,
+changed price and invalid quantities are blocked. First submitted intent and
+service time stay frozen through uncertain-response retries. Orders reconcile
+by the persisted request_id; this is NOT an offline automatic purchase queue.
+
+Read-only reports
+POS history and summary share the authoritative accounting-day filter. Currency
+groups include separate counts; no cross-currency scalar or fabricated legacy
+currency. Unknown source currency is labelled UNKNOWN. Front-office totals and
+averages use those groups. Outlet bars compare only within a currency; average
+denominators use the matching currency's order count.
+Manager financial cards/print use the existing authorised reports/revenue API,
+not client booking arithmetic. Failure stays visible and disables printing,
+instead of showing guessed money/zero. Folio timeline/report categories have
+clear activity, salon, room-service and other department labels. Original
+charges, payments, currency, tax sources and room rates are never rewritten.
+
+Verification — local and scoped, not universal error-free certification
+290 backend tests passed in107.42s, including cashier/lookup regressions;
+127 existing utcnow warnings (21 concierge,106 auth-throttle).
+43 UI tests passed;195 mobile unit tests passed and mobile typecheck passed.
+Targeted ESLint, full backend Ruff, production build and diff checks passed.
+Overlapping77/29/228/231/27/41-test runs are INCLUDED, not additional totals.
+Local Python3.13 / installed Motor3.3.1; pinned CI remains separate.
+No gate, ignore list, authentication or entitlement guard was weakened.
+
+Normal authenticated LOCAL HTTP acceptance on fresh QA Hotel900030:
+new synthetic stay; activity150 +1.5h hall300 +room service120 =570 TRY.
+Three canonical source charges;95 TRY declared inclusive VAT,475 net.
+Exact repeat requests return original source/charge. Housekeeping cannot post;
+charged-service/order cancellation409. Order delivery retries keep one timestamp.
+Reservation receivable delta, canonical charge total, financial summary/category
+report and manager revenue API agree. Old payments/daily rates unchanged.
+Audit40 chained rows verified,0 breaks/unverifiable/truncation. Records retained.
+A separate retained activity booking is preview-only, with NO charge added.
+The local legacy menu has no write API, so its known-price row was a specifically
+named localhost fixture. All subsequent order/folio actions used normal APIs.
+Room quota correctly rejected a31st local room; reused a verified available room.
+Initial local fixture email/parser/URL/port setup failures were preserved and
+corrected in the harness, not counted as product failures or test passes.
+
+Browser checks
+Live read-only matrix loaded Tasks, Feedback, Allotment, POS, Revenue Controls,
+Manager Report, KBS and KVKK; also task pending filter and allotment create form
+opened/closed without submitting. No feedback messages/invitations, KBS queue or
+provider writes, anonymization/export/deletion, price/overbooking changes made.
+Stale assets following deployment recovered through the app's reload control
+with no open form; the stale attempt is NOT counted as a successful page load.
+KBS lacks provider setup and demo identities are incomplete; no fabricated IDs.
+This matrix is navigation/specified-safe-controls evidence, NOT every-button
+mutation acceptance. Local activity UI displayed the posted-source state.
+Local Function Space displayed setup-required because the QA subscription lacks
+mice; local POS HTTP returned ENTITLEMENT_DENIED(pos_fnb). These are explicit
+coverage limits, not successful full UI/provider acceptance. Guards stayed on.
+
+Fresh LIVE read-only guard passed on951cb3: Demo Hotel100001 only;31rooms and
+QT2ED0 preserved, approved two inventory products52 each;26Oct OPEN. Exely
+TEST501694 sandbox ARI/pull OFF, HotelRunner disconnected, all V2 paused.
+No new LIVE financial, source, stock, booking or provider write in this turn.
+Previously added live demo records remain. No real collection/fiscal/KBS/dayclose.
+
+Restricted evidence (workspace; never commit session secrets/guest snapshots):
+department-remaining-20261030.9UCNru/
+- remaining-final-v4.xml; ui-final-v3.xml; room-lookup-final.xml
+- native-http-room-lookup-after-*-result.json (found the canonical stay/folio)
+- native-http-acceptance.json and distinct native-http-*-request/result files
+- native-http-manager-revenue-*-result.json
+- live1462-readonly-guards.json; live-readonly-ui-matrix.json
+- failed/before XMLs and requests remain, never overwritten/deleted
+Local Mongo data stays in /private/tmp/remaining-service-mongo.QgZdAU;
+report-only disposable fixture server data in remaining-report-mongo.nSNs9E.
+
+After human merge/deploy
+Fresh exact-head CI, merge ancestry, actual non-skipped server job and health.
+Then normal authorised, journaled APIs on Demo Hotel only. Reconcile existing
+sources first; DO NOT repeat stock/openings/archive or PR1461 service writes.
+PR1462 Upsell/QR live acceptance is also still pending; its code is deployed,
+not all newly supported source workflows have been written/accepted live.
+Use separate dated synthetic native sources and explicit known TRY/VAT/folio;
+accept once and exact retry, then compare all old financial sources, source
+IDs/fingerprints, audit chain, per-currency reports and guard state again.
+Preserve52each stocks,31rooms/QT2ED0, day26 OPEN and channels OFF.
+Keep all newly added records. No bank/card/fiscal/KBS/provider/dayclose needed.

@@ -14,13 +14,14 @@ import {
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const posMoney = (value, code) => /^[A-Z]{3}$/.test(code || '') ? formatCurrency(value, code, { decimals: 2 }) : `${Number(value).toLocaleString('tr-TR')} (para birimi bilinmiyor)`;
 
 const POSTab = ({ businessDate }) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const tc = useCallback((k) => t(`pmsComponents.pos.${k}`), [t]);
   const currency = cachedTenantCurrency();
-  const money = (value) => formatCurrency(value, currency, { decimals: 2 });
+  const money = (value, code = currency) => posMoney(value, code);
 
   const STATUS_MAP = {
     completed: { label: t('pmsComponents.housekeeping.completed'), color: 'bg-green-100 text-green-700' },
@@ -35,7 +36,8 @@ const POSTab = ({ businessDate }) => {
   const [orders, setOrders] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
   const [delayedCount, setDelayedCount] = useState(0);
-  const [summary, setSummary] = useState({ total_sales: 0, transaction_count: 0, average_transaction: 0 });
+  const [summary, setSummary] = useState(null);
+  const [loadErrors, setLoadErrors] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -47,6 +49,7 @@ const POSTab = ({ businessDate }) => {
         axios.get(`/pos/mobile/order-history?start_date=${today}&end_date=${today}&limit=20`),
         axios.get('/pos/mobile/active-orders'),
       ]);
+      setLoadErrors([breakdownRes, historyRes, activeRes].map((r, i) => r.status === 'rejected' ? ['Satış özeti', 'Sipariş listesi', 'Aktif siparişler'][i] : null).filter(Boolean));
 
       // Daily summary'yi outlet breakdown'dan türet
       if (breakdownRes.status === 'fulfilled') {
@@ -58,12 +61,14 @@ const POSTab = ({ businessDate }) => {
           total_sales: totalSales,
           transaction_count: totalOrders,
           average_transaction: totalOrders > 0 ? totalSales / totalOrders : 0,
+          byCurrency: data.total_sales_by_currency || { [data.currency || 'UNKNOWN']: totalSales },
+          counts: data.orders_by_currency || {},
         });
-      }
+      } else setSummary(null);
 
       if (historyRes.status === 'fulfilled') {
         setOrders(historyRes.value.data?.orders || []);
-      }
+      } else setOrders([]);
 
       if (activeRes.status === 'fulfilled') {
         const ad = activeRes.value.data || {};
@@ -85,6 +90,7 @@ const POSTab = ({ businessDate }) => {
 
   return (
     <div className="space-y-6">
+      {loadErrors.length > 0 && <p role="alert" className="text-sm text-red-700">Alınamayan veriler: {loadErrors.join(', ')}. Bunları sıfır sonuç olarak değerlendirmeyin.</p>}
       <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
@@ -114,21 +120,21 @@ const POSTab = ({ businessDate }) => {
           icon={CreditCard}
           intent="success"
           label={tc('totalSales')}
-          value={money(summary.total_sales)}
-          sub={tc('today')}
+          value={<div className="text-sm space-y-1">{summary ? Object.entries(summary.byCurrency).map(([code, amount]) => <div key={code}>{money(amount, code)}</div>) : 'Alınamadı'}</div>}
+          sub={`İş günü: ${businessDate || todayIso()}`}
         />
         <KpiCard
           icon={ShoppingCart}
           intent="info"
           label={tc('transactionCount')}
-          value={summary.transaction_count || 0}
+          value={summary?.transaction_count ?? 'Alınamadı'}
           sub={tc('today')}
         />
         <KpiCard
           icon={TrendingUp}
           intent="default"
           label={tc('avgTransaction')}
-          value={money(summary.average_transaction)}
+          value={<div className="text-sm space-y-1">{summary ? Object.entries(summary.byCurrency).map(([code, amount]) => <div key={code}>{summary.counts[code] ? money(amount / summary.counts[code], code) : 'Ortalama için döviz bazlı işlem sayısı yok'}</div>) : 'Alınamadı'}</div>}
           sub={tc('perOrder')}
         />
         <KpiCard
@@ -190,7 +196,7 @@ const POSTab = ({ businessDate }) => {
                       </div>
                     </div>
                     <div className="text-right ml-3 flex-shrink-0">
-                      <div className="font-bold">{money(order.total_amount)}</div>
+                      <div className="font-bold">{money(order.total_amount, order.currency || 'UNKNOWN')}</div>
                       <Badge className={st.color}>{st.label}</Badge>
                     </div>
                   </div>

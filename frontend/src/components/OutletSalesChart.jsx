@@ -30,7 +30,6 @@ const OutletSalesChart = () => {
   }
 
   const outlets = salesData.outlets;
-  const maxSales = Math.max(...Object.values(outlets).map(o => o.sales));
 
   return (
     <Card>
@@ -51,15 +50,13 @@ const OutletSalesChart = () => {
                   <div className="text-xs text-gray-500">{data.orders} {t('cm.components_OutletSalesChart.siparis')}</div>
                 </div>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div
-                  className="bg-gradient-to-r from-amber-400 to-amber-600 h-3 rounded-full transition-all duration-500"
-                  style={{ width: `${(data.sales / maxSales) * 100}%` }}
-                />
-              </div>
+              {Object.entries(data.sales_by_currency || {}).map(([currency, amount]) => {
+                const max = Math.max(...Object.values(outlets).map(o => Number(o.sales_by_currency?.[currency] || 0)), 0);
+                return <div key={currency} className="text-xs text-gray-500">{currency === 'UNKNOWN' ? 'Para birimi bilinmiyor' : currency}<div className="w-full bg-gray-200 rounded-full h-3"><div className="bg-gradient-to-r from-amber-400 to-amber-600 h-3 rounded-full" style={{ width: `${max > 0 ? amount / max * 100 : 0}%` }} /></div></div>;
+              })}
               <div className="text-xs text-gray-500 mt-1">
                 Ortalama: {formatCurrencyBreakdown(
-                  Object.fromEntries(Object.entries(data.sales_by_currency || {}).map(([currency, amount]) => [currency, data.orders ? amount / data.orders : 0])),
+                  Object.fromEntries(Object.entries(data.sales_by_currency || {}).filter(([currency]) => data.orders_by_currency?.[currency]).map(([currency, amount]) => [currency, amount / data.orders_by_currency[currency]])),
                   data.avg_ticket,
                   salesData.currency,
                 )}

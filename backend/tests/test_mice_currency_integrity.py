@@ -80,7 +80,7 @@ async def test_function_space_defaults_to_tenant_currency(monkeypatch):
 
     room = await function_space_router.create_room(
         function_space_router.FunctionRoom(name="Avrupa Salonu", capacity=100),
-        SimpleNamespace(tenant_id="tenant-1", email="test@example.com"),
+        SimpleNamespace(tenant_id="tenant-1", email="test@example.com", role="admin", is_super_admin=False),
     )
 
     assert room["currency"] == "EUR"

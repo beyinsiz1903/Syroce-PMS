@@ -34,7 +34,8 @@ def money(value):
 async def post_source_charge(db, tenant_id, source, actor_id, *, session):
     bid, kind, sid = source["booking_id"], source["kind"], source["id"]
     source_field = {"concierge": "source_concierge_request_id", "mice": "source_mice_event_id", "transfer": "source_transport_booking_id", "parking": "source_transport_booking_id",
-        "upsell": "source_upsell_offer_id", "room_service": "source_qr_submission_line_id"}[kind]
+        "upsell": "source_upsell_offer_id", "room_service": "source_qr_submission_line_id",
+        "room_service_order": "source_room_service_order_line_id", "activity": "source_activity_booking_id", "function_space": "source_function_booking_id"}[kind]
     booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": bid}, session=session)
     if not booking:
         raise HTTPException(404, "Aynı tesiste bağlı rezervasyon bulunamadı")

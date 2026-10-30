@@ -18,6 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.database import db
+from core.pos_report_period import pos_report_period
 from core.security import (
     _is_super_admin,
     get_current_user,
@@ -694,15 +695,7 @@ async def get_order_history(
     query = {"tenant_id": current_user.tenant_id}
 
     # Date filter
-    if start_date or end_date:
-        date_filter = {}
-        if start_date:
-            date_filter["$gte"] = start_date
-        if end_date:
-            # Add one day to include the end date
-            end_dt = datetime.fromisoformat(end_date) + timedelta(days=1)
-            date_filter["$lt"] = end_dt.isoformat()
-        query["created_at"] = date_filter
+    query.update(pos_report_period(start_date, end_date))
 
     if outlet_id:
         query["outlet_id"] = outlet_id
@@ -727,7 +720,8 @@ async def get_order_history(
                 "items_count": len(order.get("order_items", [])),
                 "total_amount": order.get("total_amount", 0),
                 "grand_total": order.get("grand_total"),
-                "currency": str(order.get("currency") or tenant_currency).upper(),
+                "currency": str(order.get("currency") or "UNKNOWN").upper(),
+                "business_date": order.get("business_date"),
                 "server_name": order.get("server_name", ""),
                 "created_at": order.get("created_at"),
                 "payment_status": order.get("payment_status", "unpaid"),

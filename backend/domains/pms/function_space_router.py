@@ -9,9 +9,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from core.scheduled_guest_services import ScheduledFolioInput, cancel_scheduled_booking, create_scheduled_booking, day_bookings, post_scheduled_folio, scheduled_quote
 from core.security import get_current_user
+from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
 from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from models.schemas import User
@@ -49,8 +51,9 @@ class FunctionRoom(BaseModel):
     capacity: int = Field(..., ge=1)  # banket maks koltuk
     area_m2: float | None = None
     floor: str | None = None
-    hourly_rate: float = 0
-    daily_rate: float = 0
+    hourly_rate: float = Field(default=0, ge=0, le=10_000_000)
+    daily_rate: float = Field(default=0, ge=0, le=10_000_000)
+    tax_rate: float | None = Field(default=None, ge=0, le=1)
     currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     supported_setups: list[str] = Field(default_factory=list)
     active: bool = True
@@ -66,6 +69,13 @@ class FunctionBookingCreate(BaseModel):
     setup_type: str = Field("theatre")
     attendees: int = Field(1, ge=1)
     note: str | None = None
+    request_id: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("starts_at", "ends_at")
+    @classmethod
+    def valid_datetime(cls, value):
+        # Offset-free legacy UI values explicitly mean hotel-local, not OS UTC.
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
 
 
 class FunctionBooking(FunctionBookingCreate):
@@ -74,6 +84,9 @@ class FunctionBooking(FunctionBookingCreate):
     status: str = "booked"
     created_by: str
     created_at: str
+    folio_id: str | None = None
+    folio_charge_id: str | None = None
+    reservation_id: str | None = None
 
 
 # ---------- Rooms ----------
@@ -94,6 +107,7 @@ async def list_rooms(user: User = Depends(get_current_user)):
 
 @router.post("/rooms", response_model=FunctionRoom, status_code=201)
 async def create_room(payload: FunctionRoom, user: User = Depends(get_current_user)):
+    require_catalog(user)
     db = get_system_db()
     doc = payload.model_dump()
     doc["currency"] = _normalize_currency(payload.currency, await _tenant_currency_code(user.tenant_id))
@@ -108,6 +122,7 @@ async def create_room(payload: FunctionRoom, user: User = Depends(get_current_us
 
 @router.delete("/rooms/{room_id}", status_code=204)
 async def delete_room(room_id: str, user: User = Depends(get_current_user)):
+    require_catalog(user)
     db = get_system_db()
     res = await db.function_rooms.update_one(
         {"id": room_id, "tenant_id": user.tenant_id},
@@ -120,21 +135,6 @@ async def delete_room(room_id: str, user: User = Depends(get_current_user)):
 # ---------- Bookings ----------
 
 
-async def _has_clash(db, tenant_id: str, room_id: str, starts: str, ends: str, exclude_id: str | None = None) -> bool:
-    """Aynı salon için verilen aralıkla çakışan onaylı booking var mı?"""
-    q = {
-        "tenant_id": tenant_id,
-        "room_id": room_id,
-        "status": {"$ne": "cancelled"},
-        # Çakışma: existing.starts < new.ends AND existing.ends > new.starts
-        "starts_at": {"$lt": ends},
-        "ends_at": {"$gt": starts},
-    }
-    if exclude_id:
-        q["id"] = {"$ne": exclude_id}
-    return (await db.function_bookings.find_one(q)) is not None
-
-
 @router.get("/bookings", response_model=list[FunctionBooking])
 async def list_bookings(
     date: str | None = None,
@@ -143,66 +143,33 @@ async def list_bookings(
 ):
     """Tarih (YYYY-MM-DD) veya salon filtreli booking listesi.
     Tarih verilirse o güne dokunan tüm booking'ler döner (gece taşan dahil)."""
-    db = get_system_db()
-    q: dict[str, Any] = {"tenant_id": user.tenant_id}
-    if room_id:
-        q["room_id"] = room_id
-    if date:
-        # O günün başlangıcı..bitişi ile çakışan booking'ler
-        day_start = f"{date}T00:00"
-        day_end = f"{date}T23:59"
-        q["starts_at"] = {"$lte": day_end}
-        q["ends_at"] = {"$gte": day_start}
-    cur = db.function_bookings.find(q).sort("starts_at", 1)
-    out: list[dict[str, Any]] = []
-    async for b in cur:
-        b.pop("_id", None)
-        out.append(b)
-    return out
+    return await day_bookings(get_system_db(), "function_space", user.tenant_id, date, room_id)
 
 
 @router.post("/bookings", response_model=FunctionBooking, status_code=201)
 async def create_booking(payload: FunctionBookingCreate, user: User = Depends(get_current_user)):
-    db = get_system_db()
+    require_spa_ops(user)
     if payload.setup_type not in SETUP_TYPES:
         raise HTTPException(400, f"Geçersiz kurulum tipi. Seçenekler: {', '.join(SETUP_TYPES)}")
-    if payload.starts_at >= payload.ends_at:
-        raise HTTPException(400, "Bitiş başlangıçtan sonra olmalı")
-
-    room = await db.function_rooms.find_one({"id": payload.room_id, "tenant_id": user.tenant_id})
-    if not room:
-        raise HTTPException(404, "Salon bulunamadı")
-    if not room.get("active", True):
-        raise HTTPException(400, "Salon pasif durumda; rezervasyon açılamaz")
-    if payload.attendees > (room.get("capacity") or 0):
-        raise HTTPException(400, f"Katılımcı sayısı salon kapasitesini ({room.get('capacity')}) aşıyor")
-    if room.get("supported_setups") and payload.setup_type not in room["supported_setups"]:
-        raise HTTPException(400, f"Bu salon '{payload.setup_type}' kurulumunu desteklemiyor")
-
-    if await _has_clash(db, user.tenant_id, payload.room_id, payload.starts_at, payload.ends_at):
-        raise HTTPException(409, "Bu salon seçilen saatlerde dolu (çakışma)")
-
-    doc = payload.model_dump()
-    doc["id"] = str(uuid.uuid4())
-    doc["tenant_id"] = user.tenant_id
-    doc["status"] = "booked"
-    doc["created_by"] = user.email
-    doc["created_at"] = datetime.now(UTC).isoformat()
-    await db.function_bookings.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+    return await create_scheduled_booking(get_system_db(), "function_space", payload.model_dump(), user)
 
 
 @router.post("/bookings/{booking_id}/cancel")
 async def cancel_booking(booking_id: str, user: User = Depends(get_current_user)):
-    db = get_system_db()
-    res = await db.function_bookings.update_one(
-        {"id": booking_id, "tenant_id": user.tenant_id},
-        {"$set": {"status": "cancelled", "cancelled_at": datetime.now(UTC).isoformat(), "cancelled_by": user.email}},
-    )
-    if not res.matched_count:
-        raise HTTPException(404, "Booking bulunamadı")
-    return {"ok": True}
+    require_spa_ops(user)
+    return await cancel_scheduled_booking(get_system_db(), "function_space", booking_id, user)
+
+
+@router.get("/bookings/{booking_id}/folio-quote")
+async def folio_quote(booking_id: str, billing_basis: str = "hourly", user: User = Depends(get_current_user)):
+    require_finance(user)
+    return await scheduled_quote(get_system_db(), "function_space", user.tenant_id, booking_id, billing_basis)
+
+
+@router.post("/bookings/{booking_id}/folio")
+async def post_to_folio(booking_id: str, payload: ScheduledFolioInput, user: User = Depends(get_current_user)):
+    require_finance(user)
+    return await post_scheduled_folio(get_system_db(), "function_space", booking_id, payload, user)
 
 
 @router.get("/availability")
@@ -228,18 +195,10 @@ async def availability(
             continue
         rooms.append(r)
 
-    day_start = f"{date}T00:00"
-    day_end = f"{date}T23:59"
-    busy_cur = db.function_bookings.find(
-        {
-            "tenant_id": user.tenant_id,
-            "status": {"$ne": "cancelled"},
-            "starts_at": {"$lte": day_end},
-            "ends_at": {"$gte": day_start},
-        }
-    )
     busy: dict[str, list[dict[str, str]]] = {}
-    async for b in busy_cur:
+    for b in await day_bookings(db, "function_space", user.tenant_id, date):
+        if b.get("status") == "cancelled":
+            continue
         busy.setdefault(b["room_id"], []).append(
             {
                 "starts_at": b["starts_at"],

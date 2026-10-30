@@ -8,7 +8,7 @@ export const folioCategory = item => {
   if (['food', 'beverage', 'dessert', 'appetizer', 'food_beverage', 'food_and_beverage', 'restaurant', 'room_service', 'pos_fnb'].includes(category)) return 'food_beverage';
   return category;
 };
-export const folioCategoryLabel = item => ({ accommodation: 'Konaklama', food_beverage: 'Yiyecek ve içecek', minibar: 'Minibar', spa: 'Spa', laundry: 'Çamaşırhane', tax: 'Vergi', city_tax: 'Vergi', other: 'Diğer hizmet' }[folioCategory(item)] || 'Ek hizmet');
+export const folioCategoryLabel = item => ({ accommodation: 'Konaklama', food_beverage: 'Yiyecek ve içecek', minibar: 'Minibar', spa: 'Spa', laundry: 'Çamaşırhane', concierge: 'Concierge', transfer: 'Transfer', parking: 'Otopark', mice: 'Toplantı ve etkinlik', activity: 'Aktivite', function_space: 'Salon kiralama', upsell: 'Ek hizmet teklifi', tax: 'Vergi', city_tax: 'Vergi', other: 'Diğer hizmet' }[folioCategory(item)] || 'Ek hizmet');
 
 export function serviceTimingLabel(item) {
   const date = String(item.service_date || '').slice(0, 10);

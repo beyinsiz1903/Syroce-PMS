@@ -11,7 +11,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from core.scheduled_guest_services import ScheduledFolioInput, cancel_scheduled_booking, create_scheduled_booking, day_bookings, post_scheduled_folio, scheduled_quote
 from core.security import get_current_user
+from core.spa_mice_authz import require_finance
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -72,6 +74,8 @@ class Activity(BaseModel):
     type: str = Field("other")
     duration_min: int = Field(default=60, ge=15, le=1440)
     price: float = Field(default=0, ge=0, le=10_000_000)
+    currency: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
+    tax_rate: float | None = Field(default=None, ge=0, le=1)
     capacity: int = Field(default=1, ge=1, le=10_000)
     description: str | None = None
     active: bool = True
@@ -95,6 +99,7 @@ class ActivityBookingCreate(BaseModel):
     starts_at: str  # ISO
     duration_min: int | None = Field(default=None, ge=15, le=1440)
     note: str | None = None
+    request_id: str | None = Field(default=None, min_length=8, max_length=128)
 
     @field_validator("starts_at")
     @classmethod
@@ -116,6 +121,9 @@ class ActivityBooking(ActivityBookingCreate):
     created_by: str
     created_at: str
     guest_name: str | None = None
+    folio_id: str | None = None
+    folio_charge_id: str | None = None
+    reservation_id: str | None = None
 
 
 _INDEXES_INITIALIZED = False
@@ -226,14 +234,7 @@ async def list_bookings(
 ):
     await _ensure_indexes()
     db = get_system_db()
-    q: dict[str, Any] = {"tenant_id": user.tenant_id}
-    if resource_id:
-        q["resource_id"] = resource_id
-    if date:
-        q["starts_at"] = {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"}
-    docs = await db.activity_bookings.find(q).sort("starts_at", 1).to_list(500)
-    for d in docs:
-        d.pop("_id", None)
+    docs = await day_bookings(db, "activity", user.tenant_id, date, resource_id)
     names = await _guest_names_by_id(user.tenant_id, [d.get("guest_id") for d in docs])
     for d in docs:
         d["guest_name"] = names.get(d.get("guest_id"))
@@ -243,59 +244,24 @@ async def list_bookings(
 @router.post("/bookings", response_model=ActivityBooking, status_code=201)
 async def create_booking(body: ActivityBookingCreate, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
     await _ensure_indexes()
-    db = get_system_db()
-    activity = await db.activities.find_one({"id": body.activity_id, "tenant_id": user.tenant_id, "active": True})
-    if not activity:
-        raise HTTPException(404, "Aktivite bulunamadı")
-    resource = await db.activity_resources.find_one({"id": body.resource_id, "tenant_id": user.tenant_id, "active": True})
-    if not resource:
-        raise HTTPException(404, "Aktivite kaynağı bulunamadı")
-    supported_types = resource.get("activity_types") or []
-    if supported_types and activity.get("type") not in supported_types:
-        raise HTTPException(400, "Seçilen kaynak bu aktivite tipini desteklemiyor")
-    guest = await db.guests.find_one({"id": body.guest_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
-    if not guest:
-        raise HTTPException(404, "Misafir bulunamadı")
-    duration = body.duration_min or activity.get("duration_min", 60)
-    ends_at = _add_minutes(body.starts_at, duration)
-    # Çakışma kontrolü: aynı kaynak + zaman dilimi
-    overlaps = await db.activity_bookings.count_documents(
-        {
-            "tenant_id": user.tenant_id,
-            "resource_id": body.resource_id,
-            "status": {"$ne": "cancelled"},
-            "starts_at": {"$lt": ends_at},
-            "ends_at": {"$gt": body.starts_at},
-        }
-    )
-    capacity = min(int(resource.get("capacity", 1)), int(activity.get("capacity", resource.get("capacity", 1))))
-    if overlaps >= capacity:
-        raise HTTPException(409, f"Kaynak bu zaman diliminde dolu ({overlaps}/{capacity})")
-    doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": user.tenant_id,
-        "ends_at": ends_at,
-        "status": "booked",
-        "created_by": user.email,
-        "created_at": datetime.now(UTC).isoformat(),
-        **body.model_dump(),
-        "duration_min": duration,
-    }
-    await db.activity_bookings.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+    return await create_scheduled_booking(get_system_db(), "activity", body.model_dump(), user)
 
 
 @router.post("/bookings/{booking_id}/cancel")
 async def cancel_booking(booking_id: str, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
-    db = get_system_db()
-    res = await db.activity_bookings.update_one(
-        {"id": booking_id, "tenant_id": user.tenant_id},
-        {"$set": {"status": "cancelled", "cancelled_at": datetime.now(UTC).isoformat()}},
-    )
-    if res.matched_count == 0:
-        raise HTTPException(404, "Rezervasyon bulunamadı")
-    return {"ok": True}
+    return await cancel_scheduled_booking(get_system_db(), "activity", booking_id, user)
+
+
+@router.get("/bookings/{booking_id}/folio-quote")
+async def folio_quote(booking_id: str, billing_basis: str = "per_booking", user: User = Depends(get_current_user)):
+    require_finance(user)
+    return await scheduled_quote(get_system_db(), "activity", user.tenant_id, booking_id, billing_basis)
+
+
+@router.post("/bookings/{booking_id}/folio")
+async def post_to_folio(booking_id: str, payload: ScheduledFolioInput, user: User = Depends(get_current_user)):
+    require_finance(user)
+    return await post_scheduled_folio(get_system_db(), "activity", booking_id, payload, user)
 
 
 @router.get("/availability")
@@ -321,14 +287,7 @@ async def availability(
     ).to_list(200)
     out = []
     for r in resources:
-        bookings = await db.activity_bookings.find(
-            {
-                "tenant_id": user.tenant_id,
-                "resource_id": r["id"],
-                "status": {"$ne": "cancelled"},
-                "starts_at": {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"},
-            }
-        ).to_list(100)
+        bookings = [row for row in await day_bookings(db, "activity", user.tenant_id, date, r["id"]) if row.get("status") != "cancelled"]
         out.append(
             {
                 "resource_id": r["id"],

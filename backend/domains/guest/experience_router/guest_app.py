@@ -14,7 +14,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from core.database import db
 from core.security import get_current_user
@@ -42,7 +42,10 @@ async def _assert_guest_owns_booking(booking: dict, current_user: User) -> None:
     consistent ownership contract across all booking-scoped guest endpoints.
     """
     role = getattr(current_user.role, "value", str(current_user.role))
-    if role != "guest_app":
+    if role not in {"guest_app", "guest"}:
+        allowed = {getattr(value, "value", str(value)) for value in _ROOM_SERVICE_STAFF_ROLES} | {"finance"}
+        if role not in allowed:
+            raise HTTPException(403, "Bu konaklamanın oda servisi erişimi yok")
         return  # Staff / admin callers are not restricted to their own bookings.
 
     # Collect *all* tenant-scoped guest records for this e-mail address (mirrors
@@ -413,39 +416,20 @@ async def register_device_token(
 
 # ── GET /guest/room-service-menu ──
 @router.get("/guest/room-service-menu")
-async def get_room_service_menu(current_user: User = Depends(get_current_user)):
+async def get_room_service_menu(current_user: User = Depends(get_current_user), booking_id: str | None = None):
     """Get room service menu"""
-    menu_items = []
-    async for item in db.room_service_menu.find({"tenant_id": current_user.tenant_id, "available": True}).sort("category", 1):
-        menu_items.append(item)
+    from core.room_service_order import menu_for_booking
+    booking = None
+    if booking_id:
+        booking = await db.bookings.find_one({"tenant_id": current_user.tenant_id, "id": booking_id, "status": "checked_in"})
+        if not booking:
+            raise HTTPException(404, "Aktif konaklama bulunamadı")
+        await _assert_guest_owns_booking(booking, current_user)
+    menu_items = await menu_for_booking(db, current_user.tenant_id, booking)
 
-    # If no menu exists, return sample menu
+    # Unconfigured is empty, not a sellable invented sample catalogue.
     if not menu_items:
-        return {
-            "categories": [
-                {
-                    "name": "Breakfast",
-                    "items": [
-                        {"id": "1", "name": "Continental Breakfast", "price": 15.00, "description": "Croissant, juice, coffee"},
-                        {"id": "2", "name": "American Breakfast", "price": 18.00, "description": "Eggs, bacon, toast, coffee"},
-                    ],
-                },
-                {
-                    "name": "Lunch & Dinner",
-                    "items": [
-                        {"id": "3", "name": "Club Sandwich", "price": 14.00, "description": "Triple decker with fries"},
-                        {"id": "4", "name": "Caesar Salad", "price": 12.00, "description": "With grilled chicken"},
-                    ],
-                },
-                {
-                    "name": "Beverages",
-                    "items": [
-                        {"id": "5", "name": "Fresh Juice", "price": 6.00, "description": "Orange or apple"},
-                        {"id": "6", "name": "Soft Drinks", "price": 4.00, "description": "Coca Cola, Sprite, Fanta"},
-                    ],
-                },
-            ]
-        }
+        return {"categories": [], "configured": False}
 
     # Group by category
     categories = {}
@@ -461,16 +445,28 @@ async def get_room_service_menu(current_user: User = Depends(get_current_user)):
 # ── POST /guest/room-service-order ──
 class _RoomServiceOrderBody(BaseModel):
     booking_id: str
-    items: list[dict]
+    items: list[dict] = Field(min_length=1, max_length=20)
     special_instructions: str | None = None
+    request_id: str | None = Field(default=None, min_length=8, max_length=128)
+    confirm_room_charge: bool = False
+    folio_id: str | None = None
+    service_at: str | None = None
+
+    @field_validator("service_at")
+    @classmethod
+    def service_timestamp(cls, value):
+        if value is not None:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError("Servis zamanı saat dilimi içermeli")
+            return parsed.isoformat()
+        return value
 
 
 @router.post("/guest/room-service-order")
 async def create_room_service_order(body: _RoomServiceOrderBody, current_user: User = Depends(get_current_user)):
     """Create room service order"""
     booking_id = body.booking_id
-    items = body.items
-    special_instructions = body.special_instructions
     # Verify booking
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id, "status": "checked_in"})
 
@@ -478,25 +474,13 @@ async def create_room_service_order(body: _RoomServiceOrderBody, current_user: U
         raise HTTPException(status_code=404, detail="Active booking not found")
 
     await _assert_guest_owns_booking(booking, current_user)
+    if getattr(current_user.role, "value", str(current_user.role)) not in {"guest", "guest_app"}:
+        from core.spa_mice_authz import require_finance
+        require_finance(current_user)
 
-    # Calculate total
-    total_amount = sum(item.get("price", 0) * item.get("quantity", 1) for item in items)
-
-    order = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "booking_id": booking_id,
-        "room_id": booking.get("room_id"),
-        "guest_id": current_user.id,
-        "items": items,
-        "total_amount": total_amount,
-        "special_instructions": special_instructions,
-        "status": "pending",  # pending, confirmed, preparing, delivered, cancelled
-        "ordered_at": datetime.now(UTC).isoformat(),
-        "estimated_delivery": (datetime.now(UTC) + timedelta(minutes=30)).isoformat(),
-    }
-
-    await db.room_service_orders.insert_one(order)
+    from core.room_service_order import place_order
+    guest_id = booking.get("guest_id") if getattr(current_user.role, "value", str(current_user.role)) in {"guest", "guest_app"} else None
+    order, replayed = await place_order(db, current_user.tenant_id, body, current_user.id, expected_guest_id=guest_id)
 
     # Task #64: push the new order to every guest WS subscribed to this
     # booking so the order list lights up immediately on the placing
@@ -505,32 +489,10 @@ async def create_room_service_order(body: _RoomServiceOrderBody, current_user: U
     # Task #69: also enrich with room_number so the staff dashboard can
     # render the new row immediately, without a follow-up REST refetch.
     await _enrich_order_with_room_number(order)
-    await emit_order_event(order, event_type="created")
-
-    # Post charge to folio
-    folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open"})
-
-    if folio:
-        charge = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "folio_id": folio["id"],
-            "booking_id": booking_id,
-            "date": datetime.now(UTC).date().isoformat(),
-            "charge_category": "food",
-            "description": "Room Service",
-            "unit_price": total_amount,
-            "quantity": 1,
-            "amount": total_amount,
-            "tax_rate": 0.18,
-            "tax_amount": round(total_amount * 0.18, 2),
-            "total": round(total_amount * 1.18, 2),
-            "posted_by": "Guest App",
-        }
-
-        await db.folio_charges.insert_one(charge)
-
-    return {"success": True, "order_id": order["id"], "estimated_delivery": order["estimated_delivery"], "total_amount": total_amount}
+    if not replayed:
+        await emit_order_event(order, event_type="created")
+    return {"success": True, "order_id": order["id"], "estimated_delivery": order["estimated_delivery"],
+            "total_amount": order["total_amount"], "currency": order["currency"], "replayed": replayed}
 
 
 # ── GET /guest/room-service-orders/{booking_id} ──
@@ -547,6 +509,7 @@ async def get_room_service_orders(booking_id: str, current_user: User = Depends(
 
     orders = []
     async for order in db.room_service_orders.find({"tenant_id": current_user.tenant_id, "booking_id": booking_id}).sort("ordered_at", -1):
+        order.pop("_id", None)
         orders.append(order)
 
     return {"orders": orders}
@@ -594,18 +557,26 @@ async def update_room_service_order_status(
         "updated_at": datetime.now(UTC).isoformat(),
         "updated_by": current_user.id,
     }
-    await db.room_service_orders.update_one(
-        {"id": order_id, "tenant_id": current_user.tenant_id},
-        {"$set": update},
-    )
-    order.update(update)
+    if body.status == "delivered" and not order.get("delivered_at"):
+        update["delivered_at"] = datetime.now(UTC).isoformat()
+    replayed = False
+    if order.get("folio_charge_ids"):
+        from core.room_service_order import change_order_status
+        order, replayed = await change_order_status(db, current_user.tenant_id, order_id, body.status, current_user.id)
+    else:
+        await db.room_service_orders.update_one(
+            {"id": order_id, "tenant_id": current_user.tenant_id},
+            {"$set": update},
+        )
+        order.update(update)
 
     # Best-effort fan-out to subscribed guest WS clients. Failures are
     # logged inside emit_order_event and never bubble up to the staff
     # caller — the DB write is the source of truth, polling will catch
     # up if the channel is down.
     await _enrich_order_with_room_number(order)
-    await emit_order_event(order, event_type="status_changed")
+    if not replayed:
+        await emit_order_event(order, event_type="status_changed")
 
     return {
         "success": True,
