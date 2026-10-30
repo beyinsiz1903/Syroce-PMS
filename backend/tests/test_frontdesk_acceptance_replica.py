@@ -20,8 +20,8 @@ from domains.pms import cashier_service, frontdesk_router, frontdesk_service
 from routers import early_late_pricing, reservation_detail, webhook_retry_service
 
 
-@pytest_asyncio.fixture
-async def acceptance(monkeypatch):
+@pytest_asyncio.fixture(name="acceptance")
+async def frontdesk_acceptance(monkeypatch):
     # The complete offline CI job already provisions POS_TEST_MONGO_URI as a
     # loopback replica. Run here too; never turn missing infrastructure green
     # by skipping the lifecycle acceptance tests.
@@ -45,6 +45,9 @@ async def acceptance(monkeypatch):
         "amount": 560, "quantity": 1, "currency": "USD", "tax_amount": 0, "voided": False})
     for module in (reservation_detail, frontdesk_router, early_late_pricing, cashier_service):
         monkeypatch.setattr(module, "db", database)
+    from core import audit_chain, utils
+    monkeypatch.setattr(audit_chain, "_system_db", lambda: database)
+    monkeypatch.setattr(utils, "db", database)
     monkeypatch.setattr(frontdesk_router.frontdesk_service, "_db", database)
     monkeypatch.setattr(early_late_pricing, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
     monkeypatch.setattr(reservation_detail, "invalidate_financial_report_caches", lambda *_: None)

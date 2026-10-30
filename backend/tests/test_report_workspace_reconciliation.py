@@ -77,7 +77,7 @@ async def test_daily_posting_presence_is_decided_per_currency(ledger_db):
     await ledger_db.folio_charges.insert_one({"tenant_id": "A", "booking_id": "b", "business_date": "2026-10-07", "category": "room", "total": 80, "currency": "EUR"})
     report = await dashboard()
     assert report["daily_analysis"]["room_revenue_by_currency"] == {"EUR": 80, "TRY": 200}
-    assert report["period_metrics"]["adr_by_currency"] == {"EUR": 40, "TRY": 100}
+    assert report["period_metrics"]["adr_by_currency"] == {"EUR": 80, "TRY": 200}
 
 
 async def test_previous_period_room_performance_preserves_native_currency_and_zero_postings(ledger_db):

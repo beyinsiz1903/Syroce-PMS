@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
+from tests.test_frontdesk_acceptance_replica import frontdesk_acceptance as frontdesk_acceptance
+
 
 def _user():
     return SimpleNamespace(
@@ -117,66 +119,22 @@ async def test_room_change_rejects_terminal_status_without_mutation(monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_room_change_posts_upgrade_difference_as_reportable_room_revenue(monkeypatch):
-    import routers.reservation_detail as module
-    from routers import webhook_retry_service
-
-    booking = {
-        "id": "booking-a",
-        "tenant_id": "tenant-a",
-        "status": "checked_in",
-        "room_id": "room-a",
-        "guest_id": "guest-a",
-    }
-    bookings = SimpleNamespace(find_one=AsyncMock(return_value=booking), update_one=AsyncMock())
-    rooms = SimpleNamespace(
-        find_one=AsyncMock(side_effect=[
-            {"id": "room-a", "room_number": "101"},
-            {"id": "room-b", "room_number": "201"},
-        ]),
-        update_one=AsyncMock(),
-    )
-    folios = SimpleNamespace(insert_one=AsyncMock())
-    folio_charges = SimpleNamespace(insert_one=AsyncMock())
-    room_move_history = SimpleNamespace(insert_one=AsyncMock())
-    monkeypatch.setattr(
-        module,
-        "db",
-        SimpleNamespace(
-            bookings=bookings,
-            rooms=rooms,
-            folios=folios,
-            folio_charges=folio_charges,
-            room_move_history=room_move_history,
-        ),
-    )
-    monkeypatch.setattr(module, "_enforce_perm", lambda *_: None)
-    monkeypatch.setattr(module, "_ensure_hotel_context", lambda *_: None)
-    monkeypatch.setattr(module, "ensure_reservation_mutable", AsyncMock())
-    monkeypatch.setattr(module, "_ensure_reservation_folio", AsyncMock(return_value={"id": "folio-a"}))
-    monkeypatch.setattr(module, "_refresh_cached_folio_balance", AsyncMock())
-    monkeypatch.setattr(module, "_log_activity", AsyncMock())
-
-    async def stamp(_db, _tenant_id, document):
-        document["business_date"] = "2026-09-26"
-
-    monkeypatch.setattr(module, "stamp_open_business_date", stamp)
-    monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", lambda *_args, **_kwargs: None)
-
-    result = await module.room_change(
-        "booking-a",
-        module.RoomChangeRequest(new_room_id="room-b", reason="Upgrade", extra_charge=2000),
-        current_user=_user(),
-        _perm=None,
-    )
-
-    charge = folio_charges.insert_one.await_args.args[0]
-    assert charge["folio_id"] == "folio-a"
+async def test_room_change_posts_upgrade_difference_as_reportable_room_revenue(acceptance):
+    a = acceptance
+    await a.db.rooms.insert_one({"id": "room-b", "tenant_id": "qa", "room_number": "201", "status": "available", "capacity": 2})
+    response = await a.api.post("/api/pms/reservations/synthetic-stay/room-change", json={
+        "new_room_id": "room-b", "reason": "Upgrade", "extra_charge": 2000})
+    assert response.status_code == 200, response.text
+    charge = await a.db.folio_charges.find_one({"charge_type": "room_upgrade"})
+    assert charge["folio_id"] == "synthetic-folio"
     assert charge["charge_category"] == "room"
     assert charge["charge_type"] == "room_upgrade"
     assert charge["total"] == 2000
-    assert charge["business_date"] == "2026-09-26"
-    assert result["extra_charge"] == 2000
+    assert charge["business_date"] == "2026-10-26"
+    assert charge["currency"] == "USD"
+    assert response.json()["extra_charge"] == 2000
+    from modules.pms_core.reporting_ledger import charge_category
+    assert charge_category(charge) == "room"
 
 
 @pytest.mark.asyncio

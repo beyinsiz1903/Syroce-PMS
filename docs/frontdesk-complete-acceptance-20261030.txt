@@ -1,7 +1,7 @@
 ÖN BÜRO VE BAĞLANTILI RAPORLAR — 30 EKİM 2026
 
 Sonuç: İncelenen akışlarda bulunan hatalar düzeltildi. Yerel birleşik paket:
-353 backend + 125 arayüz testi başarılı; ayrıca gerçek tarayıcıda gün sonu
+421 backend + 125 arayüz testi başarılı; ayrıca gerçek tarayıcıda gün sonu
 onay ekranı güvenlik testi başarılı. Frontend derlemesi, değişen dosyaların
 Ruff/ESLint kontrolleri ve git diff --check başarılı.
 Bu sonuç bütün olası rol/ayar/eşzamanlılık kombinasyonları için hatasızlık
@@ -99,6 +99,8 @@ KANITLAR (BU SOHBETİN YEREL ÇALIŞMA ALANI)
 Kök: /Users/syroce/Documents/Codex/2026-10-09/evet-sohbet-uzad-k-a-nceki-2/
 Kanıt klasörü: frontdesk-complete-20261030.SPT695/
 - backend-complete-final-v13.xml: 353 passed; önceki denemeler ayrıca korundu.
+- ci-regressions-complete-v15.xml: 421 passed; CI başarısız dosyaları dahil,
+  özel -p fixture plugin bayrağı olmadan normal test keşfiyle çalıştırıldı.
 - frontend-complete-final-v12.json: 125 passed, 0 failed.
 - night-ui-results.json: gerçek normal arayüzde night-audit dialog kabulü.
 - ui-tabs-2026-10-30T04-30-08-744Z-matrix.json: 19 sekme/düğme envanteri.
@@ -128,3 +130,25 @@ bu rapor altyapı sağlığı veya tüm indexlerin eksiksizliği iddiası taşı
 Üretim gerçek misafirler üzerinde toplu ücret/iade/çıkış veya gün kapatma yok.
 Yeni PR merge/deploy sonrası canlı commit ve gerçek ilgili ekran/raporlar
 salt okunur tekrar doğrulanmalı; yerel kabul canlı yayın kabulü yerine geçmez.
+
+CI TAKİP DÜZELTMESİ — PR #1458
+İlk head 52b8bc6513b4e55b01c53d096e978b192a8d4f9d tam offline CI sonucu:
+11557 passed / 5 failed / 18 fixture error / 4 skipped; kapsam %57,91 ve
+%46 eşiği geçmişti. Başarısız job: 123901766300, run: 41006217656.
+1) Genel gelir ile günlük/haftalık flash, yeni para birimi bazlı ADR paydasına
+   geçirilmemişti. Aynı canonical sayaçlarla hizalandı. İki gerçek Mongo
+   regresyonunun eski 'her para birimini tüm odalara böl' beklentisi iş
+   kuralına uygun düzeltildi; günlük/haftalık/önceki dönem eşitliği korunuyor.
+2) Kaynak test modülü de toplanınca pytest_plugins üzerinden acceptance fixture
+   bulunamıyordu. Adlandırılmış fixture açık import/re-export ile paylaşılıyor.
+   Yerel kabul artık CI gibi özel -p parametresi OLMADAN da geçiyor.
+3) Eski room-change testi transaction/tenant_settings içermeyen mock kullanıyordu;
+   gerçek replica üzerinde normal HTTP, ücret/para birimi/iş günü ve reportable
+   room category assertleriyle değiştirildi. Kaynak korumaları gevşetilmedi.
+4) İki cari testinin fake_db modeline kullanılan extra_charges koleksiyonu eklendi;
+   üretim kodunda veri okuma hatasını yok sayan fallback eklenmedi.
+Son birleşik yerel tekrar: 421 passed / 0 failed, 71,81 saniye. Bu sayı 97 testlik
+ilk tekrar ile toplanmaz. Tüm backend Ruff ve diff check başarılı. Test/kapsam
+eşikleri, işaretler, ignore/skip listeleri veya deploy korumaları değiştirilmedi.
+Yeni commitin tam GitHub CI sonucu ayrıca doğrulanmalıdır; yerel sonuç onun
+yerine geçmez. Bu takipte üretim yazısı, merge veya deploy yapılmadı.

@@ -3,6 +3,18 @@
 from modules.pms_core.report_money import add_amount, currency_code, money, rounded, rounded_totals, single_amount
 
 
+def room_adr_by_currency(revenue, metric_rows):
+    """Posted and accrued reports share the same currency-specific denominator.
+
+    Older report fixtures/consumers without a currency partition retain their
+    declared sold-room denominator; canonical metrics always carry partitions.
+    """
+    counts = {code: sum(int(row["sold_rooms_by_currency"].get(code, 0))
+        if row.get("sold_rooms_by_currency") is not None else int(row.get("sold_rooms", row.get("occupied_rooms")) or 0)
+        for row in metric_rows) for code in revenue}
+    return {code: rounded(money(amount) / counts[code]) if counts[code] else 0 for code, amount in revenue.items()}
+
+
 def reconcile_room_revenue(posted, accrued, occupied):
     """Presence, not a nonzero sum, proves a room posting exists."""
     totals, sources = {}, {}

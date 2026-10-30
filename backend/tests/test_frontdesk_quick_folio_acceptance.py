@@ -1,7 +1,8 @@
 """HTTP read model must agree with the reservation card and signed refunds."""
 import pytest
 
-pytest_plugins = ("tests.test_frontdesk_acceptance_replica",)
+from tests.test_frontdesk_acceptance_replica import frontdesk_acceptance as frontdesk_acceptance
+
 pytestmark = pytest.mark.asyncio
 
 

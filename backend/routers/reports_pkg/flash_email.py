@@ -23,6 +23,7 @@ from modules.pms_core.reporting_financials import deduplicate_report_payments, e
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
 from modules.pms_core.revenue_categories import FNB_CATEGORIES
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.room_revenue_reporting import room_adr_by_currency
 from modules.pms_core.stay_night_metrics import (
     NON_COMMERCIAL_STATUSES,
     allocated_revenue_for_night,
@@ -412,7 +413,7 @@ async def get_daily_flash_report(
     })
 
     # Calculate ADR and RevPAR
-    adr_by_currency = _rounded_currency({currency: money(amount) / sold_rooms if sold_rooms else 0 for currency, amount in room_by_currency.items()})
+    adr_by_currency = room_adr_by_currency(room_by_currency, metrics)
     rev_par_by_currency = _rounded_currency({currency: money(amount) / total_rooms if total_rooms else 0 for currency, amount in room_by_currency.items()})
     from modules.pms_core.room_revenue_reporting import room_period_performance
 
@@ -502,10 +503,9 @@ async def _weekly_management_payload(current_user):
             _add_currency(room_revenue, _currency(row), charge_amount(row))
     revenue, room_revenue = _rounded_currency(revenue), _rounded_currency(room_revenue)
     occupied = sum(row["occupied_rooms"] for row in metrics)
-    sold = sum(row.get("sold_rooms", row["occupied_rooms"]) for row in metrics)
     available = sum(row["total_rooms"] for row in metrics)
     occupancy = round(occupied / available * 100, 2) if available else 0
-    adr = {code: rounded(money(amount) / sold) if sold else 0 for code, amount in room_revenue.items()}
+    adr = room_adr_by_currency(room_revenue, metrics)
     revpar = {code: rounded(money(amount) / available) if available else 0 for code, amount in room_revenue.items()}
     return {
         "week_start": week_start.isoformat(), "week_ending": week_end.isoformat(),
