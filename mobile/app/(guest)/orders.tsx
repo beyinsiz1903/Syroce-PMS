@@ -36,10 +36,12 @@ export default function GuestOrdersScreen() {
   const c = useTheme();
   const queryClient = useQueryClient();
   const bookingsQ = useQuery({ queryKey: ['guest-bookings'], queryFn: getGuestBookings });
-  const activeBooking = useMemo(
-    () => (bookingsQ.data?.active_bookings || []).find((b) => b.status === 'checked_in'),
+  const activeBookings = useMemo(
+    () => (bookingsQ.data?.active_bookings || []).filter((b) => b.status === 'checked_in'),
     [bookingsQ.data],
   );
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const activeBooking = activeBookings.length === 1 ? activeBookings[0] : activeBookings.find(b => b.id === selectedBookingId);
 
   const [streamConnected, setStreamConnected] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -170,6 +172,10 @@ export default function GuestOrdersScreen() {
           )
         ) : null}
       </View>
+      {activeBookings.length > 1 ? activeBookings.map(booking => (
+        <Button key={booking.id} title={`Konaklama: ${booking.room?.room_number || booking.confirmation_number || booking.id.slice(0, 8)}`}
+          variant={activeBooking?.id === booking.id ? 'primary' : 'outline'} onPress={() => setSelectedBookingId(booking.id)} />
+      )) : null}
       {!activeBooking ? (
         <Card padded={false}>
           <EmptyState
@@ -219,9 +225,10 @@ export default function GuestOrdersScreen() {
                 {tr.guest.estimatedDelivery}: {formatTime(o.estimated_delivery)}
               </Muted>
             </View>
+            {o.delivered_at ? <Muted>Teslim: {new Date(o.delivered_at).toLocaleString('tr-TR')}</Muted> : null}
             <View style={{ marginTop: spacing.xs, alignItems: 'flex-end' }}>
               <Body style={{ color: c.text, fontWeight: '600' }}>
-                {formatCurrency(o.total_amount || 0)}
+                {o.currency ? formatCurrency(o.total_amount || 0, o.currency) : 'Para birimi belirtilmemiş'}
               </Body>
             </View>
             {o.special_instructions ? <Muted>Not: {o.special_instructions}</Muted> : null}

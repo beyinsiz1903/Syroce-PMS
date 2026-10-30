@@ -1,6 +1,11 @@
 REMAINING GUEST SERVICES — UPSELL / CONFIRMED STRUCTURED QR ROOM SERVICE
 30 October2026. Code verification, not new live acceptance.
 
+Later continuation: PR1462 merged and live health951cb3fd74ebd7ee69966295b1afdd1aebe55588
+was verified. The historical remaining-path list below describes that patch's
+scope. Follow-up fixes/tests and CURRENT live limitations are recorded in
+native-guest-service-acceptance-20261030.txt. No prior evidence was removed.
+
 Base release d0855750a94c924e61ff3113ccd0a1d3007f9b42 (PR1461).
 Its four pending source handoffs were completed and accepted separately:
 see department-folio-live-acceptance-20261030.txt. Gross4508 TRY; stock52 each.

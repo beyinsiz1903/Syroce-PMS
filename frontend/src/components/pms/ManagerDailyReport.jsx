@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import api from '@/api/axios';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +9,7 @@ import {
   FileText, Printer, Users, BedDouble,
   Calendar, ArrowUpRight, ArrowDownRight, Minus
 } from 'lucide-react';
-import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const dateKey = value => value ? String(value).slice(0, 10) : '';
 const localDateKey = () => {
@@ -23,12 +24,6 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character =>
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
 }[character]));
 const activeOn = (booking, day) => arrivalDate(booking) <= day && departureDate(booking) > day && !excludedStatuses.has(normalizedStatus(booking));
-const stayNights = booking => {
-  const start = new Date(`${arrivalDate(booking)}T12:00:00`);
-  const end = new Date(`${departureDate(booking)}T12:00:00`);
-  const nights = Math.round((end - start) / 86400000);
-  return Number.isFinite(nights) && nights > 0 ? nights : 1;
-};
 
 export const buildManagerDailyMetrics = ({ day, rooms = [], bookings = [] }) => {
   const activeBookings = bookings.filter(booking => activeOn(booking, day));
@@ -36,10 +31,6 @@ export const buildManagerDailyMetrics = ({ day, rooms = [], bookings = [] }) => 
   const occupiedRooms = occupiedKeys.size || activeBookings.length;
   const oooRooms = rooms.filter(room => ['out_of_order', 'out_of_service', 'maintenance'].includes(String(room.status || '').toLowerCase())).length;
   const availableRooms = Math.max(0, rooms.length - oooRooms);
-  const roomRevenue = activeBookings.reduce((sum, booking) => {
-    const stayTotal = Number(booking.accommodation_total ?? booking.room_total ?? booking.total_amount ?? booking.total_price ?? 0) || 0;
-    return sum + stayTotal / stayNights(booking);
-  }, 0);
   return {
     activeBookings,
     totalRooms: rooms.length,
@@ -48,9 +39,6 @@ export const buildManagerDailyMetrics = ({ day, rooms = [], bookings = [] }) => 
     occupiedRooms,
     emptyRooms: Math.max(0, availableRooms - occupiedRooms),
     occupancy: availableRooms > 0 ? occupiedRooms / availableRooms * 100 : 0,
-    roomRevenue,
-    adr: occupiedRooms > 0 ? roomRevenue / occupiedRooms : 0,
-    revpar: availableRooms > 0 ? roomRevenue / availableRooms : 0,
     arrivals: bookings.filter(booking => arrivalDate(booking) === day && !excludedStatuses.has(normalizedStatus(booking))).length,
     departures: bookings.filter(booking => departureDate(booking) === day && !excludedStatuses.has(normalizedStatus(booking))).length,
     noShows: bookings.filter(booking => ['no_show', 'noshow'].includes(normalizedStatus(booking)) && arrivalDate(booking) === day).length,
@@ -62,12 +50,21 @@ export const buildManagerDailyMetrics = ({ day, rooms = [], bookings = [] }) => 
 const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) => {
   const { t } = useTranslation();
   const tm = (k) => t(`pmsComponents.managerReport.${k}`);
-  const currency = cachedTenantCurrency();
-  const money = value => formatCurrency(value, currency, { decimals: 0 });
-
   const [reportDate, setReportDate] = useState(businessDate || localDateKey());
+  const [financial, setFinancial] = useState(null);
+  const [financialError, setFinancialError] = useState('');
+  useEffect(() => {
+    let current = true;
+    setFinancial(null); setFinancialError('');
+    api.get(`/reports/revenue?start_date=${reportDate}&end_date=${reportDate}&nocache=1`).then(({ data }) => {
+      if (!data?.total_revenue_by_currency || !data?.adr_by_currency || !data?.rev_par_by_currency) throw new Error('Finansal rapor kaynağı doğrulanamadı');
+      if (current) setFinancial(data);
+    }).catch(() => { if (current) setFinancialError('Finansal rapor alınamadı. Konaklama toplamları gelir yerine kullanılmadı.'); });
+    return () => { current = false; };
+  }, [reportDate]);
+  const money = key => financial ? formatCurrencyBreakdown(financial[key]) : 'Alınamadı';
   const metrics = buildManagerDailyMetrics({ day: reportDate, rooms, bookings });
-  const { totalRooms, oooRooms, availableRooms, occupiedRooms, emptyRooms, roomRevenue: totalRevenue, adr, revpar } = metrics;
+  const { totalRooms, oooRooms, availableRooms, occupiedRooms, emptyRooms } = metrics;
   const occupancy = metrics.occupancy.toFixed(1);
   const todayArrivals = metrics.arrivals;
   const todayDepartures = metrics.departures;
@@ -100,7 +97,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) 
     w.document.write(`<html><head><title>${tm('printTitle')} - ${reportDate}</title><style>body{font-family:Arial;padding:30px;font-size:12px}h1{text-align:center;font-size:18px;border-bottom:2px solid #333;padding-bottom:8px}h2{font-size:14px;margin-top:20px;border-bottom:1px solid #999;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}.box{border:1px solid #ddd;padding:10px;text-align:center;border-radius:4px}.box .val{font-size:20px;font-weight:bold}.box .lbl{font-size:10px;color:#666}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:11px}th{background:#f5f5f5}.footer{margin-top:30px;font-size:10px;color:#999;text-align:center}@media print{body{padding:15px}}</style></head><body>`);
     w.document.write(`<h1>${tm('printTitle')}</h1><p style="text-align:center">${reportDate}</p>`);
     w.document.write(`<h2>${tm('roomStatus')}</h2><div class="grid"><div class="box"><div class="val">${totalRooms}</div><div class="lbl">${tm('totalRooms')}</div></div><div class="box"><div class="val">${occupiedRooms}</div><div class="lbl">${tm('occupied')}</div></div><div class="box"><div class="val">${emptyRooms}</div><div class="lbl">${tm('empty')}</div></div><div class="box"><div class="val">%${occupancy}</div><div class="lbl">${tm('occupancy')}</div></div></div>`);
-    w.document.write(`<h2>${tm('revenueSection')}</h2><div class="grid"><div class="box"><div class="val">${money(totalRevenue)}</div><div class="lbl">${tm('totalRevenue')}</div></div><div class="box"><div class="val">${money(adr)}</div><div class="lbl">${tm('adr')}</div></div><div class="box"><div class="val">${money(revpar)}</div><div class="lbl">${tm('revpar')}</div></div><div class="box"><div class="val">${oooRooms}</div><div class="lbl">${tm('oooOos')}</div></div></div>`);
+    w.document.write(`<h2>${tm('revenueSection')}</h2><p>Folyoya işlenmiş gelir; dövizler ayrı gösterilir. Konaklama planı veya tahsilat değildir.</p><div class="grid"><div class="box"><div class="val">${escapeHtml(money('total_revenue_by_currency'))}</div><div class="lbl">${tm('totalRevenue')}</div></div><div class="box"><div class="val">${escapeHtml(money('adr_by_currency'))}</div><div class="lbl">${tm('adr')}</div></div><div class="box"><div class="val">${escapeHtml(money('rev_par_by_currency'))}</div><div class="lbl">${tm('revpar')}</div></div><div class="box"><div class="val">${oooRooms}</div><div class="lbl">${tm('oooOos')}</div></div></div>`);
     w.document.write(`<h2>${tm('guestMovementSection')}</h2><table><tr><th></th><th>#</th></tr><tr><td>${tm('arrivals')}</td><td>${todayArrivals}</td></tr><tr><td>${tm('departures')}</td><td>${todayDepartures}</td></tr><tr><td>${tm('inHouse')}</td><td>${inhouseGuests}</td></tr><tr><td>${tm('vip')}</td><td>${vipGuests}</td></tr><tr><td>${tm('group')}</td><td>${groupBookings}</td></tr><tr><td>${tm('walkIn')}</td><td>${walkIns}</td></tr><tr><td>${tm('noShow')}</td><td>${noShows}</td></tr><tr><td>${tm('cancellation')}</td><td>${cancellations}</td></tr></table>`);
     if (topNationalities.length > 0) { w.document.write(`<h2>${tm('nationalitySection')}</h2><table><tr><th></th><th>#</th></tr>`); topNationalities.forEach(([nat, count]) => w.document.write(`<tr><td>${escapeHtml(nat)}</td><td>${count}</td></tr>`)); w.document.write('</table>'); }
     w.document.write(`<h2>${tm('stayDurationSection')}</h2><table><tr><th></th><th>#</th></tr>`); Object.entries(losDistribution).forEach(([k, v]) => w.document.write(`<tr><td>${k} ${tm('nights')}</td><td>${v}</td></tr>`)); w.document.write('</table>');
@@ -130,17 +127,20 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) 
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="min-w-40 flex-1 sm:flex-none" />
-          <Button onClick={printReport}><Printer className="h-4 w-4 mr-1" /> {tm('print')}</Button>
+          <Button onClick={printReport} disabled={!financial}><Printer className="h-4 w-4 mr-1" /> {tm('print')}</Button>
         </div>
       </div>
+
+      <p className="text-sm text-muted-foreground">Finansal tutarlar seçilen iş gününde folyoya işlenmiş gelirden alınır; konaklama planı veya tahsilat değildir. Dövizler ayrı gösterilir.</p>
+      {financialError && <p role="alert" className="text-sm text-red-700">{financialError}</p>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <Card><CardContent className="p-3"><Metric label={tm('occupancy')} value={occupancy} suffix="%" /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('occupiedRooms')} value={occupiedRooms} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('emptyRooms')} value={emptyRooms} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label={tm('adr')} value={money(adr)} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label={tm('revpar')} value={money(revpar)} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label={tm('totalRevenue')} value={money(totalRevenue)} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label={tm('adr')} value={<span className="text-sm">{money('adr_by_currency')}</span>} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label={tm('revpar')} value={<span className="text-sm">{money('rev_par_by_currency')}</span>} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label={tm('totalRevenue')} value={<span className="text-sm">{money('total_revenue_by_currency')}</span>} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('oooOos')} value={oooRooms} /></CardContent></Card>
       </div>
 

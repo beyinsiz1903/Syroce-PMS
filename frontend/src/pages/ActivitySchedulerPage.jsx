@@ -22,6 +22,9 @@ import {
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { guestLabel } from '@/utils/displayIdentifiers';
+import ScheduledServiceFolioPanel from '@/components/pms/ScheduledServiceFolioPanel';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { scheduleCells, scheduleOutsideGrid } from '@/lib/scheduledServiceGrid';
 
 const TYPES = ["golf", "tennis", "yoga", "fitness", "bike", "diving", "kids", "other"];
 const HOURS = Array.from({ length: 13 }, (_, i) => 8 + i); // 08:00 → 20:00
@@ -63,7 +66,7 @@ export default function ActivitySchedulerPage() {
   const [cancelTarget, setCancelTarget] = useState(null); // {id, label}
   const [cancelling, setCancelling] = useState(false);
   const [bkForm, setBkForm] = useState({
-    activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "",
+    activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "", request_id: crypto.randomUUID(),
   });
   const [submittingBk, setSubmittingBk] = useState(false);
   const [guestQuery, setGuestQuery] = useState("");
@@ -72,7 +75,7 @@ export default function ActivitySchedulerPage() {
 
   // Tanım formları (tab içinde)
   const [actForm, setActForm] = useState({
-    name: "", type: "golf", duration_min: 60, price: 0, capacity: 1,
+    name: "", type: "golf", duration_min: 60, price: 0, capacity: 1, currency: cachedTenantCurrency(),
   });
   const [resForm, setResForm] = useState({
     name: "", kind: "instructor", activity_types: "", capacity: 1,
@@ -144,7 +147,7 @@ export default function ActivitySchedulerPage() {
         price: Number(actForm.price),
         capacity: Number(actForm.capacity),
       });
-      setActForm({ name: "", type: "golf", duration_min: 60, price: 0, capacity: 1 });
+      setActForm({ name: "", type: "golf", duration_min: 60, price: 0, capacity: 1, currency: cachedTenantCurrency() });
       toast({ title: "Aktivite eklendi" });
       load();
     } catch (e2) { handleErr("Eklenemedi", e2); }
@@ -200,7 +203,7 @@ export default function ActivitySchedulerPage() {
       await api.post("/activities/bookings", { ...bkForm, starts_at: startsAt });
       toast({ title: "Rezervasyon oluşturuldu" });
       setBookingOpen(false);
-      setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" });
+      setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "", request_id: crypto.randomUUID() });
       setGuestQuery("");
       setGuestResults([]);
       load();
@@ -217,6 +220,7 @@ export default function ActivitySchedulerPage() {
       guest_id: "",
       starts_at: startsAt,
       note: "",
+      request_id: crypto.randomUUID(),
     });
     setGuestQuery("");
     setGuestResults([]);
@@ -227,41 +231,11 @@ export default function ActivitySchedulerPage() {
   // booking'leri tut. Uzun rezervasyon (örn. 2h golf) starts..ends arası
   // tüm hücrelere yayılır (span); ilk hücreye `isStart=true` flag konur ki
   // ad/etiket sadece başlangıçta yazılsın, sonraki hücrelerde sade dolgu.
-  const bookingsByCell = useMemo(() => {
-    const map = new Map();
-    for (const b of bookings) {
-      if (!b.starts_at || !b.resource_id) continue;
-      const startH = parseInt(b.starts_at.slice(11, 13), 10);
-      // ends_at yoksa varsayılan 1 saat; HH:MM > :00 ise yukarı yuvarla
-      let endH = startH + 1;
-      if (b.ends_at) {
-        const eh = parseInt(b.ends_at.slice(11, 13), 10);
-        const em = parseInt(b.ends_at.slice(14, 16), 10);
-        endH = em > 0 ? eh + 1 : eh;
-      }
-      for (let h = startH; h < endH; h++) {
-        if (h < HOURS[0] || h > HOURS[HOURS.length - 1]) continue;
-        const key = `${b.resource_id}@${h}`;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push({ booking: b, isStart: h === startH });
-      }
-    }
-    return map;
-  }, [bookings]);
+  const bookingsByCell = useMemo(() => scheduleCells(bookings, date, HOURS, 'resource_id'), [bookings, date]);
 
   // 08-20 grid'i dışına düşen rezervasyonlar (gece/erken sabah).
   // Eski sürüm bunları tablo halinde gösteriyordu; grid view kaybetmesin.
-  const outOfGrid = useMemo(() => {
-    const lo = HOURS[0];
-    const hi = HOURS[HOURS.length - 1];
-    return bookings.filter((b) => {
-      if (!b.starts_at) return false;
-      const startH = parseInt(b.starts_at.slice(11, 13), 10);
-      const endH = b.ends_at ? parseInt(b.ends_at.slice(11, 13), 10) : startH;
-      // Hem başlangıç hem bitiş grid dışında ise listeye al
-      return (startH < lo && endH < lo) || (startH > hi && endH > hi);
-    });
-  }, [bookings]);
+  const outOfGrid = useMemo(() => scheduleOutsideGrid(bookings, date, HOURS), [bookings, date]);
 
   const activityById = useMemo(
     () => Object.fromEntries(activities.map((a) => [a.id, a])),
@@ -310,6 +284,7 @@ export default function ActivitySchedulerPage() {
         </CardContent></Card>
       </div>
 
+      <ScheduledServiceFolioPanel kind="activity" bookings={bookings} names={Object.fromEntries(activities.map(row => [row.id, row.name]))} onChanged={load} />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="schedule" data-testid="tab-schedule">{t('cm.pages_ActivitySchedulerPage.gunluk_takvim')}</TabsTrigger>
@@ -418,7 +393,7 @@ export default function ActivitySchedulerPage() {
                                         key={`${b.id}-${h}`}
                                         type="button"
                                         onClick={() => requestCancel(b)}
-                                        disabled={cancelled}
+                                        disabled={cancelled || b.status === 'completed' || Boolean(b.folio_charge_id)}
                                         className={`w-full text-left px-1 py-0.5 mb-0.5 rounded text-[10px] truncate ${
                                           cancelled
                                             ? "bg-gray-100 line-through opacity-40"
@@ -482,7 +457,7 @@ export default function ActivitySchedulerPage() {
                             <TableCell className="text-xs">{guestLabel(b)}</TableCell>
                             <TableCell>
                               {!cancelled && (
-                                <Button size="sm" variant="ghost" onClick={() => requestCancel(b)}>
+                                <Button size="sm" variant="ghost" disabled={b.status === 'completed' || Boolean(b.folio_charge_id)} onClick={() => requestCancel(b)}>
                                   <X className="h-3 w-3" />
                                 </Button>
                               )}
@@ -544,6 +519,7 @@ export default function ActivitySchedulerPage() {
                     onChange={(e) => setActForm({ ...actForm, price: e.target.value })}
                   />
                 </div>
+                <div><Label>Para birimi</Label><Input aria-label="Aktivite para birimi" maxLength={3} required value={actForm.currency} onChange={e => setActForm({ ...actForm, currency: e.target.value.toUpperCase() })} /></div>
                 <Button type="submit" data-testid="button-add-activity">
                   <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_ActivitySchedulerPage.ekle')}
                 </Button>
@@ -573,7 +549,7 @@ export default function ActivitySchedulerPage() {
                         <Badge variant="secondary">{TYPE_LABELS[a.type] || a.type}</Badge>
                       </TableCell>
                       <TableCell className="text-center">{a.duration_min} dk</TableCell>
-                      <TableCell className="text-right">{a.price}</TableCell>
+                      <TableCell className="text-right">{a.currency ? formatCurrency(a.price, a.currency) : 'Para birimi doğrulanmamış'}</TableCell>
                       <TableCell className="text-right">{a.capacity}</TableCell>
                     </TableRow>
                   ))}

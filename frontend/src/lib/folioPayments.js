@@ -36,6 +36,7 @@ const timelinePayment = event => ({ ...event, method: event.method || event.cate
 export const folioEventCategoryLabel = event => event.type === 'charge' ? ({
   room: 'Konaklama', food: 'Yiyecek', beverage: 'İçecek', f_and_b: 'Yiyecek ve içecek', spa: 'SPA',
   minibar: 'Minibar', laundry: 'Çamaşırhane', tax: 'Vergi', city_tax: 'Konaklama vergisi', other: 'Diğer',
+  room_service: 'Oda servisi', concierge: 'Concierge', transfer: 'Transfer', parking: 'Otopark', mice: 'Toplantı ve etkinlik', activity: 'Aktivite', function_space: 'Salon kiralama', upsell: 'Ek hizmet teklifi',
 }[event.category] || event.category || 'Diğer') : folioPaymentLabel(timelinePayment(event));
 export const folioEventBalanceEffect = event => {
   if (event.balance_effect != null && Number.isFinite(Number(event.balance_effect))) return Number(event.balance_effect);

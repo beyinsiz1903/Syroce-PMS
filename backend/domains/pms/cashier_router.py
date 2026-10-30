@@ -83,41 +83,30 @@ async def _ensure_shift_indexes() -> None:
 
 
 async def _find_active_booking_by_room(tenant_id: str, room_number: str) -> dict | None:
-    """Odadaki aktif misafiri (checked_in / in_house) döner."""
+    """Join the canonical same-tenant room_id; never choose an arbitrary stay."""
     if not room_number:
         return None
-    try:
-        return await db.bookings.find_one(
-            {
-                "tenant_id": tenant_id,
-                "room_number": str(room_number),
-                "status": {"$in": ["checked_in", "in_house"]},
-            },
-            {"_id": 0},
-        )
-    except Exception as e:
-        logger.warning(f"active booking lookup failed: {e}")
+    number = str(room_number).strip()
+    rooms = await db.rooms.find({"tenant_id": tenant_id, "room_number": number}, {"_id": 0}).to_list(2)
+    if not rooms:
         return None
+    if len(rooms) != 1:
+        raise HTTPException(409, "Oda numarası tekil değil; oda kayıtlarını kontrol edin")
+    rows = await db.bookings.find({"tenant_id": tenant_id, "status": {"$in": ["checked_in", "in_house"]}, "$or": [
+        {"room_id": rooms[0]["id"]},
+        {"room_id": {"$in": [None, ""]}, "room_number": number},
+    ]}, {"_id": 0}).to_list(2)
+    if len(rows) > 1:
+        raise HTTPException(409, "Odada birden fazla aktif konaklama var; hedefi rezervasyon detayından seçin")
+    return rows[0] if rows else None
 
 
 async def _find_open_folio_for_booking(tenant_id: str, booking_id: str) -> dict | None:
-    """Booking'e bağlı açık (status=open) folio'yu bulur, yoksa herhangi bir folio'yu döner."""
+    """Financial callers may use only one unambiguous open folio."""
     if not booking_id:
         return None
-    try:
-        f = await db.folios.find_one(
-            {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
-            {"_id": 0},
-        )
-        if not f:
-            f = await db.folios.find_one(
-                {"tenant_id": tenant_id, "booking_id": booking_id},
-                {"_id": 0},
-            )
-        return f
-    except Exception as e:
-        logger.warning(f"folio lookup failed: {e}")
-        return None
+    from modules.pms_core.folio_selection import select_booking_folio
+    return await select_booking_folio(db, tenant_id, booking_id)
 
 
 def _safe_float(val, default=0.0):
@@ -1378,7 +1367,10 @@ async def get_active_booking_by_room(room_number: str, current_user: User = Depe
     booking = await _find_active_booking_by_room(current_user.tenant_id, room_number)
     if not booking:
         return {"found": False}
-    folio = await _find_open_folio_for_booking(current_user.tenant_id, booking.get("id") or booking.get("booking_id") or "")
+    # A lookup may expose the stay even when several windows are open; the
+    # caller must explicitly choose from the authoritative windows endpoint.
+    windows = await db.folios.find({"tenant_id": current_user.tenant_id, "booking_id": booking.get("id") or booking.get("booking_id") or "", "status": "open"}, {"_id": 0}).to_list(2)
+    folio = windows[0] if len(windows) == 1 else None
     return {
         "found": True,
         "booking_id": booking.get("id") or booking.get("booking_id") or "",
@@ -1388,4 +1380,5 @@ async def get_active_booking_by_room(room_number: str, current_user: User = Depe
         "check_out": booking.get("check_out"),
         "status": booking.get("status"),
         "folio_id": (folio or {}).get("id") or "",
+        "folio_selection_required": len(windows) > 1,
     }

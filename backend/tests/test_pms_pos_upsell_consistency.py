@@ -34,7 +34,7 @@ class _PosOrders:
 
 @pytest.mark.asyncio
 async def test_pos_sales_uses_business_date_and_excludes_cancelled(monkeypatch):
-    orders = _PosOrders([{"outlet_name": "Restoran", "total_amount": 125}])
+    orders = _PosOrders([{"outlet_name": "Restoran", "total_amount": 125, "currency": "TRY"}])
     monkeypatch.setattr(pos_inventory, "db", SimpleNamespace(pos_orders=orders))
 
     async def _user(_credentials):
@@ -47,6 +47,18 @@ async def test_pos_sales_uses_business_date_and_excludes_cancelled(monkeypatch):
     assert orders.query["status"] == {"$nin": ["cancelled", "voided"]}
     assert orders.query["$or"][0] == {"business_date": {"$gte": "2026-09-24", "$lt": "2026-09-25"}}
     assert orders.query["$or"][1]["created_at"]["$lt"] == "2026-09-25"
+
+
+@pytest.mark.asyncio
+async def test_pos_does_not_sum_currencies_or_invent_legacy_currency(monkeypatch):
+    orders = _PosOrders([{"total_amount": 100, "currency": "USD"}, {"total_amount": 200, "currency": "TRY"}, {"total_amount": 30}])
+    monkeypatch.setattr(pos_inventory, "db", SimpleNamespace(pos_orders=orders))
+    monkeypatch.setattr(pos_inventory, "get_current_user", AsyncMock(return_value=SimpleNamespace(tenant_id="t")))
+    result = await pos_inventory.get_outlet_sales_breakdown("2026-10-26", "2026-10-26", object())
+    assert result["total_sales"] is None
+    assert result["total_sales_by_currency"] == {"USD": 100, "TRY": 200, "UNKNOWN": 30}
+    assert result["orders_by_currency"] == {"USD": 1, "TRY": 1, "UNKNOWN": 1}
+    assert result["outlets"]["Bilinmeyen"]["avg_ticket"] is None
 
 
 class _Collection:

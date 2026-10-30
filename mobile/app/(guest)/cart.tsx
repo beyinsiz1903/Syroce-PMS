@@ -7,7 +7,8 @@ import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useCartStore } from '../../src/state/cartStore';
 import { getGuestBookings } from '../../src/api/guestBookings';
-import { createRoomServiceOrder } from '../../src/api/guestRoomService';
+import { createRoomServiceOrder, listRoomServiceOrders } from '../../src/api/guestRoomService';
+import { ApiError } from '../../src/api/client';
 import { formatCurrency } from '../../src/utils/format';
 import { errorMessage } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -16,15 +17,15 @@ import { ROUTES } from '../../src/navigation/routes';
 export default function CartScreen() {
   const c = useTheme();
   const router = useRouter();
-  const { lines, setQty, remove, total, clear } = useCartStore();
+  const { lines, setQty, remove, total, clear, locked, bookingId, markSubmitted, unlockRejected } = useCartStore();
   const bookingsQ = useQuery({ queryKey: ['guest-bookings'], queryFn: getGuestBookings });
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const activeBooking = useMemo(
-    () => (bookingsQ.data?.active_bookings || []).find((b) => b.status === 'checked_in'),
-    [bookingsQ.data],
+    () => (bookingsQ.data?.active_bookings || []).find((b) => b.status === 'checked_in' && b.id === bookingId),
+    [bookingsQ.data, bookingId],
   );
 
   const onPlace = async () => {
@@ -36,10 +37,14 @@ export default function CartScreen() {
     setBusy(true);
     setError(null);
     try {
+      markSubmitted();
+      const intent = useCartStore.getState();
       await createRoomServiceOrder(
         activeBooking.id,
-        lines.map((l) => ({ id: l.itemId, name: l.name, price: l.price, quantity: l.quantity })),
+        lines.map((l) => ({ id: l.itemId, name: l.name, price: l.price, quantity: l.quantity, currency: l.currency })),
         notes || undefined,
+        intent.requestId,
+        intent.serviceAt!,
       );
       haptic.success();
       clear();
@@ -47,11 +52,22 @@ export default function CartScreen() {
       // yerine doğrudan sipariş ekranına geç.
       router.replace(ROUTES.guestOrders);
     } catch (e) {
+      if (e instanceof ApiError && [400, 401, 403, 404, 409, 422].includes(e.status) && !e.message.includes('aynı sipariş') && !e.message.includes('Aynı sipariş')) unlockRejected();
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();
     } finally {
       setBusy(false);
     }
+  };
+  const reconcile = async () => {
+    if (!activeBooking) return;
+    setBusy(true);
+    try {
+      const rows = await listRoomServiceOrders(activeBooking.id);
+      if (rows.some(row => row.request_id === useCartStore.getState().requestId)) { clear(); router.replace(ROUTES.guestOrders); }
+      else setError('Bu sipariş henüz görünmüyor. İçeriği değiştirmeden aynı sipariş anahtarıyla yeniden doğrulayabilirsiniz.');
+    } catch (e) { setError(errorMessage(e, tr.errors.generic)); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -81,11 +97,12 @@ export default function CartScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm }}>
               <View style={{ flex: 1 }}>
                 <Body style={{ fontWeight: '600' }}>{l.name}</Body>
-                <Muted>{formatCurrency(l.price)}</Muted>
+                <Muted>{formatCurrency(l.price, l.currency)}</Muted>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                 <Pressable
                   onPress={() => setQty(l.itemId, l.quantity - 1)}
+                  disabled={busy || locked}
                   accessibilityRole="button"
                   accessibilityLabel="Azalt"
                   style={{
@@ -103,6 +120,7 @@ export default function CartScreen() {
                 <Body style={{ minWidth: 24, textAlign: 'center' }}>{l.quantity}</Body>
                 <Pressable
                   onPress={() => setQty(l.itemId, l.quantity + 1)}
+                  disabled={busy || locked}
                   accessibilityRole="button"
                   accessibilityLabel="Arttır"
                   style={{
@@ -120,7 +138,7 @@ export default function CartScreen() {
               </View>
             </View>
             <View style={{ marginTop: spacing.sm, alignItems: 'flex-end' }}>
-              <Pressable onPress={() => remove(l.itemId)} accessibilityRole="button">
+              <Pressable onPress={() => remove(l.itemId)} disabled={busy || locked} accessibilityRole="button">
                 <Muted style={{ color: c.danger }}>Kaldır</Muted>
               </Pressable>
             </View>
@@ -136,6 +154,7 @@ export default function CartScreen() {
             onChangeText={setNotes}
             multiline
             numberOfLines={3}
+            editable={!busy && !locked}
             placeholder="Örn: alerji, soğuk içecek tercihi..."
           />
         </Card>
@@ -145,12 +164,14 @@ export default function CartScreen() {
         <Card>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <H2>{tr.guest.orderTotal}</H2>
-            <H2>{formatCurrency(total())}</H2>
+            <H2>{formatCurrency(total(), lines[0]?.currency)}</H2>
           </View>
+          <Muted>Vergi dahil bu tutarın seçili konaklamanızın açık oda hesabına eklenmesini sipariş düğmesiyle onaylarsınız. Kart/banka tahsilatı yapılmaz.</Muted>
         </Card>
       ) : null}
 
       {error ? <Body style={{ color: c.danger }}>{error}</Body> : null}
+      {locked ? <Button title="Sipariş sonucunu kontrol et" disabled={busy} onPress={reconcile} variant="outline" /> : null}
 
       {lines.length > 0 ? (
         <Button

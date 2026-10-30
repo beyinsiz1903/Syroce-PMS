@@ -12,6 +12,7 @@
     "types": ["node"]
   },
   "include": [
+    "src/state/__tests__/cartStore.test.ts",
     "src/cache/roomOccupancy.ts",
     "src/cache/__tests__/roomOccupancy.test.ts",
     "src/utils/guestRequests.ts",

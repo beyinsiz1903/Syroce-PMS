@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
+from core.pos_report_period import pos_report_period
 from core.security import get_current_user, security
 from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_module_role  # v89 DW
@@ -63,18 +64,9 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
     if not end_date:
         end_date = today.date().isoformat()
 
-    end_exclusive = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()
     # Yeni siparişlerde business_date otoritedir. Legacy kayıtlarda bu alan
     # bulunmadığı için created_at aralığına kontrollü fallback yapılır.
-    period_filter = {
-        "$or": [
-            {"business_date": {"$gte": start_date, "$lt": end_exclusive}},
-            {
-                "business_date": {"$exists": False},
-                "created_at": {"$gte": start_date, "$lt": end_exclusive},
-            },
-        ]
-    }
+    period_filter = pos_report_period(start_date, end_date)
     query = {
         "tenant_id": current_user.tenant_id,
         "status": {"$nin": ["cancelled", "voided"]},
@@ -85,17 +77,20 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
     # Veri yoksa boş döner (fail-closed), uydurma kategori yok.
     outlet_sales = {}
     total_sales_by_currency: dict[str, float] = {}
+    orders_by_currency: dict[str, int] = {}
 
     async for order in db.pos_orders.find(query):
         outlet = order.get("outlet_name") or "Bilinmeyen"
         if outlet not in outlet_sales:
-            outlet_sales[outlet] = {"sales": 0, "orders": 0, "avg_ticket": 0, "sales_by_currency": {}}
+            outlet_sales[outlet] = {"sales": 0, "orders": 0, "avg_ticket": 0, "sales_by_currency": {}, "orders_by_currency": {}}
 
         amount = float(order.get("total_amount", 0) or 0)
-        currency = str(order.get("currency") or tenant_currency).upper()
+        currency = str(order.get("currency") or "UNKNOWN").upper()
         outlet_sales[outlet]["sales"] += amount
         outlet_sales[outlet]["sales_by_currency"][currency] = round(outlet_sales[outlet]["sales_by_currency"].get(currency, 0) + amount, 2)
         total_sales_by_currency[currency] = round(total_sales_by_currency.get(currency, 0) + amount, 2)
+        orders_by_currency[currency] = orders_by_currency.get(currency, 0) + 1
+        outlet_sales[outlet]["orders_by_currency"][currency] = outlet_sales[outlet]["orders_by_currency"].get(currency, 0) + 1
         outlet_sales[outlet]["orders"] += 1
 
     # Calculate averages
@@ -104,12 +99,16 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
             outlet_sales[outlet]["avg_ticket"] = round(outlet_sales[outlet]["sales"] / outlet_sales[outlet]["orders"], 2)
         outlet_sales[outlet]["sales"] = round(outlet_sales[outlet]["sales"], 2)
 
-    total_sales = sum(o["sales"] for o in outlet_sales.values())
+    for outlet in outlet_sales.values():
+        if len(outlet["sales_by_currency"]) > 1:
+            outlet["sales"], outlet["avg_ticket"] = None, None
+    total_sales = next(iter(total_sales_by_currency.values()), 0) if len(total_sales_by_currency) <= 1 else None
 
     return {
         "outlets": outlet_sales,
-        "total_sales": round(total_sales, 2),
+        "total_sales": round(total_sales, 2) if total_sales is not None else None,
         "total_sales_by_currency": total_sales_by_currency,
+        "orders_by_currency": orders_by_currency,
         "currency": tenant_currency,
         "period": {"start": start_date, "end": end_date},
         "data_available": len(outlet_sales) > 0,

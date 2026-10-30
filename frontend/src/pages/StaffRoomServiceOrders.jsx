@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast }          from 'sonner';
 import { confirmDialog }  from '@/lib/dialogs';
-import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
+import { formatCurrency } from '@/lib/currency';
 import {
   ArrowLeft, RefreshCw, Clock, BedDouble, Coffee,
   CheckCircle2, ChefHat, Truck, XCircle, Wifi, WifiOff,
@@ -108,7 +108,7 @@ function OrderCard({ order, now, t, onAdvance, onCancel, isUpdating }) {
                 <span className="font-bold text-gray-900">{item.quantity || 1}×</span> {item.name}
               </span>
               <span className="text-gray-500 tabular-nums">
-                {formatCurrency((item.price || 0) * (item.quantity || 1), item.currency || cachedTenantCurrency())}
+                {item.currency || order.currency ? formatCurrency((item.price || 0) * (item.quantity || 1), item.currency || order.currency) : 'Para birimi belirtilmemiş'}
               </span>
             </div>
           ))}
@@ -119,10 +119,11 @@ function OrderCard({ order, now, t, onAdvance, onCancel, isUpdating }) {
           )}
           <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-200 font-semibold text-sm">
             <span className="text-gray-700">{t('staffRoomService.total', 'Toplam')}</span>
-            <span className="text-gray-900 tabular-nums">{formatCurrency(total, order.currency || cachedTenantCurrency())}</span>
+            <span className="text-gray-900 tabular-nums">{order.currency ? formatCurrency(total, order.currency) : 'Para birimi belirtilmemiş'}</span>
           </div>
         </div>
 
+        {order.delivered_at && <p className="text-xs text-gray-500">Teslim: {new Date(order.delivered_at).toLocaleString('tr-TR')}</p>}
         {/* Actions */}
         <div className="flex items-center gap-2">
           {next && NextIcon && (

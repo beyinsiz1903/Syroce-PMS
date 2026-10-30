@@ -20,6 +20,8 @@ import { Building2, Plus, RefreshCw, X, Loader2 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import ScheduledServiceFolioPanel from '@/components/pms/ScheduledServiceFolioPanel';
+import { scheduleCells, scheduleOutsideGrid } from '@/lib/scheduledServiceGrid';
 
 /**
  * Opera #6 — Function Space.
@@ -57,7 +59,7 @@ export default function FunctionSpacePage() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bkForm, setBkForm] = useState({
     room_id: "", event_name: "", organizer: "", starts_at: "", ends_at: "",
-    setup_type: "theatre", attendees: 1, note: "",
+    setup_type: "theatre", attendees: 1, note: "", request_id: crypto.randomUUID(),
   });
   const [submittingBk, setSubmittingBk] = useState(false);
 
@@ -134,7 +136,7 @@ export default function FunctionSpacePage() {
       setBookingOpen(false);
       setBkForm({
         room_id: "", event_name: "", organizer: "", starts_at: "", ends_at: "",
-        setup_type: "theatre", attendees: 1, note: "",
+        setup_type: "theatre", attendees: 1, note: "", request_id: crypto.randomUUID(),
       });
       load();
     } catch (e) { handleErr("Rezervasyon başarısız", e); }
@@ -174,6 +176,7 @@ export default function FunctionSpacePage() {
       setup_type: room?.supported_setups?.[0] || "theatre",
       attendees: Math.min(50, room?.capacity || 1),
       note: "",
+      request_id: crypto.randomUUID(),
     });
     setBookingOpen(true);
   };
@@ -181,48 +184,10 @@ export default function FunctionSpacePage() {
   // Booking → o saat slot'una düşen tüm hücrelere yay (start..end-1).
   // Grid dışında başlayan ama içine giren rezervasyonun ilk görünür hücresine
   // başlangıç saatini göstermek için isFirstVisible flag'i tutulur.
-  const bookingsByCell = useMemo(() => {
-    const map = new Map();
-    const lo = HOURS[0];
-    const hi = HOURS[HOURS.length - 1];
-    for (const b of bookings) {
-      if (!b.starts_at || !b.room_id) continue;
-      const startH = parseInt(b.starts_at.slice(11, 13), 10);
-      let endH = startH + 1;
-      if (b.ends_at) {
-        const eh = parseInt(b.ends_at.slice(11, 13), 10);
-        const em = parseInt(b.ends_at.slice(14, 16), 10);
-        endH = em > 0 ? eh + 1 : eh;
-      }
-      const visibleFrom = Math.max(startH, lo);
-      const visibleTo = Math.min(endH, hi + 1);
-      for (let h = visibleFrom; h < visibleTo; h++) {
-        const key = `${b.room_id}@${h}`;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push({
-          booking: b,
-          isStart: h === startH,
-          isFirstVisible: h === visibleFrom,
-        });
-      }
-    }
-    return map;
-  }, [bookings]);
+  const bookingsByCell = useMemo(() => scheduleCells(bookings, date, HOURS, 'room_id'), [bookings, date]);
 
   // Grid'i tamamen veya kısmen taşan rezervasyonlar — kullanıcı bağlamı kaybetmesin
-  const outOfGrid = useMemo(() => {
-    const lo = HOURS[0];
-    const hi = HOURS[HOURS.length - 1];
-    return bookings.filter((b) => {
-      if (!b.starts_at) return false;
-      const startH = parseInt(b.starts_at.slice(11, 13), 10);
-      const endH = b.ends_at ? parseInt(b.ends_at.slice(11, 13), 10) : startH;
-      // Tamamen dışarıda VEYA grid sınırlarını aşıyor
-      const fullyOutside = (startH < lo && endH < lo) || (startH > hi && endH > hi);
-      const partiallyOutside = startH < lo || endH > hi + 1;
-      return fullyOutside || partiallyOutside;
-    });
-  }, [bookings]);
+  const outOfGrid = useMemo(() => scheduleOutsideGrid(bookings, date, HOURS), [bookings, date]);
 
   const setupLabel = (v) => SETUPS.find((s) => s.v === v)?.l || v;
 
@@ -242,6 +207,7 @@ export default function FunctionSpacePage() {
         </Button>
       </div>
 
+      <ScheduledServiceFolioPanel kind="function_space" bookings={bookings} onChanged={load} />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="schedule" data-testid="tab-fs-schedule">{t('cm.pages_FunctionSpacePage.gunluk_takvim')}</TabsTrigger>
@@ -338,7 +304,7 @@ export default function FunctionSpacePage() {
                                         key={`${b.id}-${h}`}
                                         type="button"
                                         onClick={() => requestCancel(b)}
-                                        disabled={cancelled}
+                                        disabled={cancelled || b.status === 'completed' || Boolean(b.folio_charge_id)}
                                         className={`w-full text-left px-1 py-0.5 mb-0.5 rounded text-[10px] truncate ${
                                           cancelled
                                             ? "bg-gray-100 line-through opacity-40"
@@ -402,7 +368,7 @@ export default function FunctionSpacePage() {
                             <TableCell className="text-right">{b.attendees}</TableCell>
                             <TableCell>
                               {b.status !== "cancelled" && (
-                                <Button size="sm" variant="ghost" onClick={() => requestCancel(b)}>
+                                <Button size="sm" variant="ghost" disabled={b.status === 'completed' || Boolean(b.folio_charge_id)} onClick={() => requestCancel(b)}>
                                   <X className="h-3 w-3" />
                                 </Button>
                               )}

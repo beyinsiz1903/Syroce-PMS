@@ -4,6 +4,7 @@ export type MenuItem = {
   id: string;
   name: string;
   price: number;
+  currency?: string;
   description?: string;
   category?: string;
   available?: boolean;
@@ -20,8 +21,8 @@ export type MenuResponse = {
 
 // Errors propagate so a failed menu load surfaces as a visible error + retry
 // instead of an empty menu that looks like "nothing available".
-export async function getRoomServiceMenu(): Promise<MenuResponse> {
-  return api.get<MenuResponse>('/api/guest/room-service-menu');
+export async function getRoomServiceMenu(bookingId?: string): Promise<MenuResponse> {
+  return api.get<MenuResponse>('/api/guest/room-service-menu', { booking_id: bookingId });
 }
 
 export type OrderItemPayload = {
@@ -29,6 +30,7 @@ export type OrderItemPayload = {
   name: string;
   price: number;
   quantity: number;
+  currency?: string;
 };
 
 export type CreateOrderResponse = {
@@ -36,17 +38,23 @@ export type CreateOrderResponse = {
   order_id: string;
   estimated_delivery?: string;
   total_amount?: number;
+  currency?: string;
 };
 
 export async function createRoomServiceOrder(
   bookingId: string,
   items: OrderItemPayload[],
-  specialInstructions?: string,
+  specialInstructions: string | undefined,
+  requestId: string,
+  serviceAt: string,
 ): Promise<CreateOrderResponse> {
   return api.post<CreateOrderResponse>('/api/guest/room-service-order', {
     booking_id: bookingId,
     items,
     special_instructions: specialInstructions,
+    request_id: requestId,
+    confirm_room_charge: true,
+    service_at: serviceAt,
   });
 }
 
@@ -59,6 +67,9 @@ export type RoomServiceOrder = {
   ordered_at?: string;
   estimated_delivery?: string;
   special_instructions?: string;
+  currency?: string;
+  request_id?: string;
+  delivered_at?: string;
 };
 
 export async function listRoomServiceOrders(bookingId: string): Promise<RoomServiceOrder[]> {

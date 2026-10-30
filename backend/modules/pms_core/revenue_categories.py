@@ -6,6 +6,7 @@ LABELS = {
     "restaurant": "Restoran", "cafe": "Kafe", "room_service": "Oda servisi",
     "minibar": "Minibar", "spa": "SPA", "laundry": "Çamaşırhane",
     "concierge": "Concierge", "transfer": "Transfer", "mice": "Toplantı ve etkinlik (MICE)",
+    "activity": "Aktiviteler", "function_space": "Salon kiralama",
     "phone": "Telefon", "internet": "İnternet", "parking": "Otopark",
     "city_tax": "Ayrı vergi hareketi", "service_charge": "Servis bedeli",
     "other": "Diğer", "unclassified": "Sınıflandırılmamış hizmet",

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -27,18 +27,24 @@ import { errorMessage } from '../../src/utils/errors';
 export default function RoomServiceScreen() {
   const c = useTheme();
   const router = useRouter();
-  const menuQ = useQuery({ queryKey: ['room-service-menu'], queryFn: getRoomServiceMenu });
   const bookingsQ = useQuery({ queryKey: ['guest-bookings'], queryFn: getGuestBookings });
-  const { add, count, total } = useCartStore();
+  const { add, count, total, lines, locked, bookingId, bindBooking } = useCartStore();
+  const [cartError, setCartError] = useState<string | null>(null);
 
   const activeCheckedIn = useMemo(
-    () => (bookingsQ.data?.active_bookings || []).find((b) => b.status === 'checked_in'),
-    [bookingsQ.data],
+    () => {
+      const stays = (bookingsQ.data?.active_bookings || []).filter(b => b.status === 'checked_in');
+      return stays.find(b => b.id === bookingId) || (stays.length === 1 ? stays[0] : undefined);
+    },
+    [bookingsQ.data, bookingId],
   );
+  const menuQ = useQuery({ queryKey: ['room-service-menu', activeCheckedIn?.id], queryFn: () => getRoomServiceMenu(activeCheckedIn?.id), enabled: Boolean(activeCheckedIn) });
 
   const onAdd = (item: MenuItem) => {
-    add(item);
-    haptic.tap();
+    try {
+      if (!activeCheckedIn) throw new Error(tr.guest.selectActiveBooking);
+      bindBooking(activeCheckedIn.id); add(item); setCartError(null); haptic.tap();
+    } catch (e) { setCartError(errorMessage(e, tr.errors.generic)); }
   };
 
   return (
@@ -48,6 +54,9 @@ export default function RoomServiceScreen() {
       >
         <H1>{tr.guest.roomServiceTitle}</H1>
         <Muted>{tr.guest.roomServiceIntro}</Muted>
+        {(bookingsQ.data?.active_bookings || []).filter(b => b.status === 'checked_in').map(stay => <Button key={stay.id} title={`Konaklama: ${stay.room?.room_number || stay.confirmation_number || 'Oda bilgisi yok'}`} disabled={locked} variant={activeCheckedIn?.id === stay.id ? 'primary' : 'outline'} onPress={() => { try { bindBooking(stay.id); } catch (e) { setCartError(errorMessage(e, tr.errors.generic)); } }} />)}
+        {cartError ? <Body style={{ color: c.danger }}>{cartError}</Body> : null}
+        {locked ? <Muted>Siparişin sonucu kontrol ediliyor; sepet değiştirilemez. Sipariş geçmişinden doğrulayın.</Muted> : null}
 
         {!activeCheckedIn ? (
           <Card accent={c.warning}>
@@ -95,9 +104,10 @@ export default function RoomServiceScreen() {
               {cat.items.map((it) => (
                 <Pressable
                   key={it.id}
+                  disabled={locked || !it.currency}
                   onPress={() => onAdd(it)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${it.name}, ${formatCurrency(it.price)}`}
+                  accessibilityLabel={`${it.name}, ${it.currency ? formatCurrency(it.price, it.currency) : 'Para birimi bilinmiyor'}`}
                   style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
                 >
                   <Card>
@@ -108,7 +118,7 @@ export default function RoomServiceScreen() {
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Body style={{ color: c.text, fontWeight: '600' }}>
-                          {formatCurrency(it.price)}
+                          {it.currency ? formatCurrency(it.price, it.currency) : 'Para birimi bilinmiyor'}
                         </Body>
                         <Badge label={tr.guest.addToCart} tone="primary" />
                       </View>
@@ -134,7 +144,7 @@ export default function RoomServiceScreen() {
         >
           <View style={[{ width: '100%' }, webCenter]}>
             <Button
-              title={`${tr.guest.cart} (${count()}) · ${formatCurrency(total())}`}
+              title={`${tr.guest.cart} (${count()}) · ${formatCurrency(total(), lines[0]?.currency)}`}
               onPress={() => router.push(ROUTES.guestCart)}
               fullWidth
             />

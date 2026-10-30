@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFolioStatement, folioItemInScope, serviceTimingLabel } from '../folioPresentation';
+import { buildFolioStatement, folioItemInScope, serviceTimingLabel, folioCategoryLabel } from '../folioPresentation';
 
 const folios = [
   { id: 'guest', folio_type: 'guest', currency: 'USD', balance: 70, opening_balance: 5, folio_number: 'F-G' },
@@ -65,6 +65,11 @@ describe('payer-safe folio statements', () => {
 });
 
 describe('service timestamps', () => {
+  it('uses clear labels for native service sources without changing financial categories', () => {
+    expect(folioCategoryLabel({ charge_category: 'activity' })).toBe('Aktivite');
+    expect(folioCategoryLabel({ charge_category: 'function_space' })).toBe('Salon kiralama');
+    expect(folioCategoryLabel({ charge_category: 'room_service' })).toBe('Yiyecek ve içecek');
+  });
   it('never substitutes a posting timestamp for the service time', () => {
     expect(serviceTimingLabel({ created_at: '2026-10-27T11:15:00Z', category: 'spa' })).toBe('Hizmet tarihi belirtilmemiş');
     expect(serviceTimingLabel(charges[0])).toBe('24.10.2026 · 19:30');

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildManagerDailyMetrics } from '../ManagerDailyReport';
 
 describe('manager daily report metrics', () => {
-  it('uses the selected business day and allocates stay revenue by night', () => {
+  it('uses the selected day for occupancy, never treating booking totals as posted revenue', () => {
     const result = buildManagerDailyMetrics({
       day: '2026-09-24',
       rooms: [{ id: 'r1' }, { id: 'r2' }, { id: 'r3', status: 'out_of_service' }],
@@ -18,13 +18,13 @@ describe('manager daily report metrics', () => {
       availableRooms: 2,
       occupiedRooms: 2,
       emptyRooms: 0,
-      roomRevenue: 1800,
-      adr: 900,
-      revpar: 900,
       arrivals: 1,
       departures: 0,
       walkIns: 1,
     });
+    expect(result).not.toHaveProperty('roomRevenue');
+    expect(result).not.toHaveProperty('adr');
+    expect(result).not.toHaveProperty('revpar');
   });
 
   it('counts cancellations and no-shows only on their relevant date', () => {
