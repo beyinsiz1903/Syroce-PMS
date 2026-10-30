@@ -1,0 +1,108 @@
+DEMO HOTEL — DEPARTMENT / FOLIO ACCEPTANCE CHECKPOINT
+30 October 2026 • Not final acceptance of every front-office module
+
+Scope and safety
+Only Demo Hotel 100001 / tenant 5bad4a34-6ee3-4566-9053-741b7375a9cf.
+Observed live release: 8612abeca2e839870d49094ca3aa38d8862b418a.
+Normal authorized application APIs only; no production database writes.
+Business day remains 2026-10-26 OPEN. Exely TEST501694 ARI and automatic
+reservation pull remain OFF; HotelRunner disconnected; V2 connectors paused.
+All new records carry DEMO QA notes and are retained at the user's request.
+No real collection, card/bank transaction, fiscal document or official notice.
+
+Live records retained
+- Concierge historical-peninsula walking tour, QT2ED0: 600 TRY.
+  Source 0e9627b9-f8a7-4243-89c6-f1ad1f3ae6a9 completed. Legacy embedded
+  folio row exists but canonical receivable is MISSING. Do not add a second
+  generic extra; reconcile the same source through the corrected completion API.
+- Laundry, room126: 2 shirts x75 =150 TRY. Delivered and canonical charge
+  7b410923-8e7d-5769-9419-d9f293a9b2fa verified in full-detail and quick folio.
+- SPA, room125: 60-minute massage, 1000 TRY gross (833.33 net +166.67 declared
+  VAT). Appointment c26419ba-0c1c-4274-af4c-a9e749fbc725 completed;
+  canonical charge 39f06cab-9aba-5515-a5a5-e12cf66d6f34 verified.
+- MICE workshop, room125: source c4b88713-d322-49f8-96b8-983c67202684.
+  Net1140 + declared tax228 =gross1368 TRY. Completed; BEO readable.
+  Legacy integration posting exists but canonical receivable is MISSING.
+- Restaurant guest lunch, QT2ED0: 200 net +20 declared VAT =220 TRY.
+  POS order0393f737-8586-45cf-97b8-c4762227b7b6; canonical folio line verified.
+- Minibar, QT2ED0: one water60 + one chocolate110 =170 TRY gross.
+  New consumption afed3c3c-8b98-5a7c-82c2-48a93c1c4abe. Both canonical
+  charges and two durable depletion movements verified. Stock53 ->52 each.
+  Earlier stock openings and historical consumptions were NOT repeated.
+- Transfer resource creation failed500 BEFORE any resource was inserted.
+  Request/result retained; GET reconciliation confirms no new DEMO QA vehicle.
+  Transfer850 and parking150 flows have NOT been executed yet.
+
+Sentry diagnosis
+G1 generic error265bfd3a-a8b2-4eb3-a385-f2c3e2683646 and G2 detailed issue
+refer to the SAME POST /api/transfer-parking/resources at11:28:10 +03.
+G2 email arrived11:41; it is not evidence of a second write at11:41.
+Detailed exception: claim_idempotency() got unexpected keyword 'lock_id'.
+Router used obsolete claim/complete keywords and mishandled the acquired result.
+Also found: unlimited quota None was sent to a bounded numeric counter.
+https://syroce.sentry.io/issues/157348662/
+
+Fixes in this branch
+- Real idempotency scope/key/hash contract; acquired/replay/in-flight/mismatch
+  outcomes handled explicitly. Stable resource identity survives lost response,
+  unavailable response cache and TTL expiry without creating another resource.
+- Unlimited quota does not enter bounded reservation; bounded gates retained.
+- Source-owned concierge/MICE/transport canonical charges in a real transaction,
+  explicit same-tenant open folio and currency, exact amounts, source fingerprint,
+  current open accounting day, separate service date/time, sealed actor/reason log.
+- Refuse closed/ambiguous/foreign targets, changed/voided/conflicting sources,
+  missing currency and closed business days. Unknown tax remains unknown.
+- Preserve matching legacy embedded concierge row and MICE integration row;
+  reconcile once, never bulk-migrate unrelated historical sources.
+- MICE individual completion and financial handoff commit/rollback together.
+  Actuals reports use canonical tax components, not gross as net income.
+- Named concierge, transfer and MICE report categories replace unclassified labels.
+
+Verified checkpoint (live old release, BEFORE fix deployment)
+22/22 comparisons passed. Recognized new gross =1540 TRY:
+150 laundry +1000 SPA +220 restaurant +170 minibar.
+Target posted/planned receivables increase by390 /150 /1000 respectively.
+Original charges, payments and daily room rates on all three target stays match.
+31 physical rooms including QT2ED0 match byte-for-byte. Closed25Oct revenue,
+category report and payments match; no new payments on open26Oct.
+25/26/30Oct daily, financial-range, category and reconciliation reports saved.
+Audit chain: ok=true,10555 chained rows checked, breaks=[], unverifiable=0,
+truncated=false;2882 pre-chain legacy rows explicitly skipped, not claimed sealed.
+Laundry UI shows delivered /150 TRY /folio reflected. Concierge UI incorrectly
+shows600 TRY reflected despite missing canonical debt; this is the backend bug.
+
+Local verification (not a substitute for live final acceptance)
+183 passed in47.01s in targeted service/folio/report package, no skips.
+Separate MICE offline package146 passed,2 renderer skips,18 live-server tests
+deselected with CI's offline markers. Counts overlap; DO NOT add the totals.
+An earlier broad attempt without those markers had3 connection failures and15
+setup errors because no localhost HTTP backend was running; evidence retained.
+Local Mongo replica only, Python3.13 / installed Motor3.3.1; CI's pinned runtime
+still needs to run. No dependency/security gates or ignore lists were changed.
+Backend Ruff and git diff --check passed. Earlier failed evidence is retained.
+
+Remaining work — do not mark the whole request complete
+1. Fresh PR head/required CI/merge, real deploy job and health SHA verification.
+   Do not automatically merge or deploy this branch.
+2. Reconcile ONLY the two matching600/1368 source records using normal APIs;
+   preserve original evidence and confirm exactly one canonical charge/audit each.
+3. Create the reconciled850 transfer +150 parking sources once, verify slots,
+   folio, open-day reports and audit. Keep all records.
+4. With no intervening writes, cumulative expected new gross becomes4508 TRY
+   and target receivable deltas990 /1150 /2368. Verify stock remains52 each.
+5. Activity planning, Function Space, dedicated room-service/upsell paths and
+   remaining nonfinancial front-office tabs are NOT yet fully accepted here.
+   Source review found scheduling-only handoffs and older billing paths needing
+   separate scoped tests. Do not bypass ownership, invent tax/FX or call a manual
+   extra an automatic integration. KBS/KVKK are not billable service sources.
+
+Evidence (local, restricted permissions; no guest snapshots committed)
+Workspace directory: department-live-20261030.1MXoPp/
+checkpoint-acceptance.json, audit-checkpoint-chain.json,
+audit-checkpoint-new-services.json, acceptance-final-local.xml,
+mice-offline-after-v2.xml, all module request/result and before/after JSON files.
+Driver: department_live_acceptance_20261030.py (outside this repository).
+Its resume phase requires a different verified release SHA and stops on unknown
+prior outcomes/source drift; postdeploy-verify writes a distinct evidence prefix.
+Never repeat inventory/targets/basic/spa/mice/fnb creation or the failed transport
+phase. Never overwrite prior checkpoints to manufacture a final success.

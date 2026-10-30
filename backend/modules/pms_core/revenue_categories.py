@@ -5,6 +5,7 @@ LABELS = {
     "alcohol": "Alkollü içecek", "fnb": "Yiyecek–içecek (kırılımı yok)",
     "restaurant": "Restoran", "cafe": "Kafe", "room_service": "Oda servisi",
     "minibar": "Minibar", "spa": "SPA", "laundry": "Çamaşırhane",
+    "concierge": "Concierge", "transfer": "Transfer", "mice": "Toplantı ve etkinlik (MICE)",
     "phone": "Telefon", "internet": "İnternet", "parking": "Otopark",
     "city_tax": "Ayrı vergi hareketi", "service_charge": "Servis bedeli",
     "other": "Diğer", "unclassified": "Sınıflandırılmamış hizmet",
@@ -16,6 +17,7 @@ ALIASES = {
     **dict.fromkeys(("alcoholic_beverage", "bar"), "alcohol"),
     **dict.fromkeys(("appetizer", "dessert"), "food"),
     "mini_bar": "minibar", "accommodation_tax": "city_tax",
+    "banquet": "mice", "transfer_vehicle": "transfer", "parking_spot": "parking",
     "extra": "unclassified", "upsell": "unclassified",
 }
 FNB_CATEGORIES = frozenset({"food", "beverage", "alcohol", "fnb", "restaurant", "cafe", "room_service"})

@@ -222,44 +222,6 @@ _EDITABLE_CONCIERGE_FIELDS = {
 }
 
 
-async def _post_charge_to_folio(tenant_id: str, request_doc: dict, user_email: str) -> str | None:
-    """Post a charge to the linked folio when completing a paid concierge request.
-    Returns the new charge id, or None if no charge was posted."""
-    amount = float(request_doc.get("amount") or 0)
-    folio_id = request_doc.get("folio_id") or ""
-    if amount <= 0 or not folio_id or not request_doc.get("charge_to_folio"):
-        return None
-    if request_doc.get("folio_charge_id"):
-        # already charged; do not double-post
-        return request_doc.get("folio_charge_id")
-    try:
-        from domains.pms.folio.services.folio_service import FolioService
-
-        tenant_currency, _ = await get_tenant_currency(tenant_id)
-
-        type_label = (request_doc.get("type") or "other").replace("_", " ").title()
-        details = request_doc.get("details") or ""
-        description = f"Concierge — {type_label}"
-        if details:
-            description = f"{description}: {details[:80]}"
-        charge = await FolioService.post_charge(
-            tenant_id,
-            folio_id,
-            {
-                "amount": amount,
-                "currency": _normalize_currency(request_doc.get("currency"), tenant_currency),
-                "description": description,
-                "category": "concierge",
-                "source": "concierge_request",
-                "concierge_request_id": request_doc.get("_id") or request_doc.get("id"),
-                "posted_by": user_email,
-            },
-        )
-        return charge.get("id") if charge else None
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Folyoya işlenemedi: {exc}") from exc
-
-
 @router.patch("/concierge/requests/{request_id}")
 async def update_concierge_request(
     request_id: str,
@@ -318,16 +280,27 @@ async def update_concierge_request(
     # Build merged doc to evaluate folio posting
     merged = {**existing, **update_set}
 
-    if new_status == "completed":
-        charge_id = await _post_charge_to_folio(current_user.tenant_id, merged, current_user.email)
-        if charge_id:
-            update_set["folio_charge_id"] = charge_id
-            update_set["charged_at"] = datetime.utcnow().isoformat()
+    if existing.get("folio_charge_id") and new_status not in {None, "completed"}:
+        raise HTTPException(409, "Ücretlendirilmiş hizmet durumu folyo düzeltmesi olmadan değiştirilemez")
+    if existing.get("folio_charge_id") and any(
+        field in body and body[field] != existing.get(field)
+        for field in ("amount", "currency", "booking_id", "folio_id", "charge_to_folio", "type", "details", "date", "time", "notes")
+    ):
+        raise HTTPException(409, "Ücretlendirilmiş hizmet kaynağı değiştirilemez")
+    if new_status == "completed" and merged.get("charge_to_folio") and float(merged.get("amount") or 0) > 0:
+        from core.department_folio import complete_concierge
+        from core.spa_mice_authz import require_finance
 
-    await db.concierge_requests.update_one(
-        {"_id": request_id, "tenant_id": current_user.tenant_id},
+        require_finance(current_user)
+        return await complete_concierge(db, current_user.tenant_id, request_id, update_set, current_user.id)
+
+    changed = await db.concierge_requests.update_one(
+        {"_id": request_id, "tenant_id": current_user.tenant_id, "updated_at": existing.get("updated_at"),
+         "folio_charge_id": existing.get("folio_charge_id")},
         {"$set": update_set},
     )
+    if changed.matched_count != 1:
+        raise HTTPException(409, "Talep eşzamanlı değişti; sayfayı yenileyin")
     fresh = await db.concierge_requests.find_one({"_id": request_id, "tenant_id": current_user.tenant_id})
     if fresh:
         fresh["id"] = str(fresh.pop("_id"))
