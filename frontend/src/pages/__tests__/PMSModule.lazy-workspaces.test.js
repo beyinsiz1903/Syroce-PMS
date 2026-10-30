@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 const source = readFileSync(resolve(process.cwd(), 'src/pages/PMSModule.jsx'), 'utf8');
 
 describe('PMSModule workspace loading', () => {
+  it('passes the authenticated actor and canonical room inventory to secondary workspaces', () => {
+    expect(source).toContain('<StaffTaskManager currentUser={user} />');
+    expect(source).toContain('<AllotmentGrid rooms={rooms} />');
+  });
   it('uses full-width content and horizontal tabs at every breakpoint', () => {
     expect(source).toContain('currentModule="pms" fullWidth');
     expect(source).not.toContain('currentModule="pms">');

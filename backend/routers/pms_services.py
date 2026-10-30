@@ -16,20 +16,25 @@ Routes:
   GET  /pms/setup-status
 """
 
+import math
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
+from modules.pms_core.allotment_usage import available_rooms, contract_usage
 from modules.pms_core.module_scope_service import require_module_scope
 from modules.pms_core.role_permission_service import (
     require_module_role,  # v101 DW
     require_op,  # v101 DW
 )
+from modules.pms_core.stay_night_metrics import is_physical_room
 
 try:
     from cache_manager import cached
@@ -111,6 +116,8 @@ async def get_staff_tasks(
     _module=Depends(require_module_scope("tasks")),
 ):
     """Get manual tasks and the idempotent projection of every QR request."""
+    if page < 1 or not 1 <= page_size <= 200:
+        raise HTTPException(400, "Invalid pagination")
     from domains.guest.qr_task_projection import reconcile_tenant_requests
 
     # Covers both current structured QR requests and historical legacy
@@ -291,80 +298,57 @@ async def get_allotment_contracts(page: int = 1, page_size: int = 50, current_us
         OR the booking is explicitly linked via allotment_contract_id.
     Also returns `total_revenue` and `bookings_count` for reporting.
     """
-    import re
-
+    if page < 1 or not 1 <= page_size <= 200:
+        raise HTTPException(400, "Invalid pagination")
     query = {"tenant_id": current_user.tenant_id}
     total = await db.allotment_contracts.count_documents(query)
     skip = (page - 1) * page_size
     contracts = await db.allotment_contracts.find(query, {"_id": 0}).skip(skip).limit(page_size).to_list(page_size)
 
-    ACTIVE_STATUSES = ["pending", "confirmed", "guaranteed", "checked_in"]
     for contract in contracts:
-        room_type = contract.get("room_type")
-        start_date = contract.get("start_date")
-        end_date = contract.get("end_date")
-        tour_operator = (contract.get("tour_operator") or "").strip()
-        contract_id = contract.get("id")
-        contract.setdefault("used_rooms", 0)
-        contract["bookings_count"] = 0
-        contract["total_revenue"] = 0.0
-        if not (room_type and start_date and end_date):
-            continue
-        if not tour_operator and not contract_id:
-            continue
-
-        room_ids = []
-        async for room in db.rooms.find({"tenant_id": current_user.tenant_id, "room_type": room_type}, {"_id": 0, "id": 1}):
-            room_ids.append(room["id"])
-        if not room_ids:
-            continue
-
-        match_or = []
-        if contract_id:
-            match_or.append({"allotment_contract_id": contract_id})
-        if tour_operator:
-            op_regex = re.escape(tour_operator)
-            match_or.extend(
-                [
-                    {"agency_name": {"$regex": op_regex, "$options": "i"}},
-                    {"channel_display": {"$regex": op_regex, "$options": "i"}},
-                    {"channel": {"$regex": op_regex, "$options": "i"}},
-                    {"source_channel": {"$regex": op_regex, "$options": "i"}},
-                    {"ota_channel": {"$regex": op_regex, "$options": "i"}},
-                ]
-            )
-
-        pipeline = [
-            {
-                "$match": {
-                    "tenant_id": current_user.tenant_id,
-                    "room_id": {"$in": room_ids},
-                    "status": {"$in": ACTIVE_STATUSES},
-                    "check_in": {"$lt": end_date},
-                    "check_out": {"$gt": start_date},
-                    "$or": match_or,
-                }
-            },
-            {
-                "$group": {
-                    "_id": None,
-                    "count": {"$sum": 1},
-                    "revenue": {"$sum": {"$ifNull": ["$total_amount", 0]}},
-                }
-            },
-        ]
-        agg = await db.bookings.aggregate(pipeline).to_list(1)
-        if agg:
-            used = int(agg[0].get("count") or 0)
-            try:
-                revenue = float(agg[0].get("revenue") or 0)
-            except (TypeError, ValueError):
-                revenue = 0.0
-            contract["used_rooms"] = used
-            contract["bookings_count"] = used
-            contract["total_revenue"] = round(revenue, 2)
+        contract.update(await _allotment_usage(contract, current_user.tenant_id))
+        contract["available_rooms"] = available_rooms(contract, contract["used_rooms"])
 
     return {"contracts": contracts, "total": total, "page": page, "page_size": page_size}
+
+
+async def _allotment_usage(contract, tenant_id):
+    rooms = await db.rooms.find({"tenant_id": tenant_id, "room_type": contract.get("room_type")}, {"_id": 0}).to_list(None)
+    ids = [room["id"] for room in rooms if room.get("id") and is_physical_room(room)]
+    bookings = await db.bookings.find({"tenant_id": tenant_id, "$or": [
+        {"room_id": {"$in": ids}},
+        {"allotment_contract_id": contract.get("id"), "room_id": {"$in": [None, ""]}},
+        {"room_type": contract.get("room_type"), "room_id": {"$in": [None, ""]}},
+    ]}, {"_id": 0}).to_list(None)
+    for booking in bookings:
+        if (not booking.get("room_id") and booking.get("allotment_contract_id") == contract.get("id")
+                and booking.get("status") in {"pending", "confirmed", "guaranteed", "checked_in", "in_house"}
+                and booking.get("room_type") != contract.get("room_type")):
+            raise HTTPException(409, "Unassigned linked booking room type needs review before release")
+    return contract_usage(contract, bookings)
+
+
+def _validated_contract(data):
+    operator, room_type = data.get("tour_operator"), data.get("room_type")
+    if not isinstance(operator, str) or not 1 <= len(operator.strip()) <= 200:
+        raise HTTPException(400, "Tour operator is required (1–200 characters)")
+    if not isinstance(room_type, str) or not room_type.strip():
+        raise HTTPException(400, "Room type is required")
+    count, release = data.get("allocated_rooms"), data.get("release_days", 7)
+    if type(count) is not int or not 1 <= count <= 10000 or type(release) is not int or not 0 <= release <= 365:
+        raise HTTPException(400, "Room count and release days must be valid whole numbers")
+    try:
+        start, end = date.fromisoformat(data["start_date"]), date.fromisoformat(data["end_date"])
+        rate = Decimal(str(data.get("rate")))
+        if end <= start or not rate.is_finite() or rate < 0 or not math.isfinite(float(rate)):
+            raise ValueError
+    except (KeyError, TypeError, ValueError, InvalidOperation):
+        raise HTTPException(400, "Invalid date range or nightly rate") from None
+    currency = data.get("currency")
+    if currency is not None and (not isinstance(currency, str) or len(currency) != 3 or not currency.isascii() or not currency.isalpha()):
+        raise HTTPException(400, "Currency must be a three-letter code")
+    return {"tour_operator": operator.strip(), "room_type": room_type.strip(), "allocated_rooms": count,
+            "release_days": release, "start_date": start.isoformat(), "end_date": end.isoformat(), "rate": float(rate)}
 
 
 @router.post("/pms/allotment-contracts")
@@ -374,19 +358,20 @@ async def create_allotment_contract(
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create new allotment contract"""
+    validated = _validated_contract(contract_data)
+    rooms = await db.rooms.find({"tenant_id": current_user.tenant_id, "room_type": validated["room_type"]}, {"_id": 0}).to_list(None)
+    if not any(is_physical_room(room) for room in rooms):
+        raise HTTPException(400, "Room type is not in this property's physical inventory")
+    currency = contract_data.get("currency") or (await get_tenant_currency(current_user.tenant_id))[0]
     contract = {
+        **validated,
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "tour_operator": contract_data.get("tour_operator"),
-        "room_type": contract_data.get("room_type"),
-        "allocated_rooms": contract_data.get("allocated_rooms"),
         "used_rooms": 0,
-        "start_date": contract_data.get("start_date"),
-        "end_date": contract_data.get("end_date"),
-        "rate": contract_data.get("rate"),
-        "release_days": contract_data.get("release_days", 7),
+        "currency": currency.upper(),
         "status": "active",
         "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
     }
 
     await db.allotment_contracts.insert_one(contract)
@@ -406,11 +391,19 @@ async def release_allotment_rooms(
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
 
-    available_rooms = contract["allocated_rooms"] - contract.get("used_rooms", 0)
-
-    await db.allotment_contracts.update_one({"id": contract_id, "tenant_id": current_user.tenant_id}, {"$set": {"released_rooms": available_rooms, "released_at": datetime.now(UTC).isoformat()}})
-
-    return {"message": f"Released {available_rooms} rooms", "released_rooms": available_rooms}
+    usage = await _allotment_usage(contract, current_user.tenant_id)
+    available = available_rooms(contract, usage["used_rooms"])
+    if available:
+        # Compare-and-set prevents repeated/concurrent release clicks from adding twice.
+        query = {"id": contract_id, "tenant_id": current_user.tenant_id, "released_rooms": contract.get("released_rooms")}
+        result = await db.allotment_contracts.update_one(query, {"$set": {
+            "released_rooms": int(contract.get("released_rooms") or 0) + available,
+            "released_at": datetime.now(UTC).isoformat(), "released_by": current_user.id,
+        }})
+        if result.matched_count == 0:
+            raise HTTPException(409, "Contract changed; reload before release")
+    return {"message": f"Released {available} internal contract rooms; no channel stock sent", "released_rooms": available,
+            "used_rooms": usage["used_rooms"], "channel_inventory_changed": False}
 
 
 @router.delete("/pms/allotment-contracts/{contract_id}")

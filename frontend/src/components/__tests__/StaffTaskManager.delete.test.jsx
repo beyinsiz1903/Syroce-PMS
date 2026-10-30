@@ -16,8 +16,11 @@ vi.mock('axios', () => ({
   },
 }));
 
+const translate = vi.hoisted(() => (key, options) => key.endsWith('.deleteConfirmDescription')
+    ? `Delete ${options?.title ?? '{{title}}'}`
+    : key.endsWith('.cleanupDone') ? `Cleaned ${options?.count ?? '{{count}}'}` : key);
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key) => key }),
+  useTranslation: () => ({ t: translate }),
 }));
 
 vi.mock('sonner', () => ({
@@ -50,6 +53,17 @@ describe('StaffTaskManager destructive actions', () => {
 
   afterEach(() => cleanup());
 
+  it('loads every task page instead of silently hiding records after page one', async () => {
+    const task = { task_type: 'maintenance', department: 'engineering', priority: 'normal', room_id: '101', status: 'pending' };
+    axiosGet.mockImplementation((path, options) => Promise.resolve({ data: {
+      total: 2, tasks: [{ ...task, id: `page-${options.params.page}`, title: `Task page ${options.params.page}` }],
+    } }));
+    render(<StaffTaskManager />);
+    expect(await screen.findByText('Task page 2')).toBeInTheDocument();
+    expect(screen.getByText('Task page 1')).toBeInTheDocument();
+    expect(axiosGet).toHaveBeenCalledWith('/pms/staff-tasks', { params: { page: 2, page_size: 200 } });
+  });
+
   it('requires explicit confirmation before permanently deleting a task', async () => {
     render(<StaffTaskManager />);
 
@@ -58,6 +72,7 @@ describe('StaffTaskManager destructive actions', () => {
 
     expect(axiosDelete).not.toHaveBeenCalled();
     expect(screen.getByText('pmsComponents.staff.deleteConfirmTitle')).toBeInTheDocument();
+    expect(screen.getByText('Delete Audit task')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'pmsComponents.staff.deleteConfirmAction' }));
 

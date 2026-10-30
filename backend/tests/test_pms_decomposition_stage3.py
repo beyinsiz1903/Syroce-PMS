@@ -285,13 +285,13 @@ class TestAllotmentContractRoutes:
             assert resp.status_code == 200
             assert isinstance(resp.json(), list)
 
-    async def test_create_allotment_contract(self, auth_headers, raw_db):
+    async def test_create_allotment_contract(self, auth_headers, raw_db, test_room):
         async with httpx.AsyncClient(base_url=API_URL, timeout=15) as c:
             resp = await c.post(
                 "/api/pms/allotment-contracts",
                 json={
                     "tour_operator": "Stage 3 Test Operator",
-                    "room_type": "STD",
+                    "room_type": test_room["room_type"],
                     "allocated_rooms": 10,
                     "start_date": FUTURE_CI,
                     "end_date": FUTURE_CO,

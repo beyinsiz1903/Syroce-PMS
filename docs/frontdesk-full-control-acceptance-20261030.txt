@@ -1,0 +1,135 @@
+ÖN BÜRO TAM KONTROL KABULÜ — DEVAM EDİYOR, TAMAMLANDI DEĞİL
+30 Ekim 2026 | başlangıç canlı sürüm:582664cd30f9bc45f5c606b05d90889f66839669
+
+Kapsamın düzeltilmesi
+Önceki hizmet→folyo→rapor son kabulü, tüm ön büro kontrollerinin kabulü
+değildi. Kullanıcının açık talebiyle 19 sayfanın görünür işlem aileleri,
+bağlı hizmetler, olumsuz senaryolar, kalıcılık, yetki ve rapor etkileri
+ayrı takip edilmeye başlandı. Bu belge hiçbir zaman tüm kombinasyonlarda
+evrensel hatasızlık veya dış sağlayıcı sertifikasyonu iddia etmez.
+
+Bu değişiklik paketinde giderilenler
+1 Görev silme/temizleme metninde interpolation seçenekleri kayboluyordu.
+  Görev başlığı ve temizlenen kayıt sayısı artık çeviriye iletilir.
+2 PMS kabuğu mevcut kullanıcıyı Görevler'e geçirmiyordu; QR ataması
+  Personel olarak görünüyordu. Auth kullanıcı prop'u geçirildi.
+3 Görevler yalnız ilk API sayfasını gösteriyordu. Tüm sayfalar okunur;
+  eksik/başarısız okumada güncellik uyarısı gösterilir. Silme guard'ı korunur.
+4 Kontenjan'a oda envanteri geçirilmiyordu; gerçek Junior Suite yerine
+  varsayılan King seçeneği vardı. Yalnız aktif fiziksel oda tipleri seçilir.
+  Envanter yoksa oluşturma engellenir. Release=0 korunur, kesirli/negatif
+  adet ve geçersiz tarih/fiyat reddedilir. Yeni sözleşmenin para birimi
+  açık saklanır; eski kaydın eksik para birimi tahmin edilmez.
+5 Kontenjan kullanımında bütün dönem rezervasyon sayısı yerine eşzamanlı
+  tepe oda sayısı kullanılır. BSON/ISO tarihler normalize edilir. Açık
+  atanmamış bağlı rezervasyonun tipi belirsizse release fail-closed durur.
+  Release güncel kullanımdan hesaplanır; compare-and-set ve tekrarda0
+  ile yeniden serbest bırakma engellenir. Bu yalnız iç sözleşme takibidir;
+  gerçek oda/ARI/kanal stoğunu değiştirmez. Tahsilat değildir.
+6 Kontenjan eşleşen rezervasyon toplamları para birimi başına gösterilir;
+  TRY+USD tek toplam yapılmaz. Eksik para birimi ayrıca belirtilir.
+  Bu değer dönemsel/gecelik tahakkuk değil, eşleşen rezervasyon toplamıdır.
+7 Dış değerlendirme yanıt API'sinin query-string beklentisi, UI'nin JSON
+  gövdesiyle uyuşmuyordu. İki yanıt yolu ortak doğrulanan JSON sözleşmesi
+  kullanır; boş/çok uzun yanıt ve kayıp/başka tenant kaydı reddedilir.
+  Dış yanıt panelde saklanır, dış platformda otomatik yayın iddia edilmez.
+8 Geri bildirim kaynak hataları sessizce sıfır kabul ediliyordu; eksik
+  kaynaklar açık uyarılır. İlk10 anket sınırı kaldırıldı, okuma paralelliği
+  10 ile sınırlandı. Teslim edilmeyen davet başarı sayılmaz; yetki taşıyan
+  davet bağlantısı bildirim metnine konmaz.
+9 KVKK oluşturma/durum değişimi kendi Denetim İzi'nde yoktu. Yeni olaylar
+  kaynakla atomik gömülü saklanır, denetim listesi ve erişim ihracına dahil
+  edilir. Aktör/önceki-yeni durum/değişen alanlar kaydedilir. Keyfî alan
+  değişimi engellenir, tamamlanmış kaynak değişmez; aynı tamamla tekrarında
+  olay çoğalmaz. Eski olaya geriye dönük sahte audit üretilmez.
+
+Canlı uygulanan yeni ve korunan yapay kayıtlar
+Görev:c08ce579-7e23-4ca4-ad39-8b73ccaf73d7 — oluştur/başlat/tamamla;
+boş başlık/oda retleri ve silme onayından vazgeçme. Gerçek silme yok.
+İki mevcut QR kaynak talebi sonuçlandırıldı; her birine tek staff sonucu
+yazıldığı, Demo Kullanıcı aktörü ve booking/request bağlantısı doğrulandı.
+Bu, fiziksel yiyecek servisi yapıldığı anlamına gelmez; test notunda açık.
+KVKK:ecb20095-3e26-44a8-8354-166b3a034621 — yapay access idari kaydı
+oluştur/tamamla/yeniden yükle. Gerçek veri ihracı veya silme yapılmadı.
+Bir manuel anket, tek yanıt ve departman değerlendirmesi oluşturuldu;
+eski açıkça yapay Test yorumu panel yanıtıyla güncellendi. Kayıtlar korundu.
+Dış platform yorumu uydurulmadı, gerçek misafire davet/e-posta gönderilmedi.
+Canlı kontenjan ve gelir ayarı yazılmadı; kaynak/bağlantı hatasında duruldu.
+
+Canlı koruma ve rapor mutabakatı
+Yalnız Demo Hotel100001 tenant5bad4a34-6ee3-4566-9053-741b7375a9cf.
+Oda/rezervasyon/stok/cari/25Ekim ve26Ekim mali kaynaklar başlangıçla aynı.
+31fiziksel oda/QT2ED0,iki ürün52'şer,26Ekim iş günü açık; kanallar kapalı.
+Önceki hizmet borcu5468TRY tekrar oluşturulmadı, tahsil edilmedi.
+30Ekim mali raporu ve KBS kuyruğu da aynen korundu;
+protected-service-result.json ile ayrı karşılaştırıldı.
+Audit:10783kontrol;0kopuk/0doğrulanamaz/truncation=false;
+2882eski mühürsüz satır açıkça legacy_skipped, başarıya dahil edilmez.
+KVKK canlı eski sürümündeki eksik ekran izi ayrı DEFECT; yeni kod henüz
+deploy edilmeden LIVE_PASS sayılmaz. İlk başarısız kanıtlar korunur.
+
+Kanıt paketi (işletici çalışma alanında, erişim kısıtlı; kişisel veri Git'e yok)
+frontdesk-full-20261030/baseline.json
+frontdesk-full-20261030/task-created-source.json
+frontdesk-full-20261030/tasks-final-source.json
+frontdesk-full-20261030/qr-completed-messages.json
+frontdesk-full-20261030/kvkk-created-source.json
+frontdesk-full-20261030/kvkk-completed-source.json
+frontdesk-full-20261030/feedback-survey-source.json
+frontdesk-full-20261030/feedback-department-source.json
+frontdesk-full-20261030/after-feedback-kvkk-acceptance.json
+frontdesk-full-20261030/progress-result.json (full_scope_complete=false)
+frontdesk-full-20261030/progress-chain.json
+UI intent JSON'ları ve tarihli/tekil ekran kanıtları aynı dizinde.
+
+Yerel test kanıtı
+backend-controls-final.xml:168 passed (ilişkili kasa/folyo/servis/rapor/
+forecast/KVKK ve yeni kontrol testleri). Son sınır-değer değişiklikleri için
+backend-controls-final-v2.xml:49 passed; önceki168 ile örtüşür, eklenmez.
+frontend-full-unit.xml:2282 passed; son paging testi öncesindeki kaynak.
+frontend-full-unit-v2.xml:2283 testte1 AdminModuleControlCenter timeout;
+bu koşu başarı sayılmadı. frontend-timeout-recheck.xml:25 passed, aynı
+zaman sınırı korunarak maxWorkers=2 ile ilgili ve etkilenen testlerin tekrarı.
+Son tam arayüz tekrarı frontend-full-unit-v3.xml:2283 passed,0failure;
+maxWorkers=2, aynı test/zaman limitleri. CI ayrıca PR'ın tam head'i üzerinde
+değerlendirilir. Önceki başarısız kanıtlar silinmez.
+Ruff genel backend, değişen UI ESLint, Vite production build ve diff kontrolü
+geçti. Test sayıları LIVE_PASS yerine geçmez; CI gate/ignore değişmedi.
+
+Kapsam matrisi — kalanlar açık, bu PR ile bütün modüller kapatılmaz
+Ön Büro/rezervasyon detayları: önceki LOCAL_PASS ve kısmi LIVE_PASS;
+  tüm detay sekmeleri/çıktı/iptal/alternatif akış matrisi PENDING.
+Kat Hizmetleri/Odalar: önceki kısmi kabul korunur; tüm toplu/görsel/blok
+  kontrol ailelerinin güncel uçtan uca matrisi PENDING.
+Misafirler/Rezervasyonlar: arama/sıralama/profil önceki kabulü korunur;
+  UDF/birleştirme/uyuşmazlık ve bütün detay aileleri PENDING.
+Kasa: ödeme/iade/vardiya/gün sonu yerel lifecycle mevcut, gerçek banka yok;
+  güncel canlı tam işlem kabulü PENDING. Canlı26Ekim kapatılmadı.
+Upsell: önceki yapay teklif→folyo ve31oda raporu LIVE_PASS; tüm ayar,
+  red/kapasite/sınır varyantları güncel matriste PENDING.
+Raporlar/Flash/Müdür: önceki kaynak/forecast mutabakatı + geniş yerel paket;
+  bütün çıktı/filtre/rol/boş-hatalı okuma ailelerinin kapanışı PENDING.
+Görevler: yeni live create/start/complete/reload/QR sonucu geçti;
+  interpolation/actor/paging düzeltmeleri yerel; deploy sonrası PENDING.
+Geri Bildirim: internal/survey/department canlı kaynak ve filtreleri geçti;
+  external yerel sözleşme testi; gerçek dış yayın/teslim EXTERNAL_BLOCKED.
+Kontenjan: canlı oda tipi DEFECT; yeni doğru sözleşme/release/reload
+  yalnız yerel kabul; deploy sonrası dar canlı kabul PENDING.
+POS/Çamaşırhane/Concierge ve bağlı SPA/MICE/Transfer/Otopark/Aktivite/Salon/
+  Oda Servisi: eski kalıcı hizmet→folyo→rapor kanıtları korunur; bunlar tüm
+  görünür düğme/olumsuz senaryo/ayar kombinasyonları değildir, PENDING.
+Gelir Kontrolleri:3tab ve walk-out aç/vazgeç okunur kontrol edildi.
+  Ayarların BAR/rezervasyon engeline gerçek etkisi ve bölüm izolasyonu
+  PENDING/ayrı düzeltme gerekir; canlı ticari ayar değiştirilmedi.
+KBS: sağlayıcı/geçerli kimlik olmadan gerçek resmî teslim EXTERNAL_BLOCKED;
+  koruma gevşetilmez, teslim yapılmış sayılmaz.
+KVKK: idari access canlı geçti; audit düzeltmesi deploy sonrası PENDING;
+  gerçek geri döndürülemez kişi silme canlıda çalıştırılmadı.
+
+Son kabulün kapanma kuralı
+Bu PR'ın yeşil CI ve gerçek deploy/health sürüm doğrulaması ardından yalnız
+henüz tamamlanmamış dar canlı kontenjan ve yeni audit/yanıt/paging akışları
+çalıştırılır. Eski görev/hizmet/anket/borç kayıtları yeniden oluşturulmaz.
+Ardından yukarıdaki PENDING aileler kanıtla kapatılır; test sayısı veya sayfa
+gezmek bu eksikleri otomatik PASS yapmaz. Yeni authority gerektiren dış
+işlemler ayrıca belirtilir. Koruma/kaynak sapmasında önce uzlaştırma yapılır.
