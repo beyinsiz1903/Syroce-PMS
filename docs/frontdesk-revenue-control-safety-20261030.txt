@@ -1,4 +1,8 @@
 GELİR KONTROLLERİ — KAYIT GÜVENLİĞİ, TAM KAPSAMIN SONU DEĞİL
+31Ekim güncellemesi:PR1467 main541328be'ye merge edildi;PRhead CI15başarı,
+3beklenen skip. Son büyükJSONinteger sınırı merge dışında kaldığından
+ayrı dar takipPR'ına taşındı. Son okuma canlı39391c36;mainCI sürüyordu,
+541328be için canlı kabul henüz yapılmadı. Yeni deploy başlatılmadı.
 30 Ekim 2026 | temel main/canlı:39391c36d8a5fe1f825cf9c4e2a796e92775e93e
 
 Doğrulanan hata ve düzeltme
@@ -68,8 +72,9 @@ Audit10831mühürlü kayıt,0kopuk/0doğrulanamaz,truncated=false;
 Kanıt dosyaları işletici alanında600/700izinli, kişisel veri Git'e eklenmez.
 
 Yerel doğrulama — canlı kabul değildir
-revenue-backend-regression-v3.xml:175passed, yerel27993/27989replica;
-yeni35test bu175'in içinde, ayrıca toplanmaz. Gerçek tenant currency
+revenue-backend-regression-v3.xml:175passed, yerel27993/27989replica.
+Son büyükJSONinteger sınırı dahil revenue-backend-regression-v4.xml:
+176passed;36yeni test bu176'nın içinde, ayrıca toplanmaz. Gerçek tenant currency
 yardımcısı EUR ile ve eşzamanlı istekler gerçek Mongo üzerinde doğrulandı.
 İlk backend kurulumunda sahte JWT test anahtarı eksikliği ve ilk geniş
 pakette rapor port guard'ı durdu; guard gevşetilmedi. Bu ilk XML'ler korunur.

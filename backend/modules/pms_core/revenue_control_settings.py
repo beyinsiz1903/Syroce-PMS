@@ -17,9 +17,11 @@ def invalid():
 
 
 def number(value, maximum=1_000_000_000, integer=False, minimum=0):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         invalid()
-    if not minimum <= value <= maximum or (integer and int(value) != value):
+    # Bounds before isfinite: very large JSON integers must be a 400, not
+    # an OverflowError while converting to a platform float.
+    if not minimum <= value <= maximum or not math.isfinite(value) or (integer and int(value) != value):
         invalid()
     return int(value) if integer else value
 
