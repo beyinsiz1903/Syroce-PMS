@@ -10,6 +10,14 @@ def test_refund_reopens_debt_instead_of_looking_like_a_second_payment():
         ) == 20
 
 
+def test_persisted_deposit_refund_and_retry_rows_use_the_same_signed_balance():
+    assert calculate_departure_balance([], [
+        {"id": "paid", "amount": 70, "status": "paid", "idempotency_key": "deposit"},
+        {"id": "retry", "amount": 70, "status": "paid", "idempotency_key": "deposit"},
+        {"id": "refund", "amount": -20, "status": "refunded", "payment_type": "refund"},
+    ], [{"total": 60}], booking_total=200) == 210
+
+
 def test_departure_balance_includes_active_extra_charges_and_paid_payments():
     balance = calculate_departure_balance(
         charges=[{"total": "100"}, {"total": 999, "voided": True}],

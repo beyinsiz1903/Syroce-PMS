@@ -129,6 +129,7 @@ async def test_pending_ar_details_include_room_guest_and_reservation(monkeypatch
         companies=Collection([{"id": "company-a", "tenant_id": "tenant-a", "name": "Acente", "contact_email": "ar@example.com"}]),
         folio_charges=Collection([{"tenant_id": "tenant-a", "folio_id": "folio-a", "total": 6500}]),
         payments=Collection(),
+        extra_charges=Collection(),
         folios=Collection([{
             "id": "folio-a", "tenant_id": "tenant-a", "company_id": "company-a", "booking_id": "booking-a",
             "folio_number": "F-100", "status": "open", "balance": 6500, "created_at": "2026-09-01T00:00:00+00:00",
@@ -169,6 +170,7 @@ async def test_pending_ar_reminder_sends_real_email_and_records_audit(monkeypatc
     fake_db = SimpleNamespace(
         folio_charges=Collection([{"tenant_id": "tenant-a", "folio_id": "folio-a", "total": 125.50}]),
         payments=Collection(),
+        extra_charges=Collection(),
         companies=Collection([{
             "id": "company-a", "tenant_id": "tenant-a", "name": "Acente <A>",
             "contact_person": "Ali <script>", "contact_email": "ar@example.com",

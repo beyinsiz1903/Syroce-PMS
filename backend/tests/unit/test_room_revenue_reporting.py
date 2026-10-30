@@ -41,3 +41,10 @@ def test_a_mixed_currency_performance_never_returns_a_sum_as_its_legacy_scalar()
     assert result["room_revenue_by_currency"] == {"EUR": 90, "TRY": 200}
     assert result["adr_by_currency"] == {"EUR": 45, "TRY": 100}
     assert result["revenue_source"] == "mixed"
+
+
+def test_mixed_currency_adr_uses_only_sold_nights_in_that_currency():
+    result = room_period_performance([metric(revenue_by_currency={"TRY": 220, "USD": 100},
+        sold_rooms=3, sold_rooms_by_currency={"TRY": 2, "USD": 1})], {})
+    assert result["adr_by_currency"] == {"TRY": 110, "USD": 100}
+    assert result["sold_room_nights_by_currency"] == {"TRY": 2, "USD": 1}

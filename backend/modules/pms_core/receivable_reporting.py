@@ -22,7 +22,7 @@ def report_day(value):
         return None
 
 
-async def folio_snapshots(database, tenant_id, folios, *, fallback_currency, session=None):
+async def folio_snapshots(database, tenant_id, folios, *, fallback_currency, session=None, include_booking_extras=False):
     """Batch-read uncapped, tenant-scoped ledger data, including legacy rows."""
     ids = list({f["id"] for f in folios if f.get("id")})
     booking_ids = list({f["booking_id"] for f in folios if f.get("booking_id")})
@@ -44,6 +44,31 @@ async def folio_snapshots(database, tenant_id, folios, *, fallback_currency, ses
         amount = charge_amount(row, round_to_cents=False)
         snap["charges"].append({**row, "currency": code, "total": amount})
         add_amount(snap["charges_by_currency"], code, amount)
+    if include_booking_extras:
+        # Read-only compatibility for legacy booking extras. An unbound extra
+        # belongs to a window only if the booking has exactly ONE window in
+        # the database (not merely one window in this requested subset).
+        all_windows = await database.folios.find({"tenant_id": tenant_id, "booking_id": {"$in": booking_ids}},
+            {"_id": 0, "id": 1, "booking_id": 1}, **kwargs).to_list(None)
+        by_booking = {}
+        for window in all_windows:
+            by_booking.setdefault(window.get("booking_id"), []).append(window["id"])
+        async for row in database.extra_charges.find({"tenant_id": tenant_id, "voided": {"$ne": True},
+                "$or": [{"folio_id": {"$in": ids}}, {"booking_id": {"$in": booking_ids}}]}, {"_id": 0}, **kwargs):
+            target = row.get("folio_id")
+            candidates = by_booking.get(row.get("booking_id"), [])
+            if not target and len(candidates) == 1:
+                target = candidates[0]
+            if target not in snapshots:
+                continue
+            snap = snapshots[target]
+            mirrored = any(charge.get("source_extra_charge_id") == row.get("id") or charge.get("id") == row.get("id") for charge in snap["charges"]) if row.get("id") else False
+            if mirrored:
+                continue
+            code = currency_code(row.get("currency"), snap["currency"])
+            amount = charge_amount({**row, "report_source": "extra"}, round_to_cents=False)
+            snap["charges"].append({**row, "currency": code, "total": amount, "report_source": "extra"})
+            add_amount(snap["charges_by_currency"], code, amount)
     payments = await database.payments.find({"tenant_id": tenant_id, "folio_id": {"$in": ids}}, {"_id": 0}, **kwargs).to_list(None)
     for row in deduplicate_report_payments(payments):
         if not is_valid_payment(row):
@@ -73,7 +98,7 @@ async def receivable_rows(database, tenant_id, as_of_day, *, fallback_currency, 
     if company_id:
         query["company_id"] = company_id
     folios = await database.folios.find(query, {"_id": 0}).to_list(None)
-    snapshots = await folio_snapshots(database, tenant_id, folios, fallback_currency=fallback_currency)
+    snapshots = await folio_snapshots(database, tenant_id, folios, fallback_currency=fallback_currency, include_booking_extras=True)
     rows = []
     for snap in snapshots.values():
         balances = {code: amount for code, amount in snap["balance_by_currency"].items() if amount > 0}

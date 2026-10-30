@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from modules.pms_core.reporting_financials import effective_folio_payment
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_folio_payment
 
 
 def _amount(value: Any) -> Decimal:
@@ -36,7 +36,7 @@ def calculate_departure_balance(
         start=Decimal("0"),
     )
     payment_total = sum(
-        (_amount(effective_folio_payment({**payment, "amount": _amount(payment.get("amount"))})) for payment in payments if not payment.get("voided") and payment.get("status") == "paid"),
+        (_amount(effective_folio_payment({**payment, "amount": _amount(payment.get("amount"))})) for payment in deduplicate_report_payments(payments)),
         start=Decimal("0"),
     )
     room_charge_total = sum(

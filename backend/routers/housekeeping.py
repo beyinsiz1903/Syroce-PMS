@@ -260,9 +260,17 @@ async def update_housekeeping_task(
             # v109 round-9 IDOR: scope find + chained room update by tenant.
             task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
             if task and task.get("task_type") == "cleaning" and task.get("room_id"):
+                room_scope = {"id": task["room_id"], "tenant_id": current_user.tenant_id}
+                # Synchronize the fields consumed by room-move readiness.
+                # Cleaning an occupied room must never release its guest.
                 await db.rooms.update_one(
-                    {"id": task.get("room_id"), "tenant_id": current_user.tenant_id},
-                    {"$set": {"status": "inspected", "last_cleaned": datetime.now(UTC).isoformat()}},
+                    room_scope,
+                    {"$set": {"housekeeping_status": "clean", "hk_status": "clean", "last_cleaned": datetime.now(UTC).isoformat()}},
+                )
+                await db.rooms.update_one(
+                    {**room_scope, "current_booking_id": {"$in": [None, ""]},
+                     "status": {"$nin": ["occupied", "maintenance", "out_of_order", "out_of_service"]}},
+                    {"$set": {"status": "inspected", "room_status": "inspected"}},
                 )
     # Task #441: relational assignment — bind to an active user in the caller's
     # tenant (fail-closed). Free-text `assigned_to` is no longer accepted as a

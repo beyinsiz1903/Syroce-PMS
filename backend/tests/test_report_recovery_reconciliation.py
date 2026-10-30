@@ -249,8 +249,11 @@ async def test_native_adr_uses_same_denominator_on_all_reports_and_previous_peri
     standard = await standard_reports.get_revenue_report.__wrapped__("2026-10-07", "2026-10-07", USER)
     basic = await dashboard_lists._basic_dashboard_impl.__wrapped__(USER, True, "2026-10-07", "daily")
     flash = await flash_email.get_daily_flash_report.__wrapped__("2026-10-07", USER)
-    expected = {"TRY": 50, "EUR": 20}
+    # One paid room in each currency: do not divide either bucket by both.
+    weekly = await flash_email._weekly_management_payload(USER)
+    expected = {"TRY": 100, "EUR": 40}
     assert standard["adr_by_currency"] == flash["revenue"]["adr_by_currency"] == basic["summary"]["adr_by_currency"] == expected
+    assert weekly["key_metrics"]["adr_by_currency"] == expected
     assert basic["period_comparison"]["prev_month_adr_by_currency"] == expected
     assert basic["period_comparison"]["prev_month_adr"] == 0  # Legacy scalar is never a sum of currencies.
 

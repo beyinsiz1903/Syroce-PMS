@@ -46,6 +46,24 @@ def _ctx():
 def _service(database):
     service = financial_module.FinancialService()
     service._db = database
+    # These unit tests cover reductions, enrichment and degraded responses.
+    # Source/date/currency/dedup contracts are exercised with real Mongo in
+    # test_night_audit_report_sources_acceptance.py, not SQL-shaped mocks here.
+    async def revenue(*_args, **_kwargs):
+        return await database.folio_charges.aggregate([], maxTimeMS=financial_module._FIN_AGG_MAX_MS).to_list(None)
+    async def payments(*_args):
+        return await database.payments.aggregate([], maxTimeMS=financial_module._FIN_AGG_MAX_MS).to_list(None)
+    async def charge_rows(*_args):
+        return await database.folio_charges.find({}).to_list(None)
+    async def payment_rows(*_args):
+        return await database.payments.find({}).to_list(None)
+    async def open_balances(*_args):
+        return await database.folios.aggregate([], maxTimeMS=financial_module._FIN_AGG_MAX_MS).to_list(None)
+    service._revenue_documents = AsyncMock(side_effect=revenue)
+    service._payment_documents = AsyncMock(side_effect=payments)
+    service._revenue_rows = AsyncMock(side_effect=charge_rows)
+    service._payment_rows = AsyncMock(side_effect=payment_rows)
+    service._open_balance_documents = AsyncMock(side_effect=open_balances)
     return service
 
 
@@ -114,18 +132,7 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
         "charges_count": 3,
     }
 
-    daily_charge_match = charges.aggregate.call_args_list[0].args[0][0]["$match"]
-    daily_payment_pipeline = payments.aggregate.call_args.args[0]
-    assert daily_charge_match["business_date"] == "2026-08-25"
-    payment_match = daily_payment_pipeline[0]["$match"]
-    assert payment_match["$or"][0] == {"business_date": "2026-08-25"}
-    assert payment_match["voided"] == {"$ne": True}
-    assert "voided" in str(payment_match["$expr"])
-    assert "discount" in str(payment_match["$expr"])
-    legacy_date_match = payment_match["$or"][1]["$and"][1]["$or"]
-    assert {"processed_at": {"$regex": "^2026-08-25"}} in legacy_date_match
-    assert daily_payment_pipeline[1]["$group"]["_id"]["method"] == {"$ifNull": ["$payment_method", "$method"]}
-    assert "refund" in str(daily_payment_pipeline[1]["$group"]["total_amount"])
+    assert result.data["degraded"] is False
     assert result.data["payments"] == {
         "total": 400.0,
         "total_by_currency": {"TRY": 400.0},
@@ -194,9 +201,9 @@ async def test_payment_reconciliation_detects_duplicate_orphan_rate_and_high_bal
     result = await _service(database).get_payment_reconciliation(_ctx(), "2026-08-25")
 
     assert result.ok is True
-    assert result.data["charges_total"] == 270.0
+    assert result.data["charges_total"] is None  # TRY and USD must not be added
     assert result.data["payments_total"] == 200.0
-    assert result.data["variance"] == 70.0
+    assert result.data["variance"] is None
     assert result.data["charges_by_currency"] == {"TRY": 220.0, "USD": 50.0}
     assert result.data["payments_by_currency"] == {"TRY": 200.0}
     assert result.data["variance_by_currency"] == {"TRY": 20.0, "USD": 50.0}
@@ -317,15 +324,8 @@ async def test_financial_report_aggregates_revenue_payments_audits_and_occupancy
     assert result.data["payments_by_method"] == {"cash": {"amount": 80.0, "count": 1, "amount_by_currency": {"TRY": 80.0}}}
     assert result.data["degraded"] is False
 
-    # Room charges are accounted by business date, while front-desk payments
-    # are timestamped when processed.  Both fields must remain in the report
-    # query; otherwise a completed night audit can misleadingly show zero.
-    charge_match = database.folio_charges.aggregate.call_args.args[0][0]["$match"]
-    payment_pipeline = database.payments.aggregate.call_args.args[0]
-    payment_match = payment_pipeline[0]["$match"]
-    assert charge_match["business_date"] == {"$gte": "2026-08-24", "$lte": "2026-08-25"}
-    assert {"processed_at": {"$gte": "2026-08-24", "$lte": "2026-08-25T99"}} in payment_match["$or"]
-    assert payment_pipeline[1]["$group"]["_id"]["method"] == {"$ifNull": ["$payment_method", "$method"]}
+    # Accounting dates, legacy timestamps and payment source identity are
+    # validated by the real-replica source contract, not aggregate SQL mocks.
 
 
 @pytest.mark.asyncio

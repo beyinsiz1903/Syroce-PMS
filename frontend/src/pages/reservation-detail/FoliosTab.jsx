@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useCallback } from 'react';
-import { folioPaymentLabel, isNonCashPayment } from '@/lib/folioPayments';
+import { folioPaymentLabel, isNonCashPayment, isRefundPayment, signedFolioPayment } from '@/lib/folioPayments';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -357,6 +357,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     if (item._type === 'payment') {
       if (String(item.method || '').toLowerCase() === 'discount') return 'Finansal düzeltme / indirim';
       if (isNonCashPayment(item)) return folioPaymentLabel(item);
+      if (isRefundPayment(item)) return 'Ödeme iadesi';
       return String(item.payment_type || '').toLowerCase() === 'prepayment' ? 'Ön ödeme' : 'Tahsilat';
     }
     return folioCategoryLabel(item);
@@ -798,6 +799,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Bu kapsamda işlem bulunmuyor</div> : (
           allItems.map((item, i) => {
             const received = item._type === 'payment' ? parseReceivedCurrency(item.notes, item) : null;
+            const refund = item._type === 'payment' && isRefundPayment(item);
+            const effect = item._type === 'payment' ? -signedFolioPayment(item) : Number(item.total ?? item.charge_amount ?? item.amount);
             return (
             <div key={item.id || i} className={`flex flex-wrap items-start gap-3 border-t pt-3 ${item.voided ? 'opacity-60 bg-gray-50' : 'bg-white'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${item._type === 'payment' ? 'bg-emerald-100' : 'bg-amber-100'}`}>
@@ -805,7 +808,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-800">
-                  {item.description || item.charge_name || (item._type === 'payment' ? folioPaymentLabel(item) : item.method || item.payment_type || '-')}
+                  {item.description || item.charge_name || (refund ? 'Ödeme iadesi' : item._type === 'payment' ? folioPaymentLabel(item) : item.method || item.payment_type || '-')}
                   {item.voided && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">İPTAL</span>}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
@@ -816,12 +819,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                 {(item.created_at || item.posted_at || item.processed_at) && <p className="mt-1 text-[11px] text-slate-500">Kayda alınma: {fmtTs(item.created_at || item.posted_at || item.processed_at)}</p>}
                 {received && !item.voided && (
                   <div className="mt-1 text-xs font-semibold text-emerald-700" data-testid={`received-currency-${item.id || i}`}>
-                    Alınan: {fmtCurrency(received.amount, received.currency)}
+                    {refund ? 'İade edilen:' : 'Alınan:'} {fmtCurrency(Math.abs(received.amount), received.currency)}
                   </div>
                 )}
               </div>
-              <div className={`ml-auto shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums ${item._type === 'payment' ? 'text-emerald-700' : 'text-slate-900'}`}>
-                {item._type === 'payment' ? '-' : '+'}{fmtCurrency(item.total ?? item.charge_amount ?? item.amount, item.currency || currency)}
+              <div data-testid={`folio-event-amount-${item.id || i}`} className={`ml-auto shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums ${refund ? 'text-rose-700' : item._type === 'payment' ? 'text-emerald-700' : 'text-slate-900'}`}>
+                {effect < 0 ? '−' : '+'}{fmtCurrency(Math.abs(effect), item.currency || currency)}
               </div>
             </div>
           );

@@ -20,6 +20,7 @@ from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
 from modules.pms_core.reporting_ledger import charge_category as _charge_category
 from modules.pms_core.reporting_ledger import posted_revenue_rows
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.room_revenue_reporting import room_adr_by_currency
 from modules.pms_core.stay_night_metrics import (
     NON_COMMERCIAL_STATUSES,
     as_date,
@@ -166,10 +167,7 @@ async def get_revenue_report(
     room_revenue_by_currency = rounded_totals(room_revenue_by_currency)
     total_revenue = _single_currency_value(total_revenue_by_currency)
     room_revenue = _single_currency_value(room_revenue_by_currency)
-    adr_by_currency = {
-        currency: rounded(money(amount) / sold_room_nights) if sold_room_nights else 0.0
-        for currency, amount in room_revenue_by_currency.items()
-    }
+    adr_by_currency = room_adr_by_currency(room_revenue_by_currency, metrics)
     rev_par_by_currency = {
         currency: rounded(money(amount) / available_room_nights) if available_room_nights else 0.0
         for currency, amount in room_revenue_by_currency.items()

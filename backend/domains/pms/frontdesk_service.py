@@ -698,21 +698,35 @@ class FrontdeskService:
     async def get_folio(self, ctx: OperationContext, booking_id: str) -> ServiceResult:
         booking = await self._db.bookings.find_one(
             {"id": booking_id, "tenant_id": ctx.tenant_id},
-            {"_id": 0, "id": 1},
+            {"_id": 0},
         )
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
-        charges = await self._db.folio_charges.find({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(1000)
-        payments = await self._db.payments.find({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(1000)
-        total_charges = sum(c["total"] for c in charges)
-        total_paid = sum(p["amount"] for p in payments if p["status"] == "paid")
+        from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_folio_payment
+        from routers.reservation_detail import _booking_or_folio_scope_query
+
+        folios = await self._db.folios.find({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0, "id": 1}).to_list(None)
+        scope = _booking_or_folio_scope_query(ctx.tenant_id, booking_id, [f["id"] for f in folios])
+        charges = await self._db.folio_charges.find(scope, {"_id": 0}).to_list(None)
+        extras = await self._db.extra_charges.find({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(None)
+        payments = deduplicate_report_payments(await self._db.payments.find(scope, {"_id": 0}).to_list(None))
+        charges = [c for c in charges if not c.get("voided")]
+        extras = [c for c in extras if not c.get("voided")]
+        visible_extras = [{**c, "total": c.get("total", c.get("charge_amount", c.get("amount", 0))),
+            "charge_type": c.get("charge_type") or c.get("category") or "other", "source": "extra_charge"} for c in extras]
+        total_charges = sum(float(c.get("total", c.get("amount", 0)) or 0) for c in charges + visible_extras)
+        total_paid = sum(effective_folio_payment(p) for p in payments)
+        balance = calculate_departure_balance(charges, payments, extras, booking_total=booking.get("total_amount", 0))
         return ServiceResult.success(
             {
-                "charges": charges,
+                "charges": charges + visible_extras,
                 "payments": payments,
-                "total_charges": total_charges,
-                "total_paid": total_paid,
-                "balance": total_charges - total_paid,
+                "currency": booking.get("currency") or "TRY",
+                "total_charges": round(total_charges, 2),
+                "total_paid": round(total_paid, 2),
+                "folio_balance": round(total_charges - total_paid, 2),
+                "unposted_room_amount": round(balance - total_charges + total_paid, 2),
+                "balance": round(balance, 2),
             }
         )
 

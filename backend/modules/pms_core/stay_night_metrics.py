@@ -165,12 +165,41 @@ def booking_nights(booking: dict) -> int:
     return (check_out - check_in).days
 
 
-def allocated_revenue_for_night(booking: dict, day: date) -> Decimal:
-    """Allocate rounded cents cumulatively, preserving the full stay total."""
+def allocated_revenue_for_night(booking: dict, day: date, daily_rates: dict | None = None) -> Decimal:
+    """Use an explicit nightly plan first; allocate the stay only without one.
+
+    Ambiguous, negative or foreign-currency plans cannot become a plausible
+    average. Callers must expose the source error instead of inventing a price.
+    """
     nights = booking_nights(booking)
     if not nights or not booking_occupies_night(booking, day) or booking.get("is_complimentary"):
         return Decimal("0")
+    choices = (daily_rates or {}).get((str(booking.get("id")), day.isoformat()), [])
+    if len(choices) > 1:
+        raise ValueError("Ambiguous daily room price")
+    if choices:
+        plan = choices[0]
+        if plan.get("currency") and currency_code(plan["currency"]) != currency_code(booking.get("currency")):
+            raise ValueError("Daily room price currency mismatch")
+        amount = Decimal(0) if plan.get("is_complimentary") else money(plan["rate"])
+        if amount < 0:
+            raise ValueError("Negative daily room price")
+        return amount
     return _allocated_nightly(_money(booking.get("total_amount")) / nights, (day - as_date(booking.get("check_in"))).days)
+
+
+async def load_daily_rate_index(database, tenant_id, bookings, first, last):
+    booking_ids = [str(row["id"]) for row in bookings if row.get("id")]
+    if not booking_ids:
+        return {}
+    rows = await database.daily_rates.find({"tenant_id": tenant_id, "booking_id": {"$in": booking_ids}},
+        {"_id": 0, "booking_id": 1, "date": 1, "rate": 1, "currency": 1, "is_complimentary": 1}).to_list(None)
+    result = {}
+    for row in rows:
+        day = as_date(row.get("date"))
+        if day and first <= day <= last:
+            result.setdefault((str(row["booking_id"]), day.isoformat()), []).append(row)
+    return result
 
 
 def _allocated_nightly(nightly: Decimal, offset: int) -> Decimal:
@@ -204,12 +233,12 @@ def calculate_stay_night_metrics(
     actual_only: bool = False,
     room_blocks: list[dict] | None = None,
     fallback_currency: str = "TRY",
+    daily_rates: dict | None = None,
 ) -> list[dict]:
     """Return inclusive daily metrics using ``check_in <= day < check_out``.
 
-    Occupancy is the number of unique assigned rooms. Gross reservation totals
-    are allocated evenly over their stay nights, so they are never repeated on
-    every day. Inactive rooms are excluded from capacity.
+    Occupancy is the number of unique assigned rooms. Explicit daily plans take
+    precedence over stay-total allocation. Inactive rooms are excluded.
     """
     active_rooms = [room for room in rooms if is_physical_room(room)]
     active_room_keys = {
@@ -242,12 +271,6 @@ def calculate_stay_night_metrics(
             room_key = None
         if not check_in or not check_out or check_out <= check_in or not room_key:
             continue
-        nights = (check_out - check_in).days
-        nightly_revenue = (
-            Decimal("0")
-            if booking.get("is_complimentary")
-            else _money(booking.get("total_amount")) / nights
-        )
         parsed.append(
             (
                 check_in,
@@ -255,7 +278,7 @@ def calculate_stay_night_metrics(
                 as_date(booking.get("checked_in_business_date")) or as_date(booking.get("checked_in_at")),
                 as_date(booking.get("checked_out_business_date")) or as_date(booking.get("checked_out_at")),
                 room_key,
-                nightly_revenue,
+                booking,
                 currency_code(booking.get("currency"), fallback_currency),
             )
         )
@@ -275,14 +298,17 @@ def calculate_stay_night_metrics(
         total_rooms = len(active_room_keys - blocked_room_keys)
         occupied_rooms: set[str] = set()
         sold_rooms: set[str] = set()
+        sold_by_currency = {}
         revenue_by_currency = {}
-        for check_in, check_out, actual_in, actual_out, room_key, nightly_revenue, currency in parsed:
+        for check_in, check_out, actual_in, actual_out, room_key, booking, currency in parsed:
             actual_window_ok = not actual_only or ((not actual_in or not check_in <= actual_in < check_out or actual_in <= day) and (not actual_out or day < actual_out))
             if check_in <= day < check_out and actual_window_ok:
                 occupied_rooms.add(room_key)
-                add_amount(revenue_by_currency, currency, _allocated_nightly(nightly_revenue, (day - check_in).days))
+                nightly_revenue = allocated_revenue_for_night({**booking, "currency": currency}, day, daily_rates)
+                add_amount(revenue_by_currency, currency, nightly_revenue)
                 if nightly_revenue > 0:
                     sold_rooms.add(room_key)
+                    sold_by_currency.setdefault(currency, set()).add(room_key)
         occupied = len(occupied_rooms)
         sold = len(sold_rooms)
         revenue_by_currency = rounded_totals(revenue_by_currency)
@@ -290,7 +316,8 @@ def calculate_stay_night_metrics(
         occupancy_rate = round(min((occupied / total_rooms * 100), 100.0), 2) if total_rooms else 0
         # Complimentary rooms contribute to occupancy but are not sold rooms;
         # including them in ADR understated the achieved selling price.
-        adr_by_currency = {code: rounded(money(amount) / sold) if sold else 0 for code, amount in revenue_by_currency.items()}
+        sold_counts = {code: len(keys) for code, keys in sold_by_currency.items()}
+        adr_by_currency = {code: rounded(money(amount) / sold_counts[code]) if sold_counts.get(code) else 0 for code, amount in revenue_by_currency.items()}
         revpar_by_currency = {code: rounded(money(amount) / total_rooms) if total_rooms else 0 for code, amount in revenue_by_currency.items()}
         adr = single_amount(adr_by_currency)
         revpar = single_amount(revpar_by_currency)
@@ -299,6 +326,7 @@ def calculate_stay_night_metrics(
                 "date": day.isoformat(),
                 "occupied_rooms": occupied,
                 "sold_rooms": sold,
+                "sold_rooms_by_currency": sold_counts,
                 "total_rooms": total_rooms,
                 "occupancy_rate": occupancy_rate,
                 "revenue": revenue_value,
@@ -359,7 +387,8 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
         from core.tenant_currency import get_tenant_currency
 
         fallback_currency = (await get_tenant_currency(tenant_id))[0]
-    metrics = calculate_stay_night_metrics(bookings, rooms, start_date, end_date, actual_only=actual_only, room_blocks=room_blocks, fallback_currency=fallback_currency)
+    daily_rates = await load_daily_rate_index(db, tenant_id, bookings, start_date, end_date)
+    metrics = calculate_stay_night_metrics(bookings, rooms, start_date, end_date, actual_only=actual_only, room_blocks=room_blocks, fallback_currency=fallback_currency, daily_rates=daily_rates)
     if include_performance:
         from modules.pms_core.daily_stay_performance import daily_stay_performance
 

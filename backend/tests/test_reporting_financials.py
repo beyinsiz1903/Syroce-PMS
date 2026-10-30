@@ -17,6 +17,8 @@ def test_rate_correction_reduces_revenue_but_is_not_a_collection():
 def test_real_payment_and_refund_remain_cash_movements():
     assert effective_collection({"amount": 1000, "method": "card", "status": "paid"}) == 1000
     assert effective_collection({"amount": 1000, "method": "card", "payment_type": "refund", "status": "paid"}) == -1000
+    assert effective_collection({"amount": 20, "method": "cash", "status": "refunded"}) == -20
+    assert effective_collection({"amount": -20, "method": "cash", "status": "refunded"}) == -20
 
 
 def test_reporting_uses_immutable_try_ledger_amount_and_keeps_received_fx_out_of_total():

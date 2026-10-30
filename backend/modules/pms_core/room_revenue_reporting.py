@@ -3,6 +3,18 @@
 from modules.pms_core.report_money import add_amount, currency_code, money, rounded, rounded_totals, single_amount
 
 
+def room_adr_by_currency(revenue, metric_rows):
+    """Posted and accrued reports share the same currency-specific denominator.
+
+    Older report fixtures/consumers without a currency partition retain their
+    declared sold-room denominator; canonical metrics always carry partitions.
+    """
+    counts = {code: sum(int(row["sold_rooms_by_currency"].get(code, 0))
+        if row.get("sold_rooms_by_currency") is not None else int(row.get("sold_rooms", row.get("occupied_rooms")) or 0)
+        for row in metric_rows) for code in revenue}
+    return {code: rounded(money(amount) / counts[code]) if counts[code] else 0 for code, amount in revenue.items()}
+
+
 def reconcile_room_revenue(posted, accrued, occupied):
     """Presence, not a nonzero sum, proves a room posting exists."""
     totals, sources = {}, {}
@@ -17,7 +29,7 @@ def room_period_performance(metric_rows, posted_by_day_currency, *, fallback_cur
     occupied = sum(int(row.get("occupied_rooms") or 0) for row in metric_rows)
     sold = sum(int(row.get("sold_rooms", row.get("occupied_rooms")) or 0) for row in metric_rows)
     capacity = sum(int(row.get("total_rooms") or 0) for row in metric_rows)
-    rooms, posted_total, accrued_total, sources_by_day, gaps = {}, {}, {}, {}, []
+    rooms, posted_total, accrued_total, sources_by_day, gaps, sold_by_currency = {}, {}, {}, {}, [], {}
     for row in metric_rows:
         day = str(row.get("date"))
         posted = posted_by_day_currency.get(day, {})
@@ -25,6 +37,10 @@ def room_period_performance(metric_rows, posted_by_day_currency, *, fallback_cur
         if accrued is None:
             accrued = {currency_code(row.get("currency"), fallback_currency): row.get("revenue") or 0}
         selected, sources = reconcile_room_revenue(posted, accrued, int(row.get("occupied_rooms") or 0))
+        currency_counts = row.get("sold_rooms_by_currency")
+        for code in selected:
+            count = currency_counts.get(code, 0) if currency_counts is not None else int(row.get("sold_rooms", row.get("occupied_rooms")) or 0)
+            sold_by_currency[code] = sold_by_currency.get(code, 0) + count
         sources_by_day[day] = sources
         if "accrued" in sources.values():
             gaps.append(day)
@@ -40,6 +56,7 @@ def room_period_performance(metric_rows, posted_by_day_currency, *, fallback_cur
         "end_date": str(metric_rows[-1].get("date")) if metric_rows else None,
         "occupied_room_nights": occupied,
         "sold_room_nights": sold,
+        "sold_room_nights_by_currency": sold_by_currency,
         "available_room_nights": capacity,
         "occupancy_percentage": rounded(money(occupied) / capacity * 100) if capacity else 0,
         "revenue_source": "mixed" if len(kinds) > 1 else next(iter(kinds), "posted"),
@@ -50,7 +67,7 @@ def room_period_performance(metric_rows, posted_by_day_currency, *, fallback_cur
         "room_revenue": rooms,
         "posted_room_revenue": posted_total,
         "accrued_room_revenue": accrued_total,
-        "adr": {code: rounded(money(value) / sold) if sold else 0 for code, value in rooms.items()},
+        "adr": {code: rounded(money(value) / sold_by_currency[code]) if sold_by_currency.get(code) else 0 for code, value in rooms.items()},
         "revpar": {code: rounded(money(value) / capacity) if capacity else 0 for code, value in rooms.items()},
     }.items():
         result[key] = single_amount(totals)
