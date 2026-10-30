@@ -1,0 +1,78 @@
+ÖN BÜRO — PR1458 YAYIN SONRASI KABUL / 30 EKİM 2026
+
+YAYIN DOĞRULANDI
+PR1458 merge: 807cfb41f5bae4720a66a02ce42cc1de50dc6bf7.
+https://github.com/beyinsiz1903/Syroce-PMS/pull/1458
+Son head bb84891f2b566d32387060525c6307b558fbec97 zorunlu CI kontrolleri başarılı.
+Gerçek deploy run41011854179, deploy job123919279099 başarılı; aynı main
+revizyonunun iki zorunlu workflow doğrulaması da başarılı.
+https://github.com/beyinsiz1903/Syroce-PMS/actions/runs/41011854179
+Canlı /api/health 30 Ekim 06:12 UTC itibarıyla healthy ve tam aynı SHA.
+
+ÜRETİM KAPSAMI — YALNIZ SALT OKUNUR
+Yalnız Syroce Demo Hotel100001, tenant5bad4a34-6ee3-4566-9053-741b7375a9cf.
+Normal demo girişi sonrası API sürücüsü yalnız GET /api/ çağrılarına izin verir.
+Yeni ücret, tahsilat, iade, vardiya, çıkış, stok, arşiv, gün sonu, KBS, fatura
+ve dış sağlayıcı yazısı yok. İş günü2026-10-26 kaldı; 31 fiziksel oda/QT2ED0
+ve rezervasyon listesi kontrol başı/sonunda birebir aynı. Parola/token kaydı yok.
+Exely ekranında ARI ve tesis otomatik rezervasyon çekimi kapalı doğrulandı.
+Bu çalışmada PR1458 yeniden merge/deploy edilmedi.
+
+GEÇEN CANLI KARŞILAŞTIRMALAR
+26 Ekim açık gün: işlenmiş gelir/tahsilat boş; planlanan oda bedeli gerçekleşmiş
+gelir gibi sayılmıyor. 25 Ekim kapalı gün boş olmayan kontrolü:
+- Vergi dahil gelir: TRY178922,40 / USD833,20 / EUR360,20.
+- Muhasebe para birimindeki net tahsilatlar: TRY43240,00 / EUR356,18.
+Genel gelir, kategori, günlük özet, daily-flash, flash, gece mali günlük,
+aralık ve mutabakat raporları aynı gelir/tahsilat para birimi kovalarıyla eşleşti.
+Kategori kaynak/vergi uyumsuzluğu sayısı0; okunan ana raporlar degraded=false.
+Mobil tahsilatın TRY62829,90 raporlanmış kur toplamı ayrı ölçüdür; ham döviz
+tutarlarıyla doğrudan karşılaştırılmadı veya birbirine eklenmedi.
+Üç canlı misafir örneğinde hızlı folyo + tam detay + tek hesap kartı aynı
+işlenmiş bakiyeyi gösterdi: TRY2470 /12340 /13170. Henüz işlenmemiş oda bedeli
+ayrıca görünür; toplam planlı borç, işlenmiş folyo bakiyesi sanılmadı.
+Tarayıcıda ön büro, misafir kartı/folyo ve Flash Rapor açıldı. SPA randevusu
+25 Ekim11:00 ile kayıt zamanı ayrı; hizmet tarihi olmayan eski satıra tarih
+uydurulmuyor. Flash açık günü/işlenmemiş oda uyarısı ve 25/31 geceleyen oda
+göstergesi görünür. Ön bürodaki31 checked-in ile o gece çıkışı olan6 kaydın
+ayrılması açıklanabilir; bu iki farklı ölçü eşit olmak zorunda değildir.
+
+CANLIDA BULUNAN KALAN RAPOR GÖRÜNTÜLEME HATALARI
+Tam kabul henüz verilmedi. Ayrı düzeltme dalı:
+fix/night-audit-live-report-alignment. Finansal kaynaklar yeniden yazılmaz.
+1) Aralık raporu oda kapasitesi tüm39 oda kaydını sayıyor; 31 aktif fiziksel
+   odadan ayrı sanal odalar kapasiteye ekleniyor. Aktif/fiziksel filtre eklendi.
+2) Aynı rapor ISO timestamp giriş gününü/BSON tarihlerini kaçırıyor ve çıkış
+   gününü geceye dahil ediyor. Canonical ISO/BSON gece çakışma sorgusu kullanıldı.
+   Ayrı yerel tarih regresyonu eski kodda1, beklenen3 sonucuyla hatayı doğruladı.
+3) Açık folyo para birimi kovaları doğru, eski tek toplamlar TRY+EUR+USD
+   nominal toplamı yapabiliyor. Yalnız tek para birimindeki ölçüye scalar
+   verilir; TRY100−USD100 parasal sıfır diye sunulmaz.
+4) Vergi bileşenleri yalnız folio_charges ham sorgusundan geliyor; ek hizmet,
+   doğrudan POS, BSON iş günü ve iade işaretleri kategori raporundan ayrışıyor.
+   Bileşenler artık aynı canonical gelir kaynağından türetilir. Eksik KDV/
+   konaklama vergisi payları None kalır, uyarı görünür. Vergi kaynağı değiştirilmez.
+
+YEREL DÜZELTME DOĞRULAMASI
+İlk üç regresyon düzeltme öncesi3 failed, ayrı tarih testi1 failed; kanıtlar
+korundu. Son bağlantılı paket:68 backend passed /11 arayüz passed.
+Ruff backend geneli, değişen arayüz ESLint, Vite üretim derlemesi ve
+git diff --check başarılı. Geçici yerel Mongo test sunucusu kapatıldı.
+Yerel Mongo yalnız127.0.0.1:27989 ve yeni geçici veritabanları; üretim bağlantısı
+yok. Üç ilk regresyonun Mongo hazırlık hatalı ilk koşusu, tarih adı çakışmalı
+ara koşu ve son başarılı koşu ayrı dosyalarda korunur; sayılar toplanmaz.
+Yeni düzeltmenin uzak CI/merge/deploy sonucu ve sonraki canlı kabulü ayrı
+doğrulanmalıdır. Bu rapor bütün buton/rol/ayar kombinasyonlarına hatasızlık
+garantisi veya yeni düzeltmelerin zaten canlı olduğu iddiası değildir.
+
+YEREL KANITLAR
+Çalışma alanı: /Users/syroce/Documents/Codex/2026-10-09/evet-sohbet-uzad-k-a-nceki-2/
+frontdesk-postdeploy-20261030.r92cobo8/
+  health-before.json / health-after.json
+  read-acceptance.json / postdeploy-reconciliation.json
+  business-before/after.json; rooms-before/after.json; bookings-before/after.json
+  *-day25.json ve26Ekim raporları; guest-{0,1,2}-{quick-folio,detail,windows}.json
+  regressions-before-v2.xml / period-date-before.xml
+  backend-report-regressions-v2.xml / frontend-night-report-regressions.json
+İlk yanlış detay adresi nedeniyle duran GET kanıtı ayrıca
+frontdesk-postdeploy-20261030.9_kr_1tr/ içinde korundu; canlı mutasyon değildir.

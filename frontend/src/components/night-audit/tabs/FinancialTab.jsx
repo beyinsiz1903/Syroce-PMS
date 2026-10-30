@@ -25,10 +25,12 @@ export default function FinancialTab(props) {
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
             <strong>Rapor iş günü:</strong> {financialSummary.business_date || financialSummary.date || reportingDate || '-'} · Son tamamlanan gece denetiminin finansal hareketleri
           </div>
-          {(financialSummary.degraded || financialSummary.tax_unknown_count > 0) && (
+          {(financialSummary.degraded || financialSummary.tax_unknown_count > 0 || financialSummary.tax_breakdown_incomplete_count > 0) && (
             <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {financialSummary.degraded ? 'Bazı rapor kaynakları okunamadı; bu rakamlarla kesin mutabakat yapmayın. ' : ''}
               {financialSummary.tax_unknown_count > 0 ? `${financialSummary.tax_unknown_count} kalemin vergi ayrımı eksik. Vergi toplamı yalnız ayrımı bilinen kayıtlara aittir; eksik bilgi sıfır vergi anlamına gelmez.` : ''}
+              {financialSummary.tax_breakdown_incomplete_count > 0 && !financialSummary.tax_unknown_count
+                ? `${financialSummary.tax_breakdown_incomplete_count} kalemde vergi türü ayrımı eksik. Toplam vergi bilinse de KDV ve konaklama vergisi payları tahmin edilmez.` : ''}
             </div>
           )}
           {/* Revenue & Payment Summary Cards */}

@@ -38,7 +38,8 @@ async def revenue_documents(database, tenant_id, first, last, *, by_date=False):
         group_id = {"category": values["category"], "currency": code}
         if by_date:
             group_id["date"] = day.isoformat()
-        entry = grouped.setdefault(key, {"_id": group_id, "amount": 0, "tax": 0, "total": 0, "count": 0, "tax_unknown_count": 0})
+        entry = grouped.setdefault(key, {"_id": group_id, "amount": 0, "tax": 0, "total": 0, "count": 0, "tax_unknown_count": 0,
+            "tax_breakdown": {"vat": 0, "accommodation_tax": 0, "other_tax": 0}, "tax_breakdown_incomplete_count": 0})
         tax = sum(float(values.get(field) or 0) for field in ("vat", "city_tax", "other_tax"))
         gross = float(values["total"])
         entry["amount"] += gross - tax
@@ -46,6 +47,13 @@ async def revenue_documents(database, tenant_id, first, last, *, by_date=False):
         entry["total"] += gross
         entry["count"] += 1
         entry["tax_unknown_count"] += int(values["tax_unknown"])
+        # Carry the same component evidence as the category report. A separate
+        # folio-only aggregate loses extras/POS, BSON dates and refund signs.
+        components = {"vat": values["vat"], "accommodation_tax": values["city_tax"], "other_tax": values["other_tax"]}
+        entry["tax_breakdown_incomplete_count"] += int(any(value is None for value in components.values()))
+        for component, value in components.items():
+            current = entry["tax_breakdown"][component]
+            entry["tax_breakdown"][component] = None if value is None or current is None else round(current + float(value), 2)
     return [{**entry, "total_amount": entry["amount"], "total_tax": entry["tax"], "total_with_tax": entry["total"]} for entry in grouped.values()]
 
 
