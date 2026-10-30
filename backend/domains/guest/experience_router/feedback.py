@@ -45,6 +45,7 @@ from modules.guest_journey.review_invite_service import (
 from modules.guest_journey.review_invite_service import (
     validate_review_invite_token as _validate_review_invite_token,
 )
+from modules.guest_journey.review_response import ReviewResponsePayload
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 DEFAULT_UPSELL_PRICES = {
@@ -337,7 +338,7 @@ async def get_external_reviews_summary(start_date: str = None, end_date: str = N
 @router.post("/feedback/external-reviews/{review_id}/respond")
 async def respond_to_external_review(
     review_id: str,
-    response_text: str,
+    response_data: ReviewResponsePayload,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
@@ -347,11 +348,12 @@ async def respond_to_external_review(
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
-    await db.external_reviews.update_one(
-        {"id": review_id}, {"$set": {"response": response_text, "responded_at": datetime.now(UTC).isoformat(), "responded_by": current_user.id, "status": "responded"}}
+    result = await db.external_reviews.update_one(
+        {"id": review_id, "tenant_id": current_user.tenant_id}, {"$set": {"response": response_data.response, "responded_at": datetime.now(UTC).isoformat(), "responded_by": current_user.id, "status": "responded"}}
     )
-
-    return {"message": "Response posted successfully"}
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return {"message": "Response saved locally; external publishing is not configured", "delivery": "stored_only"}
 
 
 # ── GET /feedback/surveys ──

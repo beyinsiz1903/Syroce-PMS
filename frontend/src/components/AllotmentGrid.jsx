@@ -21,30 +21,43 @@ const AllotmentGrid = ({ rooms = [] }) => {
   const ta = useCallback((k) => t(`pmsComponents.allotment.${k}`), [t]);
   const currency = cachedTenantCurrency();
   const roomTypes = useMemo(() => {
-    const actual = [...new Set(rooms.map(room => room.room_type || room.type).filter(Boolean))];
-    return actual.length ? actual.sort((a, b) => a.localeCompare(b, i18n.language)) : ROOM_TYPE_KEYS;
+    const actual = [...new Set(rooms.filter(room => room.is_active !== false && !room.is_virtual).map(room => room.room_type || room.type).filter(Boolean))];
+    return actual.sort((a, b) => a.localeCompare(b, i18n.language));
   }, [rooms, i18n.language]);
 
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [releasing, setReleasing] = useState(null);
+  const [loadError, setLoadError] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [formData, setFormData] = useState({
-    tour_operator: '', room_type: 'standard', allocated_rooms: '',
+    tour_operator: '', room_type: '', allocated_rooms: '',
     start_date: '', end_date: '', rate: '', release_days: '7'
   });
 
   useEffect(() => {
-    setFormData(prev => roomTypes.includes(prev.room_type)
-      ? prev
-      : { ...prev, room_type: roomTypes[0] || 'standard' });
+    setFormData(prev => {
+      const selected = roomTypes.includes(prev.room_type) ? prev.room_type : roomTypes[0] || '';
+      return prev.room_type === selected ? prev : { ...prev, room_type: selected };
+    });
   }, [roomTypes]);
 
   const loadContracts = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
-      const response = await axios.get('/pms/allotment-contracts');
-      setContracts(response.data?.contracts || response.data || []);
+      const all = [];
+      for (let page = 1; ; page += 1) {
+        const response = await axios.get('/pms/allotment-contracts', { params: { page, page_size: 200 } });
+        const rows = response.data?.contracts || response.data || [];
+        all.push(...rows);
+        if (Array.isArray(response.data) || all.length >= (response.data?.total ?? all.length)) break;
+        if (!rows.length) throw new Error('Incomplete contract page');
+      }
+      setContracts(all);
     } catch {
+      setLoadError(true);
       toast.error(ta('loadError'));
     }
     setLoading(false);
@@ -57,35 +70,46 @@ const AllotmentGrid = ({ rooms = [] }) => {
     if (!formData.start_date || !formData.end_date) { toast.error(ta('datesRequired')); return; }
     if (new Date(formData.end_date) <= new Date(formData.start_date)) { toast.error(ta('endAfterStart')); return; }
     if (!formData.allocated_rooms || parseInt(formData.allocated_rooms) <= 0) { toast.error(ta('roomCountRequired')); return; }
+    const count = Number(formData.allocated_rooms), rate = Number(formData.rate), release = Number(formData.release_days);
+    if (!roomTypes.includes(formData.room_type) || !Number.isInteger(count) || count < 1 || count > 10000
+      || !formData.rate.trim() || !Number.isFinite(rate) || rate < 0 || !formData.release_days.trim()
+      || !Number.isInteger(release) || release < 0 || release > 365) {
+      toast.error('Oda tipi, fiyat, oda sayısı ve release süresini kontrol edin.'); return;
+    }
+    setCreating(true);
     try {
       await axios.post('/pms/allotment-contracts', {
         ...formData,
-        allocated_rooms: parseInt(formData.allocated_rooms) || 0,
-        rate: parseFloat(formData.rate) || 0,
-        release_days: parseInt(formData.release_days) || 7,
+        allocated_rooms: count, rate, release_days: release, currency,
       });
       toast.success(ta('contractCreated'));
       loadContracts();
       setShowDialog(false);
-      setFormData({ tour_operator: '', room_type: 'standard', allocated_rooms: '', start_date: '', end_date: '', rate: '', release_days: '7' });
+      setFormData({ tour_operator: '', room_type: roomTypes[0] || '', allocated_rooms: '', start_date: '', end_date: '', rate: '', release_days: '7' });
     } catch {
       toast.error(ta('createError'));
+    } finally {
+      setCreating(false);
     }
   };
 
   const releaseRooms = async (contractId) => {
+    setReleasing(contractId);
     try {
       await axios.post(`/pms/allotment-contracts/${contractId}/release`);
       toast.success(ta('roomsReleased'));
       loadContracts();
     } catch {
       toast.error(ta('releaseError'));
+    } finally {
+      setReleasing(null);
     }
   };
 
   const totalAllocated = contracts.reduce((s, c) => s + (c.allocated_rooms || 0), 0);
   const totalUsed = contracts.reduce((s, c) => s + (c.used_rooms || 0), 0);
-  const totalAvailable = Math.max(0, totalAllocated - totalUsed);
+  const contractAvailable = c => c.available_rooms ?? Math.max(0, (c.allocated_rooms || 0) - (c.used_rooms || 0) - (c.released_rooms || 0));
+  const totalAvailable = contracts.reduce((s, c) => s + contractAvailable(c), 0);
 
   return (
     <div className="space-y-6">
@@ -100,11 +124,13 @@ const AllotmentGrid = ({ rooms = [] }) => {
           <Button variant="outline" size="sm" onClick={loadContracts} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> {ta('refresh')}
           </Button>
-          <Button onClick={() => setShowDialog(true)}>
+          <Button onClick={() => setShowDialog(true)} disabled={loading || loadError || !roomTypes.length}>
             <Plus className="w-4 h-4 mr-2" /> {ta('newContract')}
           </Button>
         </div>
       </div>
+      {loadError && <div role="alert">Sözleşmeler yüklenemedi; görünen sayılar güncel kabul edilmemeli. Yenileyin.</div>}
+      {!roomTypes.length && <div role="alert">Fiziksel oda envanteri yüklenmeden sözleşme oluşturulamaz.</div>}
 
       <div className="rounded-lg border border-blue-300 bg-blue-50 p-3 flex items-start gap-2">
         <AlertTriangle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
@@ -156,7 +182,7 @@ const AllotmentGrid = ({ rooms = [] }) => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {contracts.map((contract) => {
-            const available = Math.max(0, (contract.allocated_rooms || 0) - (contract.used_rooms || 0));
+            const available = contractAvailable(contract);
             const usagePct = contract.allocated_rooms > 0 ? Math.round((contract.used_rooms || 0) / contract.allocated_rooms * 100) : 0;
             const endDate = contract.end_date ? new Date(contract.end_date) : null;
             const isExpiring = endDate && endDate >= new Date() && endDate < new Date(Date.now() + 7 * 86400000);
@@ -179,7 +205,7 @@ const AllotmentGrid = ({ rooms = [] }) => {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">{ta('roomType')}</span>
-                      <span className="font-semibold">{ta(`roomTypes.${contract.room_type}`) || contract.room_type}</span>
+                      <span className="font-semibold">{ROOM_TYPE_KEYS.includes(contract.room_type) ? ta(`roomTypes.${contract.room_type}`) : contract.room_type}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">{ta('allotment')}</span>
@@ -197,15 +223,18 @@ const AllotmentGrid = ({ rooms = [] }) => {
                       <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${Math.min(usagePct, 100)}%` }} />
                     </div>
                     <p className="text-xs text-gray-400 text-center">{ta('usage')} %{usagePct}</p>
-                    {(contract.bookings_count > 0 || contract.total_revenue > 0) && (
+                    {contract.bookings_count > 0 && (
                       <div className="flex justify-between border-t pt-2">
                         <span className="text-gray-600">{ta('matchedRevenue')}</span>
-                        <span className="font-semibold text-emerald-600">{formatCurrency(contract.total_revenue, contract.currency || currency)}</span>
+                        <span className="font-semibold text-emerald-600">
+                          {Object.entries(contract.total_revenue_by_currency || {}).map(([code, amount]) => <span key={code} className="block">{formatCurrency(amount, code)}</span>)}
+                          {contract.unknown_currency_bookings > 0 && <span className="block">Para birimi eksik: {contract.unknown_currency_bookings} rezervasyon</span>}
+                        </span>
                       </div>
                     )}
                     <div className="flex justify-between">
                       <span className="text-gray-600">{ta('price')}</span>
-                      <span className="font-semibold">{formatCurrency(contract.rate, contract.currency || currency)}{ta('perNight')}</span>
+                      <span className="font-semibold">{contract.currency ? formatCurrency(contract.rate, contract.currency) : `${contract.rate ?? '—'} (para birimi belirtilmemiş)`}{ta('perNight')}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">{ta('period')}</span>
@@ -217,7 +246,7 @@ const AllotmentGrid = ({ rooms = [] }) => {
                       <span className="text-gray-600">{ta('releaseDays')}</span>
                       <span className="font-semibold">{contract.release_days} {ta('days')}</span>
                     </div>
-                    <Button size="sm" variant="outline" className="w-full mt-2" onClick={() => releaseRooms(contract.id)} disabled={available === 0}>
+                    <Button size="sm" variant="outline" className="w-full mt-2" onClick={() => releaseRooms(contract.id)} disabled={available === 0 || loading || loadError || releasing !== null}>
                       {ta('releaseRooms')}
                     </Button>
                   </div>
@@ -235,8 +264,8 @@ const AllotmentGrid = ({ rooms = [] }) => {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>{ta('tourOperator')}</Label>
-              <Input value={formData.tour_operator} onChange={(e) => setFormData({ ...formData, tour_operator: e.target.value })} placeholder={ta('tourOperatorPlaceholder')} />
+              <Label htmlFor="allotment-operator">{ta('tourOperator')}</Label>
+              <Input id="allotment-operator" value={formData.tour_operator} onChange={(e) => setFormData({ ...formData, tour_operator: e.target.value })} placeholder={ta('tourOperatorPlaceholder')} />
               <p className="text-xs text-gray-500 mt-1">{ta('tourOperatorHint')}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -276,7 +305,7 @@ const AllotmentGrid = ({ rooms = [] }) => {
                 <Input type="number" min="0" value={formData.release_days} onChange={(e) => setFormData({ ...formData, release_days: e.target.value })} />
               </div>
             </div>
-            <Button onClick={createContract} className="w-full">{ta('createContract')}</Button>
+            <Button onClick={createContract} disabled={creating || loadError || !roomTypes.length} className="w-full">{ta('createContract')}</Button>
           </div>
         </DialogContent>
       </Dialog>

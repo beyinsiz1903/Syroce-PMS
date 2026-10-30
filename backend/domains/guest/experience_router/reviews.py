@@ -12,13 +12,14 @@ Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user
 from models.schemas import (
     User,
 )
+from modules.guest_journey.review_response import ReviewResponsePayload
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 DEFAULT_UPSELL_PRICES = {
@@ -104,12 +105,14 @@ async def get_reviews(current_user: User = Depends(get_current_user)):
 @router.post("/crm/reviews/{review_id}/respond")
 async def respond_to_review(
     review_id: str,
-    response_data: dict,
+    response_data: ReviewResponsePayload,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Respond to a guest review"""
-    await db.guest_reviews.update_one(
-        {"id": review_id, "tenant_id": current_user.tenant_id}, {"$set": {"response": response_data.get("response"), "responded_at": datetime.now(UTC).isoformat(), "responded_by": current_user.id}}
+    result = await db.guest_reviews.update_one(
+        {"id": review_id, "tenant_id": current_user.tenant_id}, {"$set": {"response": response_data.response, "responded_at": datetime.now(UTC).isoformat(), "responded_by": current_user.id}}
     )
-    return {"message": "Response sent successfully"}
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return {"message": "Response saved", "delivery": "stored_only"}

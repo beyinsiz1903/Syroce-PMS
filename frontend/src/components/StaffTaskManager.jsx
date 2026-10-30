@@ -42,10 +42,11 @@ const STATUS_COLORS = { pending: 'text-amber-500', in_progress: 'text-blue-500',
 
 const StaffTaskManager = ({ currentUser }) => {
   const { t } = useTranslation();
-  const ts = useCallback((k) => t(`pmsComponents.staff.${k}`), [t]);
+  const ts = useCallback((k, options) => t(`pmsComponents.staff.${k}`, options), [t]);
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -68,10 +69,19 @@ const StaffTaskManager = ({ currentUser }) => {
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
-      const response = await axios.get('/pms/staff-tasks');
-      setTasks(response.data?.tasks || response.data || []);
+      const all = [];
+      for (let page = 1; ; page += 1) {
+        const response = await axios.get('/pms/staff-tasks', { params: { page, page_size: 200 } });
+        const rows = response.data?.tasks || response.data || [];
+        all.push(...rows);
+        if (Array.isArray(response.data) || all.length >= (response.data?.total ?? all.length)) break;
+        if (!rows.length) throw new Error('Incomplete task page');
+      }
+      setTasks(all);
     } catch {
+      setLoadError(true);
       toast.error(ts('loadError'));
     }
     setLoading(false);
@@ -179,6 +189,7 @@ const StaffTaskManager = ({ currentUser }) => {
 
   return (
     <div className="space-y-6">
+      {loadError && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Görevler yüklenemedi. Görünen kayıtlar ve sayılar güncel kabul edilmemeli; yenileyin.</div>}
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-2xl font-bold flex items-center gap-2">

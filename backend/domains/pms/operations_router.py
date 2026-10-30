@@ -436,18 +436,30 @@ async def create_kvkk_request(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    now = datetime.utcnow()
+    name, request_type, details = body.get("guest_name"), body.get("type", "access"), body.get("details", "")
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 200:
+        raise HTTPException(400, "Guest name is required (1–200 characters)")
+    if not isinstance(request_type, str) or request_type not in {"access", "erasure", "rectification", "portability", "objection"}:
+        raise HTTPException(400, "Invalid request type")
+    if not isinstance(details, str) or len(details) > 4000:
+        raise HTTPException(400, "Invalid request details")
+    now = datetime.now(UTC)
+    request_id = str(uuid.uuid4())
     doc = {
-        "_id": str(uuid.uuid4()),
+        "_id": request_id,
         "tenant_id": current_user.tenant_id,
-        "guest_name": body.get("guest_name", ""),
-        "type": body.get("type", "access"),
-        "details": body.get("details", ""),
+        "guest_name": name.strip(),
+        "type": request_type,
+        "details": details,
         "status": "pending",
         "date": now.strftime("%Y-%m-%d"),
         "response_date": None,
         "created_at": now.isoformat(),
         "created_by": current_user.email,
+        # Embedded event commits atomically with its source; no dual-write gap.
+        "audit_events": [{"id": str(uuid.uuid4()), "action": "data_request_created", "user": current_user.email,
+                          "actor_id": current_user.id, "target": request_id, "request_id": request_id,
+                          "guest_name": name.strip(), "timestamp": now.isoformat(), "status": "pending"}],
     }
     await db.kvkk_requests.insert_one(doc)
     doc["id"] = doc.pop("_id")
@@ -461,13 +473,33 @@ async def update_kvkk_request(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
-    update_fields["updated_at"] = datetime.utcnow().isoformat()
-    if body.get("status") == "completed":
-        update_fields["response_date"] = datetime.utcnow().strftime("%Y-%m-%d")
-    result = await db.kvkk_requests.update_one({"_id": request_id, "tenant_id": current_user.tenant_id}, {"$set": update_fields})
+    if not body or set(body) - {"status", "details"}:
+        raise HTTPException(400, "Only status and details can be updated")
+    if "status" in body and (not isinstance(body["status"], str) or body["status"] not in {"pending", "processing", "completed"}):
+        raise HTTPException(400, "Invalid request status")
+    if "details" in body and (not isinstance(body["details"], str) or len(body["details"]) > 4000):
+        raise HTTPException(400, "Invalid request details")
+    query = {"_id": request_id, "tenant_id": current_user.tenant_id}
+    source = await db.kvkk_requests.find_one(query)
+    if not source:
+        raise HTTPException(404, "Request not found")
+    changed = {k: v for k, v in body.items() if source.get(k) != v}
+    if not changed:
+        return {"id": request_id, "status": source.get("status"), "already_applied": True}
+    if source.get("status") == "completed":
+        raise HTTPException(409, "Completed request is immutable")
+    now = datetime.now(UTC)
+    update_fields = {**changed, "updated_at": now.isoformat(), "updated_by": current_user.email}
+    if changed.get("status") == "completed":
+        update_fields["response_date"] = now.strftime("%Y-%m-%d")
+    event = {"id": str(uuid.uuid4()), "action": "data_request_updated", "user": current_user.email,
+             "actor_id": current_user.id, "target": request_id, "request_id": request_id,
+             "guest_name": source.get("guest_name"), "timestamp": now.isoformat(),
+             "previous_status": source.get("status"), "status": changed.get("status", source.get("status")),
+             "changed_fields": sorted(changed)}
+    result = await db.kvkk_requests.update_one({**query, "status": source.get("status"), "updated_at": source.get("updated_at")}, {"$set": update_fields, "$push": {"audit_events": event}})
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Request not found")
+        raise HTTPException(status_code=409, detail="Request changed; reload before updating")
     return {"id": request_id, "status": update_fields.get("status", "updated")}
 
 
@@ -483,10 +515,18 @@ async def get_kvkk_consents(skip: int = 0, limit: int = 100, current_user: User 
 
 @router.get("/kvkk/audit-log")
 async def get_kvkk_audit_log(skip: int = 0, limit: int = 200, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_system_diagnostics"))):
-    docs = await db.kvkk_audit_log.find({"tenant_id": current_user.tenant_id}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    if skip < 0 or not 1 <= limit <= 500:
+        raise HTTPException(400, "Invalid pagination")
+    window = skip + limit
+    docs = await db.kvkk_audit_log.find({"tenant_id": current_user.tenant_id}).sort("timestamp", -1).limit(window).to_list(window)
     for d in docs:
         d["id"] = str(d.pop("_id"))
-    return {"logs": docs}
+    events = await db.kvkk_requests.aggregate([
+        {"$match": {"tenant_id": current_user.tenant_id, "audit_events": {"$exists": True}}},
+        {"$unwind": "$audit_events"}, {"$replaceRoot": {"newRoot": "$audit_events"}},
+        {"$sort": {"timestamp": -1}}, {"$limit": window},
+    ]).to_list(window)
+    return {"logs": sorted(docs + events, key=lambda row: str(row.get("timestamp") or ""), reverse=True)[skip:window]}
 
 
 @router.post("/kvkk/consents/{consent_id}/revoke")
@@ -559,6 +599,8 @@ async def export_kvkk_data(
     consents = await db.kvkk_consents.find(query).sort("date", -1).to_list(500)
     requests_ = await db.kvkk_requests.find(query).sort("created_at", -1).to_list(500)
     audit = await db.kvkk_audit_log.find(query).sort("timestamp", -1).to_list(500)
+    audit += [event for source in requests_ for event in source.get("audit_events", [])]
+    audit.sort(key=lambda row: str(row.get("timestamp") or ""), reverse=True)
     for coll in (consents, requests_, audit):
         for d in coll:
             if "_id" in d:

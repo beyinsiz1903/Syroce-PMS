@@ -31,8 +31,6 @@ const PLATFORM_LABEL = {
   hotels: 'Hotels.com',
 };
 
-const safe = (p) => p.catch(() => ({ data: null }));
-
 const renderStars = (rating, size = 'w-4 h-4') => (
   <div className="flex gap-0.5">
     {Array.from({ length: 5 }, (_, i) => (
@@ -53,6 +51,7 @@ const formatDate = (raw) => {
 const FeedbackSystem = () => {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const [loadWarning, setLoadWarning] = useState('');
   const [view, setView] = useState('all');
   const [internal, setInternal] = useState([]);
   const [external, setExternal] = useState([]);
@@ -71,29 +70,38 @@ const FeedbackSystem = () => {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    setLoadWarning('');
     try {
-      const [intRes, extRes, surveysRes, deptRes] = await Promise.all([
-        safe(axios.get('/crm/reviews')),
-        safe(axios.get('/feedback/external-reviews')),
-        safe(axios.get('/feedback/surveys')),
-        safe(axios.get('/feedback/department')),
+      const results = await Promise.allSettled([
+        axios.get('/crm/reviews'),
+        axios.get('/feedback/external-reviews'),
+        axios.get('/feedback/surveys'),
+        axios.get('/feedback/department'),
       ]);
+      const names = ['Otel İçi', 'Dış Platform', 'Anket', 'Departman'];
+      const failed = results.flatMap((result, index) => result.status === 'rejected' ? [names[index]] : []);
+      const [intRes, extRes, surveysRes, deptRes] = results.map(result => result.status === 'fulfilled' ? result.value : { data: null });
 
       setInternal(intRes.data?.reviews || []);
       setExternal(extRes.data?.reviews || []);
       setDepartment(deptRes.data?.feedback || []);
 
       const surveyList = surveysRes.data?.surveys || [];
-      const responseAggregates = await Promise.all(
-        surveyList.slice(0, 10).map(s =>
-          safe(axios.get(`/feedback/surveys/${s.id}/responses`)).then(r => ({
-            survey: s,
-            responses: r.data?.responses || [],
-          }))
-        )
-      );
+      const responseAggregates = [];
+      // Bound concurrency without silently dropping surveys after the first ten.
+      for (let start = 0; start < surveyList.length; start += 10) {
+        const batch = surveyList.slice(start, start + 10);
+        const responses = await Promise.allSettled(batch.map(s => axios.get(`/feedback/surveys/${s.id}/responses`)));
+        responses.forEach((result, index) => {
+          const survey = batch[index];
+          if (result.status === 'rejected') failed.push(`Anket: ${survey.survey_name || survey.id}`);
+          else responseAggregates.push({ survey, responses: result.value.data?.responses || [] });
+        });
+      }
       setSurveys(responseAggregates);
+      if (failed.length) setLoadWarning(`Yüklenemeyen kaynaklar: ${failed.join(', ')}. Sayılar yalnız yüklenen değerlendirmeleri kapsar.`);
     } catch {
+      setLoadWarning('Geri bildirimler yüklenemedi. Görünen sayılar güncel kabul edilmemeli.');
       toast.error('Geri bildirimler yüklenemedi');
     }
     setLoading(false);
@@ -109,7 +117,9 @@ const FeedbackSystem = () => {
         ? `/feedback/external-reviews/${respondDialog.id}/respond`
         : `/crm/reviews/${respondDialog.id}/respond`;
       await axios.post(url, { response: responseText });
-      toast.success('Yanıt gönderildi');
+      toast.success(respondDialog.source === 'external'
+        ? 'Yanıt panelde kaydedildi. Dış platformda otomatik yayımlanmadı.'
+        : 'Yanıt kaydedildi');
       setRespondDialog(null);
       setResponseText('');
       loadAll();
@@ -142,7 +152,7 @@ const FeedbackSystem = () => {
         guest_email: booking.guest_email,
       });
       if (res.data?.sent === false) {
-        toast.warning('E-posta sağlayıcısı yapılandırılmamış olabilir, davet kaydedildi (link: ' + (res.data?.link || '') + ')', { duration: 8000 });
+        toast.warning('Davet kaydedildi ancak e-posta teslimi doğrulanmadı. E-posta sağlayıcısını kontrol edin.', { duration: 8000 });
       } else {
         toast.success(`Davet gönderildi: ${booking.guest_name || booking.guest_email}`);
       }
@@ -256,6 +266,7 @@ const FeedbackSystem = () => {
         </div>
       </div>
 
+      {loadWarning && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{loadWarning}</div>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="bg-yellow-50 border-yellow-200">
           <CardContent className="p-5 text-center">
@@ -382,6 +393,7 @@ const FeedbackSystem = () => {
               maxLength={2000}
             />
             <p className="text-xs text-gray-500">{responseText.length} / 2000 karakter</p>
+            {respondDialog?.source === 'external' && <p className="text-sm text-amber-800">Yanıt bu panelde kaydedilir; dış platformda otomatik yayımlanmaz.</p>}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => { setRespondDialog(null); setResponseText(''); }}>{t('cm.components_FeedbackSystem.iptal')}</Button>
               <Button onClick={respondToReview} disabled={!responseText.trim() || sending}>
