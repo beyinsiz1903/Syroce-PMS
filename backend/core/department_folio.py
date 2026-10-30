@@ -33,7 +33,8 @@ def money(value):
 
 async def post_source_charge(db, tenant_id, source, actor_id, *, session):
     bid, kind, sid = source["booking_id"], source["kind"], source["id"]
-    source_field = {"concierge": "source_concierge_request_id", "mice": "source_mice_event_id", "transfer": "source_transport_booking_id", "parking": "source_transport_booking_id"}[kind]
+    source_field = {"concierge": "source_concierge_request_id", "mice": "source_mice_event_id", "transfer": "source_transport_booking_id", "parking": "source_transport_booking_id",
+        "upsell": "source_upsell_offer_id", "room_service": "source_qr_submission_line_id"}[kind]
     booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": bid}, session=session)
     if not booking:
         raise HTTPException(404, "Aynı tesiste bağlı rezervasyon bulunamadı")
@@ -56,6 +57,8 @@ async def post_source_charge(db, tenant_id, source, actor_id, *, session):
     fingerprint = hashlib.sha256(json.dumps({**source, "folio_id": folio["id"]}, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
     cid = str(uuid5(NAMESPACE_URL, f"syroce:department:{kind}:{tenant_id}:{sid}"))
     source_query = {"$or": [{source_field: sid}, {"mice_event_id": sid}]} if kind == "mice" else {source_field: sid}
+    if kind == "upsell":
+        source_query = {"$or": [{source_field: sid}, {"upsell_offer_id": sid}]}
     prior = await db.folio_charges.find_one({"tenant_id": tenant_id, **source_query}, session=session)
     if prior:
         if (prior.get("id"), prior.get("source_fingerprint"), prior.get("booking_id"), prior.get("folio_id"), prior.get("currency"), prior.get("total"), bool(prior.get("voided"))) != (
@@ -95,7 +98,7 @@ async def post_source_charge(db, tenant_id, source, actor_id, *, session):
         "folio_id": folio["id"],
         source_field: sid,
         "charge_type": kind,
-        "charge_category": kind,
+        "charge_category": source.get("category") or kind,
         "description": source["description"],
         "amount": float(gross - (tax or 0)),
         "subtotal": float(gross - (tax or 0)),
@@ -119,6 +122,10 @@ async def post_source_charge(db, tenant_id, source, actor_id, *, session):
         charge["line_no"] = 0
     if kind == "mice":
         charge.update(mice_event_id=sid, department="mice")
+    if kind == "upsell":
+        charge["upsell_offer_id"] = sid
+    if source.get("external_reference"):
+        charge["external_reference"] = source["external_reference"]
     await db.folio_charges.insert_one(dict(charge), session=session)
     if kind == "mice":
         legacy = await db.folio_postings.find_one({"tenant_id": tenant_id, "source": "mice_module", "reference": sid, "posting_type": "CHARGE"}, session=session)

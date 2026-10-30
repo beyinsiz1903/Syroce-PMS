@@ -73,7 +73,8 @@ const UpsellTab = ({
     t
   } = useTranslation();
   const currency = cachedTenantCurrency();
-  const money = value => formatCurrency(value, currency, { decimals: 0 });
+  const money = (value, code = currency) => code ? formatCurrency(value, code, { decimals: 2 }) : 'Para birimi doğrulanmamış';
+  const currencyTotals = values => Object.entries(values || {}).map(([code, value]) => money(value, code)).join(' · ') || 'Doğrulanmış tutar yok';
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [offers, setOffers] = useState([]);
@@ -259,6 +260,7 @@ const UpsellTab = ({
   const kpis = revenueInsights?.kpis;
   const upsellSummary = revenueInsights?.upsell_summary;
   return <div className="space-y-6">
+      {(kpis?.unknown_currency_count > 0 || kpis?.limit_reached || upsellSummary?.limit_reached) && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Analiz kapsamını kontrol edin: para birimi eksik rezervasyonlar tutarlara katılmaz; sorgu sınırına ulaşan sonuçlar tüm kayıtları kapsamaz.</p>}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Upsell & Gelir Optimizasyonu</h2>
         <div className="flex gap-2">
@@ -328,7 +330,7 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <DollarSign className="w-4 h-4" /> ADR
               </div>
-              <p className="text-2xl font-bold">{money(kpis.adr)}</p>
+              <p className="text-base font-semibold tabular-nums">{currencyTotals(kpis.adr_by_currency)}</p>
               <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.ortalama_gunluk_fiyat')}</p>
             </CardContent>
           </Card>
@@ -337,19 +339,20 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <BarChart3 className="w-4 h-4" /> RevPAR
               </div>
-              <p className="text-2xl font-bold">{money(kpis.revpar)}</p>
+              <p className="text-base font-semibold tabular-nums">{currencyTotals(kpis.revpar_by_currency)}</p>
               <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.oda_basina_gelir')}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-amber-500">
             <CardContent className="pt-4 pb-3">
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-                <TrendingUp className="w-4 h-4" /> Upsell Geliri
+                <TrendingUp className="w-4 h-4" /> Folyoya İşlenen Upsell
               </div>
-              <p className="text-2xl font-bold">{money(upsellSummary?.revenue)}</p>
+              <p className="text-base font-semibold tabular-nums">{currencyTotals(upsellSummary?.revenue_by_currency)}</p>
               <p className="text-xs text-gray-400">
                 {upsellSummary?.accepted || 0} kabul / {upsellSummary?.total || 0} toplam
               </p>
+              {upsellSummary?.unreconciled_accepted > 0 && <p className="text-xs text-amber-700">{upsellSummary.unreconciled_accepted} eski kabulün folyo kaynağı doğrulanmadı; tutara eklenmedi.</p>}
             </CardContent>
           </Card>
         </div>}
@@ -423,7 +426,7 @@ const UpsellTab = ({
                           <span className="font-medium text-sm">{typeInfo.label}</span>
                           <Badge className={`text-xs ${typeInfo.color}`}>{offer.type}</Badge>
                         </div>
-                        <span className="font-bold text-lg">{money(offer.price)}</span>
+                        <span className="font-bold text-lg">{money(offer.price, offer.currency || null)}</span>
                       </div>
                       <div className="text-sm text-gray-600 mb-2">
                         {offer.current_item && <span>{offer.current_item} → </span>}
@@ -490,7 +493,7 @@ const UpsellTab = ({
                         <span className="text-xs text-gray-500 truncate">{offer.guest_name || offer.room_number || 'Rezervasyon teklifi'}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium">{money(offer.price)}</span>
+                        <span className="text-sm font-medium">{money(offer.price, offer.currency || null)}</span>
                         <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'rejected' ? 'secondary' : 'outline'} className="text-xs">
                           {offer.status === 'accepted' ? 'Kabul' : offer.status === 'rejected' ? 'Red' : 'Bekliyor'}
                         </Badge>

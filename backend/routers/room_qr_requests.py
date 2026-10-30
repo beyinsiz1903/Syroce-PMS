@@ -150,6 +150,7 @@ class RoomServiceProductInput(BaseModel):
     labels: dict[str, str]
     description: dict[str, str] | None = None
     unit_price_minor: int = Field(..., ge=1, le=100_000_000)
+    tax_rate: float | None = Field(default=None, ge=0, le=1)
     currency: str = Field(..., min_length=3, max_length=3)
     estimated_minutes: int = Field(default=30, ge=0, le=1440)
     enabled: bool = True
@@ -1187,7 +1188,7 @@ async def replace_room_service_menu(payload: RoomServiceMenuInput, current_user=
             "labels": product.labels, "description": product.description, "icon": product.icon, "input_type": "quantity",
             "input_config": {"min": 1, "max": 20, "default": 1}, "estimated_minutes": product.estimated_minutes,
             "is_chargeable": True, "charge_warning": {"tr": "Tutar oda hesabınıza eklenecektir.", "en": "This amount will be posted to your room account."},
-            "unit_price_minor": product.unit_price_minor, "currency": product.currency, "room_charge_enabled": True,
+            "unit_price_minor": product.unit_price_minor, "currency": product.currency, "tax_rate": product.tax_rate, "room_charge_enabled": True,
             "folio_category": "room_service", "enabled": product.enabled, "display_order": index, "created_at": now, "updated_at": now,
         }).model_dump()
         await raw_db["guest_service_items"].insert_one(doc)

@@ -1,3 +1,42 @@
+CURRENT UPDATE — PR1461 DEPLOYED AND PENDING SOURCE HANDOFFS ACCEPTED
+30 October 2026; supersedes the PRE-DEPLOY checkpoint below.
+
+PR1461 final head c74d2dcf71627e9831cee2297d04e5df3bed3186 passed its checks.
+Merged release d0855750a94c924e61ff3113ccd0a1d3007f9b42 is healthy/live.
+Main backend CI41034655077 and frontend CI41034654978 succeeded on that SHA.
+Actual Deploy to Server job124000381374 in run41037060214 succeeded;
+run41035551260 had SKIPPED its server step and is not deployment evidence.
+https://github.com/beyinsiz1903/Syroce-PMS/pull/1461
+https://github.com/beyinsiz1903/Syroce-PMS/actions/runs/41037060214/job/124000381374
+
+Completed ONCE through normal authorized application APIs after fresh guards:
+- Existing concierge600 and MICE1368 reconciled to canonical source charges.
+- Transfer850 and parking150 sources created, slots retained, canonical charges
+  posted. All four source IDs, real folio IDs, currency, open business date,
+  service timestamps, source fingerprints and sealed actor/reason logs verified.
+- Cumulative new gross4508 TRY. Target ledger/receivable deltas990/1150/2368.
+  MICE canonical net1140 is not mistaken for gross1368.
+-22/22 comparison checks passed: original charges/payments/daily room rates,
+ 31physical rooms/QT2ED0, closed25Oct revenue/category/payments unchanged;
+ no new payments. Both stock products remain52 each, not reset to53.
+- Business day26Oct OPEN; Exely ARI/pull OFF; HotelRunner disconnected; V2 paused.
+- Audit verification:10573 chained records checked, no breaks/unverifiable,
+  no truncation;2882 pre-chain legacy rows explicitly skipped, not called sealed.
+
+Persistent restricted local evidence: department-live-20261030.1MXoPp/
+release1461-gate.json; release1461-health.json; postdeploy-acceptance.json;
+postdeploy-source-acceptance.json; postdeploy-chain.json;
+postdeploy-audit-logs.json; postdeploy-mice-actuals.json; postdeploy-stock.json;
+postdeploy-transport-bookings.json; all distinct durable request/result pairs.
+Driver release-gate/resume/postdeploy-verify/verify-sources have already RUN.
+DO NOT repeat them or the earlier creation/stock/seed phases. Preserve all data.
+
+The separate remaining guest-service posting work is NOT live acceptance:
+see guest-service-posting-acceptance-20261030.txt. No automatic merge/deploy.
+Activity/Function Space and legacy authenticated room-service order billing
+remain outside this accepted checkpoint; do not call every module complete.
+
+HISTORICAL PRE-DEPLOY CHECKPOINT (retained, not current state)
 DEMO HOTEL — DEPARTMENT / FOLIO ACCEPTANCE CHECKPOINT
 30 October 2026 • Not final acceptance of every front-office module
 

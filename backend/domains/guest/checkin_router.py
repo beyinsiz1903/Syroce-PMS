@@ -940,37 +940,25 @@ async def accept_upsell_offer(
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadi")
 
-    await db.upsell_offers.update_one(
-        {"id": offer_id},
-        {"$set": {"status": "accepted" if action == "accept" else "rejected", "responded_at": datetime.now(UTC).isoformat()}},
-    )
-
+    if action not in {"accept", "reject"}:
+        raise HTTPException(422, "Geçersiz teklif aksiyonu")
+    await _assert_booking_accessible(offer.get("booking_id"), current_user)
     if action == "accept":
-        booking_id = offer.get("booking_id")
-        charge = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "booking_id": booking_id,
-            "charge_category": "upsell",
-            "description": offer.get("title"),
-            "amount": offer.get("discounted_price") or offer.get("original_price"),
-            "posted_at": datetime.now(UTC).isoformat(),
-            "voided": False,
-        }
+        from core.guest_service_folio import accept_upsell
+        from core.spa_mice_authz import require_finance
 
-        folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest"}, {"_id": 0})
-        if folio:
-            charge["folio_id"] = folio["id"]
-            await db.folio_charges.insert_one(charge)
-
-        return {
-            "success": True,
-            "message": f"{offer.get('title')} basariyla eklendi!",
-            "charge_added": True,
-            "amount": charge["amount"],
-        }
-    else:
-        return {"success": True, "message": "Teklif reddedildi", "charge_added": False}
+        if getattr(current_user.role, "value", str(current_user.role)) != "guest_app":
+            require_finance(current_user)
+        posted = await accept_upsell(db, current_user.tenant_id, offer_id, current_user.id)
+        return {"success": True, "message": posted["message"], "charge_added": True,
+                "amount": posted["total"], **posted}
+    changed = await db.upsell_offers.update_one(
+        {"id": offer_id, "tenant_id": current_user.tenant_id, "status": "pending"},
+        {"$set": {"status": "rejected", "responded_at": datetime.now(UTC).isoformat(), "updated_by": current_user.id}},
+    )
+    if changed.matched_count != 1:
+        raise HTTPException(409, "Bu teklif zaten işlem görmüş")
+    return {"success": True, "message": "Teklif reddedildi", "charge_added": False}
 
 
 @router.get("/pre-arrival/communications/{booking_id}")
