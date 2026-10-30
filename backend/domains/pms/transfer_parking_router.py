@@ -20,6 +20,8 @@ Tasarım:
 Tüm uçlar tenant-scoped; mutasyonlar RBAC ile sınırlı. PII/secret loglanmaz.
 """
 
+import hashlib
+import json
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -180,26 +182,46 @@ async def create_resource(
         raise HTTPException(status_code=422, detail="Geçersiz kaynak tipi")
 
     idem_key = get_idempotency_key(request)
+    lock_id = None
+    intent_hash = hashlib.sha256(json.dumps(payload.model_dump(), sort_keys=True).encode()).hexdigest()
+    doc_id = str(uuid.uuid5(_TRANSPORT_NS, f"resource:{tenant_id}:{idem_key}")) if idem_key else str(uuid.uuid4())
     if idem_key:
-        lock_doc = await claim_idempotency(db, tenant_id=tenant_id, lock_id=idem_key, context="transfer_parking_create_resource")
-        if lock_doc:
-            return lock_doc["response"]
+        claim = await claim_idempotency(db, tenant_id=tenant_id, scope="transfer_parking_create_resource",
+            idempotency_key=idem_key, request_hash=intent_hash)
+        if claim["status"] in {"in_flight", "mismatch"}:
+            raise HTTPException(409, "İstek işleniyor veya aynı anahtar farklı bir kaynak için kullanılmış")
+        if claim["status"] == "replay" and claim.get("response"):
+            return claim["response"]
+        lock_id = claim.get("lock_id")
+        # Durable source identity also protects a retry after cache expiry or
+        # a response-cache failure. Never create another vehicle in that gap.
+        prior = await db.transport_resources.find_one({"tenant_id": tenant_id, "id": doc_id})
+        if prior:
+            if prior.get("request_fingerprint") != intent_hash:
+                raise HTTPException(409, "Önceki kaynak bu istekle uyuşmuyor")
+            response = {"resource": _serialize(prior)}
+            if lock_id:
+                await complete_idempotency(db, lock_id=lock_id, response_body=response)
+            return response
+        if claim["status"] == "replay":
+            raise HTTPException(409, "Tamamlanmış isteğin kaynak kaydı doğrulanamadı")
 
     limit_key = "transfer_vehicles" if payload.kind == _KIND_TRANSFER else "parking_spots"
     limit_val = await get_tenant_limit(tenant_id, "parking", limit_key)
 
     now = _now_iso()
-    doc_id = str(uuid.uuid4())
 
     # Quota reserve
     try:
-        await reserve_quota(tenant_id, "parking", limit_key, doc_id, limit_val)
+        if payload.active and limit_val is not None:
+            await reserve_quota(tenant_id, "parking", limit_key, doc_id, limit_val)
     except QuotaExceededException as exc:
-        if idem_key:
-            await release_idempotency(db, lock_id=idem_key)
+        if lock_id:
+            await release_idempotency(db, lock_id=lock_id)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     doc = {
+        "_id": f"transport-resource:{tenant_id}:{doc_id}",
         "id": doc_id,
         "tenant_id": tenant_id,
         "name": payload.name.strip(),
@@ -211,19 +233,21 @@ async def create_resource(
         "created_at": now,
         "updated_at": now,
         "created_by": _actor_id(current_user),
+        "request_fingerprint": intent_hash,
     }
 
     try:
         await db.transport_resources.insert_one(dict(doc))
     except Exception as exc:
-        await release_quota(tenant_id, "parking", limit_key, doc_id)
-        if idem_key:
-            await release_idempotency(db, lock_id=idem_key)
+        if payload.active and limit_val is not None:
+            await release_quota(tenant_id, "parking", limit_key, doc_id)
+        if lock_id:
+            await release_idempotency(db, lock_id=lock_id)
         raise HTTPException(status_code=500, detail="Kaynak oluşturulamadı") from exc
 
     res_data = {"resource": _serialize(doc)}
-    if idem_key:
-        await complete_idempotency(db, lock_id=idem_key, response_data=res_data)
+    if lock_id:
+        await complete_idempotency(db, lock_id=lock_id, response_body=res_data)
 
     return res_data
 
@@ -251,7 +275,8 @@ async def update_resource(
     if is_activating:
         limit_val = await get_tenant_limit(tenant_id, "parking", limit_key)
         try:
-            await reserve_quota(tenant_id, "parking", limit_key, resource_id, limit_val)
+            if limit_val is not None:
+                await reserve_quota(tenant_id, "parking", limit_key, resource_id, limit_val)
         except QuotaExceededException as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -314,6 +339,7 @@ class BookingIn(BaseModel):
     guest_name: str | None = Field(None, max_length=200)
     room_number: str | None = Field(None, max_length=40)
     booking_id: str | None = Field(None, max_length=64)
+    folio_id: str | None = Field(None, max_length=64)
     # Otopark: başlangıç günü + gün sayısı.
     start_date: str | None = Field(None, max_length=10)  # YYYY-MM-DD
     num_days: int | None = Field(None, ge=1, le=365)
@@ -406,14 +432,8 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
 
     open_folio = None
     if booking_id:
-        open_folio = await db.folios.find_one(
-            {
-                "booking_id": booking_id,
-                "folio_type": "guest",
-                "status": "open",
-                "tenant_id": tenant_id,
-            }
-        )
+        from modules.pms_core.folio_selection import select_booking_folio
+        open_folio = await select_booking_folio(db, tenant_id, booking_id, booking_doc.get("folio_id"))
 
     # Sessiz degrade YOK: index kurulamazsa yükselt (çağıran rezervasyonu hiç
     # başlatmamış olur — pre-claim gate ile fail-closed).
@@ -429,40 +449,15 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
     src_id = booking_doc["id"]
     total = round(float(booking_doc.get("total", 0)), 2)
     currency = str(booking_doc.get("currency") or tenant_currency).upper()
-    label = "Transfer" if booking_doc.get("kind") == _KIND_TRANSFER else "Otopark"
     now = _now_iso()
 
     if open_folio:
-        folio_id = open_folio["id"]
-        guest_id = open_folio.get("guest_id") or (pms_booking.get("guest_id") if pms_booking else None)
-        charge_doc = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "booking_id": booking_id,
-            "folio_id": folio_id,
-            "guest_id": guest_id,
-            "charge_type": booking_doc.get("kind"),
-            "charge_category": "transfer" if booking_doc.get("kind") == _KIND_TRANSFER else "parking",
-            "description": f"{label} - {booking_doc.get('resource_name')}",
-            "amount": total,
-            "tax_amount": 0,
-            "total": total,
-            "currency": currency,
-            "voided": False,
-            "date": now,
-            "posted_by": actor,
-            "created_at": now,
-            "source_transport_booking_id": src_id,
-            "line_no": 0,
-        }
-        charged = True
-        try:
-            await db.folio_charges.insert_one(dict(charge_doc))
-        except DuplicateKeyError:
-            # Zaten yazılmış — idempotent.
-            charged = True
-        balance = await _recalc_folio_balance(db, tenant_id, folio_id)
-        return {"charged": charged, "amount": total, "currency": currency, "folio_id": folio_id, "balance": balance}
+        from core.department_folio import post_transport_charge
+        result = await post_transport_charge(db, tenant_id,
+            {**booking_doc, "booking_id": booking_id, "folio_id": open_folio["id"], "currency": currency}, actor)
+        charge = result["charge"]
+        return {"charged": True, "amount": charge["total"], "currency": currency,
+                "folio_id": open_folio["id"], "charge_id": charge["id"], "replayed": result["replayed"]}
 
     # Açık folio yok → late-charge.
     any_folio = None
@@ -569,6 +564,7 @@ async def create_booking(
         "guest_name": (payload.guest_name or "").strip() or None,
         "room_number": (payload.room_number or "").strip() or None,
         "booking_id": payload.booking_id or None,
+        "folio_id": payload.folio_id or None,
         "slots": slots,
         "schedule": sched,
         "total": total,

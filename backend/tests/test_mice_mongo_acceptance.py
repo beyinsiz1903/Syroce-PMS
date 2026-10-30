@@ -131,9 +131,22 @@ async def test_completion_handoff_failure_restores_operational_status(wired, mon
 async def test_parallel_folio_handoffs_create_one_charge(wired, monkeypatch):
     import integrations.xchange.bus as exchange_bus
     monkeypatch.setattr(exchange_bus, "bus", SimpleNamespace(publish=AsyncMock()))
-    event = {"id": "event", "currency": "EUR", "reservation_id": "synthetic-booking", "totals": {"grand_total": 100}}
+    from core import audit_chain
+    monkeypatch.setattr(audit_chain, "_system_db", lambda: wired)
+    # A real persisted source and open folio are required, not an arbitrary
+    # bus payload. Verify the canonical receivable as well as the integration row.
+    for collection in ("mice_events", "folio_locks", "folios", "bookings", "folio_charges", "folio_postings", "audit_logs", "audit_chain_state"):
+        if collection not in await wired.list_collection_names():
+            await wired.create_collection(collection)
+    await wired.tenant_settings.insert_one({"tenant_id": "A", "business_date": "2026-10-26"})
+    await wired.bookings.insert_one({"tenant_id": "A", "id": "synthetic-booking", "currency": "EUR", "status": "checked_in"})
+    await wired.folios.insert_one({"tenant_id": "A", "id": "folio", "booking_id": "synthetic-booking", "currency": "EUR", "status": "open"})
+    event = {"tenant_id": "A", "id": "event", "status": "completed", "currency": "EUR", "reservation_id": "synthetic-booking", "totals": {"grand_total": 100}}
+    await wired.mice_events.insert_one(dict(event))
     await asyncio.gather(mice._post_event_to_folio("A", event), mice._post_event_to_folio("A", event))
     assert await wired.folio_postings.count_documents({"tenant_id": "A", "reference": "event"}) == 1
+    assert await wired.folio_charges.count_documents({"tenant_id": "A", "source_mice_event_id": "event"}) == 1
+    assert (await wired.folios.find_one({"tenant_id": "A", "id": "folio"}))["balance"] == 100
 
 
 @pytest.mark.asyncio

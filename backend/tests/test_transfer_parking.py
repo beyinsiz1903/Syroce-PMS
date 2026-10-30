@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -58,17 +59,17 @@ class _Coll:
         self.insert_calls = 0
         self.unique_keys = unique_keys
 
-    def find(self, flt=None, proj=None):
+    def find(self, flt=None, proj=None, **kwargs):
         flt = flt or {}
         return _Cursor([d for d in self.docs if _match(d, flt)])
 
-    async def find_one(self, flt, proj=None, sort=None):
+    async def find_one(self, flt, proj=None, sort=None, **kwargs):
         matches = [d for d in self.docs if _match(d, flt)]
         if not matches:
             return None
         return {kk: vv for kk, vv in matches[0].items() if kk != "_id"}
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, **kwargs):
         if self.unique_keys:
             for d in self.docs:
                 if all(d.get(k) == doc.get(k) for k in self.unique_keys):
@@ -77,7 +78,7 @@ class _Coll:
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id=doc.get("id", "x"))
 
-    async def update_one(self, flt, update, upsert=False):
+    async def update_one(self, flt, update, upsert=False, **kwargs):
         for d in self.docs:
             if _match(d, flt):
                 if "$set" in update:
@@ -101,6 +102,10 @@ class _Coll:
 
 class _FakeDB:
     def __init__(self):
+        self.client = object()
+        self.tenant_settings = _Coll()
+        self.night_audit_runs = _Coll()
+        self.tenant_settings.docs.append({"tenant_id": TENANT, "business_date": "2026-07-01"})
         self.transport_resources = _Coll()
         self.transport_bookings = _Coll()
         self.transport_slot_locks = _Coll(
@@ -155,6 +160,21 @@ def _patch(monkeypatch):
     monkeypatch.setattr(tr, "reserve_quota", _mock_reserve_quota)
     monkeypatch.setattr(tr, "release_quota", _mock_reserve_quota)
 
+    # These are orchestration unit tests. The actual transaction rollback,
+    # source deduplication and sealed audit are exercised without doubles in
+    # test_department_live_folio_acceptance.py's explicit LOCAL replica set.
+    from core import department_folio
+    async def no_transaction(*, callback, **kwargs):
+        return await callback(None)
+    async def snapshots(db, tenant_id, folios, **kwargs):
+        return {f["id"]: {"balance_by_currency": {"TRY": sum(
+            c["total"] for c in fake.folio_charges.docs if c["folio_id"] == f["id"] and not c.get("voided"))}}
+            for f in folios}
+    monkeypatch.setattr(department_folio, "with_resource_locks", no_transaction)
+    monkeypatch.setattr(department_folio, "folio_snapshots", snapshots)
+    monkeypatch.setattr(department_folio, "refresh_booking_payment_state", AsyncMock())
+    monkeypatch.setattr(department_folio, "append_audit_log", AsyncMock())
+
     return fake
 
 
@@ -166,6 +186,7 @@ def _seed_booking(fake, room_id="R1", booking_id="B1", status="checked_in"):
     fake.bookings.docs.append({
         "id": booking_id, "tenant_id": TENANT, "room_id": room_id,
         "status": status, "guest_id": "G1",
+        "currency": "TRY",
     })
 
 
@@ -173,6 +194,7 @@ def _seed_open_folio(fake, booking_id="B1", folio_id="F1"):
     fake.folios.docs.append({
         "id": folio_id, "tenant_id": TENANT, "booking_id": booking_id,
         "folio_type": "guest", "status": "open", "guest_id": "G1",
+        "currency": "TRY",
     })
 
 

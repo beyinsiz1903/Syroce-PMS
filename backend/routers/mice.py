@@ -1011,6 +1011,7 @@ class EventIn(MiceInput):
     payment_schedule: list[PaymentScheduleItemIn] = Field(default_factory=list)
     notes: str | None = None
     reservation_id: str | None = None  # link to room block / master folio
+    folio_id: str | None = None  # explicit target when the stay has multiple windows
     group_block_id: str | None = None
     sales_opportunity_id: str | None = None
     timezone: str | None = None  # server resolves from the property, not the browser
@@ -1022,7 +1023,7 @@ class EventIn(MiceInput):
 
     @model_validator(mode="after")
     def valid_event(self):
-        for key in ("client_account_id", "client_contact_id", "reservation_id", "group_block_id", "sales_opportunity_id"):
+        for key in ("client_account_id", "client_contact_id", "reservation_id", "folio_id", "group_block_id", "sales_opportunity_id"):
             setattr(self, key, getattr(self, key) or None)
         if self.end_date < self.start_date:
             raise ValueError("Etkinlik bitiş tarihi başlangıçtan önce olamaz")
@@ -1441,6 +1442,13 @@ async def _validate_event_links(body: EventIn, tenant_id: str) -> None:
             raise HTTPException(422, "İlgili kişi seçilen müşteri hesabında bulunamadı")
     if body.reservation_id and not await db.bookings.find_one({"tenant_id": tenant_id, "id": body.reservation_id}):
         raise HTTPException(422, "Bağlı PMS rezervasyonu bu tesiste bulunamadı")
+    if body.folio_id:
+        if not body.reservation_id or body.group_block_id:
+            raise HTTPException(422, "Folyo hedefi için tek bir bağlı rezervasyon gereklidir")
+        from modules.pms_core.folio_selection import select_booking_folio
+        folio = await select_booking_folio(db, tenant_id, body.reservation_id, body.folio_id)
+        if str(folio.get("currency") or "").upper() != link_currency:
+            raise HTTPException(409, "Etkinlik ve seçilen folyonun para birimleri farklı")
     if body.group_block_id:
         if body.reservation_id:
             raise HTTPException(422, "Etkinlik yalnız bir finansal ana hesaba bağlanabilir")
@@ -1882,6 +1890,12 @@ async def change_status(
     cur_status = event.get("status", "lead")
     if event.get("finance_pending") or event.get("gl_posting_state") == "pending" or (body.status == "cancelled" and event.get("gl_journal_entry_id")):
         raise HTTPException(409, "Muhasebe aktarımı sürüyor veya ters muhasebe kaydı gerekiyor; etkinlik durumu değiştirilemez")
+    if cur_status == body.status == "completed" and event.get("reservation_id") and not event.get("group_block_id"):
+        # Explicit normal-API replay reconciles a legacy integration-only
+        # handoff. The immutable source fingerprint prevents a second charge.
+        await _post_event_to_folio(tenant_id, event, actor_id=current_user.id)
+        _invalidate_mice_events_cache(tenant_id)
+        return {"ok": True, "status": "completed", "reconciled": True}
     if cur_status == "cancelled" and body.status == "lead" and (event.get("signature") or event.get("gl_journal_entry_id")):
         raise HTTPException(409, "İmzalı veya muhasebeleşmiş sürüm yeniden açılamaz; yeni etkinlik/sözleşme gerekir")
     if body.status == "cancelled" and event.get("gl_journal_entry_id"):
@@ -1951,6 +1965,8 @@ async def change_status(
             raise HTTPException(409, "Etkinlik durumu değişti; sayfayı yenileyin")
 
     group_completion = body.status == "completed" and bool(event.get("group_block_id"))
+    reservation_completion = (body.status == "completed" and not group_completion and
+        bool(event.get("reservation_id")) and (event.get("totals") or {}).get("grand_total", 0) > 0)
     if group_completion:
         from routers.mice_group_bridge import post_group_event
 
@@ -1961,6 +1977,8 @@ async def change_status(
             await post_group_event(db, tenant_id, {**event, **update}, session=session)
             return {"ok": True}
         await with_resource_locks(client=db.client, db=db, tenant_id=tenant_id, locks_collection="mice_locks", resources=[("event", event_id), ("group_folio", event["group_block_id"])], callback=complete_group)
+    elif reservation_completion:
+        await _post_event_to_folio(tenant_id, {**event, **update}, actor_id=current_user.id, completion=(event, update))
     elif needs_lock:
         try:
             await with_resource_locks(
@@ -2016,9 +2034,9 @@ async def change_status(
             raise se
 
     after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
-    if body.status == "completed" and not group_completion:
+    if body.status == "completed" and not group_completion and not reservation_completion:
         try:
-            await _post_event_to_folio(tenant_id, after)
+            await _post_event_to_folio(tenant_id, after, actor_id=current_user.id)
         except Exception:
             # A terminal event must not hide a failed financial handoff. The
             # deterministic folio posting id also makes an uncertain retry safe.
@@ -2056,7 +2074,7 @@ _MICE_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
+async def _post_event_to_folio(tenant_id: str, event: dict, actor_id: str | None = None, *, completion=None) -> None:
     if event.get("group_block_id"):
         from routers.mice_group_bridge import post_group_event
         await post_group_event(get_system_db(), tenant_id, event)
@@ -2066,28 +2084,12 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
     total = float((event.get("totals") or {}).get("grand_total", 0))
     if total <= 0 or not event.get("reservation_id"):
         return
-    existing = await db.folio_postings.find_one({"tenant_id": tenant_id, "reference": event["id"], "source": "mice_module", "posting_type": "CHARGE"})
-    if existing:
+    from core.department_folio import post_mice_event
+
+    result = await post_mice_event(db, tenant_id, event["id"], actor_id or event.get("created_by") or "system", completion=completion)
+    if result["replayed"]:
         return
-    posting = {
-        "_id": f"mice-charge:{tenant_id}:{event['id']}",
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "reservation_id": event["reservation_id"],
-        "folio_id": event["reservation_id"],
-        "transaction_code": "MICE",
-        "description": f"Etkinlik: {event.get('name')}",
-        "amount": total,
-        "currency": event_currency,
-        "posting_type": "CHARGE",
-        "posted_at": datetime.now(UTC).isoformat(),
-        "source": "mice_module",
-        "reference": event["id"],
-    }
-    try:
-        await db.folio_postings.insert_one(posting)
-    except DuplicateKeyError:
-        return  # Mongo _id is the cross-worker idempotency backstop.
+    charge = result["charge"]
     try:
         from integrations.xchange.bus import bus
         from integrations.xchange.schemas import MessageType
@@ -2096,15 +2098,16 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
             tenant_id=tenant_id,
             message_type=MessageType.POSTING_CHARGE,
             payload={
-                "posting_id": posting["id"],
-                "reservation_id": posting["reservation_id"],
-                "folio_id": posting["folio_id"],
+                "posting_id": charge["id"],
+                "reservation_id": charge["booking_id"],
+                "folio_id": charge["folio_id"],
+                "folio_charge_id": charge["id"],
                 "posting_type": "CHARGE",
                 "transaction_code": "MICE",
-                "description": posting["description"],
-                "amount": total,
+                "description": charge["description"],
+                "amount": charge["total"],
                 "currency": event_currency,
-                "posted_at": posting["posted_at"],
+                "posted_at": charge["posted_at"],
             },
             message_id=f"mice-{event['id']}",
         )
@@ -2434,8 +2437,13 @@ async def get_event_actuals(event_id: str, current_user: User = Depends(get_curr
     revenue_source = None
     charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "mice_event_id": event_id, "voided": {"$ne": True}}, {"_id": 0}).to_list(None)
     if charges and all(row.get("currency") == event.get("currency") for row in charges):
-        posted_net = rounded(sum((money(row["total"]) - money(row.get("tax_amount")) for row in charges), Decimal(0)))
-        revenue_source = "folio_charges"
+        from modules.pms_core.revenue_report import charge_breakdown
+        components = [charge_breakdown({**row, "report_source": "folio"}) for row in charges]
+        if all(row["net"] is not None and not row["issues"] for row in components):
+            posted_net = rounded(sum((row["net"] for row in components), Decimal(0)))
+            revenue_source = "folio_charges"
+        else:
+            revenue_source = "folio_charges_missing_or_conflicting_tax_evidence"
     if event.get("gl_journal_entry_id"):
         if charges:
             posted_net, revenue_source = None, "duplicate_source_conflict"

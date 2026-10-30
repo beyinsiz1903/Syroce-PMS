@@ -280,7 +280,7 @@ async def test_idempotency_replay_no_reserve(fake_user):
          patch("domains.pms.transfer_parking_router.claim_idempotency", new_callable=AsyncMock) as m_claim, \
          patch("domains.pms.transfer_parking_router.reserve_quota", new_callable=AsyncMock) as m_res:
 
-         m_claim.return_value = {"response": {"resource": {"id": "replayed"}}}
+         m_claim.return_value = {"status": "replay", "response": {"resource": {"id": "replayed"}}}
          res = await create_resource(request=req, payload=body, current_user=fake_user)
 
          assert res["resource"]["id"] == "replayed"
