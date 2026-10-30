@@ -72,6 +72,21 @@ async def test_upsell_preserves_currency_declared_gross_tax_and_source_day(guest
     assert (await guest_services.bookings.find_one({"id": "b"}))["balance"] == 240
 
 
+async def test_upsell_occupancy_excludes_virtual_inactive_foreign_and_duplicate_stays(guest_services):
+    await guest_services.rooms.insert_many([
+        {"id": "physical", "tenant_id": "t"},
+        {"id": "virtual", "tenant_id": "t", "is_virtual": True},
+        {"id": "inactive", "tenant_id": "t", "is_active": False},
+        {"id": "foreign", "tenant_id": "other"},
+    ])
+    for index, room_id in enumerate(("physical", "physical", "virtual", "inactive", "foreign")):
+        await guest_services.bookings.insert_one({"id": f"stay{index}", "tenant_id": "t", "room_id": room_id, "status": "checked_in", "check_in": "2020-01-01", "check_out": "2099-01-01"})
+    result = await upsell.get_revenue_insights(actor())
+    assert result["kpis"]["total_rooms"] == 1
+    assert result["kpis"]["occupied_rooms"] == 1
+    assert result["kpis"]["occupancy_rate"] == 100
+
+
 async def test_upsell_concurrent_retry_is_one_canonical_charge(guest_services):
     await asyncio.gather(accept(), accept())
     original = await guest_services.upsell_offers.find_one({"id": "offer"})

@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from core.guest_property import guest_property_context
 from core.tenant_db import get_db_for_tenant
 from domains.guest.qr_catalogue_service import _utc_now, fetch_catalogue_data, is_service_available, resolve_catalogue_mode, validate_input_value
 from domains.guest.qr_constants import map_legacy_routing
@@ -109,7 +110,7 @@ async def handle_structured_submission(
         depts_data, services_data = await fetch_catalogue_data(tenant_id, property_id, mode)
         services_map = {s["service_code"]: s for s in services_data}
 
-        prop = await tenant_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+        prop = await guest_property_context(tenant_db, tenant_id, property_id) or {}
         prop_tz = prop.get("timezone", "UTC")
         prop_lang = prop.get("default_language", "en")
 

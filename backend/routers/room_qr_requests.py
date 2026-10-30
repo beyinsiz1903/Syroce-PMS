@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from cache_manager import cache as _cache
 from core.database import _raw_db as raw_db
+from core.guest_property import guest_property_context, room_property_id
 from core.security import JWT_SECRET, generate_qr_code, get_current_user
 
 logger = logging.getLogger("room_qr_requests")
@@ -382,13 +383,7 @@ def _resolve_property_id(tenant_id: str, room: dict, booking: dict) -> str | Non
     closed. The caller has already matched both records by tenant + room id,
     so accepting one populated side does not widen the room boundary.
     """
-    room_property_id = room.get("property_id")
-    booking_property_id = booking.get("property_id")
-
-    if room_property_id and booking_property_id and room_property_id != booking_property_id:
-        return None
-
-    return room_property_id or booking_property_id or tenant_id
+    return room_property_id(tenant_id, room, booking)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -495,7 +490,7 @@ async def public_create_guest_session(tenant_id: str, room_id: str, request: Req
                     y, m, d = map(int, departure_date_str.split("-"))
                     dep_date = date(y, m, d)
 
-                    prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+                    prop = await guest_property_context(raw_db, tenant_id, property_id) or {}
                     checkout_time_str = prop.get("checkout_time", "12:00")
                     prop_tz_str = prop.get("timezone", "UTC")
                     try:
@@ -562,7 +557,7 @@ async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
     property_id = room.get("property_id") or tenant.get("property_id")
     prop = {}
     if property_id:
-        prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+        prop = await guest_property_context(raw_db, tenant_id, property_id) or {}
 
     hotel_name = (
         prop.get("property_name")
@@ -926,7 +921,7 @@ async def public_get_catalogue(tenant_id: str, room_id: str, lang: str = Query("
     if mode == "disabled":
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+    prop = await guest_property_context(raw_db, tenant_id, property_id) or {}
     prop_tz = prop.get("timezone", "UTC")
     prop_lang = prop.get("default_language", "en")
 
@@ -1130,7 +1125,7 @@ async def get_room_service_menu(property_id: str, current_user=Depends(get_curre
     """Return the manager-editable F&B catalogue for one property."""
     _require_qr_catalogue_manager(current_user)
     tenant_id = _tenant_of(current_user)
-    if not await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}):
+    if not await guest_property_context(raw_db, tenant_id, property_id):
         raise HTTPException(status_code=404, detail="Tesis bulunamadı")
     items = await raw_db["guest_service_items"].find(
         {"tenant_id": tenant_id, "property_id": property_id, "department_code": "fnb", "room_charge_enabled": True},
@@ -1145,7 +1140,7 @@ async def replace_room_service_menu(payload: RoomServiceMenuInput, current_user=
     _require_qr_catalogue_manager(current_user)
     tenant_id = _tenant_of(current_user)
     property_id = payload.property_id
-    if not await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}):
+    if not await guest_property_context(raw_db, tenant_id, property_id):
         raise HTTPException(status_code=404, detail="Tesis bulunamadı")
     if len({item.service_code for item in payload.items}) != len(payload.items):
         raise HTTPException(status_code=422, detail="Ürün kodları benzersiz olmalı")
@@ -1450,7 +1445,7 @@ async def all_room_qr_codes(
         await raw_db["rooms"]
         .find(
             {"tenant_id": tenant_id, "is_active": {"$ne": False}},
-            {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1},
+            {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "property_id": 1},
         )
         .sort("room_number", 1)
         .to_list(2000)
@@ -1463,11 +1458,13 @@ async def all_room_qr_codes(
             "room_number": room.get("room_number"),
             "room_type": room.get("room_type"),
             "floor": room.get("floor"),
+            "property_id": room_property_id(tenant_id, room),
             "url": _guest_url_with_salt(request, tenant_id, room.get("id"), salt, slug),
         }
         for room in rooms
     ]
-    return {"items": items, "count": len(items)}
+    scopes = {item["property_id"] for item in items}
+    return {"items": items, "count": len(items), "property_id": next(iter(scopes)) if len(scopes) == 1 else None}
 
 
 @router.post("/api/rooms/qr/rotate-secret")

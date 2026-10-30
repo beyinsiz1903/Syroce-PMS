@@ -8,16 +8,17 @@ from fastapi import HTTPException
 
 from core.booking_atomicity import with_resource_locks
 from core.department_folio import money, post_source_charge
+from core.guest_property import room_property_id
 from core.guest_service_folio import _fingerprint, inclusive_tax
 from core.report_cache import invalidate_financial_report_caches
 from core.scheduled_guest_services import timezone_for
 
 
 async def property_for_booking(db, tenant_id, booking, session=None):
-    if booking.get("property_id"):
-        return booking["property_id"]
     room = await db.rooms.find_one({"tenant_id": tenant_id, "id": booking.get("room_id")}, session=session) or {}
-    return room.get("property_id")
+    if not room or room.get("is_active") is False:
+        return None
+    return room_property_id(tenant_id, room, booking)
 
 
 def qr_menu_item(row):
