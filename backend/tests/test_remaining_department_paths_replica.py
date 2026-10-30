@@ -24,6 +24,7 @@ async def services(wired, monkeypatch):  # noqa: F811
     monkeypatch.setattr("core.utils.db", wired)
     await wired.hotel_settings.update_one({"tenant_id": "t"}, {"$set": {"timezone": "Europe/Istanbul", "currency": "TRY"}})
     await wired.bookings.update_one({"id": "b"}, {"$set": {"guest_id": "g", "room_id": "r"}})
+    await wired.rooms.insert_one({"id": "r", "tenant_id": "t", "room_number": "101", "is_active": True})
     await wired.guests.insert_one({"id": "g", "tenant_id": "t", "name": "QA Synthetic"})
     await wired.room_service_menu.insert_one({"id": "food", "tenant_id": "t", "name": "QA soup", "available": True, "price": 120, "currency": "TRY", "tax_rate": 0.2})
     await wired.activities.insert_one({"id": "a", "tenant_id": "t", "name": "QA Yoga", "type": "yoga", "active": True, "price": 150, "currency": "TRY", "duration_min": 60, "capacity": 1})
@@ -255,6 +256,57 @@ async def test_order_qr_menu_is_shared_but_property_and_guest_ownership_remain_e
             await guest_app.create_room_service_order(body, user)
 
 
+async def test_legacy_tenant_menu_editor_and_authenticated_order_share_scope(services, monkeypatch):
+    from routers import room_qr_requests as qr
+
+    monkeypatch.setattr(qr, "raw_db", services)
+    await services.tenants.insert_one({"id": "t", "property_name": "QA legacy hotel"})
+    # Like Demo Hotel: room and stay have no property_id, no properties row.
+    menu = await qr.get_room_service_menu("t", actor())
+    assert menu == {"property_id": "t", "items": []}
+    product = {"service_code": "fnb.legacy_qa", "labels": {"tr": "QA çorba"}, "unit_price_minor": 12000, "currency": "TRY", "tax_rate": 0.2}
+    await qr.replace_room_service_menu(qr.RoomServiceMenuInput(property_id="t", items=[product]), actor())
+    assert await services.properties.count_documents({}) == 0
+    shared = await guest_app.get_room_service_menu(actor(), "b")
+    assert any(row["id"] == "qr:t:fnb.legacy_qa" for group in shared["categories"] for row in group["items"])
+    body = order_body(items=[{"id": "qr:t:fnb.legacy_qa", "price": 120, "currency": "TRY", "quantity": 1}])
+    first = await guest_app.create_room_service_order(body, actor())
+    again = await guest_app.create_room_service_order(body, actor())
+    assert first["order_id"] == again["order_id"] and again["replayed"]
+    charge = await services.folio_charges.find_one({})
+    assert charge["total"] == 120 and charge["vat_amount"] == 20 and charge["business_date"] == "2026-10-26"
+    assert await services.folio_charges.count_documents({}) == 1
+
+
+@pytest.mark.parametrize("room_change,booking_change", [({"property_id": "other"}, {"property_id": "p"}), ({"tenant_id": "foreign"}, {"property_id": "p"}), ({"is_active": False}, {"property_id": "p"})])
+async def test_shared_menu_does_not_escape_room_boundary(services, room_change, booking_change):
+    await services.rooms.update_one({"id": "r"}, {"$set": room_change})
+    await services.bookings.update_one({"id": "b"}, {"$set": booking_change})
+    await services.guest_service_items.insert_one({"tenant_id": "t", "property_id": "p", "service_code": "fnb.qa", "department_code": "fnb", "labels": {"tr": "QA"}, "unit_price_minor": 12000, "currency": "TRY", "enabled": True, "room_charge_enabled": True})
+    body = order_body(items=[{"id": "qr:p:fnb.qa", "price": 120, "currency": "TRY", "quantity": 1}])
+    with pytest.raises(HTTPException):
+        await guest_app.create_room_service_order(body, actor())
+    assert not await services.folio_charges.count_documents({})
+    assert not await services.room_service_orders.count_documents({})
+
+
+async def test_menu_editor_rejects_missing_foreign_or_configured_other_property(services, monkeypatch):
+    from routers import room_qr_requests as qr
+
+    monkeypatch.setattr(qr, "raw_db", services)
+    for property_id in ("t", "missing", "foreign"):
+        with pytest.raises(HTTPException) as error:
+            await qr.get_room_service_menu(property_id, actor())
+        assert error.value.status_code == 404
+    await services.tenants.insert_one({"id": "t", "property_id": "configured"})
+    with pytest.raises(HTTPException):
+        await qr.replace_room_service_menu(qr.RoomServiceMenuInput(property_id="t", items=[]), actor())
+    await services.properties.insert_one({"id": "foreign", "tenant_id": "other"})
+    with pytest.raises(HTTPException):
+        await qr.replace_room_service_menu(qr.RoomServiceMenuInput(property_id="foreign", items=[]), actor())
+    assert not await services.guest_service_items.count_documents({})
+
+
 async def test_order_unknown_vat_and_same_key_changed_payload_not_reposted(services):
     await services.room_service_menu.update_one({"id": "food"}, {"$unset": {"tax_rate": ""}})
     await guest_app.create_room_service_order(order_body(), actor())
@@ -332,7 +384,6 @@ async def test_active_room_lookup_joins_room_id_and_does_not_guess_folio_or_stay
     from domains.pms import cashier_router
 
     monkeypatch.setattr(cashier_router, "db", services)
-    await services.rooms.insert_one({"tenant_id": "t", "id": "r", "room_number": "101"})
     found = await cashier_router.get_active_booking_by_room("101", actor())
     assert found["found"] and found["booking_id"] == "b" and found["folio_id"] == "actual-folio"
     await services.folios.insert_one({"tenant_id": "t", "booking_id": "b", "id": "second", "status": "open"})
@@ -343,3 +394,19 @@ async def test_active_room_lookup_joins_room_id_and_does_not_guess_folio_or_stay
     await services.bookings.insert_one({"tenant_id": "t", "id": "duplicate", "room_id": "r", "status": "checked_in"})
     with pytest.raises(HTTPException):
         await cashier_router.get_active_booking_by_room("101", actor())
+
+
+@pytest.mark.parametrize("properties,expected", [([None, None], "t"), (["p", "p"], "p"), (["p", "q"], None)])
+async def test_bulk_qr_exposes_exact_scope_not_first_room(services, monkeypatch, properties, expected):
+    from starlette.requests import Request
+    from routers import room_qr_requests as qr
+
+    monkeypatch.setattr(qr, "raw_db", services)
+    monkeypatch.setattr(qr, "_get_qr_salt", AsyncMock(return_value=None))
+    monkeypatch.setattr(qr, "_hotel_slug", AsyncMock(return_value=None))
+    monkeypatch.setattr(qr, "_guest_url_with_salt", lambda *_args: "https://example.invalid/qa-room")
+    await services.rooms.update_one({"id": "r"}, {"$set": {"property_id": properties[0]}})
+    await services.rooms.insert_one({"tenant_id": "t", "id": "r2", "room_number": "102", "property_id": properties[1]})
+    response = await qr.all_room_qr_codes(Request({"type": "http", "headers": []}), actor())
+    assert response["property_id"] == expected
+    assert [row["property_id"] for row in response["items"]] == [p or "t" for p in properties]

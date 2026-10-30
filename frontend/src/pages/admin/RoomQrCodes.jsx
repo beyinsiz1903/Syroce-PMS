@@ -26,14 +26,16 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
   const [menuItems, setMenuItems] = useState([]);
   const [menuLoading, setMenuLoading] = useState(false);
   const [menuSaving, setMenuSaving] = useState(false);
+  const [bulkPropertyId, setBulkPropertyId] = useState(null);
 
-  const propertyId = selected?.property_id || rooms.find((room) => room.property_id)?.property_id || tenant?.property_id;
+  const propertyId = selected?.property_id || bulkPropertyId || tenant?.property_id;
 
   const load = async () => {
     setLoading(true);
     try {
       const r = await axios.get("/rooms/qr-codes/bulk");
       setRooms(r.data.items || []);
+      setBulkPropertyId(r.data.property_id || null);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Yüklenemedi");
     } finally {

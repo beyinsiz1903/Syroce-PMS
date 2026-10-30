@@ -44,4 +44,20 @@ describe('source-owned guest service finance UI', () => {
     expect(axios.put.mock.calls[0][1].items.map(item => item.tax_rate)).toEqual([0.2, 0, null]);
     expect(axios.put.mock.calls[0][1].items.map(item => item.unit_price_minor)).toEqual([12000, 12000, 12000]);
   });
+
+  it('uses the server-resolved legacy scope when tenant has no property_id', async () => {
+    axios.get.mockImplementation(url => Promise.resolve({ data: url.includes('bulk') ? { items: [], property_id: 'legacy-tenant' } : { items: [] } }));
+    render(<RoomQrCodes tenant={{ id: 'legacy-tenant' }} />);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/rooms/qr-codes/bulk'));
+    fireEvent.click(screen.getByRole('button', { name: 'Oda Servisi Menüsü' }));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/room-qr/room-service-menu', { params: { property_id: 'legacy-tenant' } }));
+  });
+
+  it('does not pick an arbitrary other room property from a mixed-scope list', async () => {
+    axios.get.mockResolvedValue({ data: { items: [{ room_id: 'r', room_number: '101', property_id: 'other-property' }], property_id: null } });
+    render(<RoomQrCodes tenant={{ id: 't' }} />);
+    await screen.findAllByText(/101/);
+    fireEvent.click(screen.getByRole('button', { name: 'Oda Servisi Menüsü' }));
+    expect(axios.get.mock.calls.some(([url]) => url === '/room-qr/room-service-menu')).toBe(false);
+  });
 });

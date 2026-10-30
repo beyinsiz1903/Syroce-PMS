@@ -1,3 +1,11 @@
+CURRENT CONTINUATION: PR1463 deployed as2b0898a0afc30b62b02de9c0c5f247e058e75c17.
+Activity150 +Function Space300 +Upsell180 TRY are now accepted LIVE and retained.
+Do NOT replay those writes. The two room-service paths remain unwritten behind
+a legacy-property compatibility blocker. Read legacy-room-service-acceptance-
+20261030.txt for the current live630 TRY evidence, report crosschecks and new
+tested follow-up. Historical local-only/PR1463-pending statements below remain
+as evidence of their original checkpoint, not current deployment status.
+
 REMAINING NATIVE SERVICES AND FRONT-OFFICE REPORTS — 30 October2026
 
 Base release951cb3fd74ebd7ee69966295b1afdd1aebe55588 (PR1462).

@@ -1,0 +1,108 @@
+DEMO HOTEL — PR1463 POST-DEPLOY ACCEPTANCE / LEGACY ROOM-SERVICE FOLLOW-UP
+30 October 2026
+
+Verified deployed base
+PR1463 merged at12:19:47UTC, release2b0898a0afc30b62b02de9c0c5f247e058e75c17.
+Exact PR head74f3d8e31:15 successful checks +3 expected skips. Main backend
+41054517428 and frontend41054517401 completed successfully on the merge SHA.
+Real Deploy to Server succeeded in run41057363436/job124068154753.
+Earlier green run41055418717 skipped the server step; not deploy evidence.
+Live /api/health was healthy and matched the exact merge SHA. No merge/deploy
+was initiated by this continuation.
+
+Completed LIVE, exactly once through normal authorised APIs
+Only Syroce Demo Hotel100001 / tenant5bad4a34-6ee3-4566-9053-741b7375a9cf.
+New records retained at the user's request, explicitly marked DEMO QA synthetic:
+- Activity:150 TRY gross,125 net +25 declared inclusive VAT;30Oct16:00.
+- Function Space:1.5h x200 =300 TRY gross,250 net +50 VAT;30Oct16:00–17:30.
+- Upsell custom welcome refreshments:180 TRY gross,150 net +30 VAT;30Oct17:30.
+These VAT rates are explicit NEW synthetic demonstration tariffs, not estimates
+of historical tax or a real supplier invoice. Source-owned handoffs completed.
+One canonical charge and one sealed actor/reason/source-hash log per service;
+exact create/post retries reused the same records and did not duplicate debt.
+No cleanup, payment, bank/card, official document, KBS or provider operation.
+
+Live reconciliation
+37/37 immutable-source/guard checks passed in interim-v3-acceptance.json.
+Other bookings unchanged by ID with the SAME QR masking as original evidence.
+Earlier interim/interim-v2 failures are retained: list order and raw-vs-masked
+QR comparison defects in the verifier, not live financial mutations/failures.
+Target ledger and receivable deltas150 /300 /180; original charges, payments,
+room-rate plans preserved.31 physical rooms and QT2ED0 unchanged; both stock
+products remain52 each.26Oct business day stays OPEN; Exely TEST501694 ARI/pull
+OFF, HotelRunner disconnected, V2 paused. Cari accounts and25Oct POS/history,
+closed-day category/revenue/payment sources preserved. No new payment.
+Audit chain10678 checked,0 breaks/unverifiable/truncation;2882 pre-chain legacy
+rows explicitly skipped, not called sealed. Three new financial logs verified.
+
+12 additional report-basis checks passed: new gross630 /net525 /declared VAT105.
+Manager revenue, daily summary, financial range and category reports agree.
+Posted26Oct revenue4508 ->5138 TRY. Activity+150, salon+300, food+180.
+Existing unknown-tax count unchanged; old unreconciled Upsell accept remains
+explicitly excluded from verified revenue. No FX or legacy tax was invented.
+Separate source-crosscheck verifies source IDs, completed/accepted state, folio,
+service date/time, actor, reason, source fingerprint and sealed charge ID.
+Real live browser after safe reload shows manager5138 TRY and Upsell180 TRY.
+The old loaded tab initially retained pre-deploy assets; that view is not a
+successful verification of new code. No open form was discarded by the reload.
+
+Newly reproduced blockers, patched in this follow-up (NOT deployed yet)
+1. Demo Hotel legacy rooms/stays have no property_id. QR sessions already use
+   the canonical tenant scope, but menu management required a properties row,
+   authenticated room service omitted that scope, and the QR editor lacked an
+   authoritative scope in its room list. Read-only canonical menu GET returned
+   404. No menu/order write was attempted; no property/profile was fabricated.
+2. Upsell live occupancy counted39 rooms instead of31 physical rooms because
+   virtual routing placeholders were included. It also counted overlapping
+   stays as separate occupied rooms rather than distinct physical room IDs.
+
+Fix boundaries
+One existing room/booking/tenant resolver; contradictory property, foreign tenant
+or room mismatch fails closed. Missing/inactive canonical room isn't accepted
+for a shared-menu order. Legacy menu scope is accepted only for the exact
+existing tenant with no conflicting configured property; arbitrary/missing/
+foreign properties still404. No properties row is created or migrated.
+Existing tenant/hotel timezone/settings supply legacy catalogue/session context;
+secrets aren't surfaced. Explicit property metadata stays authoritative.
+Room QR bulk response exposes each resolved scope and a common scope ONLY when
+unambiguous; editor never chooses the first other room's property arbitrarily.
+Finance/ownership/open-folio/currency/consent/idempotency guards stay intact.
+Upsell occupancy excludes virtual/inactive/foreign inventory and counts each
+matching occupied physical room once. No historical finance is rewritten.
+
+Verification of this follow-up
+192 backend tests passed in103.34s;21 pre-existing concierge utcnow warnings.
+11 UI tests passed across QR menu, manager metrics/ledger, POS and native folio
+components; production build, targeted ESLint, complete backend Ruff and diff
+checks passed. Prior164/156-pass runs overlap and are not additive totals.
+The first test attempts had local harness setup/fixture/assertion failures;
+all logs/XMLs retained. No CI/security/entitlement/ignore gate was lowered.
+Local Python3.13/installed Motor3.3.1; pinned full CI remains separate.
+Tests use a fresh localhost-only replica on27991, not production DB access.
+
+Remaining after human merge/deploy
+Fresh exact-head/full CI, merge SHA/ancestry, actual non-skipped server step and
+health must be verified. Then complete ONLY the still-unwritten authenticated
+room-service order and confirmed structured QR service pathways, with distinct
+durable request/result keys and server-owned prices/currency/explicit VAT.
+Read full current menu before adding the two synthetic products; preserve all
+existing business values. Resolve canonical scope from the new authenticated
+server response, not a guessed property or direct DB update. Normal QR session
+and consent only; credentials stay in memory, never logs. Exact safe retry once;
+on any uncertain result reconcile server sources before another request.
+Reconcile against the ALREADY COMPLETED630 TRY checkpoint. Do not recreate or
+repost these three sources, earlier4508 TRY services, stock, archives or seeds.
+Keep added records and old financial sources; day/channels remain unchanged.
+Recheck corrected physical occupancy in the live UI. No universal every-button
+or all-provider/error-free acceptance is claimed; earlier KBS/identity and QA
+entitlement limits remain explicit in native-guest-service-acceptance-20261030.txt.
+
+Restricted workspace evidence (not committed guest snapshots)
+native-live-20261030/: release-gate.json; preflight.json; all exclusive normal
+API request/results; interim-v3-acceptance.json; report-crosscheck.json;
+source-crosscheck.json; legacy-canonical-menu-probe.json;
+manager-report-live-5138.png; upsell-live-180.png;
+property-scope-backend-final.xml/.log; property-scope-ui-final.xml;
+property-scope-frontend-build.log. All earlier failed evidence retained.
+Driver native_live_acceptance_20261030.py is outside this repository; its old
+release/preflight blocks room-service writes until a NEW verified gate is added.

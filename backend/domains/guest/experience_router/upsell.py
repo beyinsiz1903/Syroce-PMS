@@ -643,10 +643,15 @@ async def get_revenue_insights(current_user: User = Depends(get_current_user)):
     month_start = today.replace(day=1)
     next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
 
-    total_rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
-    today_occupied = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "status": {"$in": ["checked_in", "confirmed", "guaranteed"]}, "check_in": {"$lte": today.isoformat()}, "check_out": {"$gt": today.isoformat()}}
+    # Routing placeholders/inactive inventory aren't physical rooms. Multiple
+    # overlapping stays must not count the same physical room twice.
+    physical_ids = await db.rooms.distinct("id", {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}})
+    total_rooms = len(physical_ids)
+    occupied_ids = await db.bookings.distinct(
+        "room_id",
+        {"tenant_id": tenant_id, "room_id": {"$in": physical_ids}, "status": {"$in": ["checked_in", "confirmed", "guaranteed"]}, "check_in": {"$lte": today.isoformat()}, "check_out": {"$gt": today.isoformat()}},
     )
+    today_occupied = len(occupied_ids)
     occupancy_rate = round((today_occupied / total_rooms * 100) if total_rooms > 0 else 0, 1)
 
     monthly_bookings = await db.bookings.find(
