@@ -21,6 +21,33 @@ def _cursor(rows):
 
 
 @pytest.mark.asyncio
+async def test_guest_360_enriches_room_numbers_with_one_tenant_scoped_query(monkeypatch):
+    monkeypatch.setattr("security.encrypted_lookup.decrypt_guest_doc", lambda doc: doc)
+    monkeypatch.setattr(crm_guest, "get_tenant_currency", AsyncMock(return_value=("USD", "$")))
+    rooms = MagicMock()
+    rooms.find.return_value = _cursor([{"id": "room-104", "room_number": "104"}])
+    bookings = MagicMock()
+    bookings.find.return_value = _cursor([
+        {"id": "b", "room_id": "room-104", "check_in": "2026-10-21", "check_out": "2026-10-26"},
+        {"id": "b2", "room_id": "missing", "check_in": "2026-10-21", "check_out": "2026-10-26"},
+    ])
+    upsells = MagicMock()
+    upsells.find.return_value = _cursor([])
+    database = SimpleNamespace(rooms=rooms, bookings=bookings,
+        guests=SimpleNamespace(find_one=AsyncMock(return_value={"id": "guest", "name": "Synthetic Guest"})),
+        guest_preferences=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        guest_behavior=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        guest_profiles=SimpleNamespace(find_one=AsyncMock(return_value={"id": "profile"})), upsell_offers=upsells)
+    monkeypatch.setattr(crm_guest, "db", database)
+    result = await crm_guest.get_guest_360("guest", current_user=SimpleNamespace(tenant_id="tenant-a"))
+    assert [row["room_number"] for row in result["stay_history"]] == ["104", None]
+    rooms.find.assert_called_once()
+    query = rooms.find.call_args.args[0]
+    assert query["tenant_id"] == "tenant-a"
+    assert set(query["id"]["$in"]) == {"room-104", "missing"}
+
+
+@pytest.mark.asyncio
 async def test_connection_status_normalizes_string_and_naive_datetimes(monkeypatch):
     monkeypatch.setattr(
         security_mobile,

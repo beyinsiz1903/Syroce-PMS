@@ -910,7 +910,10 @@ async def get_folio(booking_id: str, current_user: User = Depends(get_current_us
 @router.get("/frontdesk/arrivals")
 async def get_arrivals(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
-    result = await frontdesk_service.get_arrivals(ctx, date)
+    try:
+        result = await frontdesk_service.get_arrivals(ctx, date)
+    except ValueError as exc:
+        raise HTTPException(400, "Geçersiz tarih (YYYY-MM-DD)") from exc
     return result.data
 
 
@@ -918,7 +921,10 @@ async def get_arrivals(date: str | None = None, current_user: User = Depends(get
 @router.get("/frontdesk/departures")
 async def get_departures(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
-    result = await frontdesk_service.get_departures(ctx, date)
+    try:
+        result = await frontdesk_service.get_departures(ctx, date)
+    except ValueError as exc:
+        raise HTTPException(400, "Geçersiz tarih (YYYY-MM-DD)") from exc
     return result.data
 
 

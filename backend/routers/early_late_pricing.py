@@ -10,6 +10,7 @@ Erken Giriş / Geç Çıkış Otomatik Fiyat Kuralları.
 """
 
 from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -30,6 +31,33 @@ DAY_END_HOUR = 24.0  # son kuralın inclusive bitişi (23:00–23:59 dahil)
 def _currency_code(value: object, fallback: str = "TRY") -> str:
     code = str(value or fallback or "TRY").strip().upper()
     return "TRY" if code == "TL" else code
+
+
+def _stay_pricing_base(booking: dict) -> tuple[int, Decimal, str]:
+    """Use stay dates, not a missing/stale cached night count. Never invent a night."""
+    try:
+        if booking.get("check_in") or booking.get("check_out"):
+            # Hotel dates are wall-calendar dates; converting to UTC can shift a night.
+            arrival = datetime.fromisoformat(str(booking["check_in"]).replace("Z", "+00:00")).date()
+            departure = datetime.fromisoformat(str(booking["check_out"]).replace("Z", "+00:00")).date()
+            nights = (departure - arrival).days
+        else:
+            stored = Decimal(str(booking.get("nights")))
+            if not stored.is_finite() or stored != stored.to_integral_value():
+                raise ValueError("invalid nights")
+            nights = int(stored)
+        if nights <= 0:
+            raise ValueError("invalid stay")
+        base_field = next((key for key in ("subtotal", "base_amount", "total_amount", "total_price")
+                           if booking.get(key) is not None), None)
+        if base_field is None:
+            raise ValueError("missing price")
+        total = Decimal(str(booking[base_field]))
+        if not total.is_finite() or total < 0:
+            raise ValueError("invalid price")
+    except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+        raise HTTPException(422, "Ücret hesaplanamadı: konaklama tarihlerini ve konaklama tutarını kontrol edin") from exc
+    return nights, total, base_field
 
 
 class PricingRule(BaseModel):
@@ -235,35 +263,35 @@ async def calculate(payload: CalcRequest, current_user: User = Depends(get_curre
             "currency": booking_currency,
         }
 
-    nights = max(int(booking.get("nights") or 1), 1)
-    # P1 #7 vergi tabanı belirginliği: subtotal varsa onu kullan (vergi/fee hariç),
-    # yoksa total_amount/total_price'a düş.
-    subtotal = booking.get("subtotal") or booking.get("base_amount")
-    total = float(subtotal if subtotal is not None else (booking.get("total_amount") or booking.get("total_price") or 0))
-    nightly = total / nights if nights else total
+    nights, total, base_field = _stay_pricing_base(booking)
+    nightly = total / nights
 
     ct = rule["charge_type"]
-    val = float(rule["charge_value"])
+    val = Decimal(str(rule["charge_value"]))
     if ct == "free":
-        amount = 0.0
+        amount = Decimal(0)
     elif ct == "flat":
-        amount = round(val, 2)
+        # Settings label flat amounts in the tenant currency. Relabelling 800
+        # TRY as 800 USD is not a conversion; explicit FX belongs to extra-entry.
+        if booking_currency != _currency_code(tenant_currency) and val != 0:
+            raise HTTPException(422, "Sabit ücret tesis para birimindedir; farklı dövizli rezervasyon için Ek Ücret Ekle ekranında tutar ve kur girin")
+        amount = val
     elif ct == "percent_of_nightly":
-        amount = round(nightly * val / 100, 2)
+        amount = nightly * val / 100
     elif ct == "percent_of_total":
-        amount = round(total * val / 100, 2)
+        amount = total * val / 100
     else:
-        amount = 0.0
+        amount = Decimal(0)
 
     return {
         "applicable": True,
-        "amount": amount,
+        "amount": float(amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "currency": booking_currency,
         "rule": rule,
         "actual_hour": payload.actual_hour,
-        "nightly_rate": round(nightly, 2),
-        "total": total,
-        "tax_base": "subtotal" if subtotal is not None else "total_amount",
+        "nightly_rate": float(nightly.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "total": float(total),
+        "tax_base": base_field,
         "nights": nights,
         "label": ("Erken Giriş" if payload.direction == "early_checkin" else "Geç Çıkış") + " — " + rule["label"],
     }

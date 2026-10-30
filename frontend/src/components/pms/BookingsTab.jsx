@@ -7,22 +7,8 @@ import { AlertTriangle, Home, Plus } from 'lucide-react';
 import VirtualizedBookingList from '@/components/VirtualizedBookingList';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
 import { useNavigate } from 'react-router-dom';
-import { currencyBreakdownEntries, formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { sortBookingsByStay } from '@/lib/bookingStaySort';
-
-const CurrencySummary = ({ breakdown, className }) => {
-  const entries = currencyBreakdownEntries(breakdown);
-  return entries.length ? (
-    <dl className={`mt-2 space-y-1 text-sm tabular-nums ${className}`}>
-      {entries.map(({ currency, formatted }) => (
-        <div key={currency} className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-          <dt className="text-xs font-medium text-slate-500">{currency}</dt>
-          <dd className="min-w-0 break-words font-semibold">{formatted}</dd>
-        </div>
-      ))}
-    </dl>
-  ) : <div className={`mt-2 break-words text-sm font-semibold tabular-nums ${className}`}>{formatCurrencyBreakdown(breakdown)}</div>;
-};
+import CurrencySummary from './CurrencySummary';
 
 const BookingsTab = ({
   bookingStats,

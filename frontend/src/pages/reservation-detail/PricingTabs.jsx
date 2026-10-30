@@ -327,6 +327,7 @@ export function ExtraChargesTab({
   onRefresh,
   allBookings,
   readOnly = false,
+  onOpenEarlyLate,
 }) {
   const currency = booking?.currency || "TRY";
   const {
@@ -528,13 +529,13 @@ export function ExtraChargesTab({
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.ek_ucretler')}</span>
         <div className="flex gap-1.5">
           {!readOnly && <>
-            {canAddEarlyCheckin && <Button size="sm" variant="outline" onClick={() => setElDirection('early_checkin')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.erken_giris')}</Button>}
-            {canAddLateCheckout && <Button size="sm" variant="outline" onClick={() => setElDirection('late_checkout')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.gec_cikis')}</Button>}
+            {canAddEarlyCheckin && <Button size="sm" variant="outline" onClick={() => (onOpenEarlyLate || setElDirection)('early_checkin')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.erken_giris')}</Button>}
+            {canAddLateCheckout && <Button size="sm" variant="outline" onClick={() => (onOpenEarlyLate || setElDirection)('late_checkout')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.gec_cikis')}</Button>}
             <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.ekle')}</Button>
           </>}
         </div>
       </div>
-      <EarlyLateChargeModal open={!!elDirection} onClose={() => setElDirection(null)} bookingId={booking?.id} direction={elDirection || 'early_checkin'} defaultHour={elDirection === 'late_checkout' ? 14 : 10} onApplied={onRefresh} />
+      <EarlyLateChargeModal open={!!elDirection} onClose={() => setElDirection(null)} bookingId={booking?.id} direction={elDirection || 'early_checkin'} defaultHour={elDirection === 'late_checkout' ? 14 : 10} serviceDate={String(elDirection === 'late_checkout' ? booking?.check_out || '' : booking?.check_in || '').slice(0, 10)} onApplied={onRefresh} />
       {showAdd && <div className="border rounded-lg p-4 bg-amber-50/50 space-y-3">
           <div className="flex items-center justify-between rounded-md border border-amber-200 bg-white px-3 py-2 text-sm">
             <span className="font-medium text-slate-700">Rezervasyon para birimi</span>

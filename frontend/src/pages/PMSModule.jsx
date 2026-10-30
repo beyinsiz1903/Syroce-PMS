@@ -127,6 +127,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [stayoverRooms, setStayoverRooms] = useState([]);
   const [arrivalRooms, setArrivalRooms] = useState([]);
   const [businessDate, setBusinessDate] = useState(null);
+  const businessDateRef = useRef(null);
+  const frontdeskRequestRef = useRef(0);
   const [auditLogs, setAuditLogs] = useState([]);
   const [userPermissions, setUserPermissions] = useState({});
   const [otaReservations, setOtaReservations] = useState([]);
@@ -483,10 +485,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     const idleFn = () => { loadAuditLogs(); loadChannelManagerData(); };
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(idleFn, { timeout: 4000 });
-      return () => { dataRequestRef.current += 1; window.cancelIdleCallback?.(id); };
+      return () => { dataRequestRef.current += 1; frontdeskRequestRef.current += 1; window.cancelIdleCallback?.(id); };
     }
     const t = setTimeout(idleFn, 3000);
-    return () => { dataRequestRef.current += 1; clearTimeout(t); };
+    return () => { dataRequestRef.current += 1; frontdeskRequestRef.current += 1; clearTimeout(t); };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- Bootstrap once; subsequent refreshes use callbacks and business-date events.
   }, []);
 
@@ -494,9 +496,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     const handleBusinessDateChanged = (event) => {
       const nextBusinessDate = event?.detail?.businessDate;
       if (!nextBusinessDate) return;
+      businessDateRef.current = nextBusinessDate;
       setBusinessDate(nextBusinessDate);
       loadData(nextBusinessDate);
-      if (hasLoadedFrontdesk) loadFrontDeskData();
+      if (hasLoadedFrontdesk) loadFrontDeskData(nextBusinessDate);
       if (hasLoadedHousekeeping) loadHousekeepingData();
     };
     window.addEventListener(BUSINESS_DATE_CHANGED_EVENT, handleBusinessDateChanged);
@@ -524,12 +527,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setRefreshing(true);
     }
     try {
-      let operationalDate = businessDateOverride || businessDate;
+      let operationalDate = businessDateOverride || businessDateRef.current;
       if (!operationalDate && (user?.effective_permissions || []).includes('view_bookings')) {
         const businessDateResponse = await axios.get('/night-audit/business-date', { timeout: 8000 });
         if (requestId !== dataRequestRef.current) return;
         operationalDate = businessDateResponse?.data?.business_date;
-        if (operationalDate) setBusinessDate(operationalDate);
+        if (operationalDate) { businessDateRef.current = operationalDate; setBusinessDate(operationalDate); }
       }
       const today = operationalDate || new Date().toISOString().split('T')[0];
       // Initial fetch range 90gün → 30gün, limit 200 → 120: ilk render için
@@ -595,12 +598,24 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const loadFrontDeskData = async () => {
+  const loadFrontDeskData = async (businessDateOverride = null) => {
+    const requestId = ++frontdeskRequestRef.current;
     setFdLoading(true); setFdError(null);
     try {
+      let operationalDate = businessDateOverride || businessDateRef.current;
+      if (!operationalDate) {
+        const response = await axios.get('/night-audit/business-date', { timeout: 8000 });
+        if (requestId !== frontdeskRequestRef.current) return;
+        operationalDate = response?.data?.business_date;
+        if (!operationalDate) throw new Error('İş günü bilgisi alınamadı');
+        businessDateRef.current = operationalDate;
+        setBusinessDate(operationalDate);
+      }
+      const dateQuery = `?date=${encodeURIComponent(operationalDate)}`;
       const [arrivalsRes, departuresRes, inhouseRes] = await Promise.all([
-        axios.get('/frontdesk/arrivals'), axios.get('/frontdesk/departures'), axios.get('/frontdesk/inhouse')
+        axios.get(`/frontdesk/arrivals${dateQuery}`), axios.get(`/frontdesk/departures${dateQuery}`), axios.get('/frontdesk/inhouse')
       ]);
+      if (requestId !== frontdeskRequestRef.current) return;
       setArrivals(arrivalsRes.data); setDepartures(departuresRes.data); setInhouse(inhouseRes.data);
       // AI insights ana frontdesk render'ını blokemeli — idle'da yüklensin.
       // Eskiden render hemen ardından 2 ek AI çağrısı yapıyordu (occupancy
@@ -612,9 +627,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           : setTimeout(fn, 1500);
       idle(() => loadAIInsights());
     } catch (error) {
+      if (requestId !== frontdeskRequestRef.current) return;
       const msg = error?.response?.data?.detail || error.message || 'Ön büro verileri yüklenemedi';
       setFdError(msg); toast.error('Ön büro verileri yüklenemedi');
-    } finally { setFdLoading(false); }
+    } finally { if (requestId === frontdeskRequestRef.current) setFdLoading(false); }
   };
 
   const loadAIInsights = async () => {
@@ -1151,7 +1167,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               canlı tuttuğu için tab geçişi yavaşlıyordu. */}
           {validTabKeys.has(activeTab) && <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
           {activeTab === 'frontdesk' && (
-            <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
+            <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} businessDate={businessDate} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
           )}
           {activeTab === 'housekeeping' && (
             <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} currentUserId={user?.id} loadHousekeepingData={loadHousekeepingData} onBookingCardClick={async (bookingId) => {
@@ -1214,7 +1230,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <HKTaskDialog open={openDialog === 'hktask'} onClose={() => setOpenDialog(null)} rooms={rooms} newHKTask={newHKTask} setNewHKTask={setNewHKTask} onSubmit={handleCreateHKTask} />
         <RoomBlockCreateDialog open={openDialog === 'roomblock'} onClose={() => { setOpenDialog(null); setSelectedRoom(null); }} rooms={rooms} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} newRoomBlock={newRoomBlock} setNewRoomBlock={setNewRoomBlock} onSubmit={createRoomBlock} />
         <RoomBlockViewDialog open={openDialog === 'roomblock-view'} onClose={() => setOpenDialog(null)} roomBlocks={roomBlocks} onCancel={cancelRoomBlock} />
-        <FindRoomDialog open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} criteria={findRoomCriteria} setCriteria={setFindRoomCriteria} />
+        <FindRoomDialog open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} findRoomCriteria={findRoomCriteria} setFindRoomCriteria={setFindRoomCriteria} businessDate={businessDate} onRoomSelected={canCreateBooking ? (room) => {
+          const adults = Math.max(1, Number(findRoomCriteria.guests) || 1);
+          setNewBooking((current) => ({ ...current, check_in: findRoomCriteria.check_in, check_out: findRoomCriteria.check_out, room_id: room.id, adults, children: 0, children_ages: [], guests_count: adults }));
+          setMultiRoomBooking([{ room_id: room.id, adults, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
+          setOpenDialog('booking');
+        } : undefined} />
         <PaymentDialog
           open={openDialog === 'payment'}
           onClose={() => setOpenDialog(null)}

@@ -447,6 +447,7 @@ def test_legacy_extra_charge_can_omit_service_time_without_inventing_one():
 
 @pytest.mark.asyncio
 async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance(monkeypatch):
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
     extra_charges = SimpleNamespace(insert_one=AsyncMock())
     database = SimpleNamespace(
         bookings=SimpleNamespace(
@@ -489,6 +490,7 @@ async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance
 
 @pytest.mark.asyncio
 async def test_extra_charge_converts_entered_currency_to_booking_currency(monkeypatch):
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
     extra_charges = SimpleNamespace(insert_one=AsyncMock())
     database = SimpleNamespace(
         bookings=SimpleNamespace(

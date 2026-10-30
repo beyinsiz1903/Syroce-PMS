@@ -6,12 +6,13 @@ keycard management, and unified arrivals/departures. No FastAPI dependencies.
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_service import ensure_business_date_initialized
 from core.business_date_transition_guard import enforce_business_date_transition
 from core.channel_mapping_issues import is_mapping_hold
 from core.kbs_auto_enqueue import auto_enqueue_kbs
@@ -715,15 +716,21 @@ class FrontdeskService:
             }
         )
 
+    async def _operational_date(self, ctx: OperationContext, date_str: str | None) -> date:
+        if date_str is None:
+            state = await ensure_business_date_initialized(self._db, ctx.tenant_id)
+            date_str = str(state["business_date"])[:10]
+        return date.fromisoformat(date_str)
+
     async def get_arrivals(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:
-        target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
-        start = datetime.combine(target_date, datetime.min.time())
-        end = datetime.combine(target_date, datetime.max.time())
+        target_date = await self._operational_date(ctx, date_str)
+        start = target_date.isoformat()
+        end = (target_date + timedelta(days=1)).isoformat()
         bookings = await self._db.bookings.find(
             {
                 "tenant_id": ctx.tenant_id,
                 "status": {"$in": ["confirmed", "checked_in"]},
-                "check_in": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "check_in": {"$gte": start, "$lt": end},
             },
             {"_id": 0},
         ).to_list(1000)
@@ -744,7 +751,7 @@ class FrontdeskService:
         return ServiceResult.success(enriched)
 
     async def get_departures(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:
-        target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
+        target_date = await self._operational_date(ctx, date_str)
         start = target_date.isoformat()
         end = (target_date + timedelta(days=1)).isoformat()
         bookings = await self._db.bookings.find(
