@@ -42,6 +42,14 @@ import { FoliosTab, calculateReceivedCurrency, parseReceivedCurrency, summarizeR
 const booking = { id: 'bk-1', guest_name: 'Ada Lovelace', room_number: '101' };
 const summary = { total_amount: 100, total_charges: 100, total_payments: 0, balance: 100 };
 
+it('labels a persisted deposit refund as money returned, not another collection or a double minus', () => {
+  render(<FoliosTab {...singleFolioProps({ payments: [{ id: 'refund', folio_id: 'f1', amount: -20,
+    currency: 'TRY', method: 'cash', status: 'refunded', payment_type: 'refund', received_amount: 20, received_currency: 'TRY' }] })} />);
+  expect(screen.getByTestId('folio-event-amount-refund')).toHaveTextContent('+20');
+  expect(screen.getByTestId('received-currency-refund')).toHaveTextContent('İade edilen: 20');
+  expect(screen.getAllByText('Ödeme iadesi').length).toBeGreaterThan(0);
+});
+
 function singleFolioProps(overrides = {}) {
   return {
     folios: [{ id: 'f1', folio_number: 'F-001', folio_type: 'guest', status: 'open', balance: 100 }],

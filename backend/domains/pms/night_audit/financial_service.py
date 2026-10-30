@@ -9,7 +9,6 @@ import os
 
 from common.context import OperationContext
 from common.result import ServiceResult
-from core.business_date_service import accounting_day_match
 from core.channel_room_charge_pricing import calculate_room_charge
 
 logger = logging.getLogger(__name__)
@@ -55,6 +54,12 @@ def _currency_delta(left: dict[str, float], right: dict[str, float]) -> dict[str
     }
 
 
+def _legacy_scalar(total, *buckets):
+    """Never present a TRY + EUR sum as one monetary amount."""
+    codes = {code for values in buckets for code, value in values.items() if abs(value or 0) >= .005}
+    return None if len(codes) > 1 else round(total, 2)
+
+
 class FinancialService:
     """Financial reporting and reconciliation for night audit."""
 
@@ -62,6 +67,26 @@ class FinancialService:
         from core.database import db
 
         self._db = db
+
+    async def _revenue_documents(self, ctx, first, last, *, by_date=False):
+        from .financial_sources import revenue_documents
+        return await revenue_documents(self._db, ctx.tenant_id, first, last, by_date=by_date)
+
+    async def _payment_documents(self, ctx, first, last):
+        from .financial_sources import payment_documents
+        return await payment_documents(self._db, ctx.tenant_id, first, last)
+
+    async def _revenue_rows(self, ctx, first, last):
+        from .financial_sources import revenue_rows
+        return await revenue_rows(self._db, ctx.tenant_id, first, last)
+
+    async def _payment_rows(self, ctx, first, last):
+        from .financial_sources import payment_rows
+        return await payment_rows(self._db, ctx.tenant_id, first, last)
+
+    async def _open_balance_documents(self, ctx):
+        from .financial_sources import open_balance_documents
+        return await open_balance_documents(self._db, ctx.tenant_id)
 
     async def get_daily_financial_summary(
         self,
@@ -74,96 +99,7 @@ class FinancialService:
         seri await chain'i kaldırıldı. Hata izolasyonu için return_exceptions=True;
         tek bir alt sorgu başarısız olsa bile diğerleri sonuç döndürmeye devam eder.
         """
-        # Revenue by category from folio_charges
-        charge_pipeline = [
-            {
-                "$match": {
-                    "tenant_id": ctx.tenant_id,
-                    # Room charges are posted after the business day closes;
-                    # their event timestamp is therefore the following day.
-                    # Financial reporting must use the accounting date.
-                    "business_date": business_date,
-                    "voided": {"$ne": True},
-                }
-            },
-            {
-                "$group": {
-                    "_id": {"category": "$charge_category", "currency": {"$ifNull": ["$currency", "TRY"]}},
-                    "total_amount": {"$sum": "$amount"},
-                    "total_tax": {"$sum": "$tax_amount"},
-                    "total_with_tax": {"$sum": "$total"},
-                    "count": {"$sum": 1},
-                }
-            },
-        ]
 
-        # Payments received today
-        payment_pipeline = [
-            {
-                "$match": {
-                    "tenant_id": ctx.tenant_id,
-                    "voided": {"$ne": True},
-                    "$expr": {
-                        "$and": [
-                            {
-                                "$not": [
-                                    {
-                                        "$in": [
-                                            {"$toLower": {"$ifNull": ["$status", "paid"]}},
-                                            ["void", "voided", "failed", "cancelled", "rejected"],
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "$ne": [
-                                    {
-                                        "$toLower": {
-                                            "$ifNull": ["$method", {"$ifNull": ["$payment_method", ""]}]
-                                        }
-                                    },
-                                    "discount",
-                                ]
-                            },
-                        ]
-                    },
-                    **accounting_day_match(
-                        business_date,
-                        {"date": business_date},
-                        {"payment_date": business_date},
-                        {"processed_at": {"$regex": f"^{business_date}"}},
-                    ),
-                }
-            },
-            {
-                "$group": {
-                    "_id": {
-                        "method": {"$ifNull": ["$payment_method", "$method"]},
-                        "currency": {"$ifNull": ["$currency", "TRY"]},
-                    },
-                    "total_amount": {
-                        "$sum": {
-                            "$cond": [
-                                {
-                                    "$and": [
-                                        {
-                                            "$eq": [
-                                                {"$toLower": {"$ifNull": ["$payment_type", ""]}},
-                                                "refund",
-                                            ]
-                                        },
-                                        {"$gt": ["$amount", 0]},
-                                    ]
-                                },
-                                {"$multiply": ["$amount", -1]},
-                                "$amount",
-                            ]
-                        }
-                    },
-                    "count": {"$sum": 1},
-                }
-            },
-        ]
 
         # Tax breakdown
         tax_pipeline = [
@@ -184,30 +120,6 @@ class FinancialService:
             },
         ]
 
-        # Open balance pipeline (combines count + balance aggregation)
-        open_balance_pipeline = [
-            {"$match": {"tenant_id": ctx.tenant_id, "status": "open"}},
-            {
-                "$group": {
-                    "_id": {"currency": {"$ifNull": ["$currency", "TRY"]}},
-                    "total_balance": {"$sum": "$balance"},
-                    "positive_balance": {"$sum": {"$cond": [{"$gt": ["$balance", 0]}, "$balance", 0]}},
-                    "negative_balance": {"$sum": {"$cond": [{"$lt": ["$balance", 0]}, "$balance", 0]}},
-                    "receivable_count": {"$sum": {"$cond": [{"$gt": ["$balance", 0]}, 1, 0]}},
-                    "overpayment_count": {"$sum": {"$cond": [{"$lt": ["$balance", 0]}, 1, 0]}},
-                    "count": {"$sum": 1},
-                    "folios": {
-                        "$push": {
-                            "folio_number": "$folio_number",
-                            "booking_id": "$booking_id",
-                            "balance": "$balance"
-                            ,"currency": {"$ifNull": ["$currency", "TRY"]}
-                        }
-                    }
-                }
-            },
-        ]
-
         async def _agg(coll, pipeline):
             return await coll.aggregate(
                 pipeline,
@@ -224,10 +136,10 @@ class FinancialService:
             open_balance_docs,
             audit_run,
         ) = await asyncio.gather(
-            _agg(self._db.folio_charges, charge_pipeline),
-            _agg(self._db.payments, payment_pipeline),
+            self._revenue_documents(ctx, business_date, business_date),
+            self._payment_documents(ctx, business_date, business_date),
             _agg(self._db.folio_charges, tax_pipeline),
-            _agg(self._db.folios, open_balance_pipeline),
+            self._open_balance_documents(ctx),
             self._db.night_audit_runs.find_one(
                 {"tenant_id": ctx.tenant_id, "business_date": business_date},
                 {"_id": 0},
@@ -236,18 +148,20 @@ class FinancialService:
             return_exceptions=True,
         )
 
-        def _ok(result, default):
+        degraded_subqueries: list[str] = []
+
+        def _ok(result, default, name):
             if isinstance(result, BaseException):
-                logger.warning("financial_summary subquery failed: %s", result)
+                logger.warning("financial_summary subquery %s failed: %s", name, result)
+                degraded_subqueries.append(name)
                 return default
             return result
 
-        charge_docs = _ok(charge_docs, [])
-        payment_docs = _ok(payment_docs, [])
-        tax_docs = _ok(tax_docs, [])
-        open_balance_docs = _ok(open_balance_docs, [])
-        audit_run = _ok(audit_run, None)
-        degraded_subqueries: list[str] = []
+        charge_docs = _ok(charge_docs, [], "revenue")
+        payment_docs = _ok(payment_docs, [], "payments")
+        tax_docs = _ok(tax_docs, [], "tax")
+        open_balance_docs = _ok(open_balance_docs, [], "open_folios")
+        audit_run = _ok(audit_run, None, "audit_status")
 
         # In-memory reduce
         revenue_by_category: dict = {}
@@ -329,25 +243,31 @@ class FinancialService:
         for fol in open_folios_list:
             fol["balance"] = round(fol.get("balance", 0), 2)
 
+        for entry in revenue_by_category.values():
+            for key in ("amount", "tax", "total"):
+                entry[key] = _legacy_scalar(entry[key], entry[key + "_by_currency"])
+        for entry in payments_by_method.values():
+            entry["amount"] = _legacy_scalar(entry["amount"], entry["amount_by_currency"])
+
 
         return ServiceResult.success(
             {
                 "business_date": business_date,
                 "revenue": {
-                    "total": round(total_revenue, 2),
+                    "total": _legacy_scalar(total_revenue, revenue_by_currency),
                     "total_by_currency": revenue_by_currency,
-                    "total_with_tax": round(total_revenue + total_tax, 2),
+                    "total_with_tax": _legacy_scalar(total_revenue + total_tax, revenue_with_tax_by_currency),
                     "total_with_tax_by_currency": revenue_with_tax_by_currency,
                     "by_category": revenue_by_category,
                     "charges_count": total_charges_count,
                 },
                 "tax": {
-                    "total": round(total_tax, 2),
+                    "total": _legacy_scalar(total_tax, tax_by_currency),
                     "total_by_currency": tax_by_currency,
                     "breakdown": tax_breakdown,
                 },
                 "payments": {
-                    "total": round(total_payments, 2),
+                    "total": _legacy_scalar(total_payments, payments_by_currency),
                     "total_by_currency": payments_by_currency,
                     "by_method": payments_by_method,
                     "payments_count": total_payments_count,
@@ -360,9 +280,12 @@ class FinancialService:
                     "balance_by_currency": open_balance_by_currency,
                     "items": open_folios_list
                 },
-                "net_position": round(total_revenue + total_tax - total_payments, 2),
+                "net_position": _legacy_scalar(total_revenue + total_tax - total_payments, revenue_with_tax_by_currency, payments_by_currency),
                 "net_position_by_currency": _currency_delta(revenue_with_tax_by_currency, payments_by_currency),
                 "audit_status": audit_run.get("status") if audit_run else "not_run",
+                "degraded": bool(degraded_subqueries),
+                "degraded_subqueries": degraded_subqueries,
+                "tax_unknown_count": sum(row.get("tax_unknown_count", 0) for row in charge_docs),
             }
         )
 
@@ -387,34 +310,8 @@ class FinancialService:
         degraded_subqueries: list[str] = []
 
         charges_r, payments_r, high_balance_r = await asyncio.gather(
-            _to_list(
-                self._db.folio_charges.find(
-                    {
-                        "tenant_id": ctx.tenant_id,
-                        "date": business_date,
-                        "voided": {"$ne": True},
-                    },
-                    {"_id": 0, "id": 1, "booking_id": 1, "charge_category": 1, "amount": 1, "tax_amount": 1, "total": 1, "description": 1, "currency": 1},
-                ).max_time_ms(_FIN_AGG_MAX_MS),
-                1000,
-            ),
-            _to_list(
-                self._db.payments.find(
-                    {
-                        "tenant_id": ctx.tenant_id,
-                        "status": {"$ne": "voided"},
-                        **accounting_day_match(
-                            business_date,
-                            {"date": business_date},
-                            {"payment_date": business_date},
-                            {"processed_at": {"$regex": f"^{business_date}"}},
-                            {"created_at": {"$regex": f"^{business_date}"}},
-                        ),
-                    },
-                    {"_id": 0, "id": 1, "booking_id": 1, "amount": 1, "payment_method": 1, "description": 1, "currency": 1},
-                ).max_time_ms(_FIN_AGG_MAX_MS),
-                1000,
-            ),
+            self._revenue_rows(ctx, business_date, business_date),
+            self._payment_rows(ctx, business_date, business_date),
             _to_list(
                 self._db.folios.find(
                     {
@@ -589,13 +486,13 @@ class FinancialService:
         return ServiceResult.success(
             {
                 "business_date": business_date,
-                "charges_total": round(total_charges, 2),
+                "charges_total": _legacy_scalar(total_charges, charges_by_currency),
                 "charges_by_currency": charges_by_currency,
                 "charges_count": len(charges),
-                "payments_total": round(total_payments_amount, 2),
+                "payments_total": _legacy_scalar(total_payments_amount, payments_by_currency),
                 "payments_by_currency": payments_by_currency,
                 "payments_count": len(payments),
-                "variance": variance,
+                "variance": _legacy_scalar(variance, charges_by_currency, payments_by_currency),
                 "variance_by_currency": _currency_delta(charges_by_currency, payments_by_currency),
                 "is_balanced": not _currency_delta(charges_by_currency, payments_by_currency),
                 "discrepancies": discrepancies,
@@ -614,26 +511,7 @@ class FinancialService:
         end_date: str,
     ) -> ServiceResult:
         """Generate financial report for a date range."""
-        # Revenue trend by date
-        revenue_pipeline = [
-            {
-                "$match": {
-                    "tenant_id": ctx.tenant_id,
-                    "business_date": {"$gte": start_date, "$lte": end_date},
-                    "voided": {"$ne": True},
-                }
-            },
-            {
-                "$group": {
-                    "_id": {"date": "$date", "category": "$charge_category", "currency": {"$ifNull": ["$currency", "TRY"]}},
-                    "amount": {"$sum": "$amount"},
-                    "tax": {"$sum": "$tax_amount"},
-                    "total": {"$sum": "$total"},
-                    "count": {"$sum": 1},
-                }
-            },
-            {"$sort": {"_id.date": 1}},
-        ]
+
 
         daily_revenue = {}
         category_totals = {}
@@ -644,10 +522,7 @@ class FinancialService:
         degraded_subqueries: list[str] = []
 
         try:
-            revenue_docs = await self._db.folio_charges.aggregate(
-                revenue_pipeline,
-                maxTimeMS=_FIN_AGG_MAX_MS,
-            ).to_list(None)
+            revenue_docs = await self._revenue_documents(ctx, start_date, end_date, by_date=True)
         except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
             logger.warning("financial_report subquery 'revenue' failed: %s", exc)
             degraded_subqueries.append("revenue")
@@ -683,35 +558,12 @@ class FinancialService:
             grand_total_revenue += doc["amount"]
             grand_total_tax += doc["tax"]
 
-        # Payment trend
-        payment_pipeline = [
-            {
-                "$match": {
-                    "tenant_id": ctx.tenant_id,
-                    "status": {"$ne": "voided"},
-                    "$or": [
-                        {"date": {"$gte": start_date, "$lte": end_date}},
-                        {"payment_date": {"$gte": start_date, "$lte": end_date}},
-                        {"processed_at": {"$gte": start_date, "$lte": f"{end_date}T99"}},
-                    ],
-                }
-            },
-            {
-                "$group": {
-                    "_id": {"method": {"$ifNull": ["$payment_method", "$method"]}, "currency": {"$ifNull": ["$currency", "TRY"]}},
-                    "total": {"$sum": "$amount"},
-                    "count": {"$sum": 1},
-                }
-            },
-        ]
+
         payment_method_totals = {}
         grand_total_payments = 0.0
         grand_payments_by_currency: dict[str, float] = {}
         try:
-            payment_docs = await self._db.payments.aggregate(
-                payment_pipeline,
-                maxTimeMS=_FIN_AGG_MAX_MS,
-            ).to_list(None)
+            payment_docs = await self._payment_documents(ctx, start_date, end_date)
         except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
             logger.warning("financial_report subquery 'payments' failed: %s", exc)
             degraded_subqueries.append("payments")
@@ -791,19 +643,24 @@ class FinancialService:
             degraded_subqueries.append("rooms")
             total_rooms = 0
 
+        for entry in [*category_totals.values(), *payment_method_totals.values(), *daily_revenue.values()]:
+            for field in ("amount", "tax", "total"):
+                if field in entry and field + "_by_currency" in entry:
+                    entry[field] = _legacy_scalar(entry[field], entry[field + "_by_currency"])
+
         return ServiceResult.success(
             {
                 "start_date": start_date,
                 "end_date": end_date,
                 "summary": {
-                    "total_revenue": round(grand_total_revenue, 2),
+                    "total_revenue": _legacy_scalar(grand_total_revenue, grand_revenue_by_currency),
                     "total_revenue_by_currency": grand_revenue_by_currency,
-                    "total_tax": round(grand_total_tax, 2),
+                    "total_tax": _legacy_scalar(grand_total_tax, grand_tax_by_currency),
                     "total_tax_by_currency": grand_tax_by_currency,
-                    "total_with_tax": round(grand_total_revenue + grand_total_tax, 2),
-                    "total_payments": round(grand_total_payments, 2),
+                    "total_with_tax": _legacy_scalar(grand_total_revenue + grand_total_tax, grand_revenue_by_currency, grand_tax_by_currency),
+                    "total_payments": _legacy_scalar(grand_total_payments, grand_payments_by_currency),
                     "total_payments_by_currency": grand_payments_by_currency,
-                    "net_position": round(grand_total_revenue + grand_total_tax - grand_total_payments, 2),
+                    "net_position": _legacy_scalar(grand_total_revenue + grand_total_tax - grand_total_payments, grand_revenue_by_currency, grand_tax_by_currency, grand_payments_by_currency),
                     "net_position_by_currency": _currency_delta(
                         {code: round(amount + grand_tax_by_currency.get(code, 0), 2) for code, amount in grand_revenue_by_currency.items()},
                         grand_payments_by_currency,
@@ -817,6 +674,7 @@ class FinancialService:
                 "audit_runs": audit_runs,
                 "degraded": bool(degraded_subqueries),
                 "degraded_subqueries": degraded_subqueries,
+                "tax_unknown_count": sum(row.get("tax_unknown_count", 0) for row in revenue_docs),
             }
         )
 

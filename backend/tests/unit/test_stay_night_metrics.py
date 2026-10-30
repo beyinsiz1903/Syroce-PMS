@@ -55,6 +55,7 @@ def test_room_nights_are_unique_checkout_exclusive_and_revenue_is_allocated():
         "date": "2026-08-29",
         "occupied_rooms": 2,
         "sold_rooms": 2,
+        "sold_rooms_by_currency": {"TRY": 2},
         "total_rooms": 2,
         "occupancy_rate": 100.0,
         "revenue": 4000.0,

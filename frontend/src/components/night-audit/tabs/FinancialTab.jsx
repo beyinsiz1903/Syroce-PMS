@@ -25,6 +25,12 @@ export default function FinancialTab(props) {
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
             <strong>Rapor iş günü:</strong> {financialSummary.business_date || financialSummary.date || reportingDate || '-'} · Son tamamlanan gece denetiminin finansal hareketleri
           </div>
+          {(financialSummary.degraded || financialSummary.tax_unknown_count > 0) && (
+            <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {financialSummary.degraded ? 'Bazı rapor kaynakları okunamadı; bu rakamlarla kesin mutabakat yapmayın. ' : ''}
+              {financialSummary.tax_unknown_count > 0 ? `${financialSummary.tax_unknown_count} kalemin vergi ayrımı eksik. Vergi toplamı yalnız ayrımı bilinen kayıtlara aittir; eksik bilgi sıfır vergi anlamına gelmez.` : ''}
+            </div>
+          )}
           {/* Revenue & Payment Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
@@ -52,7 +58,7 @@ export default function FinancialTab(props) {
               icon={ArrowUpDown}
               label="Net Pozisyon"
               value={breakdown(financialSummary.net_position_by_currency, financialSummary.net_position)}
-              subValue={financialSummary.net_position > 0 ? "Alacak" : financialSummary.net_position < 0 ? "Fazla ödeme" : "Dengeli"}
+              subValue={financialSummary.net_position == null ? 'Para birimi bazında değerlendirin' : financialSummary.net_position > 0 ? "Alacak" : financialSummary.net_position < 0 ? "Fazla ödeme" : "Dengeli"}
               color={financialSummary.net_position > 0 ? "text-amber-600" : financialSummary.net_position < 0 ? "text-red-600" : "text-emerald-600"}
             />
           </div>
@@ -84,7 +90,7 @@ export default function FinancialTab(props) {
                           </div>
                           <div className="text-right">
                             <span className="text-sm font-semibold text-gray-900">{breakdown(data.amount_by_currency, data.amount)}</span>
-                            <span className="text-[11px] text-gray-400 ml-2">{pct}%</span>
+                            {financialSummary.revenue.total != null && <span className="text-[11px] text-gray-400 ml-2">{pct}%</span>}
                           </div>
                         </div>
                       );

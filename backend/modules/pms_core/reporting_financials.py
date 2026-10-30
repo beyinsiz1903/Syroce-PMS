@@ -123,7 +123,8 @@ def effective_folio_payment(payment: dict) -> float:
     if not is_valid_payment(payment):
         return 0.0
     amount = float(money(payment.get("amount") or 0))
-    return -amount if str(payment.get("payment_type") or "").strip().lower() == "refund" and amount > 0 else amount
+    refund = str(payment.get("payment_type") or "").strip().lower() == "refund" or str(payment.get("status") or "").strip().lower() == "refunded"
+    return -abs(amount) if refund else amount
 
 
 def reporting_collection_amount(payment: dict, reporting_currency: str = REPORTING_CURRENCY) -> float | None:

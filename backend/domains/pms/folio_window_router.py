@@ -34,6 +34,7 @@ from core.utils import calculate_folio_balance, generate_folio_number
 from models.enums import FolioStatus, FolioType
 from models.schemas import User
 from modules.pms_core.folio_allocation import FolioAllocationRequest, allocate_posted_debt
+from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.audit_helper import audit_log
 
@@ -327,12 +328,16 @@ async def list_windows(
 
     folios.sort(key=lambda f: (f["_resolved_window"] or 99, _ts_key(f.get("created_at"))))
 
+    snapshots = await folio_snapshots(db, user.tenant_id, folios,
+        fallback_currency=(booking or {}).get("currency") or "TRY", include_booking_extras=True)
     out: list[WindowSummary] = []
     for f in folios:
         fid = f["id"]
-        bal = await calculate_folio_balance(fid, user.tenant_id)
-        c_cnt = await db.folio_charges.count_documents({"tenant_id": user.tenant_id, "folio_id": fid, "voided": {"$ne": True}})
-        p_cnt = await db.payments.count_documents({"tenant_id": user.tenant_id, "folio_id": fid, "voided": {"$ne": True}})
+        snapshot = snapshots[fid]
+        bal = snapshot["balance_by_currency"].get(snapshot["currency"], 0)
+        if any(code != snapshot["currency"] and amount for code, amount in snapshot["balance_by_currency"].items()):
+            raise HTTPException(409, "Çok para birimli folyo: hesap detayında para birimi bazında mutabakat yapın")
+        c_cnt, p_cnt = len(snapshot["charges"]), len(snapshot["payments"])
         wn = f["_resolved_window"]
         out.append(
             WindowSummary(

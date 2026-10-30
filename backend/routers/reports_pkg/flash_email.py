@@ -23,7 +23,16 @@ from modules.pms_core.reporting_financials import deduplicate_report_payments, e
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
 from modules.pms_core.revenue_categories import FNB_CATEGORIES
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, booking_occupies_night, load_stay_night_metrics, stay_day_match
+from modules.pms_core.stay_night_metrics import (
+    NON_COMMERCIAL_STATUSES,
+    allocated_revenue_for_night,
+    as_date,
+    booking_nights,
+    booking_occupies_night,
+    load_daily_rate_index,
+    load_stay_night_metrics,
+    stay_day_match,
+)
 
 try:
     from domains.pms.night_audit_module import AuditStatus, AutomaticPosting, NightAuditRecord
@@ -159,8 +168,9 @@ async def get_flash_report(
     room_ids = [b["room_id"] for b in active if b.get("room_id") and not b.get("room_number")]
     room_rows = await db.rooms.find({"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}}, {"_id": 0, "id": 1, "room_number": 1}).to_list(None) if room_ids else []
     room_names = {row["id"]: row.get("room_number") for row in room_rows}
+    daily_rates = await load_daily_rate_index(db, current_user.tenant_id, active, target_day, target_day)
     breakdown = [{"guest_name": b.get("guest_name") or "Misafir", "room_number": b.get("room_number") or room_names.get(b.get("room_id")) or "?",
-        "daily_rate": float(allocated_revenue_for_night(b, target_day)), "total_stay_amount": b.get("total_amount", 0),
+        "daily_rate": float(allocated_revenue_for_night(b, target_day, daily_rates)), "total_stay_amount": b.get("total_amount", 0),
         "currency": _currency(b), "nights": booking_nights(b)} for b in active]
     legacy_revenue = {field: _single_currency(values) for field, values in fields.items()}
     legacy_revenue.update({field + "_by_currency": values for field, values in fields.items()})

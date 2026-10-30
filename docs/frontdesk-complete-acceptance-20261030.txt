@@ -1,0 +1,130 @@
+ÖN BÜRO VE BAĞLANTILI RAPORLAR — 30 EKİM 2026
+
+Sonuç: İncelenen akışlarda bulunan hatalar düzeltildi. Yerel birleşik paket:
+353 backend + 125 arayüz testi başarılı; ayrıca gerçek tarayıcıda gün sonu
+onay ekranı güvenlik testi başarılı. Frontend derlemesi, değişen dosyaların
+Ruff/ESLint kontrolleri ve git diff --check başarılı.
+Bu sonuç bütün olası rol/ayar/eşzamanlılık kombinasyonları için hatasızlık
+iddiası değildir. Yeni kodun canlı son kabulü merge/deploy sonrasında yapılır.
+
+ORTAM VE YETKİ
+Kullanıcının ücret, ödeme kaydı, vardiya, çıkış ve gün sonu açık onayı kapsamında
+işlemler ayrı LOCAL QA otelleri 900030 ve 900031'de yapıldı. Gerçek üretim
+misafirleri veya iş günü değiştirilmedi. Başlangıç canlı sürümü salt okunur
+cadd57742480d07768b0111dc7378a9d2da6d9de olarak doğrulandı (PR #1457).
+Yeni dal: fix/frontdesk-complete-acceptance. Bu çalışmada merge/deploy yok.
+
+Full backend + normal login/RBAC/entitlement/edit-lock middleware kullanıldı.
+Mongo gerçek localhost replica set; cache/oturum katmanı geçici fakeredis.
+Tarayıcı ayrı geçici Chrome oturumu; browser ve backend dış ağa kapalı.
+Kimlikler, tutarlar ve oteller yapaydır; kart/banka, KBS, mali belge, OTA veya
+gerçek yazıcı işlemi gönderilmedi. Login parolaları/tokenlar rapora alınmadı.
+
+UYGULANAN VE DOĞRULANAN DÜZELTMELER
+1) Rezervasyon kartı oda değişimi: dolu/kirli/temizlikte/bakım/OOO odaları,
+   aynı oda, yetersiz kapasite ve çakışan konaklamalar güvenli reddediliyor.
+   Oda, rezervasyon, gece kilitleri, varsa ücret ve mühürlü log tek transaction.
+   İki ayrı misafirin aynı odayı eşzamanlı istemesinde yalnız biri kazanıyor;
+   geç hata durumunda oda/ücret/gece kilitleri geri alınıyor.
+2) Hızlı folyo: ek hizmetler, iptal edilmiş kalemler, eski yalnız folyo kimliği
+   bağlı kayıtlar ve net iadeler ana rezervasyon hesabıyla eşleştirildi.
+   Henüz işlenmemiş oda bedeli işlenmiş borçtan ayrı gösteriliyor.
+3) Kasa: boş/geçersiz/negatif/sonsuz tutar veya yabancı para kuru sessizce
+   sıfır/bir olmuyor. Hızlı yabancı para ödemesi işlem anı TL kuru gerektiriyor.
+4) Çamaşırhane teslimi: yalnız eski ledger'a yazıp ana folyodan/rapordan kaybolan
+   teslim giderildi. Sipariş durumu + canonical ücret + ledger + mühürlü log
+   atomik; tekrar teslim ücret çoğaltmıyor. İncelenen aynı açık-gün legacy
+   kayıt salt idempotent kaynak eşleştirmesiyle bir kez tamamlandı. Kapalı gün
+   veya tutar/para birimi uyuşmazlığı otomatik değiştirilmez.
+5) İade: refund/refunded/negatif satırlar tahsilat gibi sayılmıyor. Ekranda çift
+   eksi yerine 'Ödeme iadesi / İade edilen' ve doğru borç etkisi gösteriliyor.
+6) Gün sonu günlük/aralık/mutabakat raporları canonical gelir ve ödeme kaynaklarını
+   kullanıyor: ek hizmet, tek sayılan POS aktarımı, muhasebe günü, BSON/ISO tarih,
+   void/failed filtreleri ve güvenli tekrarlar tutarlı. Rapor okuma arızası
+   'degraded' olarak görünür; tamamlanmış sağlıklı sıfır gibi sunulmaz.
+7) Çok para birimi: TRY+EUR/USD nominal tutarları tek parasal toplam yapılmıyor.
+   Net pozisyon her para biriminde ayrı. Vergi ayrımı eksik kayıtlarda uyarı var;
+   bilinmeyen vergi sıfır vergi diye yorumlanmaz.
+8) ADR/operasyonel oda tahakkuku: günlük fiyat planı varken konaklama ortalaması
+   kullanılmıyor. Her para birimindeki ADR yalnız o para birimindeki ücretli
+   oda-gece sayısına bölünüyor. Çakışan/uyuşmayan plan tahmin edilmez. Gün sonuna
+   işlenmemiş planlanan oda geliri gerçekleşmiş mali gelire eklenmez.
+9) Folyo hesap kartı / cari raporu: eski bağlı olmayan ek hizmetler, veritabanında
+   gerçekten tek hesap varsa salt okunur özetin içine alınır; kayıt yeniden
+   yazılmaz. Çok hesapta ödeyen tahmini yapılmaz. Tek hesapta eski -45 TL yerine
+   15 TL ve üç hizmet kaydı görüntülendi. Gece mali özetindeki açık folyo
+   bakiyeleri de eski cache bakiyesi yerine aynı ledger görüntüsünden okunur.
+   Finansal paylaştırmanın kaynak/izin
+   sözleşmesi değiştirilmedi; bu uyumluluk yalnız okuma projeksiyonudur.
+10) Temizlik tamamlanması: stale housekeeping_status=dirty bayrağı temizleniyor;
+    misafirli oda boşaltılmıyor, bakım/OOO durumu kaldırılmıyor, başka tenant'a
+    dokunulmuyor.
+11) Eski koşulsuz başarılı night-audit e2e yerine gerçek UI login, authoritative
+    iş günü ve onay dialog testi var. Dialog açmak POST /run göndermiyor.
+
+GERÇEK LOCAL HTTP / TARAYICI KABULÜ
+19 ön büro modül sekmesi açıldı; sayfa metinleri ve düğme envanteri korundu.
+Bu sekme gezinmesi, her düğmenin her rol/konfigürasyonda tam mutasyon testi
+anlamına gelmez. İşlem kabulü aşağıdaki belirli akışlarla sınırlıdır:
+- Üç yeni QA misafiri/rezervasyonu ve giriş; ekstra hizmet + void; depozito,
+  kısmi iade, ödeme ve aynı anahtarla güvenli tekrar; manuel kasa giriş/çıkışı.
+- Normal rezervasyon edit-lock, dolu odaya ret, güvenli oda değişimi, gecelik
+  fiyat planı değişimi, temizlik, OOO oluşturma/iptal, çamaşırhane ve concierge.
+- Housekeeping kasa/ödeme yazısı 403; ön büro yetkisiz plan ayarı 403; finance
+  rapor okuması 200; diğer QA tenant rezervasyon/folyo/misafir erişimi 404.
+- Tarayıcıda hizmet tarih/saatleri, iadenin borç etkisi, yalnız yiyecek-içecek
+  misafir çıktısı seçimi incelendi. Çıktı seçimi borç/hesap taşımaz.
+- İkinci QA otelinde 29 Ekim dry run günü ilerletmedi. Gerçek normal gün sonu
+  tek 100 TL oda ücretini işleyip günü 30 Ekim'e aldı. Tekrar/eski gün ve aynı
+  gün erken kapatma 409; borçla çıkış 402; 100 TL ödeme sonrası çıkış başarılı.
+  Kapalı vardiya Z beklenen=100, sayılan=100, fark=0.
+
+FİNANSAL VE RAPOR KARŞILAŞTIRMASI
+900030: anlaşılmış oda toplamı 250 TRY; aktif SPA 40 + yemek 20 + çamaşırhane 15
+= 75 TRY işlenmiş gelir. 70 depozito -20 iade +10 ödeme =60 TRY net tahsilat.
+İşlenmiş gelir/tahsilat farkı 15 TRY; henüz işlenmemiş oda tutarı 250 TRY;
+toplam planlı kalan ödeme 265 TRY. Bunlar farklı ölçüler, birbirine karıştırılmaz.
+Gelir, kategori, daily-summary, daily-flash, flash, gece mali günlük/aralık ve
+payment reconciliation aynı 75/60 kaynağıyla karşılaştırıldı.
+Kasa açılış 500; nakit giriş 120, çıkış 30; net 90; beklenen=590 TRY.
+Vardiya normal API ile 590 sayılarak kapandı; Z farkı=0; beş kasa hareketi.
+30 Ekim oda tahakkuk planı TRY220 / USD100; ADR TRY110 / USD100. Forecast ile
+operasyonel flash aynı; 30 fiziksel odada üç oda konaklıyor (%10).
+900031: 100 TRY oda geliri 29 Ekim; 100 TRY tahsilat 30 Ekim; gelir tahsilat
+gününe taşınmadı. Gün sonu ödeme/tarih testi gerçek normal uygulama akışı.
+Audit doğrulaması: ana otel 139, gece oteli 26 mühürlü kayıt; iki zincir sağlıklı
+(yakalanan sequence prefix itibarıyla). Legacy kayıtlar sessizce mühürlenmedi.
+
+KANITLAR (BU SOHBETİN YEREL ÇALIŞMA ALANI)
+Kök: /Users/syroce/Documents/Codex/2026-10-09/evet-sohbet-uzad-k-a-nceki-2/
+Kanıt klasörü: frontdesk-complete-20261030.SPT695/
+- backend-complete-final-v13.xml: 353 passed; önceki denemeler ayrıca korundu.
+- frontend-complete-final-v12.json: 125 passed, 0 failed.
+- night-ui-results.json: gerçek normal arayüzde night-audit dialog kabulü.
+- ui-tabs-2026-10-30T04-30-08-744Z-matrix.json: 19 sekme/düğme envanteri.
+- final-v8-report-acceptance-075036.json ve final-v8-*-075036.json: rapor kontrolü.
+- final-v8-shift-z-075145.json: 590/590/0 kapanış raporu.
+- final-v8-audit-session-075204.json / final-v8-audit-night-075204.json.
+- state-night-close.json / state-night-checkout.json: gün sonu ve çıkış.
+- window-final-v12.json / room-readiness-final-v12.json: son görüntü uyumu.
+- folio-refund-fixed-2026-10-30T04-55-53-930Z.png: kart/hesap görünümü.
+- food-print-2026-10-30T04-55-53-930Z.png: yiyecek-içecek çıktı seçimi.
+- food-document-2026-10-30T04-57-54-196Z.txt/.png: gerçek filtreli belge önizlemesi;
+  yalnız QA food, 30 Ekim 19:00, 20 TL; oda/SPA/çamaşırhane hariç.
+Normal HTTP yazılarının request/result ve idempotency anahtarları ayrı ayrı
+korundu. İlk hatalı kod test sonuçları, guard retleri ve fixture/port/selector
+kurulum hataları silinmedi. Sayılar tekrar testlerinin toplamı değildir.
+Private oturum dosyaları/parolalar ve veritabanı dosyaları Git'e eklenmez.
+
+SINIRLAR / SONRAKİ CANLI KABUL
+POS için full-stack entitlement kapalı durumun 403 koruması ve açılmış QA
+planda boş raporun 200 cevabı doğrulandı; satış/oda aktarımı/iade tutarlılığı
+gerçek replica test paketinde var. Her POS terminal/donanım varyantı denenmedi.
+Gece otelinde GL bridge 'not_configured': bu gerçek muhasebe sağlayıcısına
+aktarımı doğrulamaz. KBS/banka/fatura/OTA dış servis teslimi bu testte kapsam dışı.
+Redis taşıması emüledir; gerçek dağıtık Redis kesintisi tüm kombinasyonları yok.
+Test ortamının başlangıcında bazı mevcut POS/messaging index uyarıları var;
+bu rapor altyapı sağlığı veya tüm indexlerin eksiksizliği iddiası taşımaz.
+Üretim gerçek misafirler üzerinde toplu ücret/iade/çıkış veya gün kapatma yok.
+Yeni PR merge/deploy sonrası canlı commit ve gerçek ilgili ekran/raporlar
+salt okunur tekrar doğrulanmalı; yerel kabul canlı yayın kabulü yerine geçmez.

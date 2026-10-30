@@ -918,7 +918,7 @@ class NoteCreate(BaseModel):
 
 class RoomChangeRequest(BaseModel):
     new_room_id: str
-    reason: str
+    reason: str = Field(..., min_length=3, max_length=500)
     transfer_folio: bool = True
     extra_charge: float = Field(0.0, ge=0, le=1e9)
 
@@ -2800,7 +2800,7 @@ async def room_change(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
-    """Change the room for a reservation with full audit trail."""
+    """Change room, calendar locks, fee and audit as one durable operation."""
     _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -2809,102 +2809,17 @@ async def room_change(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
     await ensure_reservation_mutable(db, tid, booking)
-    if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed", "checked_in"}:
-        raise HTTPException(status_code=409, detail="Bu rezervasyon mevcut durumunda oda değişikliğine uygun değil")
+    if len(data.reason.strip()) < 3:
+        raise HTTPException(422, "Oda değişikliği gerekçesi en az 3 karakter olmalıdır")
+    from core.reservation_room_move import move_reservation_room
 
-    old_room_id = booking.get("room_id")
-    old_room = await db.rooms.find_one({"id": old_room_id, "tenant_id": tid}, {"_id": 0})
-    new_room = await db.rooms.find_one({"id": data.new_room_id, "tenant_id": tid}, {"_id": 0})
-
-    if not new_room:
-        raise HTTPException(status_code=404, detail="Yeni oda bulunamadı")
-
-    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
-    effective_extra_charge = 0.0 if full_comp else round(data.extra_charge, 2)
-
-    # Update booking
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": tid},
-        {
-            "$set": {
-                "room_id": data.new_room_id,
-                "room_number": new_room.get("room_number"),
-            }
-        },
-    )
-
-    # Release old room
-    if old_room_id:
-        await db.rooms.update_one(
-            {"id": old_room_id, "tenant_id": tid},
-            {"$set": {"status": "dirty", "current_booking_id": None}},
-        )
-
-    # Assign new room
-    await db.rooms.update_one(
-        {"id": data.new_room_id, "tenant_id": tid},
-        {"$set": {"status": "occupied", "current_booking_id": booking_id}},
-    )
-
-    # Record room move history
-    move_record = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "from_room_id": old_room_id,
-        "from_room_number": old_room.get("room_number") if old_room else None,
-        "to_room_id": data.new_room_id,
-        "to_room_number": new_room.get("room_number"),
-        "reason": data.reason,
-        "moved_by": current_user.name,
-        "moved_at": datetime.now(UTC).isoformat(),
-    }
-    await db.room_move_history.insert_one({**move_record})
-
-    # An upgrade difference is accommodation revenue, not a generic extra.
-    # Post it to the guest folio so every financial report reads the same
-    # durable ledger row and checkout immediately sees the updated balance.
-    if data.extra_charge > 0:
-        folio = await _ensure_reservation_folio(tid, booking)
-        now = datetime.now(UTC).isoformat()
-        charge = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tid,
-            "folio_id": folio["id"],
-            "booking_id": booking_id,
-            "charge_category": "room",
-            "charge_type": "room_upgrade",
-            "description": f"Oda değişikliği fiyat farkı: {old_room.get('room_number') if old_room else '-'} → {new_room.get('room_number') or '-'}",
-            "quantity": 1,
-            "unit_price": effective_extra_charge,
-            "amount": effective_extra_charge,
-            "tax_rate": 0,
-            "tax_amount": 0,
-            "total": effective_extra_charge,
-            "is_complimentary": bool(full_comp),
-            "complimentary_original_amount": data.extra_charge if full_comp else None,
-            "posted_at": now,
-            "posted_by": current_user.name,
-            "voided": False,
-        }
-        await stamp_open_business_date(db, tid, charge)
-        await db.folio_charges.insert_one({**charge})
-        await _refresh_cached_folio_balance(tid, folio["id"])
-        invalidate_financial_report_caches(tid)
-
-    await _log_activity(
-        tid,
-        booking_id,
-        "room_changed",
-        current_user.name,
-        {
-            "from_room": old_room.get("room_number") if old_room else None,
-            "to_room": new_room.get("room_number"),
-            "reason": data.reason,
-            "extra_charge": effective_extra_charge,
-            "complimentary_original_amount": data.extra_charge if full_comp else None,
-        },
-    )
+    day = (await ensure_business_date_initialized(db, tid))["business_date"]
+    result, folio_id = await move_reservation_room(db, tenant_id=tid, booking_id=booking_id,
+        data=data, actor=current_user, business_date=day, ensure_folio=_ensure_reservation_folio)
+    if folio_id:
+        await _run_post_commit_hook(lambda: _refresh_cached_folio_balance(tid, folio_id), operation="room_move_balance")
+    invalidate_financial_report_caches(tid)
+    move_record = result["move_record"]
 
     # Acente webhook: rezervasyon güncellendi (oda değişti)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
@@ -2913,11 +2828,10 @@ async def room_change(
         tid,
         booking_id,
         "room_moved",
-        {"new_room_id": data.new_room_id, "new_room_number": new_room.get("room_number"), "reason": data.reason},
+        {"new_room_id": data.new_room_id, "new_room_number": move_record["to_room_number"], "reason": data.reason},
     )
 
-    move_record.pop("_id", None)
-    return {"success": True, "move_record": move_record, "extra_charge": effective_extra_charge}
+    return result
 
 
 @router.post("/reservations/{booking_id}/early-checkin")

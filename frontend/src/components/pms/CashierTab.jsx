@@ -215,11 +215,11 @@ const CashierTab = () => {
 
   const submitManual = (direction) => {
     const amt = parseFloat(manualTxn.amount);
-    if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
+    if (!Number.isFinite(amt) || amt <= 0) { toast.error('Geçerli tutar girin'); return; }
     if (!manualTxn.description.trim()) { toast.error('Açıklama girin'); return; }
     const cur = manualTxn.currency || 'TRY';
-    const fx = parseFloat(manualTxn.fx_rate) || 1;
-    if (cur !== 'TRY' && (!fx || fx <= 0)) { toast.error('Yabancı para için kur girin'); return; }
+    const fx = cur === 'TRY' ? 1 : Number(manualTxn.fx_rate);
+    if (cur !== 'TRY' && (!manualTxn.fx_rate.trim() || !Number.isFinite(fx) || fx <= 0)) { toast.error('Yabancı para için kur girin'); return; }
     const label = direction === 'in'
       ? t('pms.cashierActions.pinBeforeCashIn', 'Nakit girişi öncesi PIN doğrulayın')
       : t('pms.cashierActions.pinBeforeCashOut', 'Kasa çıkışı öncesi PIN doğrulayın');
@@ -885,7 +885,7 @@ const CashierTab = () => {
               </div>
               <div>
                 <Label>Para Birimi</Label>
-                <Select value={manualTxn.currency} onValueChange={v => setManualTxn(p => ({ ...p, currency: v, fx_rate: v === 'TRY' ? '1' : p.fx_rate }))}>
+                <Select value={manualTxn.currency} onValueChange={v => setManualTxn(p => ({ ...p, currency: v, fx_rate: v === 'TRY' ? '1' : '' }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CURRENCIES.map(c => <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>)}
@@ -940,7 +940,7 @@ const CashierTab = () => {
               </div>
               <div>
                 <Label>Para Birimi</Label>
-                <Select value={manualTxn.currency} onValueChange={v => setManualTxn(p => ({ ...p, currency: v, fx_rate: v === 'TRY' ? '1' : p.fx_rate }))}>
+                <Select value={manualTxn.currency} onValueChange={v => setManualTxn(p => ({ ...p, currency: v, fx_rate: v === 'TRY' ? '1' : '' }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CURRENCIES.map(c => <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>)}

@@ -68,6 +68,12 @@ export default function ReportTab(props) {
 
           {financialReport ? (
             <div className="space-y-4">
+              {(financialReport.degraded || financialReport.tax_unknown_count > 0) && (
+                <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {financialReport.degraded ? 'Bazı rapor kaynakları okunamadı; sonuçlar eksik olabilir. ' : ''}
+                  {financialReport.tax_unknown_count > 0 ? `${financialReport.tax_unknown_count} kalemin vergi ayrımı eksik; gösterilen vergi tüm kayıtlar için kesin toplam değildir.` : ''}
+                </div>
+              )}
               {/* Summary */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 <div className="p-3 bg-emerald-50 rounded-lg">

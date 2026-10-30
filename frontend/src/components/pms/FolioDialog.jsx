@@ -18,9 +18,11 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
   });
   const [chargeSubmitting, setChargeSubmitting] = useState(false);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [receivedToTryRate, setReceivedToTryRate] = useState('');
   const chargeSubmittingRef = useRef(false);
   const paymentSubmittingRef = useRef(false);
   const folioCurrency = folio?.currency || folio?.currency_code || cachedTenantCurrency();
+  const foreignFolio = folioCurrency !== 'TRY';
 
   const handleAddCharge = async (e) => {
     e.preventDefault();
@@ -54,11 +56,19 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
       toast.error('Sıfırdan büyük ödeme tutarı gerekli');
       return;
     }
+    const rate = Number(receivedToTryRate);
+    if (foreignFolio && (!receivedToTryRate.trim() || !Number.isFinite(rate) || rate <= 0)) {
+      toast.error('Yabancı para tahsilatı için işlem anındaki TL kuru gerekli');
+      return;
+    }
     paymentSubmittingRef.current = true;
     setPaymentSubmitting(true);
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `folio-payment-${Date.now()}-${Math.random()}`;
-      await axios.post(`/frontdesk/folio/${bookingId}/payment`, newPayment, {
+      await axios.post(`/frontdesk/folio/${bookingId}/payment`, {
+        ...newPayment, currency: folioCurrency,
+        ...(foreignFolio ? { received_to_try_rate: rate } : {}),
+      }, {
         headers: { 'Idempotency-Key': idempotencyKey },
       });
       toast.success('Ödeme işlendi');
@@ -153,11 +163,16 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                   <Input
                     type="number"
                     step="0.01"
+                    aria-label="Folyo tahsilat tutarı"
                     placeholder={t('common.amount', 'Amount')}
                     value={newPayment.amount}
                     onChange={(e) => setNewPayment((prev) => ({...prev, amount: Number(e.target.value) || 0}))}
                     required
                   />
+                  {foreignFolio && <label className="text-sm">1 {folioCurrency} için TL kuru
+                    <Input aria-label="Tahsilat TL kuru" type="number" step="0.000001" min="0.000001"
+                      value={receivedToTryRate} onChange={event => setReceivedToTryRate(event.target.value)} placeholder="İşlem anındaki kur" />
+                  </label>}
                   <Select value={newPayment.method} onValueChange={(v) => setNewPayment((prev) => ({...prev, method: v}))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -183,6 +198,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
             </div>
 
             <div className="border-t pt-4">
+              {Number(folio.unposted_room_amount || 0) > 0 && <div className="mb-2 flex justify-between text-sm text-gray-600"><span>Henüz tahakkuk etmemiş konaklama:</span><span>{formatCurrency(folio.unposted_room_amount, folioCurrency, { decimals: 2 })}</span></div>}
               {Number(folio.opening_balance || 0) !== 0 && <div className="flex justify-between text-sm"><span>Önceki PMS devir bakiyesi (gelir/tahsilat değil):</span><span>{formatCurrency(folio.opening_balance, folioCurrency, { decimals: 2 })}</span></div>}
               <div className="flex justify-between text-lg font-bold">
                 <span>{t('pms.totalCharges', 'Total Charges')}:</span>

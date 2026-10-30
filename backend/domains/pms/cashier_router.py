@@ -4,6 +4,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 
@@ -34,6 +35,21 @@ _FX_RECEIPT_RE = re.compile(
     re.IGNORECASE,
 )
 _SHIFT_INDEX_RETRY_BACKOFF_SEC = 60.0
+
+
+def _cashier_number(value, label, *, positive=False, money=True):
+    """Reject malformed/non-finite money instead of silently substituting 0/1."""
+    try:
+        if isinstance(value, bool) or value is None:
+            raise ValueError
+        amount = Decimal(str(value))
+        if not amount.is_finite() or amount < 0 or amount > Decimal("1e9") or (positive and amount == 0):
+            raise ValueError
+        if money and amount != amount.quantize(Decimal("0.01")):
+            raise ValueError
+        return float(amount)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise HTTPException(400, f"{label} geçerli, sonlu ve {'sıfırdan büyük' if positive else 'negatif olmayan'} olmalıdır") from exc
 
 
 async def _ensure_shift_indexes() -> None:
@@ -150,7 +166,7 @@ async def open_shift(
     if existing:
         raise HTTPException(status_code=400, detail="Zaten açık bir vardiya var")
     now = datetime.utcnow()
-    opening_amount = _safe_float(body.get("opening_amount", 0))
+    opening_amount = _cashier_number(body.get("opening_amount", 0), "Açılış tutarı")
     doc = {
         "_id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -190,7 +206,7 @@ async def close_shift(
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
     now = datetime.utcnow()
-    counted_amount = _safe_float(body.get("counted_amount", 0))
+    counted_amount = _cashier_number(body.get("counted_amount", 0), "Sayılan tutar")
     expected = (
         _safe_float(shift.get("opening_amount", 0))
         + _safe_float(shift.get("cash_in", 0))
@@ -483,9 +499,7 @@ async def manual_transaction(
     """
     from domains.pms.cashier_service import record_cash_transaction
 
-    amount = _safe_float(body.get("amount", 0))
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Tutar 0'dan büyük olmalı")
+    amount = _cashier_number(body.get("amount"), "Tutar", positive=True)
     direction = (body.get("direction") or "").lower()
     if direction not in {"in", "out"}:
         raise HTTPException(status_code=400, detail="Yön 'in' veya 'out' olmalı")
@@ -496,14 +510,15 @@ async def manual_transaction(
     txn_type = body.get("type") or ("paid_out" if direction == "out" else "manual_in")
 
     # Döviz: TRY default, fx_rate orijinal birim → TL çevrim katsayısı
-    currency = (body.get("currency") or "TRY").upper()
-    fx_rate = _safe_float(body.get("fx_rate", 1.0)) or 1.0
-    if currency != "TRY" and fx_rate <= 0:
-        raise HTTPException(status_code=400, detail="Yabancı para için kur 0'dan büyük olmalı")
-    original_amount = _safe_float(body.get("original_amount", amount)) or amount
+    currency = str(body.get("currency") or "TRY").strip().upper()
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        raise HTTPException(400, "Geçerli üç harfli para birimi gereklidir")
+    fx_rate = 1.0 if currency == "TRY" else _cashier_number(body.get("fx_rate"), "Yabancı para kuru", positive=True, money=False)
+    original_amount = _cashier_number(body.get("original_amount", amount), "Orijinal tutar", positive=True)
     # amount: TL karşılığı; eğer client original_amount gönderdiyse onu kullan
     if currency != "TRY":
         amount = round(original_amount * fx_rate, 2)
+        _cashier_number(amount, "TL karşılığı", positive=True)
 
     # Aktif vardiya zorunlu (tüm manuel işlemler için)
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
@@ -1162,6 +1177,18 @@ async def update_laundry_order(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
+    if body.get("status") == "delivered":
+        from core.laundry_delivery import deliver_laundry
+        from routers.reservation_detail import _refresh_cached_folio_balance, _run_post_commit_hook, invalidate_financial_report_caches
+
+        if set(body) - {"status"}:
+            raise HTTPException(422, "Teslimden önce sipariş düzenlemelerini ayrıca kaydedin")
+        delivered = await deliver_laundry(db, current_user.tenant_id, order_id, current_user)
+        orders = await _get_laundry_orders_array(current_user.tenant_id)
+        order = next(row for row in orders if row.get("id") == order_id)
+        await _run_post_commit_hook(lambda: _refresh_cached_folio_balance(current_user.tenant_id, order["folio_id"]), operation="laundry_delivery_balance")
+        invalidate_financial_report_caches(current_user.tenant_id)
+        return delivered
     update_fields = {k: v for k, v in body.items() if k not in ("id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     set_doc = {f"laundry_orders.$.{k}": v for k, v in update_fields.items()}
@@ -1172,97 +1199,7 @@ async def update_laundry_order(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Siparis bulunamadi")
 
-    # status=delivered → folio'ya LAUNDRY charge (idempotent)
-    folio_charge_result = None
-    if update_fields.get("status") == "delivered":
-        # Atomik claim: yalnızca folio_charged=false ise true'ya çevir.
-        # Concurrent isteklerden sadece biri ledger'a charge POST eder.
-        claim = await db.tenant_settings.update_one(
-            {
-                "tenant_id": current_user.tenant_id,
-                "laundry_orders": {"$elemMatch": {"id": order_id, "folio_charged": {"$ne": True}}},
-            },
-            {"$set": {"laundry_orders.$.folio_charged": True}},
-        )
-        # Ilgili siparisi tekrar oku
-        orders = await _get_laundry_orders_array(current_user.tenant_id)
-        order = next((o for o in orders if o.get("id") == order_id), None)
-        if order and claim.modified_count > 0:
-            booking_id = order.get("booking_id") or ""
-            folio_id = order.get("folio_id") or ""
-            # Eski siparişler için lookup
-            if not booking_id:
-                active = await _find_active_booking_by_room(current_user.tenant_id, order.get("room_number", ""))
-                if active:
-                    booking_id = active.get("id") or active.get("booking_id") or ""
-            if booking_id and not folio_id:
-                folio = await _find_open_folio_for_booking(current_user.tenant_id, booking_id)
-                if folio:
-                    folio_id = folio.get("id") or ""
-
-            if folio_id and booking_id:
-                try:
-                    items_desc = ", ".join(f"{i.get('name', '?')} x{i.get('quantity', 1)}" for i in (order.get("items") or []))
-                    desc = f"Çamaşırhane - Oda {order.get('room_number', '?')}"
-                    if items_desc:
-                        desc += f" ({items_desc})"
-                    posted = await _ledger.post_charge(
-                        tenant_id=current_user.tenant_id,
-                        folio_id=folio_id,
-                        booking_id=booking_id,
-                        amount=_safe_float(order.get("total", 0)),
-                        description=desc,
-                        charge_code="LAUNDRY",
-                        idempotency_key=f"laundry:{order_id}",
-                        posted_by=current_user.email,
-                        metadata={
-                            "laundry_order_id": order_id,
-                            "service_type": order.get("service_type"),
-                            "items": order.get("items", []),
-                        },
-                    )
-                    # folio_charged zaten claim aşamasında set edilmişti;
-                    # burada entry_id/folio_id/booking_id metadata'yı yansıt
-                    await db.tenant_settings.update_one(
-                        {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
-                        {
-                            "$set": {
-                                "laundry_orders.$.folio_entry_id": posted.get("entry_id"),
-                                "laundry_orders.$.folio_id": folio_id,
-                                "laundry_orders.$.booking_id": booking_id,
-                            }
-                        },
-                    )
-                    folio_charge_result = {
-                        "charged": True,
-                        "amount": _safe_float(order.get("total", 0)),
-                        "entry_id": posted.get("entry_id"),
-                        "new_balance": posted.get("new_balance"),
-                    }
-                except Exception as e:
-                    # Charge başarısız → claim'i geri al ki yeniden denenebilsin
-                    logger.error(f"laundry folio charge failed for {order_id}: {e}")
-                    await db.tenant_settings.update_one(
-                        {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
-                        {"$set": {"laundry_orders.$.folio_charged": False}},
-                    )
-                    folio_charge_result = {"charged": False, "error": str(e)}
-            else:
-                # Booking/folio bulunamadı → claim'i geri al
-                await db.tenant_settings.update_one(
-                    {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
-                    {"$set": {"laundry_orders.$.folio_charged": False}},
-                )
-                folio_charge_result = {
-                    "charged": False,
-                    "reason": "no_active_booking_or_folio",
-                }
-
-    return {
-        "id": order_id,
-        "status": update_fields.get("status", "updated"),
-        "folio_charge": folio_charge_result,
-    }
+    return {"id": order_id, "status": update_fields.get("status", "updated"), "folio_charge": None}
 
 
 @router.delete("/laundry/orders/{order_id}")

@@ -4,11 +4,13 @@ const nonCash = new Set(['discount', 'city_ledger', 'direct_bill', 'complimentar
 export const paymentMethod = row => String(row.payment_method || row.method || '').trim().toLowerCase();
 export const isEffectivePayment = row => !row.voided && !invalid.has(String(row.status || 'paid').trim().toLowerCase());
 export const isNonCashPayment = row => nonCash.has(paymentMethod(row));
+export const isRefundPayment = row => String(row.payment_type || '').trim().toLowerCase() === 'refund'
+  || String(row.status || '').trim().toLowerCase() === 'refunded' || Number(row.amount || 0) < 0;
 export const signedFolioPayment = row => {
   if (!isEffectivePayment(row)) return 0;
   const amount = Number(row.amount || 0);
   if (!Number.isFinite(amount)) return 0;
-  return String(row.payment_type || '').trim().toLowerCase() === 'refund' && amount > 0 ? -amount : amount;
+  return isRefundPayment(row) ? -Math.abs(amount) : amount;
 };
 export const collectionPayment = row => isNonCashPayment(row) ? 0 : signedFolioPayment(row);
 // Display the last actual receipt, not a later concession, AR transfer or refund.
