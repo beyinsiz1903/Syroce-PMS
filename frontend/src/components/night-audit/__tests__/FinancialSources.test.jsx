@@ -24,3 +24,16 @@ it('warns before interpreting an incomplete range report', () => {
     financialReport={{ tax_unknown_count: 2, summary: {} }} /></Tabs>);
   expect(screen.getByRole('alert')).toHaveTextContent('2 kalemin vergi ayrımı eksik');
 });
+
+it('warns when aggregate tax is known but its component split is not', () => {
+  render(<Tabs value="financial"><FinancialTab categoryLabels={{}} paymentMethodLabels={{}}
+    StatCard={({ value }) => <div>{value}</div>}
+    financialSummary={{ tax_unknown_count: 0, tax_breakdown_incomplete_count: 1, revenue: {}, payments: {},
+      open_folios: { balance: { total: null }, balance_by_currency: {
+        TRY: { total: 100 }, USD: { total: -100 },
+      } } }} /></Tabs>);
+  expect(screen.getByRole('alert')).toHaveTextContent('1 kalemde vergi türü ayrımı eksik');
+  expect(screen.getByRole('alert')).toHaveTextContent('payları tahmin edilmez');
+  expect(screen.getByTestId('open-folios-card')).toHaveTextContent('TRY');
+  expect(screen.getByTestId('open-folios-card')).toHaveTextContent('USD');
+});

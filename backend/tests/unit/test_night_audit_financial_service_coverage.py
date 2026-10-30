@@ -96,11 +96,12 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
     charges = _aggregate_collection(
         AsyncCursor(
             [
-                {"_id": "room", "total_amount": 1000.125, "total_tax": 100.012, "total_with_tax": 1100.137, "count": 2},
-                {"_id": None, "total_amount": 50.0, "total_tax": 5.0, "total_with_tax": 55.0, "count": 1},
+                {"_id": "room", "total_amount": 1000.125, "total_tax": 100.012, "total_with_tax": 1100.137, "count": 2,
+                 "tax_breakdown": {"vat": 77.34, "accommodation_tax": 22.67, "other_tax": 0}},
+                {"_id": None, "total_amount": 50.0, "total_tax": 5.0, "total_with_tax": 55.0, "count": 1,
+                 "tax_breakdown": {"vat": 5, "accommodation_tax": 0, "other_tax": 0}},
             ]
         ),
-        AsyncCursor([{"total_vat": 82.345, "total_accommodation_tax": 22.667}]),
     )
     payments = _aggregate_collection(
         AsyncCursor([{"_id": "card", "total_amount": 400.0, "count": 1}])
@@ -141,7 +142,9 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
         },
         "payments_count": 1,
     }
-    assert result.data["tax"]["breakdown"] == {"vat": 82.34, "accommodation_tax": 22.67, "by_currency": {"TRY": {"vat": 82.34, "accommodation_tax": 22.67}}}
+    assert result.data["tax"]["breakdown"] == {"vat": 82.34, "accommodation_tax": 22.67, "other_tax": 0,
+        "by_currency": {"TRY": {"vat": 82.34, "accommodation_tax": 22.67, "other_tax": 0}}}
+    assert charges.aggregate.call_count == 1  # no second folio-only tax source
     assert result.data["open_folios"] == {
         "count": 3,
         "receivable_count": 2,
@@ -323,6 +326,9 @@ async def test_financial_report_aggregates_revenue_payments_audits_and_occupancy
     assert len(result.data["revenue_by_date"]) == 2
     assert result.data["payments_by_method"] == {"cash": {"amount": 80.0, "count": 1, "amount_by_currency": {"TRY": 80.0}}}
     assert result.data["degraded"] is False
+    assert database.rooms.count_documents.call_args.args[0] == {
+        "tenant_id": "tenant-1", "is_active": {"$ne": False}, "is_virtual": {"$ne": True},
+    }
 
     # Accounting dates, legacy timestamps and payment source identity are
     # validated by the real-replica source contract, not aggregate SQL mocks.

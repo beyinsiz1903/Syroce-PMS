@@ -118,3 +118,109 @@ async def test_single_window_and_receivable_report_include_legacy_booking_extras
     await db.folios.insert_one({"tenant_id": "qa", "id": "second", "booking_id": "b", "status": "open", "currency": "TRY"})
     windows = await folio_window_router.list_windows("b", SimpleNamespace(tenant_id="qa"), None)
     assert {w.folio_id: w.balance for w in windows} == {"f": -45, "second": 0}  # no guessed payer
+
+
+async def test_financial_capacity_excludes_virtual_inactive_and_other_tenant_rooms(ledger_db):
+    await ledger_db.rooms.insert_many([
+        {"tenant_id": "qa", "id": "real"},
+        {"tenant_id": "qa", "id": "occupied", "status": "occupied", "is_active": True},
+        {"tenant_id": "qa", "id": "virtual", "is_virtual": True},
+        {"tenant_id": "qa", "id": "inactive", "is_active": False},
+        {"tenant_id": "other", "id": "foreign"},
+    ])
+    service = FinancialService(); service._db = ledger_db
+    result = (await service.get_financial_report(
+        OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin"), "2026-10-25", "2026-10-26")).data
+    assert result["summary"]["total_rooms"] == 2
+    assert not result["degraded"]
+
+
+async def test_financial_period_counts_arrival_day_and_bson_stays_but_not_departure_night(ledger_db):
+    await ledger_db.bookings.insert_many([
+        {"tenant_id": "qa", "id": "arrival", "status": "checked_in", "check_in": "2026-10-25T14:00:00Z", "check_out": "2026-10-26T12:00:00Z"},
+        {"tenant_id": "qa", "id": "bson", "status": "checked_out", "check_in": datetime(2026, 10, 24, tzinfo=UTC), "check_out": datetime(2026, 10, 26, tzinfo=UTC)},
+        {"tenant_id": "qa", "id": "alias", "status": "in_house", "check_in": "2026-10-24", "check_out": "2026-10-26"},
+        {"tenant_id": "qa", "id": "departed", "status": "checked_out", "check_in": "2026-10-24", "check_out": "2026-10-25"},
+        {"tenant_id": "qa", "id": "future", "status": "confirmed", "check_in": "2026-10-25", "check_out": "2026-10-26"},
+        {"tenant_id": "other", "id": "foreign", "status": "checked_in", "check_in": "2026-10-24", "check_out": "2026-10-26"},
+    ])
+    service = FinancialService(); service._db = ledger_db
+    result = (await service.get_financial_report(
+        OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin"), "2026-10-25", "2026-10-25")).data
+    assert result["summary"]["total_bookings"] == 3
+
+
+async def test_open_balances_do_not_add_currencies_even_when_net_cancels(ledger_db):
+    db = ledger_db
+    await db.folios.insert_many([
+        {"tenant_id": "qa", "id": "try", "currency": "TRY", "status": "open"},
+        {"tenant_id": "qa", "id": "usd", "currency": "USD", "status": "open"},
+    ])
+    await db.folio_charges.insert_many([
+        {"tenant_id": "qa", "folio_id": "try", "total": 100, "currency": "TRY"},
+        {"tenant_id": "qa", "folio_id": "usd", "total": 100, "currency": "USD"},
+    ])
+    await db.payments.insert_one({"tenant_id": "qa", "folio_id": "usd", "amount": 200, "currency": "USD", "status": "paid"})
+    service = FinancialService(); service._db = db
+    result = (await service.get_daily_financial_summary(
+        OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin"), "2026-10-26")).data["open_folios"]
+    assert result["balance"]["total"] is None  # TRY 100 - USD 100 is not zero money
+    assert result["balance"]["receivable"] == 100  # only TRY has receivables
+    assert result["balance"]["overpayment"] == 100  # only USD has an overpayment
+    assert result["balance_by_currency"] == {
+        "TRY": {"total": 100, "receivable": 100, "overpayment": 0},
+        "USD": {"total": -100, "receivable": 0, "overpayment": 100},
+    }
+
+
+async def test_tax_components_share_posted_sources_dates_refunds_and_deduplication(ledger_db):
+    from domains.pms.night_audit.financial_sources import revenue_rows
+    from modules.pms_core.revenue_report import build_revenue_report
+    db = ledger_db; tid = "qa"; day = "2026-10-25"
+    await db.folio_charges.insert_many([
+        {"tenant_id": tid, "id": "room", "business_date": datetime(2026, 10, 25, tzinfo=UTC),
+         "date": "2026-10-27", "amount": 100, "total": 112, "currency": "TRY", "charge_category": "room",
+         "tax_breakdown": {"vat": 10, "accommodation_tax": 2}},
+        {"tenant_id": tid, "id": "room-pos", "business_date": day, "total": 22, "amount": 20,
+         "currency": "TRY", "charge_category": "food", "source_pos_order_id": "room-pos",
+         "tax_breakdown": {"vat": 2}},
+        {"tenant_id": tid, "id": "room-refund", "business_date": day, "total": -11.2, "amount": -10,
+         "currency": "TRY", "charge_category": "room", "tax_breakdown": {"vat": 1, "accommodation_tax": .2}},
+        {"tenant_id": tid, "id": "next-day", "business_date": "2026-10-26", "total": 999, "tax_breakdown": {"vat": 999}},
+        {"tenant_id": tid, "id": "void", "business_date": day, "voided": True, "total": 999, "tax_breakdown": {"vat": 999}},
+        {"tenant_id": "other", "business_date": day, "total": 999, "tax_breakdown": {"vat": 999}},
+    ])
+    await db.extra_charges.insert_one({"tenant_id": tid, "id": "spa", "business_date": day,
+        "total": 12, "currency": "TRY", "category": "spa", "vat_amount": 2})
+    await db.pos_orders.insert_many([
+        {"tenant_id": tid, "id": "room-pos", "business_date": day, "status": "closed", "grand_total": 22,
+         "currency": "TRY", "tax_breakdown": {"vat": 2}},
+        {"tenant_id": tid, "id": "direct", "business_date": day, "status": "closed", "grand_total": 12,
+         "currency": "USD", "tax_breakdown": {"vat": 2}},
+    ])
+    service = FinancialService(); service._db = db
+    result = (await service.get_daily_financial_summary(
+        OperationContext(tenant_id=tid, actor_id="qa", actor_role="admin"), day)).data
+    expected = build_revenue_report(await revenue_rows(db, tid, day, day), date(2026, 10, 25), date(2026, 10, 25))
+    assert result["tax"]["breakdown"]["by_currency"] == {
+        code: {"vat": values["vat"], "accommodation_tax": values["city_tax"], "other_tax": values["other_tax"]}
+        for code, values in expected["totals_by_currency"].items()
+    }
+    assert result["tax"]["breakdown"]["vat"] is None  # never TRY VAT + USD VAT
+    assert result["tax"]["total_by_currency"] == {"TRY": 14.8, "USD": 2}
+    assert result["tax_unknown_count"] == 0
+
+
+@pytest.mark.parametrize("tax_fields, expected", [
+    ({}, {"vat": None, "accommodation_tax": None, "other_tax": None}),
+    ({"tax_amount": 2, "report_tax_kind": "aggregate", "posted_by": "night_audit"},
+     {"vat": None, "accommodation_tax": None, "other_tax": 2}),
+])
+async def test_missing_tax_component_evidence_stays_unknown(ledger_db, tax_fields, expected):
+    await ledger_db.folio_charges.insert_one({"tenant_id": "qa", "id": "unknown", "business_date": "2026-10-25",
+        "total": 12, "currency": "TRY", **tax_fields})
+    service = FinancialService(); service._db = ledger_db
+    result = (await service.get_daily_financial_summary(
+        OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin"), "2026-10-25")).data
+    assert result["tax"]["breakdown"]["by_currency"]["TRY"] == expected
+    assert result["tax_breakdown_incomplete_count"] == 1

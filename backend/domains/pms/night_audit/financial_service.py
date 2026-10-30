@@ -6,6 +6,7 @@ Provides financial reporting, revenue reconciliation, and payment integrity chec
 import asyncio
 import logging
 import os
+from datetime import date as calendar_date
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -95,36 +96,10 @@ class FinancialService:
     ) -> ServiceResult:
         """Generate comprehensive daily financial summary.
 
-        Perf: 6 bağımsız aggregation/lookup paralel çalışır (asyncio.gather);
+        Perf: 4 bağımsız aggregation/lookup paralel çalışır (asyncio.gather);
         seri await chain'i kaldırıldı. Hata izolasyonu için return_exceptions=True;
         tek bir alt sorgu başarısız olsa bile diğerleri sonuç döndürmeye devam eder.
         """
-
-
-        # Tax breakdown
-        tax_pipeline = [
-            {
-                "$match": {
-                    "tenant_id": ctx.tenant_id,
-                    "business_date": business_date,
-                    "voided": {"$ne": True},
-                    "tax_breakdown": {"$exists": True},
-                }
-            },
-            {
-                "$group": {
-                    "_id": {"currency": {"$ifNull": ["$currency", "TRY"]}},
-                    "total_vat": {"$sum": "$tax_breakdown.vat"},
-                    "total_accommodation_tax": {"$sum": "$tax_breakdown.accommodation_tax"},
-                }
-            },
-        ]
-
-        async def _agg(coll, pipeline):
-            return await coll.aggregate(
-                pipeline,
-                maxTimeMS=_FIN_AGG_MAX_MS,
-            ).to_list(length=None)
 
         # Parallel fan-out — canonical payments collection is the single source
         # of truth. Folio-embedded payments mirror the same operations and must
@@ -132,13 +107,11 @@ class FinancialService:
         (
             charge_docs,
             payment_docs,
-            tax_docs,
             open_balance_docs,
             audit_run,
         ) = await asyncio.gather(
             self._revenue_documents(ctx, business_date, business_date),
             self._payment_documents(ctx, business_date, business_date),
-            _agg(self._db.folio_charges, tax_pipeline),
             self._open_balance_documents(ctx),
             self._db.night_audit_runs.find_one(
                 {"tenant_id": ctx.tenant_id, "business_date": business_date},
@@ -159,7 +132,6 @@ class FinancialService:
 
         charge_docs = _ok(charge_docs, [], "revenue")
         payment_docs = _ok(payment_docs, [], "payments")
-        tax_docs = _ok(tax_docs, [], "tax")
         open_balance_docs = _ok(open_balance_docs, [], "open_folios")
         audit_run = _ok(audit_run, None, "audit_status")
 
@@ -206,15 +178,18 @@ class FinancialService:
             total_payments += doc["total_amount"]
             total_payments_count += doc["count"]
 
-        tax_breakdown = {"vat": 0.0, "accommodation_tax": 0.0, "by_currency": {}}
-        for doc in tax_docs:
+        components_by_currency = {}
+        for doc in charge_docs:
             group_id = doc.get("_id")
             currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
-            vat = round(doc.get("total_vat", 0), 2)
-            accommodation = round(doc.get("total_accommodation_tax", 0), 2)
-            tax_breakdown["vat"] = round(tax_breakdown["vat"] + vat, 2)
-            tax_breakdown["accommodation_tax"] = round(tax_breakdown["accommodation_tax"] + accommodation, 2)
-            tax_breakdown["by_currency"][currency] = {"vat": vat, "accommodation_tax": accommodation}
+            bucket = components_by_currency.setdefault(currency, {"vat": 0.0, "accommodation_tax": 0.0, "other_tax": 0.0})
+            for component in bucket:
+                value = doc.get("tax_breakdown", {}).get(component)
+                bucket[component] = None if value is None or bucket[component] is None else round(bucket[component] + value, 2)
+        tax_breakdown = {"by_currency": components_by_currency}
+        for component in ("vat", "accommodation_tax", "other_tax"):
+            values = {code: bucket[component] for code, bucket in components_by_currency.items()}
+            tax_breakdown[component] = None if any(value is None for value in values.values()) else _legacy_scalar(sum(values.values()), values)
 
         open_balance = {"total": 0.0, "receivable": 0.0, "overpayment": 0.0}
         open_folios_count = 0
@@ -248,6 +223,8 @@ class FinancialService:
                 entry[key] = _legacy_scalar(entry[key], entry[key + "_by_currency"])
         for entry in payments_by_method.values():
             entry["amount"] = _legacy_scalar(entry["amount"], entry["amount_by_currency"])
+        for key, total in open_balance.items():
+            open_balance[key] = _legacy_scalar(total, {code: bucket[key] for code, bucket in open_balance_by_currency.items()})
 
 
         return ServiceResult.success(
@@ -286,6 +263,7 @@ class FinancialService:
                 "degraded": bool(degraded_subqueries),
                 "degraded_subqueries": degraded_subqueries,
                 "tax_unknown_count": sum(row.get("tax_unknown_count", 0) for row in charge_docs),
+                "tax_breakdown_incomplete_count": sum(row.get("tax_breakdown_incomplete_count", 0) for row in charge_docs),
             }
         )
 
@@ -610,14 +588,15 @@ class FinancialService:
             degraded_subqueries.append("audit_runs")
             audit_runs = []
 
-        # Occupancy data for the range
+        # Count stays overlapping the selected nights, including same-day
+        # arrivals stored as ISO timestamps or BSON dates. Checkout is exclusive.
+        from modules.pms_core.stay_night_metrics import ACTUAL_OCCUPANCY_STATUSES, stay_overlap_match
         occupancy_pipeline = [
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "status": {"$in": ["checked_in", "checked_out"]},
-                    "check_in": {"$lte": end_date},
-                    "check_out": {"$gte": start_date},
+                    "status": {"$in": sorted(ACTUAL_OCCUPANCY_STATUSES)},
+                    **stay_overlap_match(calendar_date.fromisoformat(start_date), calendar_date.fromisoformat(end_date)),
                 }
             },
             {"$count": "total_bookings"},
@@ -635,7 +614,7 @@ class FinancialService:
 
         try:
             total_rooms = await self._db.rooms.count_documents(
-                {"tenant_id": ctx.tenant_id},
+                {"tenant_id": ctx.tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}},
                 maxTimeMS=_FIN_AGG_MAX_MS,
             )
         except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
