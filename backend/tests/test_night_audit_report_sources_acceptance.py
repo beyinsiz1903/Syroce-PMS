@@ -150,6 +150,44 @@ async def test_financial_period_counts_arrival_day_and_bson_stays_but_not_depart
     assert result["summary"]["total_bookings"] == 3
 
 
+@pytest.mark.parametrize("departure", [
+    "2026-10-25T12:00:00+03:00",
+    datetime(2026, 10, 25, 12, tzinfo=UTC),
+])
+async def test_financial_period_normalizes_timestamp_checkout_and_same_day_stays(ledger_db, departure):
+    await ledger_db.bookings.insert_many([
+        {"tenant_id": "qa", "id": "departing", "status": "checked_in", "check_in": "2026-10-24T14:00:00Z", "check_out": departure},
+        {"tenant_id": "qa", "id": "day-use", "status": "checked_out", "check_in": "2026-10-25T08:00:00Z", "check_out": "2026-10-25T18:00:00Z"},
+        {"tenant_id": "qa", "id": "night", "status": "checked_in", "check_in": "2026-10-25T14:00:00Z", "check_out": "2026-10-26T12:00:00Z"},
+    ])
+    service = FinancialService(); service._db = ledger_db
+    ctx = OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin")
+    for first, last in [("2026-10-25", "2026-10-25"), ("2026-10-25", "2026-10-27")]:
+        report = (await service.get_financial_report(ctx, first, last)).data
+        assert report["summary"]["total_bookings"] == 1  # one stay, not timestamp overlap or room-nights
+
+
+async def test_financial_period_uses_actual_business_window_and_completed_audit_evidence(ledger_db):
+    base = {"tenant_id": "qa", "status": "checked_in", "check_in": "2026-10-24", "check_out": "2026-10-28"}
+    await ledger_db.bookings.insert_many([
+        {**base, "id": "late", "checked_in_at": "2026-10-26T12:00:00Z"},
+        {**base, "id": "early-out", "status": "checked_out", "checked_out_at": "2026-10-25T11:00:00Z"},
+        {**base, "id": "business-day", "checked_in_at": "2026-10-26T12:00:00Z", "checked_in_business_date": "2026-10-24"},
+        {**base, "id": "audit-presence", "checked_in_at": "2026-10-26T12:00:00Z"},
+    ])
+    await ledger_db.night_audit_runs.insert_one({"tenant_id": "qa", "id": "run", "business_date": "2026-10-25", "status": "completed"})
+    await ledger_db.night_audit_run_items.insert_many([
+        {"tenant_id": "qa", "booking_id": "audit-presence", "run_id": "run", "posting_type": "room_charge", "posting_date": "2026-10-25", "status": "posted"},
+        {"tenant_id": "other", "booking_id": "late", "run_id": "run", "posting_type": "room_charge", "posting_date": "2026-10-25", "status": "posted"},
+    ])
+    before = await ledger_db.bookings.find({}).to_list(None)
+    service = FinancialService(); service._db = ledger_db
+    ctx = OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin")
+    assert (await service.get_financial_report(ctx, "2026-10-25", "2026-10-25")).data["summary"]["total_bookings"] == 2
+    assert (await service.get_financial_report(ctx, "2026-10-25", "2026-10-26")).data["summary"]["total_bookings"] == 3
+    assert await ledger_db.bookings.find({}).to_list(None) == before  # evidence is not written back
+
+
 async def test_open_balances_do_not_add_currencies_even_when_net_cancels(ledger_db):
     db = ledger_db
     await db.folios.insert_many([

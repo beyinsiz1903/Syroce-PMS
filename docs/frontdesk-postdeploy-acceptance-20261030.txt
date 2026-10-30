@@ -76,3 +76,54 @@ frontdesk-postdeploy-20261030.r92cobo8/
   backend-report-regressions-v2.xml / frontend-night-report-regressions.json
 İlk yanlış detay adresi nedeniyle duran GET kanıtı ayrıca
 frontdesk-postdeploy-20261030.9_kr_1tr/ içinde korundu; canlı mutasyon değildir.
+
+PR1459 YAYINI VE YENİ CANLI KABUL — 30 EKİM 2026 07:14 UTC
+PR1459 merge:8e133b6afa8679a1449c9915620b10463c368b6f.
+https://github.com/beyinsiz1903/Syroce-PMS/pull/1459
+PR head ceac406368e2648da2a1bb3b0b0583950396f65f ve iki main CI başarılı.
+Önceki yeşil deploy41016972399 sunucu adımı SKIPPED olduğundan yayın sayılmadı.
+Gerçek deploy41018462132/job123940043787 sunucu adımı başarılı; health tam
+merge SHA'yı healthy döndürdü. Yeniden merge/deploy başlatılmadı.
+https://github.com/beyinsiz1903/Syroce-PMS/actions/runs/41018462132
+
+Yeni kanıt dizini:frontdesk-postdeploy-20261030.ua1s3d9z/.
+GET sürücüsü; rooms/bookings başı-sonu ve önceki PR1458 kanıtıyla birebir aynı.
+31 fiziksel oda/QT2ED0 ve açık2026-10-26 günü korundu. Üç örnek misafirin
+ücret/ödeme satırları da önceki kanıtla değişmedi; üç folyo görüntüsü uyumlu.
+25/26 Ekim gelir/tahsilatları, kategori/günlük/flash/gece/aralık/mutabakat
+raporlarında para birimi bazında aynı kaldı. 25 Ekim vergi bileşenleri artık
+kategori raporuyla tam eşleşiyor: TRY KDV16632,79 ve konaklama1408,99;
+EUR35,03/2,88; USD78,11/7,00. Farklı döviz bakiyeleri tek toplama dönüşmüyor.
+Aralık raporu kapasitesi31 oldu. Üç düzeltme canlıda geçti.
+
+KALAN SINIR HATASI — TAM KABUL VERİLMEDİ
+Yeni canlı kabulde yalnız period_stay_dates_fixed kontrolleri başarısız:
+25 Ekim raporu33 (beklenen31),26 Ekim31 (beklenen25).
+stay_overlap_match, ISO/BSON kayıtlar için geniş ADAY seçicisidir. Çıkışın
+12:00 timestamp'i aynı günün00:00 sınırından büyük olduğundan adaylara girer;
+bu ham sorguyu doğrudan saymak, normalize edilmiş otel gecesi hesabı değildir.
+Önceki yerel testin çıkış sınırı yalnız YYYY-MM-DD idi; bu timestamp biçimi
+eksik kalmıştı. Başarısız pr1459-live-acceptance.json silinmedi/ezilmedi.
+
+Yeni dar düzeltme dalı:fix/night-audit-normalized-stay-boundaries.
+Aralık raporu adayları salt okur, canonical booking_occupies_night ile
+normalize edilmiş yarı açık gece aralığını doğrular. Gerçek giriş/çıkış iş günü,
+geç giriş/erken çıkış ve tamamlanmış audit bulunma kanıtı aynı shared helper'dan
+okunur. Her konaklama aralıkta bir kez sayılır; gün başına DB sorgusu yok.
+Gün sonu, ücret, ödeme, stok, booking veya audit kaynaklarını yeniden yazmaz.
+
+Yeni timestamp sınırı regresyonları düzeltme öncesi2 failed; son bağlantılı
+paket80 passed. Sayı70/80 tekrar koşularının toplamı değildir. Backend Ruff
+ve git diff --check başarılı. Yeni dal arayüz değiştirmez.
+Ek anonim yerel replay: yalnız status/check_in/check_out ve gerçekleşen iş
+günü/zaman alanları, takma ID'lerle yeni localhost veritabanına alındı; kimlik,
+iletişim, ücret/ödeme veya şifre/token alınmadı. Normal FinancialService aynı
+tarih biçimleri üzerinde31/25 doğru saydı. Kaynak replay kayıtları değişmedi,
+yalnız bu çalışma için oluşturulan yerel DB temizlendi. Üretim DB erişimi yok.
+Yeni PR'ın CI, merge/deploy ve tekrar canlı kabulü hâlâ ayrıca gereklidir.
+
+Ek kanıtlar ua1s3d9z/ içinde:
+- read-acceptance.json; pr1459-live-acceptance.json (başarısız son kontrol)
+- timestamp-boundaries-before.xml (2 failed)
+- stay-boundary-backend-final.xml (80 passed)
+- stay-boundary-local-replay.json (31/25, salt okunur servis)

@@ -588,29 +588,43 @@ class FinancialService:
             degraded_subqueries.append("audit_runs")
             audit_runs = []
 
-        # Count stays overlapping the selected nights, including same-day
-        # arrivals stored as ISO timestamps or BSON dates. Checkout is exclusive.
-        from modules.pms_core.stay_night_metrics import ACTUAL_OCCUPANCY_STATUSES, stay_overlap_match
-        occupancy_pipeline = [
-            {
-                "$match": {
-                    "tenant_id": ctx.tenant_id,
-                    "status": {"$in": sorted(ACTUAL_OCCUPANCY_STATUSES)},
-                    **stay_overlap_match(calendar_date.fromisoformat(start_date), calendar_date.fromisoformat(end_date)),
-                }
-            },
-            {"$count": "total_bookings"},
-        ]
+        # The Mongo overlap selector is deliberately broad (ISO/BSON storage).
+        # It selects candidates, not hotel nights: noon on checkout day still
+        # sorts after that day's midnight. Apply the canonical date predicate
+        # before counting, just like daily/flash occupancy does.
+        from modules.pms_core.stay_night_metrics import (
+            as_date,
+            booking_occupies_night,
+            stay_overlap_match,
+            with_checkin_business_date_evidence,
+        )
         try:
-            occ_result = await self._db.bookings.aggregate(
-                occupancy_pipeline,
-                maxTimeMS=_FIN_AGG_MAX_MS,
-            ).to_list(1)
+            first, last = calendar_date.fromisoformat(start_date), calendar_date.fromisoformat(end_date)
+            stays = await self._db.bookings.find(
+                {"tenant_id": ctx.tenant_id, **stay_overlap_match(first, last)},
+                {"_id": 0, "id": 1, "status": 1, "check_in": 1, "check_out": 1,
+                 "checked_in_at": 1, "checked_in_business_date": 1,
+                 "checked_out_at": 1, "checked_out_business_date": 1},
+                max_time_ms=_FIN_AGG_MAX_MS,
+            ).to_list(None)
+            stays = await with_checkin_business_date_evidence(self._db, ctx.tenant_id, stays)
+            total_bookings = 0
+            for stay in stays:
+                check_in, check_out = as_date(stay.get("check_in")), as_date(stay.get("check_out"))
+                if not check_in or not check_out:
+                    continue
+                # The first possible actual night suffices: each stay counts
+                # once in a range, never once per night. No per-day DB queries.
+                candidate = max(first, check_in)
+                actual_in = as_date(stay.get("checked_in_business_date")) or as_date(stay.get("checked_in_at"))
+                if actual_in and check_in <= actual_in < check_out:
+                    candidate = max(candidate, actual_in)
+                if candidate <= last and booking_occupies_night(stay, candidate, actual_only=True):
+                    total_bookings += 1
         except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
             logger.warning("financial_report subquery 'occupancy' failed: %s", exc)
             degraded_subqueries.append("occupancy")
-            occ_result = []
-        total_bookings = occ_result[0]["total_bookings"] if occ_result else 0
+            total_bookings = 0
 
         try:
             total_rooms = await self._db.rooms.count_documents(

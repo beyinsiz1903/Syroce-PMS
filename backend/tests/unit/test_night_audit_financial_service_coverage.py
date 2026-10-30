@@ -299,7 +299,10 @@ async def test_financial_report_aggregates_revenue_payments_audits_and_occupancy
         night_audit_runs=SimpleNamespace(
             find=MagicMock(return_value=AsyncCursor([{"audit_id": "audit-1", "status": "completed"}]))
         ),
-        bookings=_aggregate_collection(AsyncCursor([{"total_bookings": 4}])),
+        bookings=_find_collection(AsyncCursor([
+            {"id": str(index), "status": "checked_in", "check_in": "2026-08-24T14:00:00Z", "check_out": "2026-08-26T12:00:00Z"}
+            for index in range(4)
+        ])),
         rooms=SimpleNamespace(count_documents=AsyncMock(return_value=10)),
     )
 
@@ -341,7 +344,7 @@ async def test_financial_report_isolates_all_database_failures():
         folio_charges=_aggregate_collection(AsyncCursor(error=failure)),
         payments=_aggregate_collection(AsyncCursor(error=failure)),
         night_audit_runs=SimpleNamespace(find=MagicMock(return_value=AsyncCursor(error=failure))),
-        bookings=_aggregate_collection(AsyncCursor(error=failure)),
+        bookings=_find_collection(AsyncCursor(error=failure)),
         rooms=SimpleNamespace(count_documents=AsyncMock(side_effect=failure)),
     )
 
