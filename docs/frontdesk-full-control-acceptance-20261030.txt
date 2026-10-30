@@ -1,4 +1,9 @@
 ÖN BÜRO TAM KONTROL KABULÜ — DEVAM EDİYOR, TAMAMLANDI DEĞİL
+Güncelleme:PR1466 gerçek deploy39391c36 sonrası dar kontenjan/görev/
+KVKKaudit/panel yanıt kabulü geçti; aşağıdaki ilk durum tarihçedir.
+Yeni kanıt ve kalan gelir kontrol düzeltmesi ayrıntıları:
+docs/frontdesk-revenue-control-safety-20261030.txt.
+Tüm19aile tamamlanmış sayılmadı; full_scope_complete=false korunur.
 30 Ekim 2026 | başlangıç canlı sürüm:582664cd30f9bc45f5c606b05d90889f66839669
 
 Kapsamın düzeltilmesi
