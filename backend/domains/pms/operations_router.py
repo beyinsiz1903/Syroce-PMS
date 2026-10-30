@@ -2,11 +2,13 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from models.schemas import User
+from modules.pms_core.revenue_control_settings import physical_types, revision, snapshot, validate_patch, validate_walk
 from modules.pms_core.role_permission_service import (
     require_module_role,  # v97 DW
     require_op,  # v97 DW
@@ -739,10 +741,7 @@ async def update_room_features(
 @router.get("/revenue/settings")
 async def get_revenue_settings(current_user: User = Depends(get_current_user)):
     doc = await db.revenue_settings.find_one({"tenant_id": current_user.tenant_id})
-    if not doc:
-        return {"hurdle_rates": {}, "day_pricing": {}, "overbooking": {"enabled": False, "max_percentage": 5, "walk_compensation": "upgrade_nearby", "walk_amount": 0}}
-    doc["id"] = str(doc.pop("_id"))
-    return doc
+    return snapshot(doc)
 
 
 @router.put("/revenue/settings")
@@ -751,22 +750,28 @@ async def save_revenue_settings(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
-    now = datetime.utcnow()
-    await db.revenue_settings.update_one(
-        {"tenant_id": current_user.tenant_id},
-        {
-            "$set": {
-                "tenant_id": current_user.tenant_id,
-                "hurdle_rates": body.get("hurdle_rates", {}),
-                "day_pricing": body.get("day_pricing", {}),
-                "overbooking": body.get("overbooking", {}),
-                "updated_at": now.isoformat(),
-                "updated_by": current_user.email,
-            }
-        },
-        upsert=True,
-    )
-    return {"status": "saved", "updated_at": now.isoformat()}
+    rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
+    changes, expected = validate_patch(body, physical_types(rooms))
+    doc = await db.revenue_settings.find_one({"tenant_id": current_user.tenant_id})
+    current = snapshot(doc)
+    if any(expected[key] != current["section_revisions"][key] for key in changes):
+        raise HTTPException(409, "Bölüm başka bir oturumda değişti; yeniden yükleyin.")
+    now = datetime.now(UTC).isoformat()
+    update = {**changes, "updated_at": now, "updated_by": current_user.email, "updated_by_id": current_user.id}
+    if doc is None:
+        try:
+            await db.revenue_settings.insert_one({"_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"revenue-settings:{current_user.tenant_id}")),
+                "tenant_id": current_user.tenant_id, **update})
+        except DuplicateKeyError:
+            raise HTTPException(409, "Ayarlar eşzamanlı oluşturuldu; yeniden yükleyin.") from None
+    else:
+        query = {"_id": doc["_id"], "tenant_id": current_user.tenant_id,
+                 **{key: doc[key] if key in doc else {"$exists": False} for key in changes}}
+        result = await db.revenue_settings.update_one(query, {"$set": update})
+        if not result.matched_count:
+            raise HTTPException(409, "Bölüm eşzamanlı değişti; yeniden yükleyin.")
+    return {"status": "saved", "updated_at": now, "application_mode": "planning_only",
+            "automatic_enforcement": False, "section_revisions": {key: revision(value) for key, value in changes.items()}}
 
 
 @router.post("/revenue/walk-out")
@@ -775,22 +780,34 @@ async def process_walk_out(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
-    now = datetime.utcnow()
+    rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
+    values = validate_walk(body, physical_types(rooms))
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    source_hash = revision({**values, "currency": currency})
+    record_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"walk-record:{current_user.tenant_id}:{values['request_id']}"))
+    now = datetime.now(UTC).isoformat()
     doc = {
-        "_id": str(uuid.uuid4()),
+        "_id": record_id,
         "tenant_id": current_user.tenant_id,
-        "guest_name": body.get("guest_name", ""),
-        "room_type": body.get("room_type", ""),
-        "compensation_type": body.get("compensation_type", ""),
-        "compensation_amount": _safe_float(body.get("compensation_amount", 0)),
-        "nearby_hotel": body.get("nearby_hotel", ""),
-        "notes": body.get("notes", ""),
-        "processed_at": now.isoformat(),
+        **values,
+        "currency": currency,
+        "source_hash": source_hash,
+        "record_only": True,
+        "financial_posting": False,
+        "processed_at": now,
         "processed_by": current_user.email,
+        "processed_by_id": current_user.id,
     }
-    await db.walk_out_records.insert_one(doc)
+    try:
+        await db.walk_out_records.insert_one(doc)
+    except DuplicateKeyError:
+        prior = await db.walk_out_records.find_one({"_id": record_id, "tenant_id": current_user.tenant_id})
+        if not prior or prior.get("source_hash") != source_hash:
+            raise HTTPException(409, "Aynı kayıt anahtarı farklı içerikle kullanıldı.") from None
+        prior["id"] = prior.pop("_id")
+        return {**prior, "replayed": True}
     doc["id"] = doc.pop("_id")
-    return doc
+    return {**doc, "replayed": False}
 
 
 @router.delete("/concierge/requests/{request_id}")

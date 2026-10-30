@@ -1,0 +1,90 @@
+GELİR KONTROLLERİ — KAYIT GÜVENLİĞİ, TAM KAPSAMIN SONU DEĞİL
+30 Ekim 2026 | temel main/canlı:39391c36d8a5fe1f825cf9c4e2a796e92775e93e
+
+Doğrulanan hata ve düzeltme
+Tek sekmenin Kaydet düğmesi tüm üç bölümü gönderiyordu. Backend de eksik
+bölümleri boş nesneye çeviriyordu. Artık yalnız seçilen bölüm gönderilir;
+verilmeyen bölümler değiştirilmez. Bölüm içerik hash'i ile sürüm kontrolü
+ve Mongo compare-and-set eski/eşzamanlı yazıyı409 ile durdurur. İlk kayıt
+tenant'a özgü deterministik _id ile çoğalmaz. Güncelleyen aktör saklanır.
+Yeni istemci bölüm sürümünü okuyamazsa kaydetme kapalıdır;409 sonrası
+açık yeniden yükleme gerekir. Fiziksel envanter dışındaki eski ayarları
+istemci sessiz silmez; ilgili bölümde kaydetme durur, değerler korunur.
+
+Sayı ve kimlik sınırları
+Negatif/NaN/infinity/bool/string sayılar backend'de reddedilir. UI boş
+değeri0'a, kesirli gün/yüzdeyi tam sayıya dönüştürmez. Fiyat ve tazminat
+kuruşları korunur. Oda tipi aktif fiziksel envanterden gelir; sanal/pasif
+odalar kapasiteye eklenmez. Kapalı fazla-satış planı ek kapasite göstermez.
+
+Önemli ürün sınırı — bağlantı yapılmış gibi gösterilmez
+Bu revenue_settings koleksiyonu mevcut rezervasyon/rate/kanal motoruna
+bağlı değildir. Bu PR otomatik minimum fiyat, gün fiyatı/minimum konaklama
+veya fazla-satış izni uygulaması eklemez; mevcut korumaları kapatmaz.
+Ekran ve API açıkça planning_only/automatic_enforcement=false der.
+Doğrulanmış canlı overbook adedi bağlı değilken0 diye gösterilmez.
+Gerçek uygulama bağlantısı tam kabul matrisinde PENDING kalır.
+
+Walk-out bu endpoint'te yalnız idari nottur; rezervasyon iptali, oda stok
+değişikliği, gerçek tazminat/ödeme veya mali fiş oluşturmaz. UI ve yanıt
+bunu açıklar. Kaynak kimliği ve sonlu/negatif olmayan tutar doğrulanır;
+tenant para birimi gerçek yardımcı fonksiyondan alınır. request_id ile
+aynı kayıt tekrarda çoğalmaz, aynı anahtar farklı içerikte409 döner.
+Not: mevcut misafir/rezervasyon/folyo bağlama ve gerçek walk-out ödeme
+lifecycle'ı uygulanmış sayılmaz. Sağlayıcı/banka/resmî teslim yoktur.
+
+PR1466 deploy sonrası DAR canlı kabul
+Tam head CI15başarı+3beklenen skip; gerçek sunucu deploy41115503797
+(Deploy to Server adımı başarılı) ve health aynı39391c36 sürümü.
+Eski yeşil ama sunucu adımı atlanan41113965798 deploy kanıtı sayılmadı.
+Yeni iç kontenjan:154958c3-d386-48a9-b5e8-9e24d5faeca0;Junior Suite,
+1oda,0TRY,release0,20–22Kasım; kullanılmayan1oda iç kayıtta serbest,
+güvenli tekrarda0,kanal envanteri değişmedi; kayıt korundu.
+Yeni idari access:ac1c76d6-a678-42a4-89cb-fdf72d36ac3c;create/complete
+iki atomik olay, doğru aktör/önceki-yeni durum; audit listesi ve yalnız
+yapay ada ait erişim ihracı2olay; tamamla tekrarı yeni olay eklemedi.
+Yeni ücretsiz QR:a6e8d63f-0cc5-4539-9b3c-c09a27c8d55b;mevcut açık
+QT2ED0 konaklamasında yeni görev,Demo Kullanıcı ataması ve tek sonuç
+mesajı; fiziksel temizlik/tahsilat iddiası yok, room_charge_lines boş.
+Silme metni görev başlığını gösterdi; iptal edildi, hiçbir görev silinmedi.
+6görevin2'şer sayfalı API okuması tüm sayfa200 okumasıyla eşleşti.
+Eski5görev aynen korundu; >200 UI sınırı önceki yerel test kanıtıdır,
+canlıda200yapay görev oluşturulmadı.
+Eski yapay race-A yorumu tek panel yanıtı aldı; yeniden yüklemede aynı.
+Dış değerlendirme kaydı uydurulmadı; geçerli JSON kayıp ID'de404,
+boş/yanlış tür422; gerçek dış yayın/teslim başarı sayılmadı.
+
+Canlı koruma/kanıt
+frontdesk-release1466-20261030/release-gate.json
+frontdesk-release1466-20261030/acceptance.json:passed=true,
+full_scope_complete=false (yalnız PR1466 alt kapsamı).
+after1466-protected-result.json:oda/booking/stok/cari,25/26/30Ekim mali,
+KBS kuyruğu ve gelir ayarları aynı.31oda/QT2ED0,stok52'şer,5468TRY eski
+hizmet borcu korunur;26Ekim açık,kanallar kapalı. Önceki kayıtlar tekrar
+oluşturulmadı. Cari ilk ham-list karşılaştırması sıra farkında durdu;
+aynı ID'lerin tüm alanları eşitliğiyle uzlaştırıldı; başarısız kanıt silinmedi.
+Audit10831mühürlü kayıt,0kopuk/0doğrulanamaz,truncated=false;
+2882eski mühürsüz kayıt ayrıca legacy_skipped, başarı sayısına eklenmez.
+Kanıt dosyaları işletici alanında600/700izinli, kişisel veri Git'e eklenmez.
+
+Yerel doğrulama — canlı kabul değildir
+revenue-backend-regression-v3.xml:175passed, yerel27993/27989replica;
+yeni35test bu175'in içinde, ayrıca toplanmaz. Gerçek tenant currency
+yardımcısı EUR ile ve eşzamanlı istekler gerçek Mongo üzerinde doğrulandı.
+İlk backend kurulumunda sahte JWT test anahtarı eksikliği ve ilk geniş
+pakette rapor port guard'ı durdu; guard gevşetilmedi. Bu ilk XML'ler korunur.
+revenue-ui-v3.xml:9yeni kontrol testi. revenue-frontend-full.xml:
+423dosya/2292passed,maxWorkers2;9test2292'nin içindedir. İlk UI testi
+aktif sekme yerine birden çok Kaydet eşleşmesinde durdu; doğru panel
+kapsamasıyla düzeltildi, ilk XML korundu. Zaman/CI gate değiştirilmedi.
+Gerçek tarayıcıda localhost yapay fixture ile sayı reddi, tek bölüm
+kaydı, fiziksel kapasite ve idari not sınırları görsel kontrol edildi;
+bu mock tarayıcı testi canlı backend kabulü olarak sunulmaz.
+Genel Ruff,değişen UI ESLint,i18n kalite kontrolü,Vitebuild,diff temiz.
+
+Kapanmayan kapsam
+Ana19aile matrisi docs/frontdesk-full-control-acceptance-20261030.txt.
+Bu PR ne tüm modüllerin tüm düğmelerini ne otomatik gelir uygulamasını
+tamamlanmış yapar. Diğer PENDING aileler ve KBS/banka/dış teslim gibi
+EXTERNAL_BLOCKED sınırlar korunur. Merge/deploy sonrası yeni bölüm
+sürümü/kayıt akışının dar canlı kabulü de ayrıca yapılmalıdır.
