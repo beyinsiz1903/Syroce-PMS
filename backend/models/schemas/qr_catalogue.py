@@ -242,6 +242,7 @@ class GuestServiceItem(BaseModel):
     # price as an integer makes catalogue snapshots and folio postings immune
     # to locale/float rounding differences (for example 150,74 vs 150.74).
     unit_price_minor: int = Field(default=0, ge=0, le=100_000_000)
+    tax_rate: float | None = Field(default=None, ge=0, le=1)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     room_charge_enabled: bool = False
     folio_category: str = Field(default="room_service", min_length=1, max_length=64)

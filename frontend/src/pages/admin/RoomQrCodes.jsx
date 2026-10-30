@@ -9,6 +9,11 @@ import { toast } from "sonner";
 import { Loader2, Printer, Download, QrCode, Search, Copy, Plus, Save, Trash2, Utensils } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 
+const menuTaxRate = value => {
+  const text = String(value ?? "").trim().replace(",", ".");
+  return text === "" ? null : Number(text) / 100;
+};
+
 export default function RoomQrCodes({ user, tenant, onLogout }) {
   const { t } = useTranslation();
   const [rooms, setRooms] = useState([]);
@@ -85,6 +90,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
         description: item.description?.tr || "",
         price: ((Number(item.unit_price_minor) || 0) / 100).toFixed(2),
         currency: item.currency || "TRY",
+        taxPercent: item.tax_rate == null ? "" : String(item.tax_rate * 100),
         estimated_minutes: item.estimated_minutes || 30,
         enabled: item.enabled !== false,
       })));
@@ -100,7 +106,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
   };
 
   const addMenuItem = () => setMenuItems((items) => [...items, {
-    service_code: `fnb.menu_${Date.now()}`, name: "", nameEn: "", description: "", price: "0.00", currency: "TRY", estimated_minutes: 30, enabled: true,
+    service_code: `fnb.menu_${Date.now()}`, name: "", nameEn: "", description: "", price: "0.00", currency: "TRY", taxPercent: "", estimated_minutes: 30, enabled: true,
   }]);
 
   const saveMenu = async () => {
@@ -108,6 +114,13 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
     const invalid = menuItems.find((item) => !item.service_code || !item.name || !Number.isFinite(Number(String(item.price).replace(",", "."))) || Number(String(item.price).replace(",", ".")) <= 0);
     if (invalid) {
       toast.error("Her ürün için kod, Türkçe ad ve sıfırdan büyük fiyat girin");
+      return;
+    }
+    if (menuItems.some((item) => {
+      const rate = menuTaxRate(item.taxPercent);
+      return rate !== null && (!Number.isFinite(rate) || rate < 0 || rate > 1);
+    })) {
+      toast.error("KDV oranı 0–100 arasında olmalı; bilinmiyorsa boş bırakın");
       return;
     }
     setMenuSaving(true);
@@ -120,6 +133,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
           description: item.description ? { tr: item.description.trim(), en: item.description.trim() } : undefined,
           unit_price_minor: Math.round(Number(String(item.price).replace(",", ".")) * 100),
           currency: item.currency.toUpperCase(), estimated_minutes: Number(item.estimated_minutes) || 30, enabled: item.enabled,
+          tax_rate: menuTaxRate(item.taxPercent),
         })),
       });
       toast.success("Oda servisi menüsü kaydedildi");
@@ -224,6 +238,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Utensils className="h-5 w-5" /> QR Oda Servisi Menüsü</DialogTitle></DialogHeader>
           <p className="text-sm text-slate-500">Misafir bu ürünleri QR’dan sipariş eder; onayladığı tutar otomatik olarak açık oda folyosuna yazılır.</p>
+          <p className="text-xs text-slate-500">Fiyat vergi dahil toplamdır. KDV oranını yalnız biliniyorsa girin; boş alan %0 anlamına gelmez.</p>
           {menuLoading ? <div className="flex justify-center py-10"><Loader2 className="h-7 w-7 animate-spin" /></div> : (
             <div className="space-y-3">
               {menuItems.map((item, index) => <div key={`${item.service_code}-${index}`} className="grid grid-cols-1 gap-2 rounded-xl border bg-slate-50 p-3 md:grid-cols-12">
@@ -231,8 +246,9 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
                 <Input className="md:col-span-2" value={item.price} onChange={(e) => updateMenuItem(index, "price", e.target.value)} inputMode="decimal" placeholder="Fiyat" aria-label="Ürün fiyatı" />
                 <Input className="md:col-span-1" value={item.currency} onChange={(e) => updateMenuItem(index, "currency", e.target.value)} maxLength={3} aria-label="Para birimi" />
                 <Input className="md:col-span-2" value={item.estimated_minutes} onChange={(e) => updateMenuItem(index, "estimated_minutes", e.target.value)} inputMode="numeric" placeholder="Dakika" aria-label="Hazırlık süresi" />
-                <Input className="md:col-span-3" value={item.description} onChange={(e) => updateMenuItem(index, "description", e.target.value)} placeholder="Kısa açıklama" />
+                <Input className="md:col-span-2" value={item.taxPercent} onChange={(e) => updateMenuItem(index, "taxPercent", e.target.value)} inputMode="decimal" placeholder="KDV % (ops.)" aria-label="KDV oranı (bilinmiyorsa boş)" />
                 <Button variant="ghost" size="icon" className="md:col-span-1" onClick={() => setMenuItems((items) => items.filter((_, itemIndex) => itemIndex !== index))} aria-label="Ürünü kaldır"><Trash2 className="h-4 w-4 text-red-600" /></Button>
+                <Input className="md:col-span-12" value={item.description} onChange={(e) => updateMenuItem(index, "description", e.target.value)} placeholder="Kısa açıklama" />
               </div>)}
               <Button variant="outline" onClick={addMenuItem}><Plus className="mr-2 h-4 w-4" /> Ürün ekle</Button>
               <Button className="ml-2" onClick={saveMenu} disabled={menuSaving}>{menuSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Kaydet</Button>

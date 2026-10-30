@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -65,7 +66,7 @@ class _Collection:
 
 
 @pytest.mark.asyncio
-async def test_accepted_upsell_posts_complete_charge_to_open_folio(monkeypatch):
+async def test_accepted_upsell_delegates_to_atomic_source_handoff(monkeypatch):
     offers = _Collection({
         "id": "offer-1",
         "tenant_id": "tenant-1",
@@ -79,23 +80,11 @@ async def test_accepted_upsell_posts_complete_charge_to_open_folio(monkeypatch):
     fake_db = SimpleNamespace(upsell_offers=offers, folio_charges=charges, folios=folios)
     monkeypatch.setattr(upsell, "db", fake_db)
 
-    async def _stamp(_db, _tenant_id, row):
-        row["business_date"] = "2026-09-24"
-
-    async def _balance(_folio_id, _tenant_id):
-        return 240
-
-    monkeypatch.setattr(upsell, "stamp_open_business_date", _stamp)
-    monkeypatch.setattr(upsell, "calculate_folio_balance", _balance)
-    monkeypatch.setattr(upsell, "invalidate_financial_report_caches", lambda _tenant_id: None)
-
-    user = SimpleNamespace(tenant_id="tenant-1", email="resepsiyon@example.com")
+    handoff = AsyncMock(return_value={"status": "accepted", "folio_charge_id": "canonical"})
+    monkeypatch.setattr("core.guest_service_folio.accept_upsell", handoff)
+    user = SimpleNamespace(id="manager", role="admin", tenant_id="tenant-1", email="resepsiyon@example.com", is_super_admin=False)
     result = await upsell.update_upsell_offer("offer-1", "accepted", user, None)
 
     assert result["status"] == "accepted"
-    assert charges.inserted["folio_id"] == "folio-1"
-    assert charges.inserted["charge_category"] == "other"
-    assert charges.inserted["total"] == 240
-    assert charges.inserted["voided"] is False
-    assert folios.updated[1]["$set"]["balance"] == 240
-    assert offers.updated[0] == {"id": "offer-1", "tenant_id": "tenant-1"}
+    handoff.assert_awaited_once_with(fake_db, "tenant-1", "offer-1", "manager")
+    assert charges.inserted is None and offers.updated is None

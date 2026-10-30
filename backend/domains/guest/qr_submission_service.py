@@ -3,7 +3,6 @@ import logging
 import secrets
 import string
 import uuid
-from decimal import Decimal
 
 from fastapi import HTTPException
 from pymongo import ReturnDocument
@@ -56,68 +55,26 @@ def _room_charge_for_item(catalogue_item: dict, validated_value: dict) -> dict |
     currency = str(catalogue_item.get("currency") or "").upper()
     if quantity < 1 or unit_minor < 1 or not currency:
         raise HTTPException(status_code=503, detail="Oda servisi fiyatı şu anda kullanılamıyor")
-    return {
+    snapshot = {
         "unit_price_minor": unit_minor,
         "quantity": quantity,
         "total_minor": unit_minor * quantity,
         "currency": currency,
         "folio_category": catalogue_item.get("folio_category") or "room_service",
     }
+    if catalogue_item.get("tax_rate") is not None:
+        snapshot["tax_rate"] = catalogue_item["tax_rate"]
+    return snapshot
 
 
 async def _post_room_service_charges(tenant_id: str, tenant_db, booking_id: str, submission_group_id: str, prepared_items: list[dict]):
-    """Post confirmed QR menu items once to the active guest folio.
-
-    The folio service recognizes ``external_reference`` so an interrupted
-    request/retry converges to the original financial line rather than
-    duplicating it.
-    """
+    """All confirmed lines + balances + source status + audit in one transaction."""
     chargeable = [item for item in prepared_items if item.get("room_charge")]
     if not chargeable:
         return []
 
-    folio = await tenant_db["folios"].find_one(
-        {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
-        {"_id": 0},
-    )
-    if not folio:
-        raise HTTPException(status_code=409, detail="Açık oda folyosu bulunamadı; sipariş kaydedilmedi")
-
-    from modules.pms_core.folio_hardening_service import FolioHardeningService
-
-    posted = []
-    for item in chargeable:
-        room_charge = item["room_charge"]
-        reference = f"qr-room-service:{submission_group_id}:{item['service_code']}"
-        amount = Decimal(room_charge["unit_price_minor"]) / Decimal(100)
-        result = await FolioHardeningService().post_charge(
-            tenant_id=tenant_id,
-            folio_id=folio["id"],
-            booking_id=booking_id,
-            charge_data={
-                "category": room_charge["folio_category"],
-                "description": f"[QR Oda Servisi] {item['title']}",
-                "amount": float(amount),
-                "quantity": room_charge["quantity"],
-                "tax_rate": 0,
-                "department": "room_service",
-                "currency": room_charge["currency"],
-                "external_reference": reference,
-            },
-            posted_by="guest-qr-room-service",
-        )
-        if not result.get("success"):
-            raise HTTPException(status_code=409, detail="Oda hesabına yazılamadı; sipariş kaydedilmedi")
-        charge_id = (result.get("charge") or {}).get("id")
-        if not charge_id:
-            raise HTTPException(status_code=503, detail="Oda hesabı kaydı doğrulanamadı")
-        posted.append({"service_code": item["service_code"], "folio_charge_id": charge_id, **room_charge})
-
-    await tenant_db["guest_service_submissions"].update_one(
-        {"tenant_id": tenant_id, "property_id": prepared_items[0]["property_id"], "booking_id": booking_id, "submission_group_id": submission_group_id},
-        {"$set": {"room_charge_status": "posted", "room_charge_lines": posted, "updated_at": _utc_now()}},
-    )
-    return posted
+    from core.guest_service_folio import post_qr_submission
+    return await post_qr_submission(tenant_db, tenant_id, booking_id, submission_group_id, prepared_items)
 
 
 async def handle_structured_submission(
@@ -347,6 +304,21 @@ async def handle_structured_submission(
             except DuplicateKeyError as e:
                 details = getattr(e, "details", None) or {}
                 key_pattern = details.get("keyPattern", {})
+
+                # Mongo may report the _id or public-reference index first on
+                # retry, not the compound source index. Reconcile the exact
+                # persisted line before treating it as an unrelated collision.
+                if "_id" in key_pattern or "request_reference" in key_pattern:
+                    from core.guest_service_folio import _fingerprint
+
+                    prior = await tenant_db["qr_requests"].find_one({"tenant_id": tenant_id, "property_id": property_id,
+                        "booking_id": booking_id, "submission_group_id": submission_group_id, "service_code": item_doc["service_code"]})
+                    if prior:
+                        fields = ("_id", "request_reference", "room_charge", "catalogue_snapshot")
+                        if _fingerprint({field: prior.get(field) for field in fields}) != _fingerprint({field: item_doc.get(field) for field in fields}):
+                            raise HTTPException(409, "Oda servisi talep kaynağı uyuşmuyor")
+                        replayed_count += 1
+                        break
 
                 if "request_reference" in key_pattern:
                     new_ref = generate_public_reference("REQ")

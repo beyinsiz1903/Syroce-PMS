@@ -15,18 +15,18 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pymongo.errors import DuplicateKeyError
 
-from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
-from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user
-from core.utils import calculate_folio_balance
+from core.tenant_currency import get_tenant_currency
 from models.schemas import (
     User,
 )
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 from shared_kernel.idempotency import (
+    build_request_hash,
     claim_idempotency,
     complete_idempotency,
     get_idempotency_key,
@@ -78,6 +78,39 @@ async def check_rate_limit(tenant_id: str, channel: str, limit_per_hour: int = 1
     count = await db.messages.count_documents({"tenant_id": tenant_id, "channel": channel, "sent_at": {"$gte": one_hour_ago}})
 
     return count < limit_per_hour
+
+
+async def _posted_upsell_totals(tenant_id, offers):
+    """Read posted source-linked gross amounts; never add currencies or old guesses."""
+    from decimal import Decimal, InvalidOperation
+
+    missing_ids = sum(1 for offer in offers if offer.get("status") == "accepted" and not offer.get("id"))
+    accepted = {offer["id"]: offer for offer in offers if offer.get("status") == "accepted" and offer.get("id")}
+    ids = [offer["folio_charge_id"] for offer in accepted.values() if offer.get("folio_charge_id")]
+    charges = await db.folio_charges.find({"tenant_id": tenant_id, "id": {"$in": ids}, "voided": {"$ne": True}}, {"_id": 0}).to_list(len(ids)) if ids else []
+    groups, verified = {}, set()
+    for charge in charges:
+        source_id = charge.get("source_upsell_offer_id")
+        offer = accepted.get(source_id)
+        code = charge.get("currency")
+        if not offer or charge.get("id") != offer.get("folio_charge_id") or charge.get("booking_id") != offer.get("booking_id") or not isinstance(code, str) or len(code) != 3 or source_id in verified:
+            continue
+        try:
+            amount = Decimal(str(charge.get("total")))
+            if not amount.is_finite() or amount < 0:
+                continue
+        except InvalidOperation:
+            continue
+        groups[code] = groups.get(code, Decimal(0)) + amount
+        verified.add(source_id)
+    values = {code: float(total) for code, total in sorted(groups.items())}
+    return {
+        "revenue_by_currency": values,
+        "revenue": next(iter(values.values())) if len(values) == 1 else None,
+        "revenue_currency": next(iter(values)) if len(values) == 1 else None,
+        "unreconciled_accepted": len(accepted) - len(verified) + missing_ids,
+        "revenue_source": "folio_charges",
+    }
 
 
 # Router will be included at the very end after ALL endpoints are defined
@@ -166,9 +199,7 @@ async def generate_upsell_offers(
     loyalty_tier = guest.get("loyalty_tier", "standard")
     past_bookings = 0
     if guest_id:
-        past_bookings = await db.bookings.count_documents(
-            {"guest_id": guest_id, "tenant_id": current_user.tenant_id, "status": "checked_out"}
-        )
+        past_bookings = await db.bookings.count_documents({"guest_id": guest_id, "tenant_id": current_user.tenant_id, "status": "checked_out"})
 
     for better_room in better_rooms[:3]:
         conflicts = await db.bookings.count_documents(
@@ -278,6 +309,9 @@ async def generate_upsell_offers(
     offers.sort(key=lambda x: x["confidence"], reverse=True)
 
     if offers:
+        offer_currency, _ = await get_tenant_currency(current_user.tenant_id)
+        for offer in offers:
+            offer["currency"] = offer_currency
         await db.upsell_offers.insert_many(offers)
         for o in offers:
             o.pop("_id", None)
@@ -332,18 +366,62 @@ async def create_upsell_offer(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
+    from datetime import date, time
+
+    from core.guest_service_folio import inclusive_tax
+    from modules.pms_core.folio_selection import select_booking_folio
+    from modules.pms_core.revenue_categories import LABELS
+
+    offer_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = str(payload.get("currency") or offer_currency).strip().upper()
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+        raise HTTPException(422, "Teklif para birimi açık üç harfli ISO kodu olmalı")
+    category = payload.get("service_category")
+    if category is not None and category not in LABELS:
+        raise HTTPException(422, "Geçersiz hizmet kategorisi")
+    tax_rate = payload.get("tax_rate")
+    inclusive_tax(round(price, 2), tax_rate)
+    service_date, service_time = payload.get("service_date"), payload.get("service_time")
+    try:
+        if service_date:
+            date.fromisoformat(service_date)
+        if service_time:
+            time.fromisoformat(service_time)
+    except (TypeError, ValueError):
+        raise HTTPException(422, "Hizmet tarih/saat biçimi geçersiz") from None
+    if payload.get("folio_id"):
+        await select_booking_folio(db, current_user.tenant_id, booking_id, payload["folio_id"])
+
     # Optional Idempotency-Key replay protection.
     idem_key = get_idempotency_key(request)
     lock_id = None
+    source_hash = build_request_hash(payload)
+    offer_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:upsell:{current_user.tenant_id}:{idem_key}")) if idem_key else str(uuid.uuid4())
+
+    async def persisted_offer():
+        row = await db.upsell_offers.find_one({"tenant_id": current_user.tenant_id, "id": offer_id}, {"_id": 0})
+        if row and row.get("request_hash") != source_hash:
+            raise HTTPException(409, "Aynı istek anahtarı farklı teklif içeriğiyle kullanılamaz")
+        return row
+
     if idem_key:
+        existing = await persisted_offer()
+        if existing:
+            return existing
         claim = await claim_idempotency(
             db,
             tenant_id=current_user.tenant_id,
             scope="upsell_offer_create",
             idempotency_key=idem_key,
+            request_hash=source_hash,
         )
         if claim["status"] == "replay":
-            return claim["response"]
+            existing = await persisted_offer()
+            if existing:
+                return existing
+            raise HTTPException(409, "Önceki teklifin kalıcı kaydı doğrulanamadı")
+        if claim["status"] == "mismatch":
+            raise HTTPException(409, "Aynı istek anahtarı farklı teklif içeriğiyle kullanılamaz")
         if claim["status"] == "in_flight":
             raise HTTPException(
                 status_code=409,
@@ -354,7 +432,9 @@ async def create_upsell_offer(
     try:
         valid_until = payload.get("valid_until") or booking.get("check_out")
         offer_doc = {
-            "id": str(uuid.uuid4()),
+            "_id": f"upsell-offer:{current_user.tenant_id}:{offer_id}",
+            "id": offer_id,
+            "request_hash": source_hash,
             "tenant_id": current_user.tenant_id,
             "guest_id": booking.get("guest_id"),
             "booking_id": booking_id,
@@ -362,6 +442,12 @@ async def create_upsell_offer(
             "current_item": payload.get("current_item"),
             "target_item": payload.get("target_item"),
             "price": round(price, 2),
+            "currency": currency,
+            "folio_id": payload.get("folio_id"),
+            "tax_rate": tax_rate,
+            "service_category": category,
+            "service_date": service_date,
+            "service_time": service_time,
             "confidence": 1.0,  # manual = full confidence
             "reason": payload.get("reason") or "Manuel teklif",
             "valid_until": valid_until,
@@ -370,7 +456,13 @@ async def create_upsell_offer(
             "created_by": getattr(current_user, "id", None),
             "source": "manual",
         }
-        await db.upsell_offers.insert_one(offer_doc.copy())
+        try:
+            await db.upsell_offers.insert_one(offer_doc.copy())
+        except DuplicateKeyError:
+            existing = await persisted_offer()
+            if existing:
+                return existing
+            raise
         offer_doc.pop("_id", None)
         if lock_id:
             await complete_idempotency(db, lock_id=lock_id, response_body=offer_doc)
@@ -391,8 +483,20 @@ async def list_upsell_offers(status: str | None = None, current_user: User = Dep
     accepted = sum(1 for o in offers if o.get("status") == "accepted")
     rejected = sum(1 for o in offers if o.get("status") == "rejected")
     pending = sum(1 for o in offers if o.get("status") == "pending")
-    total_revenue = sum(o.get("price", 0) for o in offers if o.get("status") == "accepted")
-    return {"offers": offers, "summary": {"total": len(offers), "accepted": accepted, "rejected": rejected, "pending": pending, "total_revenue": round(total_revenue, 2)}}
+    posted = await _posted_upsell_totals(current_user.tenant_id, offers)
+    return {
+        "offers": offers,
+        "summary": {
+            "total": len(offers),
+            "accepted": accepted,
+            "rejected": rejected,
+            "pending": pending,
+            "total_revenue": posted["revenue"],
+            "scope": "latest_200_offers",
+            "limit_reached": len(offers) == 200,
+            **posted,
+        },
+    }
 
 
 # ── GET /ai/upsell/settings ──
@@ -508,6 +612,13 @@ async def update_upsell_offer(
     if action not in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail="Gecersiz aksiyon. 'accepted' veya 'rejected' olmali.")
 
+    if action == "accepted":
+        from core.guest_service_folio import accept_upsell
+        from core.spa_mice_authz import require_finance
+
+        require_finance(current_user)
+        return await accept_upsell(db, current_user.tenant_id, offer_id, current_user.id)
+
     offer = await db.upsell_offers.find_one({"id": offer_id, "tenant_id": current_user.tenant_id})
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadi")
@@ -517,53 +628,9 @@ async def update_upsell_offer(
 
     update_data = {"status": action, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.email}
 
-    if action == "accepted":
-        existing_charge = await db.folio_charges.find_one({"upsell_offer_id": offer_id, "tenant_id": current_user.tenant_id})
-        if not existing_charge:
-            folio = await db.folios.find_one(
-                {
-                    "booking_id": offer["booking_id"],
-                    "tenant_id": current_user.tenant_id,
-                    "status": "open",
-                },
-                {"_id": 0, "id": 1},
-            )
-            if not folio:
-                raise HTTPException(status_code=409, detail="Teklif kabul edilemedi: rezervasyonun açık folyosu bulunamadı")
-            amount = round(float(offer.get("price", 0) or 0), 2)
-            folio_charge = {
-                "id": str(uuid.uuid4()),
-                "upsell_offer_id": offer_id,
-                "booking_id": offer["booking_id"],
-                "folio_id": folio["id"],
-                "tenant_id": current_user.tenant_id,
-                "description": f"Upsell: {offer.get('target_item', offer.get('type', 'Ek Hizmet'))}",
-                "charge_category": "other",
-                "charge_type": "upsell",
-                "quantity": 1,
-                "unit_price": amount,
-                "amount": amount,
-                "subtotal": amount,
-                "discount_amount": 0,
-                "vat_rate": 0,
-                "vat_amount": 0,
-                "tax_amount": 0,
-                "total": amount,
-                "voided": False,
-                "status": "posted",
-                "created_at": datetime.now(UTC).isoformat(),
-                "created_by": current_user.email,
-            }
-            await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
-            await db.folio_charges.insert_one(folio_charge)
-            balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
-            await db.folios.update_one(
-                {"id": folio["id"], "tenant_id": current_user.tenant_id},
-                {"$set": {"balance": balance, "updated_at": datetime.now(UTC).isoformat()}},
-            )
-            invalidate_financial_report_caches(current_user.tenant_id)
-
-    await db.upsell_offers.update_one({"id": offer_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
+    changed = await db.upsell_offers.update_one({"id": offer_id, "tenant_id": current_user.tenant_id, "status": "pending"}, {"$set": update_data})
+    if changed.matched_count != 1:
+        raise HTTPException(409, "Teklif eşzamanlı değişti; sayfayı yenileyin")
     return {"message": f"Teklif {'kabul edildi' if action == 'accepted' else 'reddedildi'}", "offer_id": offer_id, "status": action}
 
 
@@ -574,6 +641,7 @@ async def get_revenue_insights(current_user: User = Depends(get_current_user)):
     now = datetime.now(UTC)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month_start = today.replace(day=1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
 
     total_rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
     today_occupied = await db.bookings.count_documents(
@@ -582,36 +650,45 @@ async def get_revenue_insights(current_user: User = Depends(get_current_user)):
     occupancy_rate = round((today_occupied / total_rooms * 100) if total_rooms > 0 else 0, 1)
 
     monthly_bookings = await db.bookings.find(
-        {"tenant_id": tenant_id, "check_in": {"$gte": month_start.isoformat()}, "status": {"$nin": ["cancelled", "no_show"]}}, {"total_amount": 1, "check_in": 1, "check_out": 1, "_id": 0}
+        {"tenant_id": tenant_id, "check_in": {"$gte": month_start.date().isoformat(), "$lt": next_month.date().isoformat()}, "status": {"$nin": ["cancelled", "no_show"]}},
+        {"total_amount": 1, "currency": 1, "check_in": 1, "check_out": 1, "_id": 0},
     ).to_list(5000)
 
-    total_revenue = sum(b.get("total_amount", 0) for b in monthly_bookings)
-    total_nights = 0
+    revenue_by_currency, nights_by_currency = {}, {}
+    unknown_currency_count = 0
     for b in monthly_bookings:
+        code = b.get("currency")
+        if not code:
+            unknown_currency_count += 1
+            continue
         try:
             ci = datetime.fromisoformat(b["check_in"])
             co = datetime.fromisoformat(b["check_out"])
-            total_nights += max((co - ci).days, 1)
-        except Exception:
-            total_nights += 1
-    adr = round(total_revenue / total_nights, 2) if total_nights > 0 else 0
-    revpar = round(adr * occupancy_rate / 100, 2)
+            revenue_by_currency[code] = revenue_by_currency.get(code, 0) + b.get("total_amount", 0)
+            nights_by_currency[code] = nights_by_currency.get(code, 0) + max((co - ci).days, 1)
+        except (ValueError, KeyError, TypeError):
+            pass
+    adr_by_currency = {code: round(total / nights_by_currency[code], 2) for code, total in revenue_by_currency.items()}
+    revpar_by_currency = {code: round(value * occupancy_rate / 100, 2) for code, value in adr_by_currency.items()}
+    adr = next(iter(adr_by_currency.values())) if len(adr_by_currency) == 1 else None
+    revpar = next(iter(revpar_by_currency.values())) if len(revpar_by_currency) == 1 else None
 
-    upsell_stats = await db.upsell_offers.find({"tenant_id": tenant_id, "created_at": {"$gte": month_start.isoformat()}}, {"_id": 0, "status": 1, "price": 1, "type": 1}).to_list(5000)
+    upsell_stats = await db.upsell_offers.find({"tenant_id": tenant_id, "created_at": {"$gte": month_start.isoformat()}}, {"_id": 0}).to_list(5000)
     upsell_total = len(upsell_stats)
     upsell_accepted = sum(1 for u in upsell_stats if u.get("status") == "accepted")
-    upsell_revenue = sum(u.get("price", 0) for u in upsell_stats if u.get("status") == "accepted")
+    posted = await _posted_upsell_totals(tenant_id, upsell_stats)
     acceptance_rate = round((upsell_accepted / upsell_total * 100) if upsell_total > 0 else 0, 1)
 
     type_breakdown = {}
     for u in upsell_stats:
         t = u.get("type", "diger")
         if t not in type_breakdown:
-            type_breakdown[t] = {"total": 0, "accepted": 0, "revenue": 0}
+            type_breakdown[t] = {"total": 0, "accepted": 0}
         type_breakdown[t]["total"] += 1
         if u.get("status") == "accepted":
             type_breakdown[t]["accepted"] += 1
-            type_breakdown[t]["revenue"] += u.get("price", 0)
+    for offer_type, stats in type_breakdown.items():
+        stats.update(await _posted_upsell_totals(tenant_id, [u for u in upsell_stats if u.get("type", "diger") == offer_type]))
 
     insights = []
     if occupancy_rate < 60:
@@ -633,28 +710,44 @@ async def get_revenue_insights(current_user: User = Depends(get_current_user)):
             {
                 "type": "info",
                 "title": "Upsell Performansi",
-                "text": f"Bu ay {upsell_total} teklif uretildi, %{acceptance_rate} kabul orani ile {upsell_revenue:.0f} TL ek gelir saglandi.",
+                "text": f"Bu ay {upsell_total} teklif üretildi; kabul oranı %{acceptance_rate}. Folyoya işlenen tutarlar para birimi bazında gösterilir; mutabakatı eksik eski teklifler gelire eklenmez.",
                 "metric": f"%{acceptance_rate}",
             }
         )
 
-    best_type = max(type_breakdown.items(), key=lambda x: x[1]["revenue"], default=None)
-    if best_type and best_type[1]["revenue"] > 0:
+    best_type = max(type_breakdown.items(), key=lambda x: x[1]["revenue"] or 0, default=None) if len(posted["revenue_by_currency"]) == 1 else None
+    if best_type and (best_type[1]["revenue"] or 0) > 0:
         type_labels = {"room_upgrade": "Oda Yukseltme", "early_checkin": "Erken Check-in", "late_checkout": "Gec Check-out", "airport_transfer": "Transfer"}
         insights.append(
             {
                 "type": "success",
                 "title": "En Iyi Upsell Kategorisi",
-                "text": f"{type_labels.get(best_type[0], best_type[0])} kategorisi {best_type[1]['revenue']:.0f} TL ile en cok gelir getiren upsell tipi.",
-                "metric": f"{best_type[1]['revenue']:.0f} TL",
+                "text": f"{type_labels.get(best_type[0], best_type[0])}: {best_type[1]['revenue']:.2f} {best_type[1]['revenue_currency']} folyoya işlendi.",
+                "metric": f"{best_type[1]['revenue']:.2f} {best_type[1]['revenue_currency']}",
             }
         )
 
-    if adr > 0:
-        insights.append({"type": "info", "title": "Ortalama Gunluk Fiyat (ADR)", "text": f"Bu ayin ADR degeri {adr:.0f} TL, RevPAR {revpar:.0f} TL.", "metric": f"{adr:.0f} TL"})
-
     return {
-        "kpis": {"occupancy_rate": occupancy_rate, "adr": adr, "revpar": revpar, "monthly_revenue": round(total_revenue, 2), "total_rooms": total_rooms, "occupied_rooms": today_occupied},
-        "upsell_summary": {"total": upsell_total, "accepted": upsell_accepted, "revenue": round(upsell_revenue, 2), "acceptance_rate": acceptance_rate, "type_breakdown": type_breakdown},
+        "kpis": {
+            "occupancy_rate": occupancy_rate,
+            "adr": adr,
+            "revpar": revpar,
+            "adr_by_currency": adr_by_currency,
+            "revpar_by_currency": revpar_by_currency,
+            "monthly_revenue_by_currency": revenue_by_currency,
+            "monthly_revenue": next(iter(revenue_by_currency.values())) if len(revenue_by_currency) == 1 else None,
+            "unknown_currency_count": unknown_currency_count,
+            "limit_reached": len(monthly_bookings) == 5000,
+            "total_rooms": total_rooms,
+            "occupied_rooms": today_occupied,
+        },
+        "upsell_summary": {
+            "total": upsell_total,
+            "accepted": upsell_accepted,
+            **posted,
+            "acceptance_rate": acceptance_rate,
+            "type_breakdown": type_breakdown,
+            "limit_reached": len(upsell_stats) == 5000,
+        },
         "insights": insights,
     }

@@ -1,0 +1,89 @@
+REMAINING GUEST SERVICES — UPSELL / CONFIRMED STRUCTURED QR ROOM SERVICE
+30 October2026. Code verification, not new live acceptance.
+
+Base release d0855750a94c924e61ff3113ccd0a1d3007f9b42 (PR1461).
+Its four pending source handoffs were completed and accepted separately:
+see department-folio-live-acceptance-20261030.txt. Gross4508 TRY; stock52 each.
+All source, request/result and before/after evidence is retained locally.
+
+Newly reproduced defects (LOCAL replica, not deliberate live failures)
+- Upsell acceptance lost explicit currency, treated unknown tax as zero and
+  could accept an invalid booking/folio without atomic debt/status/audit.
+- Both modern staff and old online-checkin accept entrypoints used separate,
+  incomplete financial write paths. Old endpoint lacked guest ownership check.
+- QR per-line pre-read + posting could double-charge under concurrent retry,
+  leave a partially posted multi-line bill and stamp calendar instead of open day.
+- Real Mongo may report _id/public-reference uniqueness first on a QR retry;
+  the old handler mistook its own persisted source for an unrelated collision.
+- Upsell reports summed nominal offers rather than verified canonical charges,
+  added different currencies and printed hardcoded TL; monthly booking metrics
+  had no upper month boundary and excluded date-only first-day check-ins.
+
+Fix scope
+Source-owned transaction for Upsell acceptance and all confirmed QR charge
+lines, booking/folio balances, source status and sealed audit. Deterministic
+charge IDs, source fingerprints and resource locks; exact replay or409, never
+blind legacy migration. Same-tenant active booking/open unambiguous folio and
+matching explicit currency required. Current OPEN business date is separate
+from declared service date/time. Missing service date remains unknown.
+
+Unknown tax stays null; explicit zero is distinct. Optional declared inclusive
+VAT is preserved from server catalogue through consent snapshot to canonical
+charge. Menu editor retains existing rates and explains gross/optional VAT.
+Guest browser cannot supply price/currency/tax. Persisted consent is required.
+QR retry reconciles only the exact same immutable source; unrelated collisions
+or changed payload stop. Online checkin uses the same financial handoff and
+enforces ownership; staff financial authorization is not weakened.
+
+Manual offer request hash + stable identity survives lost response/cache TTL;
+changed request with same key409. Existing sources/charges/payments untouched.
+Reports read canonical nonvoid charge links, group currencies without FX,
+flag unverified legacy accepts and expose query caps rather than silently count
+them as revenue. ADR/RevPAR displayed per currency; no invented conversion.
+
+Verification
+LOCAL replica regressions cover concurrent retry, multi-line rollback including
+second-line audit failure, unknown/zero tax, currency/tenant/folio/day guards,
+guest ownership, old/new endpoint convergence, full catalogue submission and
+consent, persisted-source retry after repricing and BSON timestamp precision.
+Final broad targeted package:186 passed in86.36s;3 live-server tests explicitly
+deselected by offline markers, no skipped test counted as a pass.21 existing
+datetime.utcnow deprecation warnings in concierge code are not new failures.
+8 frontend tests passed; targeted ESLint, full backend Ruff, production build
+and git diff --check passed. New replica regressions are included in186;
+earlier132/12-test runs overlap and MUST NOT be added to this total.
+Local Python3.13 / installed Motor3.3.1; pinned-runtime full CI still required.
+Earlier failing XMLs remain; they are not current-head results.
+No CI/security gate or ignore list was lowered. Local tests are not a substitute
+for pinned-runtime CI, deployment, browser/live acceptance or universal proof.
+
+Live continuation after merge/deploy (NOT yet performed)
+Verify final head CI, merge SHA, actual non-skipped server deploy step and health.
+No automatic merge/deploy. Only Demo Hotel100001 tenant
+5bad4a34-6ee3-4566-9053-741b7375a9cf, normal authorized APIs.
+Read current sources first; reconcile uncertain results before any retry. Use
+distinct durable request/result files and idempotency keys. Retain all records.
+Create an explicit-currency dated synthetic Upsell offer on one approved stay;
+accept once and safe retry; verify one source/charge/audit, exact balance/report.
+For QR, preserve the complete existing menu when adding a synthetic item; obtain
+the normal guest session/consent, submit once and safe retry; verify all lines,
+VAT evidence, source linkage, report and audit. No guessed FX or historical tax.
+Compare original charges/payments/plans,31rooms/QT2ED0,52each stock and channels.
+Keep26Oct OPEN, Exely ARI/pull OFF, HotelRunner off/V2 paused. No real collection,
+bank/card, KBS/fiscal documents, provider operations or dayclose is required.
+
+Still not fully accepted / not silently included in this patch
+- The older authenticated /guest/room-service-order route still needs separate
+  server-menu/idempotent billing regressions; do not use its client price or
+  fixed18% tax path to create demo financial evidence.
+- Activity Scheduler and Function Space provide scheduling, not native automatic
+  folio handoff. Do not present a manual extra as automatic module integration.
+- Upsell acceptance posts the agreed service charge; it does not silently move
+  a room assignment or modify stay dates. Such operations need their own flow.
+- Remaining nonfinancial front-office pages need their own coverage matrix.
+No claim that all modules, buttons or reports are universally error-free.
+
+Restricted evidence directory (workspace, not committed guest snapshots):
+department-live-20261030.1MXoPp/
+remaining-services-before-v2.xml; remaining-services-after-v1.xml;
+remaining-services-related-v1/v2/v3.xml; remaining-services-final-v1/v2.xml.
