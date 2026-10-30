@@ -1,0 +1,49 @@
+FORECAST — GÜNLÜK NET KALAN ODA ETİKETİ
+30 Ekim 2026
+
+Talep
+Müsaitlik grafiğindeki her günün sayısı, dolu oda dilimi veya fiziksel kapasite
+değil, o güne ait net kalan oda sayısı olmalı.
+
+Kök neden ve düzeltme
+Önceki grafik her yığılmış dilime kendi değerini yazıyor ve sıfırı gizliyordu.
+Bu yüzden 31 dolu oda da 31 boş oda da grafikte aynı 31 etiketiyle görünüyordu.
+Artık gün başına tek etiket var; değer doğrudan raporun remaining_rooms
+alanından alınır. Grafik, bilgi balonu, tablo ve mevcut Excel verisi aynı
+anlık görüntünün işaretli net kalan değerini kullanır. 0 gizlenmez; pozitif
+sayı + ile, fazla satış negatif ve kırmızı gösterilir. Bilinmeyen değer
+kapasiteye veya sıfıra çevrilmez.
+
+Yığılmış rezervasyon / kalan kesin grup bloğu / müsait / kapalı oda dilimleri
+korundu. Etiketin yerini belirleyen görünmez çizgi yalnız çizim koordinatı
+içindir; kalan oda hesabı yapmaz, stok veya rezervasyon verisi değiştirmez.
+Bu ayrı etiket katmanı, son kapalı-oda dilimi sıfır yüksekliğinde olsa bile
+etiketin kaybolmasını engeller. 62 günlük etiket gizleme sınırı kaldırıldı;
+uzun aralıklar mevcut yatay kaydırmayla gösterilir.
+
+Doğrulama
+- 89 UI/regresyon testi başarılı (18 yeni etiket/bilgi balonu testi dahil).
+- 31 mevcut backend forecast/Excel/kapsam testi başarılı; backend değişmedi.
+- Hedefli ESLint, üretim Vite derlemesi ve git diff --check başarılı.
+- Gerçek Recharts entegrasyon testi: 31 kapasiteli tesiste 0, +5, -2, +31.
+- Localhost tarayıcı kabulü, yalnız yapay veri: 30 etiket / 30 tablo satırı
+  birebir eşleşti; 365 günlük görünümde 365 etiket / 365 satır eşleşti.
+- Tam dolu gün bilgi balonu Kalan oda: 0 ve Rezervasyon: 31 gösterdi.
+- Fazla satış günü etiket, bilgi balonu ve tablo -2 değerini korudu.
+- İlk backend denemesi eksik yerel JWT test ayarı nedeniyle setup'ta durdu;
+  bu kanıt korunarak yalnız test anahtarı ve localhost DB adresiyle yeniden
+  çalıştırılan paket 31/31 geçti. Üretim kimlik bilgisi veya DB kullanılmadı.
+
+Yerel kanıt dizini (repo dışında)
+/Users/syroce/Documents/Codex/2026-10-09/evet-sohbet-uzad-k-a-nceki-2/forecast-label-qa-20261030/
+  tests.xml                         89 UI testi
+  backend-tests.xml                 korunmuş ilk setup hatası
+  backend-tests-configured.xml      31/31 başarılı backend sonucu
+  browser-acceptance.json           30 ve 365 gün karşılaştırması
+  remaining-rooms-preview.png       grafik / tablo önizlemesi
+  sold-out-tooltip.png             tam dolu gün
+  overbooked-tooltip.png            fazla satış günü
+
+Yayın sınırı
+Bu çalışma üretim verisi yazmaz; canlı mutasyon, otomatik merge veya deploy
+yapılmadı. PR yayımlandıktan sonra canlı bundle ve ekran ayrıca doğrulanmalı.

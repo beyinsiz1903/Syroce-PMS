@@ -11,10 +11,11 @@ vi.mock('recharts', () => {
   const Container = ({ children }) => <div>{children}</div>;
   const Chart = ({ children, onClick }) => <div data-testid="synthetic-chart" onClick={() => onClick?.({ activeTooltipIndex: '0' })}>{children}</div>;
   const Empty = () => null;
-  return { ResponsiveContainer: Container, BarChart: Chart, LineChart: Chart,
-    Bar: ({ dataKey, name, stackId }) => <span data-testid={`bar-${dataKey}`} data-stack={stackId}>{name}</span>,
-    Line: ({ dataKey, connectNulls }) => <span data-testid={`line-${dataKey}`} data-connect-nulls={String(connectNulls)} />,
-    CartesianGrid: Empty, LabelList: Empty, Legend: Empty, Tooltip: Empty, XAxis: Empty, YAxis: Empty };
+  return { ResponsiveContainer: Container, ComposedChart: Chart, LineChart: Chart,
+    Bar: ({ dataKey, name, stackId, children }) => <span data-testid={`bar-${dataKey}`} data-stack={stackId}>{name}{children}</span>,
+    Line: ({ dataKey, connectNulls, children }) => <span data-testid={`line-${dataKey}`} data-connect-nulls={String(connectNulls)}>{children}</span>,
+    LabelList: ({ dataKey }) => <span data-testid="chart-label-list" data-key={dataKey} />,
+    CartesianGrid: Empty, Legend: Empty, Tooltip: Empty, XAxis: Empty, YAxis: Empty };
 });
 const col = (key, label, type = 'number') => ({ key, label, type });
 function payload(params) {
@@ -57,6 +58,9 @@ it('shows KPIs, disjoint stacked availability, daily details and selected-day hi
   const table = await loaded();
   expect(screen.getByTestId('forecast-occupancy-total')).toHaveTextContent('%50');
   for (const key of ['booked_rooms', 'block_rooms', 'vacant_rooms', 'blocked_rooms']) expect(screen.getByTestId(`bar-${key}`)).toHaveAttribute('data-stack', 'rooms');
+  expect(screen.getAllByTestId('chart-label-list')).toHaveLength(1);
+  expect(screen.getByTestId('chart-label-list')).toHaveAttribute('data-key', 'remaining_rooms');
+  expect(screen.getByText(/Her günün üzerindeki sayı net kalan odadır/)).toBeInTheDocument();
   expect(table).toHaveTextContent('Net kalan (+/−)');
   expect(table).toHaveTextContent('+3');
   fireEvent.click(screen.getByTestId('synthetic-chart'));

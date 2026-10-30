@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, LabelList, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, LabelList, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ChevronLeft, ChevronRight, Download, Printer, RefreshCw } from 'lucide-react';
 import api from '@/api/axios';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { validateReportDate } from '@/utils/reportExports';
 import './FrontdeskForecastReport.css';
 import ForecastRoomTypeMatrix from './ForecastRoomTypeMatrix';
+import { availabilityLabelAnchor, AvailabilityTooltip, RemainingRoomsLabel } from './ForecastAvailabilityLabels';
 
 const views = [['availability', 'Müsaitlik'], ['movements', 'Geliş–Ayrılış'], ['occupancy', 'Doluluk'], ['revenue', 'Gelir'], ['stay_types', 'Konaklama Tipleri']];
 const percent = value => value == null ? '—' : `%${Number(value).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`;
@@ -79,7 +80,7 @@ export default function FrontdeskForecastReport() {
   const summaryKeys = ['physical_rooms', 'total_occupied_rooms', 'block_rooms', 'blocked_rooms', 'remaining_rooms', 'occupancy_pct'];
   const columns = (data?.columns?.[view] || []).filter(column => detailed || view !== 'availability' || summaryKeys.includes(column.key)).map(column => basis === 'sellable' && view !== 'occupancy' && column.key === 'occupancy_pct'
     ? { ...column, key: 'sellable_occupancy_pct', label: 'Doluluk % (satılabilir)' } : column);
-  const chartRows = data?.rows.map(row => ({ ...row, label: dateText(row.date), chart_revenue: row.room_revenue_by_currency == null ? null : row.room_revenue_by_currency[chartCurrency] ?? 0 })) || [];
+  const chartRows = data?.rows.map(row => ({ ...row, label: dateText(row.date), availability_label_anchor: availabilityLabelAnchor(row), chart_revenue: row.room_revenue_by_currency == null ? null : row.room_revenue_by_currency[chartCurrency] ?? 0 })) || [];
   const knownCurrencies = [...new Set(data?.rows.flatMap(row => Object.keys(row.room_revenue_by_currency || {})) || [])].sort();
   const currencies = knownCurrencies.length ? knownCurrencies : data ? [data.currency] : [];
   const submitRange = (start = first, end = last, kind = roomType) => {
@@ -150,18 +151,22 @@ export default function FrontdeskForecastReport() {
         <div className="p-3 sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{views.find(([key]) => key === view)?.[1]} · Günlük görünüm</h3>{view === 'revenue' && <label className="text-sm">Grafik para birimi <select aria-label="Forecast grafik para birimi" value={chartCurrency} onChange={e => setChartCurrency(e.target.value)} className="rounded border bg-background p-1">{currencies.map(code => <option key={code}>{code}</option>)}</select></label>}</div>
           {view === 'availability' && <div aria-label="Grafik renkleri" className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">{[['Rezervasyon', '#38bdf8'], ['Kesin grup bloğu (kalan)', '#818cf8'], ['Müsait oda', '#fde68a'], ['Kapalı oda', '#64748b']].map(([label, color]) => <span key={label} className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: color }} />{label}</span>)}</div>}
+          {view === 'availability' && <p className="mb-2 text-xs text-muted-foreground">Her günün üzerindeki sayı net kalan odadır; oda kapasitesi değildir. 0 müsait oda olmadığını, eksi değer fazla satışı gösterir.</p>}
           <div className="forecast-chart-scroll" aria-label="Günlük forecast grafiği">
             <div className="forecast-chart" style={{ minWidth: Math.max(700, chartRows.length * 38 + 70) }}>
               <ResponsiveContainer width="100%" height={260}>
                 {view === 'occupancy' || view === 'revenue' ? <LineChart data={chartRows} onClick={chooseChartDay} margin={{ top: 12, right: 20, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip contentStyle={tooltipStyle} itemStyle={tooltipStyle} /><Legend formatter={legendLabel} />
                   <Line dataKey={view === 'revenue' ? 'chart_revenue' : occupancyKey} name={view === 'revenue' ? `Rezervasyon oda bedeli (${chartCurrency})` : 'Doluluk %'} stroke="#2563eb" strokeWidth={2} connectNulls={false} />
-                </LineChart> : <BarChart data={chartRows} onClick={chooseChartDay} margin={{ top: 12, right: 20, left: 0, bottom: 0 }} barCategoryGap="12%">
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip contentStyle={tooltipStyle} itemStyle={tooltipStyle} />{view !== 'availability' && <Legend formatter={legendLabel} wrapperStyle={{ fontSize: 11 }} />}
+                </LineChart> : <ComposedChart data={chartRows} onClick={chooseChartDay} margin={{ top: 28, right: 20, left: 0, bottom: 0 }} barCategoryGap="12%">
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip content={view === 'availability' ? <AvailabilityTooltip /> : undefined} contentStyle={tooltipStyle} itemStyle={tooltipStyle} />{view !== 'availability' && <Legend formatter={legendLabel} wrapperStyle={{ fontSize: 11 }} />}
                   {(view === 'availability' ? [['booked_rooms', 'Rezervasyon', '#38bdf8'], ['block_rooms', 'Kesin grup bloğu (kalan)', '#818cf8'], ['vacant_rooms', 'Müsait oda', '#fde68a'], ['blocked_rooms', 'Kapalı oda', '#64748b']]
                     : view === 'movements' ? [['arrivals', 'Gelen oda', '#2563eb'], ['departures', 'Ayrılan oda', '#64748b'], ['stayovers', 'Devam eden', '#38bdf8']]
-                      : [['comp_rooms', 'Comp', '#38bdf8'], ['house_use_rooms', 'House-use', '#64748b'], ['day_use_rooms', 'Day-use', '#fde68a'], ['group_rooms', 'Pickup grup oda', '#818cf8']]).map(([key, label, fill]) => <Bar key={key} dataKey={key} name={label} fill={fill} stackId={view === 'availability' ? 'rooms' : undefined} isAnimationActive={false}>{view === 'availability' && chartRows.length <= 62 && <LabelList dataKey={key} position="center" formatter={value => value > 0 ? value : ''} fill={key === 'blocked_rooms' ? '#fff' : '#123047'} fontSize={11} />}</Bar>)}
-                </BarChart>}
+                      : [['comp_rooms', 'Comp', '#38bdf8'], ['house_use_rooms', 'House-use', '#64748b'], ['day_use_rooms', 'Day-use', '#fde68a'], ['group_rooms', 'Pickup grup oda', '#818cf8']]).map(([key, label, fill]) => <Bar key={key} dataKey={key} name={label} fill={fill} stackId={view === 'availability' ? 'rooms' : undefined} isAnimationActive={false} />)}
+                  {view === 'availability' && <Line dataKey="availability_label_anchor" stroke="none" dot={false} activeDot={false} legendType="none" tooltipType="none" isAnimationActive={false}>
+                    <LabelList dataKey="remaining_rooms" position="top" content={<RemainingRoomsLabel />} />
+                  </Line>}
+                </ComposedChart>}
               </ResponsiveContainer>
             </div>
           </div>
