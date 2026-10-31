@@ -1,0 +1,92 @@
+ÖN BÜRO KALAN ÇIKTI / KVKK KONTROLÜ — 31 EKİM 2026
+
+Başlangıç canlı:PR1475 merge45eebd9ddfddfc12dcb5081317b9caee77624577.
+Önceki dönem/UTC-saat düzeltmesi canlı geçti; bu çalışma onu tekrarlamaz.
+
+Gerçek yeni bulgu
+Safari'de mevcut kapalı vardiyanın Z Yazdır düğmesi sistem önizlemesinde
+5sayfa üretiyordu: ilk sayfalarda rapor yerine PMS kabuğu ve diğer kapalı
+vardiyalar vardı. Ekrandaki metnin doğru olması çıktı izolasyonunu doğrulamaz.
+Salt okunur canlı önce-kanıtı saklandı; fiziksel yazdırma veya para işlemi yok.
+
+Düzeltme
+Yalnız verisi yüklenmiş X/Z veya dönem raporu portalled DialogContent'i
+çıktı belgesi olarak işaretlenir. Print-only, aktif belgeye bağlı CSS body'nin
+diğer doğrudan çocuklarını dışlar. Arka plan/overlay/geçmiş diğer vardiyalar
+yazdırılmaz. Sabit konum/dönüşüm/kaydırma yükseklik sınırları bırakılır;
+tablo başlıkları tekrarlanır, satırlar korunur. Ekran tasarımı ve diğer
+modüllerin çıktı kuralları işaret yokken değişmez. Şifre/finans kaynağı/
+işgünü/kur/güvenlik koruması değişmedi, ek bağımlılık veya popup yok.
+
+İlgili negatif kontroller
+Eski dönem sonucu tarih değiştirilince ve yeni okuma başlarken silinir;
+hata sonrası CSV/print açılmaz, görünür hata mesajı kalır. İstek sürümü ve
+busy guard tekrar isteği, önceki aralığın geç yanıtını ve kapatılan pencereye
+dönen sonucu engeller. Tarih alanları label/id ile erişilebilir bağlandı.
+Önceki koşuda altı yeni regresyonun altısı başarısızdı; düzeltme sonrası
+aynı altı koşul ve mevcut saat/not testleri birlikte13passed.
+
+Yerel gerçek tarayıcı kanıtı
+Üretim bileşeninin aynı kaynak kodu/locale/CSS'i, yalnızlocalhost5179'da
+sentetik ve yazma kapalı axios fixture ile açıldı. Gerçek veri/kimlik/token
+veya sağlayıcı çağrısı yok. Safari sistem önizlemesinde Z1sayfa ve dönem
+1sayfa:başlık/saat/not/0-100-40-60-0/2hareket ve tablolar var; dıştaki
+yerel test başlığı ve19diğer99999tutarlı vardiya yok. Kontrollü okuma hatası
+UI'da görünür, CSV/Yazdır yok. Sistem önizlemesi vazgeçildi; fiziksel çıktı yok.
+Bu yerel doğrulamadır; yeni kodun canlı kabulü merge/deploy/health sonrasıdır.
+
+KVKK arayüzünde ayrıca doğrulanan dört boşluk
+Talep oluşturma sonrası gömülü audit yenilenmiyordu. Tamamlama sonrası
+sunucudaki response_date yerine tarayıcı tarihi uyduruluyordu. Talepler ve
+rızalar ilk100, audit ilk200 satırda sessizce kesiliyordu. Bekleyen tamamlama
+isteği yeniden gönderilebiliyordu. Yeni ilk beş test eski kaynakta4fail/1pass;
+başarısız kanıt korunur. Backend audit/kimlik/tenant sözleşmesi değişmez.
+
+Tüm sayfalar skip/limit ile okunur; yinelenen/ilerlemeyen, yarım veya güvenli
+100sayfalık pencereyi aşan kaynak görünür hata olur. Eksik sayılar0/başarılı
+ilk sayfa toplamı gibi gösterilmez. Sunucuya başarılı yazı sonrası talepler,
+rızalar, audit ve politika yenilenir; eski okuma yanıtı yeni görünümü ezemez.
+Tamamlama tarihi yalnız sunucudan gelir. Tek uçuş guard'ı ve disabled
+kontroller tekrar yazıyı engeller; hata sonrası yanlış başarı/audit üretilmez.
+Bu, belirsiz ağ hatasından sonra oluşturma işlemini kör tekrarlamak için bir
+idempotency garantisi değildir. Canlı gerçek silme/anonimleştirme yapılmadı.
+Yerel gerçek KVKKManager:1sentetik erişim talebi→audit1→tamamla→audit2;
+özel fixture'ın sunucu tarihi30Ekim, tarayıcı31Ekim olmasına rağmen doğru
+kaynak tarihi gösterildi. Bu yalnız localhost belleğidir; gerçek kişi yok.
+
+Doğrulama
+Son kaynakta temiz repo-pinli tamUI:435dosya2399passed,0fail0skip,290.28s.
+Önceki cashier-only tamUI434dosya2390pass tarihsel alt kapsamdır, toplanmaz.
+Son odaklı22test tamUI'nın alt kümesidir:9KVKK+6çıktı+4saat+3not.
+İlk tam koşu sandboxlocalhostlistenEPERM nedeniyle güvenlik testinin setup'ında
+durdu (2384pass/6skip/1failedsuite); bu koşu başarı sayılmadı/silinmedi.
+Aynı paket izinli localhost ortamında hiçbir testi/gate'i atlamadan tekrar
+geçti. Son KVKK kaynaklarıyla üretim build, değişen dosyaESLint ve diffcheck
+geçti. CI son commit için ayrıca doğrulanır; yerel test tamCI değildir.
+Backend değişmedi; önceki682backend/359Sentrykoşulu yeniden sayılmaz.
+
+Canlı kaynak koruması
+51GET kaynağı,25/26/30Ekim altı gelir okuyucusu/döviz bazlı tahsilat,
+31fiziksel oda forecast ve audit zinciri yeniden doğrulandı. Canlı business
+yazısı/stock/seed/arşiv/hizmet/kasa/ayar tekrarı yok.26Ekim iş günü açık;
+ExelyARI/pullOFF,HotelRunnerkapalı,V2paused.
+
+Kapsam sınırı
+Bu PR bütün19sayfanın her rol/çıktı/alternatifini otomatik PASS yapmaz.
+KBS/dışplatform teslimi gerçek erişimsiz gönderilmiş sayılmaz.48tarihsel
+Exelyolayında doğrulanmış oda eşlemesi yok; tahmini eşleme/replay yok.
+Gelir Kontrolleri'nin planlama ayarları gerçek BARmotoru değildir; bu
+tasarım/ürün boşluğu yazdırma düzeltmesiyle kapandı denmez.
+
+Operatör kanıt dizini (kişisel veri Git'e alınmadı)
+frontdesk-final-sweep-20261031.QghrNT/
+z-print-native-before.txt/png (canlı5sayfa)
+z-print-local-after.txt/png (yerel1sayfa)
+period-print-local-after-v2.txt/png (yerel1sayfa)
+period-local-read-failure.txt/png
+print-regression-before.xml / print-regression-after-v1.xml
+frontend-full-v1.xml / frontend-full-v2.xml
+kvkk-regression-before.xml / kvkk-regression-after-v1.xml
+final-focus-v1.xml / frontend-full-v3-kvkk.xml
+kvkk-local-created.txt / kvkk-local-completed.txt/png
+source-sweep-acceptance.json

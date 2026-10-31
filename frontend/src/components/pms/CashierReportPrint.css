@@ -1,0 +1,75 @@
+/* Radix dialogs are portalled directly under body. Print the selected document,
+   not the application behind its overlay, and release every scroll/fixed limit.
+   The condition is absent when the report is closed or has no current result;
+   other modules' print rules and the application's screen layout are untouched. */
+@media print {
+  body:has(> [data-cashier-print-document][data-state='open']) {
+    overflow: visible !important;
+    height: auto !important;
+    margin: 0 !important;
+  }
+
+  body:has(> [data-cashier-print-document][data-state='open']) > :not([data-cashier-print-document][data-state='open']) {
+    display: none !important;
+  }
+
+  body > [data-cashier-print-document][data-state='open'] {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    translate: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    animation: none !important;
+    transition: none !important;
+    font-size: 10pt;
+  }
+
+  [data-cashier-print-document],
+  [data-cashier-print-document] * {
+    color: #111827 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  [data-cashier-print-document] [class*='overflow-'] {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  [data-cashier-print-document] [data-cashier-print-controls],
+  [data-cashier-print-document] button,
+  [data-cashier-print-document] input,
+  [data-cashier-print-document] select,
+  [data-cashier-print-document] svg,
+  [data-cashier-print-document] .sr-only {
+    display: none !important;
+  }
+
+  [data-cashier-print-document] table {
+    width: 100% !important;
+    border-collapse: collapse;
+  }
+
+  [data-cashier-print-document] thead {
+    display: table-header-group;
+  }
+
+  [data-cashier-print-document] tr {
+    break-inside: avoid;
+  }
+
+  [data-cashier-print-document] th,
+  [data-cashier-print-document] td {
+    border-bottom: 1px solid #cbd5e1;
+  }
+}

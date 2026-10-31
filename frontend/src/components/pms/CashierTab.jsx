@@ -20,6 +20,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '@/lib/currency';
 import { CASHIER_TIME_ZONE_LABEL, cashierCalendarDay, formatCashierTime, formatCashierTimestamp } from '@/lib/cashierTime';
+import './CashierReportPrint.css';
 
 const DIFF_THRESHOLD = 50;
 const CURRENCIES = [
@@ -87,6 +88,22 @@ const CashierTab = () => {
   const [periodRange, setPeriodRange] = useState({ start: monthAgoIso(), end: todayIso() });
   const [periodData, setPeriodData] = useState(null);
   const [periodLoading, setPeriodLoading] = useState(false);
+  const [periodError, setPeriodError] = useState(false);
+  const periodRequestRef = useRef(0);
+  const periodBusyRef = useRef(false);
+
+  const invalidatePeriodReport = () => {
+    periodRequestRef.current += 1;
+    periodBusyRef.current = false;
+    setPeriodData(null);
+    setPeriodLoading(false);
+    setPeriodError(false);
+  };
+
+  const changePeriodRange = (field, value) => {
+    invalidatePeriodReport();
+    setPeriodRange(previous => ({ ...previous, [field]: value }));
+  };
 
   const [pinGate, setPinGate] = useState({ open: false, label: '', onVerified: null });
   const [pinValue, setPinValue] = useState('');
@@ -295,14 +312,28 @@ const CashierTab = () => {
 
   const loadPeriodReport = async () => {
     if (!periodRange.start || !periodRange.end) { toast.error('Tarih aralığı seçin'); return; }
+    if (periodBusyRef.current) return;
+    const request = ++periodRequestRef.current;
+    periodBusyRef.current = true;
+    setPeriodData(null);
+    setPeriodError(false);
     setPeriodLoading(true);
     try {
       const res = await axios.get('/cashier/period-report', {
         params: { start_date: periodRange.start, end_date: periodRange.end }
       });
+      if (request !== periodRequestRef.current) return;
       setPeriodData(res.data);
-    } catch (e) { toast.error('Rapor alınamadı: ' + (e.response?.data?.detail || e.message)); }
-    setPeriodLoading(false);
+    } catch (e) {
+      if (request !== periodRequestRef.current) return;
+      setPeriodError(true);
+      toast.error('Rapor alınamadı: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      if (request === periodRequestRef.current) {
+        periodBusyRef.current = false;
+        setPeriodLoading(false);
+      }
+    }
   };
 
   const exportPeriodCsv = () => {
@@ -983,7 +1014,7 @@ const CashierTab = () => {
       </Dialog>
 
       <Dialog open={showReportDialog} onOpenChange={(o) => { if (!o) { setShowReportDialog(false); setReportData(null); } }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto print:max-w-full print:overflow-visible">
+        <DialogContent data-cashier-print-document={reportData ? 'shift' : undefined} className="max-w-2xl max-h-[90vh] overflow-y-auto print:max-w-full print:overflow-visible">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
@@ -1101,7 +1132,7 @@ const CashierTab = () => {
                 {t('cm.components_pms_CashierTab.toplam')} {reportData.transaction_count || 0} {t('cm.components_pms_CashierTab.islem_9d951')}
               </div>
 
-              <div className="flex justify-end gap-2 print:hidden">
+              <div data-cashier-print-controls className="flex justify-end gap-2 print:hidden">
                 <Button variant="outline" onClick={() => { setShowReportDialog(false); setReportData(null); }}>
                   {t('cm.components_pms_CashierTab.kapat')}
                 </Button>
@@ -1151,20 +1182,20 @@ const CashierTab = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showPeriodReportDialog} onOpenChange={(o) => { setShowPeriodReportDialog(o); if (!o) setPeriodData(null); }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto print:max-w-full print:overflow-visible">
+      <Dialog open={showPeriodReportDialog} onOpenChange={(o) => { setShowPeriodReportDialog(o); if (!o) invalidatePeriodReport(); }}>
+        <DialogContent data-cashier-print-document={periodData ? 'period' : undefined} className="max-w-4xl max-h-[90vh] overflow-y-auto print:max-w-full print:overflow-visible">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><CalendarRange className="w-5 h-5" /> {t('cm.components_pms_CashierTab.donem_raporu_d2bb7')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-sm" id="period-report">
-            <div className="flex items-end gap-2 flex-wrap print:hidden">
+            <div data-cashier-print-controls className="flex items-end gap-2 flex-wrap print:hidden">
               <div>
-                <Label>{t('cm.components_pms_CashierTab.baslangic_677c8')}</Label>
-                <Input type="date" value={periodRange.start} onChange={e => setPeriodRange(p => ({ ...p, start: e.target.value }))} />
+                <Label htmlFor="cashier-period-start">{t('cm.components_pms_CashierTab.baslangic_677c8')}</Label>
+                <Input id="cashier-period-start" type="date" value={periodRange.start} onChange={e => changePeriodRange('start', e.target.value)} />
               </div>
               <div>
-                <Label>{t('cm.components_pms_CashierTab.bitis')}</Label>
-                <Input type="date" value={periodRange.end} onChange={e => setPeriodRange(p => ({ ...p, end: e.target.value }))} />
+                <Label htmlFor="cashier-period-end">{t('cm.components_pms_CashierTab.bitis')}</Label>
+                <Input id="cashier-period-end" type="date" value={periodRange.end} onChange={e => changePeriodRange('end', e.target.value)} />
               </div>
               <Button onClick={loadPeriodReport} disabled={periodLoading} className="bg-slate-700 hover:bg-slate-800">
                 {periodLoading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CalendarRange className="w-4 h-4 mr-2" />}
@@ -1181,6 +1212,9 @@ const CashierTab = () => {
                 </>
               )}
             </div>
+
+            {periodLoading && <p role="status">Dönem raporu yükleniyor…</p>}
+            {periodError && <p role="alert">Dönem raporu yüklenemedi. Tarih aralığını kontrol edip yeniden deneyin; eski sonuç dışa aktarılamaz.</p>}
 
             {periodData && (
               <>
