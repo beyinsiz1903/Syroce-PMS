@@ -348,7 +348,7 @@ export default function ProfileUdfPage() {
                   ) : defs.map((d) => (
                     <TableRow key={d.id}>
                       <TableCell><Badge variant="secondary">{d.section || "Genel"}</Badge></TableCell>
-                      <TableCell><code className="text-xs">{d.key}</code></TableCell>
+                      <TableCell><code className="text-xs">{d.presentation_key || d.key}</code></TableCell>
                       <TableCell className="font-medium">{d.label}</TableCell>
                       <TableCell>{TYPES.find((t) => t.v === d.type)?.l || d.type}</TableCell>
                       <TableCell className="text-center">{d.required ? "Evet" : "Hayır"}</TableCell>

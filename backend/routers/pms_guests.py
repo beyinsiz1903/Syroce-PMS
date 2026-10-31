@@ -227,6 +227,9 @@ async def search_guests(
     # that drove the Atlas query-targeting alert. (Behavior change: substring ->
     # "starts typing a name" prefix.)
     name_conditions = prefix_conditions(["name", "first_name", "last_name"], q)
+    from modules.pms_core.frontdesk_presentation import guest_alias_conditions
+
+    name_conditions += guest_alias_conditions(tenant_id, q)
 
     # Build search conditions supporting both encrypted and plaintext fields
     if _fenc:

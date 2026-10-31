@@ -1,0 +1,424 @@
+{
+  "version": "frontdesk-natural-presentation-20261031-v1",
+  "tenant_id": "5bad4a34-6ee3-4566-9053-741b7375a9cf",
+  "hotel_id": "100001",
+  "hotel": {
+    "original": "Syroce Demo Hotel",
+    "display": "Syroce Hotel"
+  },
+  "operator": {
+    "original": "Demo Kullanıcı",
+    "display": "Ön Büro Yetkilisi"
+  },
+  "guests": [
+    {
+      "id": "c92f6c2f-01dd-45ab-9aa8-9a9af3ba449a",
+      "original": "E2E Manuel Denetim 1308",
+      "display": "Berk Arıkan"
+    },
+    {
+      "id": "00045ebc-f0bc-4939-be59-4b3f18f0a88c",
+      "original": "test e2e 2",
+      "display": "Ece Karaca"
+    },
+    {
+      "id": "0a16130a-831c-5c14-b12c-530b6294e6c0",
+      "original": "Syroce QA Certification",
+      "display": "Bora Atalay"
+    },
+    {
+      "id": "0b68c94f-a6c4-4fe1-94d3-479e10b86bfa",
+      "original": "Demo Konaklama",
+      "display": "İpek Taner"
+    },
+    {
+      "id": "0d1cc0ea-8bc3-4064-9fce-6fefab37015e",
+      "original": "CANLI TEST KONAKLAMA COMP 589",
+      "display": "Onur Aksu"
+    },
+    {
+      "id": "0f30a3f9-963f-5660-a47e-2b94c1f58af9",
+      "original": "QA Deluxe SeriesA",
+      "display": "Selen Ergin"
+    },
+    {
+      "id": "12065f59-2760-4b8e-b8ed-1cfc50913929",
+      "original": "SYROCE ACK TEST 3",
+      "display": "Kaan Öztürk"
+    },
+    {
+      "id": "20dbcf23-0955-5d1d-b994-32bfcd2d9815",
+      "original": "E2E_CORE_1778428011437",
+      "display": "Burcu Ilgaz"
+    },
+    {
+      "id": "2b6c5e8c-2fbd-5b59-8dab-0bee1917069c",
+      "original": "E2E_mqa0kc9rgxur_GUEST",
+      "display": "Utku Şahin"
+    },
+    {
+      "id": "3279058f-8264-564a-8ff4-dcab117ca64e",
+      "original": "Ada AcceptanceTest",
+      "display": "Ada Erdem"
+    },
+    {
+      "id": "3aa04558-3fa3-4d16-98df-d9d4dca52f68",
+      "original": "CANLI TEST FULL COMP 589",
+      "display": "Aslıhan Ekinci"
+    },
+    {
+      "id": "3dc3e586-fcbe-5386-b9d0-3fdbf52c77cb",
+      "original": "E2E_CORE_1778428156068",
+      "display": "Caner Güneş"
+    },
+    {
+      "id": "3e7bd760-6560-545f-ad56-55440704b42d",
+      "original": "E2E_mqa0w0cx4yux_GUEST",
+      "display": "Pelin Sezer"
+    },
+    {
+      "id": "42911e9e-2862-593e-9df9-4cd79e139110",
+      "original": "E2E_mqa0k401ccax_GUEST",
+      "display": "Fırat Köksal"
+    },
+    {
+      "id": "42a69e69-890b-51bb-9901-e748fb752725",
+      "original": "E2E_CORE_1778428156068",
+      "display": "Zeynep Tümer"
+    },
+    {
+      "id": "4b34e8d0-5b60-553c-99e5-774843e50cc0",
+      "original": "E2E_CORE_1778428341242",
+      "display": "Baran Tekin"
+    },
+    {
+      "id": "58911203-82f6-4c01-b49f-b4b404ee3750",
+      "original": "E2E_mqa0a34ep8fr_GUEST",
+      "display": "Nilay Uçar"
+    },
+    {
+      "id": "66373c39-3b04-5498-95ef-01b5e96fa003",
+      "original": "QA Standard SeriesA",
+      "display": "Tolga Akın"
+    },
+    {
+      "id": "68239fb3-631c-4f18-9175-87fbf7227dfa",
+      "original": "E2E_mqa09wwfb8yj_GUEST",
+      "display": "Öykü Başar"
+    },
+    {
+      "id": "6ee021db-bfa6-5bd4-aa94-48080e32b1b7",
+      "original": "QA Standard SeriesB",
+      "display": "Serkan Yalçın"
+    },
+    {
+      "id": "7241ae8c-737c-4859-b52d-f07f888f8a6d",
+      "original": "TEST E2E Misafir",
+      "display": "Dilan Soylu"
+    },
+    {
+      "id": "7265cc4e-9c75-4c4b-ab6b-31631d7e0198",
+      "original": "TEST E2E Misafir",
+      "display": "Levent Karaman"
+    },
+    {
+      "id": "747137c9-600d-54a7-bb66-ee4f861a39c6",
+      "original": "E2E_CORE_1778428376061",
+      "display": "Gizem Altın"
+    },
+    {
+      "id": "7aa64a03-e78a-45c6-a69a-816cac788c8f",
+      "original": "syroce test",
+      "display": "Okan Yücel"
+    },
+    {
+      "id": "7aeb2f8e-fb99-525a-9809-1019f3706b94",
+      "original": "E2E_mqa0w3ui9qi6_GUEST",
+      "display": "Ceyda Erol"
+    },
+    {
+      "id": "7b30425c-a808-4ff2-aece-cc9a6380aac3",
+      "original": "QA DÖVİZ TEST TL",
+      "display": "Arda Sönmez"
+    },
+    {
+      "id": "7ed9ec59-9aee-5748-8a58-cb0237f3ed29",
+      "original": "TestChildAgeSix SyroceQAOctober",
+      "display": "İrem Tuncer"
+    },
+    {
+      "id": "82a18786-b596-5a13-8c42-4f35775e1f14",
+      "original": "E2E_CORE_1778428047583",
+      "display": "Engin Koral"
+    },
+    {
+      "id": "8abca55f-b3d3-58ac-99c1-1e82125d2477",
+      "original": "CertMapping SyntheticTest",
+      "display": "Selma İnce"
+    },
+    {
+      "id": "8ee896d9-afac-5c6f-9303-05475afe0813",
+      "original": "E2E_CORE_1778428086601",
+      "display": "Eray Dinç"
+    },
+    {
+      "id": "92557f1b-9eab-4500-bf97-cac321e2e528",
+      "original": "Exely Certification Test",
+      "display": "Aylin Tan"
+    },
+    {
+      "id": "9be96e7a-0679-5941-8f1c-34b4e7f6747e",
+      "original": "QA Deluxe SeriesB",
+      "display": "Hakan Vural"
+    },
+    {
+      "id": "9c183b57-813a-5781-98fa-dbeadef28e23",
+      "original": "E2E_CORE_1778428419319",
+      "display": "Damla Karahan"
+    },
+    {
+      "id": "9f442f75-1498-4103-8bab-6225a51d50e3",
+      "original": "SYROCE ACK TEST 2",
+      "display": "Umut Sarı"
+    },
+    {
+      "id": "a1210471-3429-55f2-ba31-5237581fea36",
+      "original": "Deniz AcceptanceTest",
+      "display": "Deniz Acar"
+    },
+    {
+      "id": "a5cc4603-af2f-5be3-be0c-2558d21ca32e",
+      "original": "Syroce Deluxe QA Certification",
+      "display": "Buse Akalın"
+    },
+    {
+      "id": "b07cff39-8d50-4931-aed0-75b30f567d07",
+      "original": "güncel test",
+      "display": "Koray Keskin"
+    },
+    {
+      "id": "c980a4d7-8c23-4486-a72c-8ec95435ca5b",
+      "original": "Synthetic QA AutoStock 20261029",
+      "display": "Melis Ural"
+    },
+    {
+      "id": "cbc22f47-12b9-4d37-af91-3585038c41a7",
+      "original": "Test Hotelrunner",
+      "display": "Tuna Yaman"
+    },
+    {
+      "id": "cbeca8a4-ae39-52c6-9f65-b885ca7fd72d",
+      "original": "E2E_CORE_1778428211738",
+      "display": "Begüm Eren"
+    },
+    {
+      "id": "d7c3cff1-655b-5d95-afb5-4de648c0555f",
+      "original": "E2E_mqa0ues9yf7w_GUEST",
+      "display": "Alper Durmaz"
+    },
+    {
+      "id": "da93d3ed-de71-4899-bda3-af5394386834",
+      "original": "QA DÖVİZ TEST EUR",
+      "display": "Nehir Özkan"
+    },
+    {
+      "id": "dbbb1da6-2c0d-5293-8e12-759a28c0ff90",
+      "original": "E2E_mqa0ub2imloo_GUEST",
+      "display": "Sarp Demirci"
+    },
+    {
+      "id": "df0d059d-5427-4dc5-b86e-ca9df9c4d85d",
+      "original": "E2E_CORE_1778427995769",
+      "display": "Elçin Çakır"
+    },
+    {
+      "id": "ef71d219-75aa-56cd-ba10-b29fc1491cb5",
+      "original": "E2E_mqa0ot9w9h37_GUEST",
+      "display": "Cemre Aydın"
+    },
+    {
+      "id": "f0bfda50-b8de-5b60-bb60-cd4aa1a4a475",
+      "original": "E2E_CORE_1778428098937",
+      "display": "Volkan Polat"
+    }
+  ],
+  "names": {
+    "Queue Tester": "Selçuk Demir",
+    "Syroce Integration Test": "Eren Akın",
+    "QA Deploy 606": "Berk Onat",
+    "QA Geç Tahakkuk 606": "Nisa Ersoy",
+    "QA Geç Tahakkuk": "Doruk Şen",
+    "QA Transfer Canlı": "Aren Çelik",
+    "QA Canlı Otopark": "Elif Soyer",
+    "Test": "Ayça Sönmez"
+  },
+  "labels": {
+    "E2E Cari 0817": "Mavi Rota Seyahat",
+    "noshow-e2e-56745f5b": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "noshow-e2e-c382cff2": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "folio-e2e-794b96d2": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "folio-e2e-4e740883": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "folio-e2e-8a9f5532": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "folio-e2e-bb3a08d5": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "noshow-e2e-24b16204": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "folio-e2e-6723e122": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "noshow-e2e-d0cd7223": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "folio-e2e-f253fc13": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "folio-e2e-62201035": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "lifecycle-e2e-2d6dfed0": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "xtenant-e2e-fffa2ead": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "xtenant-e2e-89ce9175": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "Split from F-2026-00234: E2E manuel folyo ayrıştırma": "F-2026-00234 numaralı hesaptan ayrılan folyo.",
+    "Canlı QA - rezervasyon ve çakışma testi": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "Syroce Demo Hotel": "Syroce Hotel",
+    "TEST Syroce Demo Hotel (E2E)": "Syroce Hotel",
+    "QA Genel Muhasebe Demo Limited Şirketi": "Akdeniz Konaklama Hizmetleri",
+    "E2E TEST — iptal edilecek": "Rezervasyon işlem notu.",
+    "Guest's comment: SYNTHETIC CERTIFICATION TEST ONLY. R9 COMMENT UPDATED. No actual guest, stay, payment, or marketing consent.": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "Guest's comment: SYNTHETIC QA SeriesA 20261029. Two distinct room guests; child aged 6 in main occupancy. No actual stay, card, charge, receipt or marketing consent. Lifecycle acceptance only.": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "Guest's comment: SYNTHETIC QA SeriesB 20261029. Two distinct room guests; child aged 6 in main occupancy. No actual stay, card, charge, receipt or marketing consent. Batch-read and partial-cancellation acceptance only.": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "Guest's comment: SYNTHETIC QA TEST ONLY - child age 6 - no actual stay or payment - Exely 501694 integration acceptance 2026-10-22.": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "Guest's comment: SYROCE ACCEPTANCE 20261028 — SYNTHETIC TEST ONLY. Two categories, separate room guests, age-six child, nightly prices and provider payment instruction acceptance. No real stay, card, collection or fiscal document.": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "SYNTHETIC QA AutoStock 20261029; approved TEST501694 5-4-5 only; no real guest, card, receipt or fiscal document.": "Konaklama işlem notu kaynak geçmişinde saklanır.",
+    "demo-pr1417-cashier-acceptance-v1:EUR | Yapay Demo kabul kaydı; gerçek para/POS/banka/mesaj/resmi bildirim yok. Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir. Tümü iade edildi; kabul kaydı kapatıldı.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1417-cashier-acceptance-v1:TRY | Yapay Demo kabul kaydı; gerçek para/POS/banka/mesaj/resmi bildirim yok. Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir. Tümü iade edildi; kabul kaydı kapatıldı.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1417-cashier-acceptance-v1:USD | Yapay Demo kabul kaydı; gerçek para/POS/banka/mesaj/resmi bildirim yok. Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir. Tümü iade edildi; kabul kaydı kapatıldı.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Aktivite — DEMO QA • Nefes ve esneme atölyesi 30 Ekim": "Aktivite — Nefes ve esneme atölyesi",
+    "Açık onaylı yapay Demo Hotel sunum stok mutabakatı. Gerçek tedarikçi faturası/banka tahsilatı değildir; kapalı günlerin mali kaynakları değişmez.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Açık onaylı yapay Demo Hotel sunum stok mutabakatı. Gerçek tedarikçi faturası/banka tahsilatı değildir; kapalı günlerin mali kaynakları değişmez. Yalnız mali/hizmet kaynağı bulunmayan eski yapay rezervasyon arşivi.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Concierge — DEMO QA • Tarihi yarımada yürüyüş turu": "Concierge — Tarihi yarımada yürüyüş turu",
+    "Concierge — Tour: DEMO QA • Tarihi yarımada yürüyüş turu": "Concierge — Tour: Tarihi yarımada yürüyüş turu",
+    "DEMO QA 30.10.2026 native acceptance — yapay hizmet, kullanıcı onayıyla kalıcı; gerçek tahsilat yok.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA 30.10.2026 — sentetik hizmet akışı; kayıtlar kullanıcı isteğiyle kalıcıdır; gerçek tahsilat yok.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA 31 Ekim": "Misafir Tercihleri",
+    "DEMO QA Ekip": "Ön Büro Ekibi",
+    "DEMO QA FULL 30.10.2026 — sentetik görev; mali/stok etkisi yok, kayıt korunacak.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA FULL 30.10.2026 — tüm ön büro işlem kabulü; yapay ve kalıcı test kaydı; gerçek dış teslim/tahsilat yok.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA FULL 30.10.2026: Yapay değerlendirme yanıtı ve kalıcılık kabulü. Gerçek müşteri beyanı veya dış platform yayını değildir.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA FULL • Oda ekipman kontrolü 3010": "Oda ekipman kontrolü",
+    "DEMO QA FULL • Yapay değerlendirme": "Ayça Sönmez",
+    "DEMO QA FULL • Ön büro değerlendirmesi 3010": "Ön büro değerlendirmesi",
+    "DEMO QA FULL: Yapay oda servisi talebinin sonuçlandırma ve QR mesajlaşma akışı test edildi. Gerçek fiziksel servis veya tahsilat yok; kaynak ve folyo kayıtları korunmuştur.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA PR1466 — yapay yorum için JSON yanıt sözleşmesi ve kalıcılık kontrolü. Gerçek müşteri beyanı veya dış platform yayını değildir.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA PR1466 — yazılım atama ve sonuç mesajı testi tamamlandı. Fiziksel temizlik veya ücret işlemi yapılmadı.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA PR1470 31.10.2026 — kullanıcı onaylı yapay kabul; mali/sağlayıcı işlemi yok, kayıtlar korunur.": "Misafirin konaklama tercihleri için kullanılan ek profil alanı.",
+    "DEMO QA — yapay organizatör": "Marmara Etkinlik Organizasyon",
+    "DEMO QA • Atölye eğitmeni 30 Ekim": "Ece Kavak",
+    "DEMO QA • Atölye oturumu": "Atölye oturumu",
+    "DEMO QA • Evet/Hayır kabul değeri": "Özel Karşılama Talebi",
+    "DEMO QA • Eğitim ve toplantı salonu": "Eğitim ve toplantı salonu",
+    "DEMO QA • Fruit plate": "Fruit plate",
+    "DEMO QA • Gömlek yıkama ve ütü": "Gömlek yıkama ve ütü",
+    "DEMO QA • Günün çorbası": "Günün çorbası",
+    "DEMO QA • Günün çorbası\nMiktar: 1\nNot: DEMO QA 30.10.2026 native acceptance — yapay hizmet, kullanıcı onayıyla kalıcı; gerçek tahsilat yok.": "Günün çorbası\nMiktar: 1",
+    "DEMO QA • Günün çorbası — Oda QT2ED0": "Günün çorbası — Oda QT2ED0",
+    "DEMO QA • Havalimanı transfer aracı": "Havalimanı transfer aracı",
+    "DEMO QA • Kahve molası ikramı": "Kahve molası ikramı",
+    "DEMO QA • Klasik bakım masajı 60 dk": "Klasik bakım masajı 60 dk",
+    "DEMO QA • Meyve tabağı": "Meyve tabağı",
+    "DEMO QA • Meyve tabağı\nMiktar: 1\nNot: DEMO QA 30.10.2026 native acceptance — yapay hizmet, kullanıcı onayıyla kalıcı; gerçek tahsilat yok.": "Meyve tabağı\nMiktar: 1",
+    "DEMO QA • Meyve tabağı — Oda QT2ED0": "Meyve tabağı — Oda QT2ED0",
+    "DEMO QA • Misafir katılımlı turizm atölyesi": "Misafir katılımlı turizm atölyesi",
+    "DEMO QA • Misafir otopark yeri": "Misafir otopark yeri",
+    "DEMO QA • Misafir toplantı salonu 30 Ekim": "Misafir toplantı salonu",
+    "DEMO QA • Nefes ve esneme atölyesi 30 Ekim": "Nefes ve esneme atölyesi",
+    "DEMO QA • Sayısal kabul değeri": "Konaklama Tercih Puanı",
+    "DEMO QA • Soup": "Soup",
+    "DEMO QA • Tarihi yarımada yürüyüş turu": "Tarihi yarımada yürüyüş turu",
+    "DEMO QA • Turizm bilgilendirme toplantısı": "Turizm bilgilendirme toplantısı",
+    "Demo Hotel etkinlik katı": "Etkinlik katı",
+    "E2E Demo Stok": "Genel Tüketim Malzemesi",
+    "Ek hizmet teklifi — DEMO QA • Misafir karşılama ikram paketi": "Ek hizmet teklifi — Misafir karşılama ikram paketi",
+    "Etkinlik: DEMO QA • Misafir katılımlı turizm atölyesi": "Etkinlik: Misafir katılımlı turizm atölyesi",
+    "Oda servisi — DEMO QA • Günün çorbası": "Oda servisi — Günün çorbası",
+    "Oda temizliği\nNot: DEMO QA PR1466 30.10.2026 — yapay kalıcı kabul; gerçek sözleşme/tahsilat/dış teslim yok. Yalnız yazılım iş akışı; fiziksel temizlik yapıldığı iddiası yok.": "Oda temizliği",
+    "Otopark — DEMO QA • Misafir otopark yeri": "Otopark — Misafir otopark yeri",
+    "POS: DEMO QA • Misafir öğle menüsü x 1": "POS: Misafir öğle menüsü x 1",
+    "QA Genel Muhasebe Cari 0409": "Genel Misafir Hesabı",
+    "QA Otopark 555462": "Açık Otopark",
+    "QA Transfer 605": "Havalimanı Servisi",
+    "SPA: DEMO QA • Klasik bakım masajı 60 dk": "SPA: Klasik bakım masajı 60 dk",
+    "Salon — DEMO QA • Misafir toplantı salonu 30 Ekim": "Salon — Misafir toplantı salonu",
+    "Smoke Test 1": "Yönetim Toplantısı",
+    "Smoke test": "Misafir talebine uygun ek hizmet",
+    "TEST MANUEL SPA ODASI": "Rahatlama Odası",
+    "Test Etkinlik": "İş Ortakları Buluşması",
+    "Test yorum": "Konaklama deneyimi değerlendirmesi",
+    "Transfer — DEMO QA • Havalimanı transfer aracı": "Transfer — Havalimanı transfer aracı",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka tahsilatı veya resmi bildirim değildir. Yayın sonrası Ekim 2026 kabulü.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka tahsilatı veya resmi bildirim değildir. Yayın sonrası Ekim 2026 kabulü. Birlikte kalan misafirlerin oda tercihi; 102/103 takası.": "Birlikte kalan misafirlerin oda tercihi; 102/103 takası.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka tahsilatı veya resmi bildirim değildir. Yayın sonrası Ekim 2026 kabulü. Hizmet bedeli diğer odayla paylaşılır; yeni gelir veya ödeme değildir.": "Hizmet bedeli diğer odayla paylaşılır; yeni gelir veya ödeme değildir.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka tahsilatı veya resmi bildirim değildir. Yayın sonrası Ekim 2026 kabulü. Örnek kur: USD=50 / EUR=55 TRY; piyasa kuru değildir.": "Örnek kur: USD=50 / EUR=55 TRY; piyasa kuru değildir.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. Birlikte konaklayan misafirlerin oda tercihi nedeniyle 102/103 atomik takası.": "Birlikte konaklayan misafirlerin oda tercihi nedeniyle 102/103 atomik takası.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. Birlikte konaklayan odalar arasında hizmet bedeli paylaşımı; yeni satış veya tahsilat değildir.": "Birlikte konaklayan odalar arasında hizmet bedeli paylaşımı; yeni satış veya tahsilat değildir.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. Örnek kur: USD=50 / EUR=55 TRY; piyasa kuru değildir.": "Örnek kur: USD=50 / EUR=55 TRY; piyasa kuru değildir.",
+    "Yapay Demo Hotel sunumu; gerçek ödeme veya resmi bildirim değildir. PR1434 yayın kabulü. Restoran masrafı diğer odayla paylaşılır; yeni gelir veya ödeme değildir.": "Restoran masrafı diğer odayla paylaşılır; yeni gelir veya ödeme değildir.",
+    "Yapay Demo Hotel sunumu; gerçek ödeme veya resmi bildirim değildir. PR1434 yayın kabulü. İade öncesi hizmet bedeli bölme kabulü.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo kabul kaydı; gerçek para/POS/banka/mesaj/resmi bildirim yok. Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir.": "Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir.",
+    "Yapay Demo sunum kabulü; gerçek para/kart/banka veya resmi bildirim yok. Ayrı pencere hedefi kabulü.": "Hizmet ve işlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "[QR Oda Servisi] DEMO QA • Günün çorbası — Oda QT2ED0": "[QR Oda Servisi] Günün çorbası — Oda QT2ED0",
+    "[QR Oda Servisi] DEMO QA • Meyve tabağı — Oda QT2ED0": "[QR Oda Servisi] Meyve tabağı — Oda QT2ED0",
+    "Çamaşırhane - Oda 126 (DEMO QA • Gömlek yıkama ve ütü x2)": "Çamaşırhane - Oda 126 (Gömlek yıkama ve ütü x2)",
+    "DEMO QA PR1466 30.10.2026 — yapay kalıcı kabul; gerçek sözleşme/tahsilat/dış teslim yok. Yalnız yazılım iş akışı; fiziksel temizlik yapıldığı iddiası yok.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "DEMO QA PR1466 • İç kontenjan 3010": "Kıyı Tur",
+    "DEMO QA • Misafir karşılama ikram paketi": "Misafir karşılama ikram paketi",
+    "Demo yeniden kurma: örnek kur/vade/vergi; tarihî kaynak doğrulaması veya gerçek mali kabul değildir.": "Kaynak uyarısı: örnek kur/vade/vergi; tarihî kaynak doğrulaması veya gerçek mali kabul değildir.",
+    "E2E Demo Sirket": "Kuzey Turizm",
+    "Test Acente E2E": "Marmara Seyahat",
+    "Test Hotel Updated": "Syroce Hotel",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-101-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-101-2026-10-31": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-102-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-103-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-104-2026-10-26": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-105-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-106-2026-10-26": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-107-2026-10-28": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-108-2026-10-30": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-109-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-109-2026-10-28": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-109-2026-10-31": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-110-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-110-2026-10-30": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-111-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-111-2026-10-31": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-112-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-113-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-114-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-115-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-116-2026-10-27": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-117-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-117-2026-10-31": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-118-2026-10-27": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-119-2026-10-29": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-120-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-120-2026-10-31": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-121-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-121-2026-10-29": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-122-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-122-2026-10-31": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-123-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-124-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-125-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-126-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-127-2026-10-26": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-128-2026-10-28": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-129-2026-10-26": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-130-2026-10-28": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "Yapay Demo Hotel sunumu; gerçek misafir, banka ödemesi, resmi bildirim veya mali belge değildir. Tam doluluk Ekim 2026. fill-QT2ED0-2026-10-25": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1416-prepayment-v1:EUR | Yapay Demo sunum kabulü; gerçek para/kart/banka veya resmi bildirim yok. Kabul tamamlandı; tüm ön ödemeler iade edildi.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1416-prepayment-v1:TRY | Yapay Demo sunum kabulü; gerçek para/kart/banka veya resmi bildirim yok. Kabul tamamlandı; tüm ön ödemeler iade edildi.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1416-prepayment-v1:USD | Yapay Demo sunum kabulü; gerçek para/kart/banka veya resmi bildirim yok. Kabul tamamlandı; tüm ön ödemeler iade edildi.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1417-cashier-acceptance-v1:EUR | Yapay Demo kabul kaydı; gerçek para/POS/banka/mesaj/resmi bildirim yok. Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir. Tümü iade edildi; kabul kaydı kapatıldı.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1417-cashier-acceptance-v1:TRY | Yapay Demo kabul kaydı; gerçek para/POS/banka/mesaj/resmi bildirim yok. Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir. Tümü iade edildi; kabul kaydı kapatıldı.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "demo-pr1417-cashier-acceptance-v1:USD | Yapay Demo kabul kaydı; gerçek para/POS/banka/mesaj/resmi bildirim yok. Örnek kaynak kur: USD=50.0001 TRY, EUR=55.0001 TRY; güncel piyasa kuru değildir. Tümü iade edildi; kabul kaydı kapatıldı.": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "semantic-create-test-4e81a197": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "semantic-create-test-6bac003b": "İşlem açıklaması kaynak geçmişinde korunmaktadır.",
+    "source-backed-presentation-1423-v1 | Yapay Demo sunum kaydı; gerçek ödeme/banka belgesi veya mali kabul değildir.": "İşlem açıklaması kaynak geçmişinde korunmaktadır."
+  },
+  "field_keys": {
+    "demoqa_1470_number": "konaklama_tercih_puani",
+    "demoqa_1470_boolean": "ozel_karsilama_talebi"
+  }
+}

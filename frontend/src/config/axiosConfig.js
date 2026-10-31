@@ -13,6 +13,7 @@ import {
 import { clearAuthScopedSessionStorage } from "@/lib/authSessionScope";
 import { navigateInternal } from "@/lib/appNavigation";
 import { recordSessionEvent } from "@/lib/sessionTelemetry";
+import { presentFrontdeskResponse, preserveFrontdeskSourceUpdate, storedPresentationTenant } from "@/lib/frontdeskPresentation";
 
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
@@ -36,6 +37,7 @@ installAxiosResilience(axios);
 // Request interceptor — token injection + cache headers
 axios.interceptors.request.use(
   (config) => {
+    config._frontdeskPresentationTenant = storedPresentationTenant();
     const url = config.url || "";
     const isPublicAuthEndpoint =
       url.includes("/auth/login") ||
@@ -97,7 +99,7 @@ axios.interceptors.request.use(
     }
     // -------------------------------
 
-    return config;
+    return preserveFrontdeskSourceUpdate(config);
   },
   (error) => Promise.reject(error)
 );
@@ -275,7 +277,7 @@ export async function keepActiveSessionAlive() {
 
 // Response interceptor — 401 handling + Pydantic error normalization
 axios.interceptors.response.use(
-  (response) => response,
+  (response) => presentFrontdeskResponse(response),
   async (error) => {
     const original = error.config || {};
     if (

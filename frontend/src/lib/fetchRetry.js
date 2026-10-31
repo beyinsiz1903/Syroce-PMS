@@ -4,9 +4,12 @@
 // kez kısa gecikmeli retry yeterli. HTTP 4xx/5xx ve gerçek ağ hataları retry
 // EDİLMEZ; sadece clone/body-stream desenli mesajlar.
 
+import { presentFrontdeskResponse, storedPresentationTenant } from './frontdeskPresentation';
+
 const TRANSIENT_FETCH_ERR = /clone|body is already used|body stream/i;
 
 export async function fetchJsonWithRetry(url, opts) {
+  const config = { url, method: opts?.method || 'get', _frontdeskPresentationTenant: storedPresentationTenant() };
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(url, opts);
@@ -15,7 +18,8 @@ export async function fetchJsonWithRetry(url, opts) {
         err.status = res.status;
         throw err;
       }
-      return await res.json();
+      const data = await res.json();
+      return presentFrontdeskResponse({ data, config }).data;
     } catch (err) {
       const msg = err && err.message ? String(err.message) : '';
       const isTransient = TRANSIENT_FETCH_ERR.test(msg);

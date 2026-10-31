@@ -1,4 +1,5 @@
 import { isEffectivePayment } from './folioPayments';
+import { projectFrontdeskPresentation } from './frontdeskPresentation';
 
 const normalize = value => String(value || '').toLowerCase();
 export const folioPayorLabel = folio => ({ guest: 'Misafir', agency: 'Acente', company: 'Şirket', master: 'Ana hesap' }[normalize(folio?.payor_type || folio?.folio_type)] || 'Ödeyen belirtilmemiş');
@@ -59,7 +60,8 @@ export function buildFolioStatement({ folios = [], charges = [], extraCharges = 
   const hotelName = text(booking.hotel_name) || text(booking.property_name) || (booking.tenant_id && propertyId === booking.tenant_id ? text(propertyName) : undefined);
   return {
     charges: filtered, payments: scopedPayments, extra_charges: [], booking,
-    currency, mixedCurrency, statement_only: partial, hotel_name: hotelName,
+    currency, mixedCurrency, statement_only: partial,
+    hotel_name: projectFrontdeskPresentation({ hotel_name: hotelName }, booking.tenant_id).hotel_name,
     document_title: partial ? 'Seçili Hizmetler Dökümü' : audience === 'internal' ? 'İç Kullanım Hesap Dökümü' : 'Misafir Hesap Dökümü',
     folio_number: selected.map(folio => folio.folio_number).filter(Boolean).join(', '),
     opening_balance: partial ? 0 : selected.reduce((sum, folio) => sum + Number(folio.opening_balance || 0), 0),
