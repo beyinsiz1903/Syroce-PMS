@@ -62,6 +62,13 @@ describe('payer-safe folio statements', () => {
     expect(buildFolioStatement({ ...input, booking: { tenant_id: 'tenant-b' }, property: { id: 'tenant-a', property_name: 'Yanlış Otel' } }).hotel_name).toBeUndefined();
     expect(buildFolioStatement({ ...input, property: { id: 'tenant-a', property_name: 'Yanlış Otel' } }).hotel_name).toBeUndefined();
   });
+  it('uses the reviewed hotel display name on a non-fiscal statement, not another tenant', () => {
+    const tenant = '5bad4a34-6ee3-4566-9053-741b7375a9cf';
+    const property = { id: tenant, property_name: 'Syroce Demo Hotel' };
+    expect(buildFolioStatement({ ...input, booking: { tenant_id: tenant }, property }).hotel_name).toBe('Syroce Hotel');
+    expect(property.property_name).toBe('Syroce Demo Hotel');
+    expect(buildFolioStatement({ ...input, booking: { tenant_id: 'other', hotel_name: 'Syroce Demo Hotel' }, property }).hotel_name).toBe('Syroce Demo Hotel');
+  });
 });
 
 describe('service timestamps', () => {

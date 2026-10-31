@@ -1,13 +1,14 @@
 import React from 'react';
 import { Info } from 'lucide-react';
 import DemoSourceNotice from './DemoSourceNotice';
+import { presentationHotelName } from '@/lib/frontdeskPresentation';
 
 const formatDate = value => value
   ? new Date(`${value}T12:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
   : '-';
 
 const ReportFrame = ({ children, reportName, reportDate, periodLabel, tenant, user, contract, refreshedAt }) => {
-  const hotelName = tenant?.property_name || tenant?.hotel_name || tenant?.name || 'Otel';
+  const hotelName = presentationHotelName(tenant, user) || tenant?.hotel_name || tenant?.name || 'Otel';
   const preparedBy = user?.full_name || user?.name || user?.email || 'Sistem kullanıcısı';
   const generatedAt = new Date().toLocaleString('tr-TR');
 

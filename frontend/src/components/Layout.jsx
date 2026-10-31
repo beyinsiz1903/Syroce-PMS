@@ -49,6 +49,7 @@ import {
 import { persistExitedTenantContext } from '@/lib/adminTenantContext';
 import { accessibleNavigationItems, navigationItemsByGroup } from '@/lib/navigationCatalog';
 import { userAccessScopeLabel, userIdentityLabel, userRoleLabel } from '@/lib/userRolePresentation';
+import { presentationHotelName, presentationOperatorName } from '@/lib/frontdeskPresentation';
 
 const ICON_BY_KEY = {
   dashboard: Home,
@@ -205,7 +206,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   const [exitingTenantContext, setExitingTenantContext] = useState(false);
 
   const { isSuperAdmin, hasModule, hasTenantModule = hasModule } = useEntitlements();
-  const identityLabel = userIdentityLabel(user);
+  const identityLabel = userIdentityLabel({ ...user, name: presentationOperatorName(user, tenant) });
+  const hotelDisplayName = presentationHotelName(tenant, user);
   const roleLabel = userRoleLabel(user?.role, t);
   const accessScopeLabel = userAccessScopeLabel(user?.role);
   const navRef = useRef(null);
@@ -495,8 +497,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
               <img src="/syroce-logo.svg" alt="Syroce" className="h-7 w-auto dark:brightness-0 dark:invert" />
               <div className="hidden sm:flex flex-col leading-none">
                 <span className="text-[9px] uppercase tracking-widest text-gray-400">Syroce PMS</span>
-                <span className="text-xs font-semibold text-gray-700 truncate max-w-[120px]" title={tenant?.property_name || ''}>
-                  {tenant?.property_name || 'Hotel'}
+                <span className="text-xs font-semibold text-gray-700 truncate max-w-[120px]" title={hotelDisplayName || ''}>
+                  {hotelDisplayName || 'Hotel'}
                 </span>
               </div>
             </div>

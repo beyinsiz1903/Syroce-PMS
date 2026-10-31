@@ -1,0 +1,68 @@
+ÖN BÜRO — DOĞAL OTEL SUNUM ADLARI / 31 EKİM 2026
+
+Amaç ve kapsam
+Kullanıcı ön büro ve bağlı modüllerdeki demo/test/QA başlıklarının doğal otel
+sunumuna dönüştürülmesini istedi. Yalnız 100001 / tenant
+5bad4a34-6ee3-4566-9053-741b7375a9cf için incelenmiş sabit görünüm eşlemesi.
+46 yapay misafir profili doğal, kurgusal adlarla; 160 tam metin eşlemesiyle
+hizmet, görev, katalog, anket, not ve özel alan başlıkları gösterilir.
+Gerçek kişilerin iletişim veya resmî kimlik bilgileri üretilmez/kullanılmaz.
+
+Uygulama
+- Otel başlığı: Syroce Hotel. Ön büro kullanıcı gösterimi: Ön Büro Yetkilisi.
+  Kimlik, tenant ve yetki nesneleri değiştirilmez; admin bağlam uyarısı korunur.
+- Axios GET ve normal JSON fetch okuma yanıtları kopyalanarak sunulur.
+  Özgün DTO ve istemci önbelleği değiştirilmez. Mutasyon yanıtları değiştirilmez.
+- Diğer tenant, yabancı alt nesne, tenant geçişinde gecikmiş yanıt, başka origin,
+  blob ve kapsam dışı okuyucular eşlemeye alınmaz.
+- Geçmiş, denetim, before/after, kaynak snapshot, özel alan değerleri, seçenekler,
+  resmî misafir listesi, KBS/KVKK, mali belge/fatura ve ham dışa aktarım korunur.
+- İncelenen kaynak kimliğiyle eşleşen normal misafir ve rezervasyon araması,
+  görünen adla aynı profili bulur. Başka tenant, arşiv/silinme veya bağımsız ad
+  değişiminde eski takma ad kabul edilmez. API kanonik adı döndürmeye devam eder.
+- Aynı eski ada sahip profiller yalnız sabit misafir ID'siyle ayrılır; ID olmadan
+  belirsiz profiller için kişi tahmini yapılmaz. Maskeli kimlik geri açılmaz.
+- GET DTO'sunu güncellemeye taşıyan PUT/PATCH formlarında aynı mevcut kaynağın
+  gözlenen ve kullanıcı tarafından değiştirilmemiş görünüm metni özgün değere
+  çevrilir. Başka kaynak/tenant/yeni POST veya gerçekten değiştirilen metin
+  yeniden yazılmaz. Geçici gözlem belleği tenant bağlamı değişince temizlenir.
+- UDF etiketi ve sunum anahtarı doğal gösterilir; gerçek key, 0 ve false dahil
+  değerler ve seçenekler aynıdır. Resmî olmayan hesap dökümü başlığı düzenlenir.
+- Mali kaynak uyarısı açıkça korunur: örnek/reconstructed işlemler gerçek mali
+  doğrulama veya tarihî kaynak belgesi gibi sunulmaz. Eski mühürler üretilmez.
+
+Doğrulama (canlı yazma yok)
+- Normal yetkili GET envanteri: 73 snapshot, 31 aktif rezervasyon ayrıntısı.
+- Son transport karşılaştırması: 451 görünüm metni değişti; 9.733 sayısal değer
+  ve 56.933 korunan yaprak aynı; incelenen normal görünüm alanlarında kalan
+  demo/test etiketi 0. Bu bir evrensel tüm veri/gelecek içerik iddiası değildir.
+- Backend: 77 passed. Gerçek LOCAL replica + HTTP üzerinde doğal ad araması,
+  tenant/silinme/arşiv/bağımsız ad değişimi, kaynak tutarı/para birimi koruması;
+  ad normalizasyonu, görünürlük, UDF ve kontrol regresyonları. Bir mevcut
+  utcnow deprecation uyarısı var; başarısız test yok. Test sunucusu kapatıldı.
+- Frontend son dondurulmuş kaynak: 428 dosyada 2351 passed (253.46 sn).
+  Auth, istemci cache/race, kaynak kopyası ve kayıt dönüşü, maskeleme,
+  tenant izolasyonu, resmî okuyucu istisnası ve bağlı modüller dahil.
+- Genel backend Ruff, değişen frontend dosyalarının ESLint'i, git diff --check
+  temiz. Vite üretim derlemesi başarılı (6.50 sn).
+- Yerel tarayıcıda gerçek GuestsTab bileşeni: 6 kurgusal örnek profil doğal
+  isimle göründü; Ada Erdem araması yalnız aynı profil kartını gösterdi.
+  Bu yerel bileşen kanıtıdır, canlı deploy kabulü değildir.
+
+Kanıtlar (çalışma alanı / frontdesk-presentation-20261031/)
+inventory.json
+transport-acceptance-final.json
+backend-regression-final.xml
+presentation-ui-full-final.xml / presentation-ui-full-final.log
+build-final.log
+local-natural-names.png / local-alias-search.png / local-search-state.txt
+İlk sonuçlar ve başarısız test fixture yanıt-zarfı denemesi silinmedi/ezilmedi.
+Özel snapshotlar ve gerçek kaynak ayrıntıları repoya eklenmez.
+
+Yayın sınırı
+Kod ve testler yeni PR ile sunulur; bu görevde otomatik merge/deploy yok.
+Canlı kayıt adı/ödeme/stok/rezervasyon/kanal/iş günü yazısı yapılmadı.
+Merge ve gerçek health sürümü doğrulandıktan sonra normal ön büro, misafir
+araması, bağlı hizmetler ve rapor görünümü için ayrıca canlı kabul gerekir.
+PR1471 DND okuma modeli ayrı değişikliktir; bu işin başarısı onu veya tüm
+ön büro kontrol listesini tamamlanmış saymaz.

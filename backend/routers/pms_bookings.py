@@ -459,6 +459,17 @@ async def get_bookings(
         from security.search_normalize import prefix_conditions
 
         conds = prefix_conditions(["guest_name", "booking_number"], search)
+        from modules.pms_core.frontdesk_presentation import guest_alias_conditions
+
+        alias_conditions = guest_alias_conditions(current_user.tenant_id, search)
+        if alias_conditions:
+            alias_ids = [guest["id"] async for guest in db.guests.find(
+                {"tenant_id": current_user.tenant_id, "archived": {"$ne": True},
+                 "status": {"$ne": "deleted"}, "$or": alias_conditions},
+                {"_id": 0, "id": 1},
+            )]
+            if alias_ids:
+                conds.append({"guest_id": {"$in": alias_ids}})
         query = {"tenant_id": current_user.tenant_id}
         if conds:
             query["$or"] = conds
