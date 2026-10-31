@@ -11,87 +11,58 @@ import {
 } from 'lucide-react';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
-const dateKey = value => value ? String(value).slice(0, 10) : '';
 const localDateKey = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
-const arrivalDate = booking => dateKey(booking.check_in || booking.arrival_date || booking.start_date);
-const departureDate = booking => dateKey(booking.check_out || booking.departure_date || booking.end_date);
-const normalizedStatus = booking => String(booking.status || '').toLowerCase();
-const excludedStatuses = new Set(['cancelled', 'canceled', 'no_show', 'noshow']);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
 }[character]));
-const activeOn = (booking, day) => arrivalDate(booking) <= day && departureDate(booking) > day && !excludedStatuses.has(normalizedStatus(booking));
-
-export const buildManagerDailyMetrics = ({ day, rooms = [], bookings = [] }) => {
-  const activeBookings = bookings.filter(booking => activeOn(booking, day));
-  const occupiedKeys = new Set(activeBookings.map(booking => booking.room_id || booking.room_number || booking.room_no).filter(Boolean));
-  const occupiedRooms = occupiedKeys.size || activeBookings.length;
-  const oooRooms = rooms.filter(room => ['out_of_order', 'out_of_service', 'maintenance'].includes(String(room.status || '').toLowerCase())).length;
-  const availableRooms = Math.max(0, rooms.length - oooRooms);
-  return {
-    activeBookings,
-    totalRooms: rooms.length,
-    oooRooms,
-    availableRooms,
-    occupiedRooms,
-    emptyRooms: Math.max(0, availableRooms - occupiedRooms),
-    occupancy: availableRooms > 0 ? occupiedRooms / availableRooms * 100 : 0,
-    arrivals: bookings.filter(booking => arrivalDate(booking) === day && !excludedStatuses.has(normalizedStatus(booking))).length,
-    departures: bookings.filter(booking => departureDate(booking) === day && !excludedStatuses.has(normalizedStatus(booking))).length,
-    noShows: bookings.filter(booking => ['no_show', 'noshow'].includes(normalizedStatus(booking)) && arrivalDate(booking) === day).length,
-    cancellations: bookings.filter(booking => ['cancelled', 'canceled'].includes(normalizedStatus(booking)) && dateKey(booking.cancelled_at || booking.canceled_at || booking.updated_at) === day).length,
-    walkIns: bookings.filter(booking => arrivalDate(booking) === day && ['walk_in', 'walkin'].includes(String(booking.source || booking.channel || booking.booking_source || '').toLowerCase())).length,
-  };
+export const buildManagerDailyMetrics = ({ day, operations }) => {
+  if (!operations || operations.date !== day || operations.basis !== 'actual_in_house_reservations_on_business_date') return null;
+  const counters = ['totalRooms', 'availableRooms', 'oooRooms', 'occupiedRooms', 'emptyRooms', 'occupancy', 'inhouseReservations', 'vipGuests', 'groupBookings', 'arrivals', 'departures', 'noShows', 'cancellations', 'walkIns'];
+  const breakdowns = ['nationality', 'losDistribution'].every(key => operations[key] && !Array.isArray(operations[key]) && Object.values(operations[key]).every(value => Number.isInteger(value) && value >= 0) && Object.values(operations[key]).reduce((sum, value) => sum + value, 0) === operations.inhouseReservations);
+  return counters.every(key => Number.isFinite(operations[key]) && operations[key] >= 0) && breakdowns ? operations : null;
 };
 
-const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) => {
+const ManagerDailyReport = ({ businessDate = null }) => {
   const { t } = useTranslation();
   const tm = (k) => t(`pmsComponents.managerReport.${k}`);
   const [reportDate, setReportDate] = useState(businessDate || localDateKey());
   const [financial, setFinancial] = useState(null);
+  const [operations, setOperations] = useState(null);
+  const [loadedDate, setLoadedDate] = useState(null);
   const [financialError, setFinancialError] = useState('');
   useEffect(() => {
     let current = true;
-    setFinancial(null); setFinancialError('');
-    api.get(`/reports/revenue?start_date=${reportDate}&end_date=${reportDate}&nocache=1`).then(({ data }) => {
+    setFinancial(null); setOperations(null); setFinancialError('');
+    Promise.all([api.get(`/reports/revenue?start_date=${reportDate}&end_date=${reportDate}&nocache=1`), api.get(`/reports/manager-daily-operations?date_str=${reportDate}`)]).then(([{ data }, operational]) => {
       if (!data?.total_revenue_by_currency || !data?.adr_by_currency || !data?.rev_par_by_currency) throw new Error('Finansal rapor kaynağı doğrulanamadı');
-      if (current) setFinancial(data);
-    }).catch(() => { if (current) setFinancialError('Finansal rapor alınamadı. Konaklama toplamları gelir yerine kullanılmadı.'); });
+      const verified = buildManagerDailyMetrics({ day: reportDate, operations: operational.data });
+      if (!verified) throw new Error('Operasyon rapor kaynağı doğrulanamadı');
+      if (current) { setFinancial(data); setOperations(verified); setLoadedDate(reportDate); }
+    }).catch(() => { if (current) setFinancialError('Finansal rapor veya gerçekleşen konaklama kaynağı alınamadı. Eksik veriler sıfır ya da planlanan rezervasyonlarla doldurulmadı.'); });
     return () => { current = false; };
   }, [reportDate]);
-  const money = key => financial ? formatCurrencyBreakdown(financial[key]) : 'Alınamadı';
-  const metrics = buildManagerDailyMetrics({ day: reportDate, rooms, bookings });
+  const ready = loadedDate === reportDate && Boolean(financial && operations);
+  const money = key => ready ? formatCurrencyBreakdown(financial[key]) : 'Alınamadı';
+  const metrics = ready ? operations : {};
   const { totalRooms, oooRooms, availableRooms, occupiedRooms, emptyRooms } = metrics;
-  const occupancy = metrics.occupancy.toFixed(1);
+  const occupancy = ready ? metrics.occupancy.toFixed(1) : '—';
   const todayArrivals = metrics.arrivals;
   const todayDepartures = metrics.departures;
-  const inhouseGuests = metrics.activeBookings.length;
-  const vipGuests = metrics.activeBookings.filter(b => b.vip || b.guest_vip).length;
-  const groupBookings = metrics.activeBookings.filter(b => b.group_id || b.is_group).length;
+  const inhouseGuests = metrics.inhouseReservations;
+  const vipGuests = metrics.vipGuests;
+  const groupBookings = metrics.groupBookings;
   const { noShows, cancellations, walkIns } = metrics;
 
-  const nationality = {};
-  metrics.activeBookings.forEach(b => {
-    const nat = b.guest_nationality || b.nationality || tm('notSpecified');
-    nationality[nat] = (nationality[nat] || 0) + 1;
-  });
+  const nationality = metrics.nationality || {};
   const topNationalities = Object.entries(nationality).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-  const losDistribution = { '1': 0, '2-3': 0, '4-7': 0, '7+': 0 };
-  metrics.activeBookings.filter(b => arrivalDate(b) && departureDate(b)).forEach(b => {
-    const ci = new Date(b.check_in);
-    const co = new Date(b.check_out);
-    const nights = Math.ceil((co - ci) / 86400000);
-    if (nights <= 1) losDistribution['1']++;
-    else if (nights <= 3) losDistribution['2-3']++;
-    else if (nights <= 7) losDistribution['4-7']++;
-    else losDistribution['7+']++;
-  });
+  const losDistribution = metrics.losDistribution || {};
 
   const printReport = () => {
+    if (!ready) return;
     const w = window.open('', '_blank');
     if (!w) return;
     w.document.write(`<html><head><title>${tm('printTitle')} - ${reportDate}</title><style>body{font-family:Arial;padding:30px;font-size:12px}h1{text-align:center;font-size:18px;border-bottom:2px solid #333;padding-bottom:8px}h2{font-size:14px;margin-top:20px;border-bottom:1px solid #999;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}.box{border:1px solid #ddd;padding:10px;text-align:center;border-radius:4px}.box .val{font-size:20px;font-weight:bold}.box .lbl{font-size:10px;color:#666}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:11px}th{background:#f5f5f5}.footer{margin-top:30px;font-size:10px;color:#999;text-align:center}@media print{body{padding:15px}}</style></head><body>`);
@@ -108,7 +79,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) 
 
   const Metric = ({ label, value, suffix = '', trend }) => (
     <div className="text-center">
-      <div className="text-2xl font-bold">{value}{suffix}</div>
+      <div className="text-2xl font-bold">{value ?? '—'}{suffix}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
       {trend !== undefined && (
         <div className={`text-xs flex items-center justify-center gap-1 ${trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-gray-500'}`}>
@@ -127,11 +98,12 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) 
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="min-w-40 flex-1 sm:flex-none" />
-          <Button onClick={printReport} disabled={!financial}><Printer className="h-4 w-4 mr-1" /> {tm('print')}</Button>
+          <Button onClick={printReport} disabled={!ready}><Printer className="h-4 w-4 mr-1" /> {tm('print')}</Button>
         </div>
       </div>
 
       <p className="text-sm text-muted-foreground">Finansal tutarlar seçilen iş gününde folyoya işlenmiş gelirden alınır; konaklama planı veya tahsilat değildir. Dövizler ayrı gösterilir.</p>
+      <p className="text-sm text-muted-foreground">Doluluk ve misafir dağılımları seçilen iş gününün gerçekleşen konaklamalarıdır; henüz giriş yapmamış rezervasyonlar dahil değildir. Konaklama sayısı kişi sayısı değildir. Kapalı oda sayısı tarihli oda bloklarından alınır.</p>
       {financialError && <p role="alert" className="text-sm text-red-700">{financialError}</p>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -178,7 +150,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) 
                 <span>{key} {tm('nights')}</span>
                 <div className="flex items-center gap-2">
                   <div className="w-20 bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${metrics.activeBookings.length > 0 ? (val / metrics.activeBookings.length * 100) : 0}%` }} />
+                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${inhouseGuests > 0 ? (val / inhouseGuests * 100) : 0}%` }} />
                   </div>
                   <Badge variant="outline">{val}</Badge>
                 </div>

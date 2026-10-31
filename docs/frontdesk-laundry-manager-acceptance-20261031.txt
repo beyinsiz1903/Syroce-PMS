@@ -1,0 +1,72 @@
+KALAN ÖN BÜRO KONTROLLERİ — ÇAMAŞIRHANE / MÜDÜR RAPORU
+31 Ekim 2026. Bu belge tüm 19 işlem ailesinin son kabulü değildir.
+
+Bulgu ve önceki test boşluğu
+1 Çamaşırhane formunda oda değişince eski misafir, rezervasyon ve folyo
+  anında temizlenmiyordu. Geç kalan yanıt yeni odayı ezebiliyor; eşleşmeyen
+  oda yanıtından sonra eski misafir adı kalıyordu. Canlı formda 105→
+  bulunmayan oda ile yeniden üretildi; sipariş gönderilmedi.
+2 Üretim kayıt sırası cashier_router→laundry_router. İki modül aynı URL'yi
+  tanımlıyor; eski test_laundry_orders.py ikinci modülü doğrudan sınadığı
+  için ilk gerçek HTTP oluşturma yolundaki yanlış booking/folio kabulünü
+  ve istemci total alanına güvenilmesini yakalamıyordu. Yeni replica testi
+  kayıt sırasını ve iki eş URL'nin gerçek dispatch'ini sabitler.
+3 Hizmet tipi değişince eklenmiş satırlar yeniden fiyatlanmıyordu; miktar
+  parseInt ile sessizce değişiyordu. İstek sonucu belirsizken yeni anahtar
+  ile tekrar oluşturma çift sipariş riski taşıyordu.
+4 Müdür Raporu planlanan konaklama aralığını doluluk sayıyordu. Aynı açık
+  iş gününde ekran 31; Raporlar/Flash gerçekleşen kaynak 25 gösterdi.
+  Önceki gelir mutabakatı ve planlanan-sayı birim testleri bu eşitliği
+  sınamıyordu; doluluk/ortak kohort sözleşmesi eksikti.
+
+Düzeltmeler (henüz canlı değil)
+Çamaşırhane: oda değişiminde sıfırla, eski/kapalı-form yanıtını yoksay,
+aktif konaklama + açık folyo doğrulanmadan oluşturma. Sunucu oda/konaklama/
+tenant/folio bağlantısını doğrular, kanonik misafir adını kullanır. Aktif
+katalog ve sunucu hizmet çarpanıyla kuruş bazlı fiyat anlık görüntüsü
+saklanır. Dört hizmet tipi; kesirli/bool/taşan miktar, geçersiz fiyat,
+pasif ürün ve yanlış bağlantı retleri. Anahtar+payload hash'iyle atomik
+aynı-sipariş tekrarı; farklı içerik aynı anahtarda409. Belirsiz istekte
+form/payload/anahtar korunur; aynı formu kapat/aç yeniden üretmez.
+Durum ucu mali kaynak düzenlemesi kabul etmez. İptal/teslim terminal
+geçişleri, CAS ve teslim sırasında oda değişimi/kapanmış iş günü
+korunur. Folyoya işlenmiş siparişin kaynak kaydı silinemez. Eski kayıtlar
+yeniden fiyatlanmaz; teslim anında güncel tarife ile geriye dönük değişmez.
+
+Müdür Raporu: salt okunur, reports modülü/view_reports korumalı yeni günlük
+operasyon kaynağı. Ortak booking_occupies_night / fiziksel oda / tarihli
+blok / iş günü ve tamamlanmış audit kanıtı kullanılır. Doluluk, konaklama,
+VIP/grup, milliyet ve süre dağılımı aynı gerçekleşen kohorttan gelir.
+İptal sayacı konaklama aralığı değil olay gününden alınır. Gelir yine
+işlenmiş gelir kaynağındandır; dövizler karıştırılmaz. Eski/eksik tarihli
+ya da başarısız operasyon kaynağında planlanan prop'lara veya0'a dönülmez;
+yazdırma engellenir. Ekran ve yazdırma aynı doğrulanmış anlık görüntüdür.
+Konaklama adedi kişi adedi diye sunulmaz. Tarihî OOO/OOS, bugünkü oda
+statüsünden geriye uydurulmaz; kapalı oda tarihli bloklardan hesaplanır.
+
+Kanıt
+İşletici alanındaki frontdesk-final-families-20261031/ korunur.
+laundry-regression-before.xml: eski ilk HTTP yolunda3 gerçek başarısızlık
+(0,01 istemci toplamı ve yanlış rezervasyon/folyo kabulü). Silinmedi.
+backend-related-final-v3.xml:222 passed; yeni çamaşırhane/Müdür/teslim,
+ön büro, hizmet→folyo, eşzamanlılık ve rapor mutabakatları. Daha küçük
+24/200/5 koşular bunun alt kümesidir; toplanmaz. Son registry-dispatch
+pekiştirmesi ve rol/tenant sınırları registry-manager-final-v2.xml:33passed
+ile doğrulandı (222ile örtüşür,toplanmaz). TamCI PRhead'inde ayrıca beklenir.
+Başarısız/erken UI koşuları ve rapor testlerinin güvenli port guard'ında
+duran ilk geniş koşu saklanır. Port guard/gate/ignore değiştirilmedi;
+izin verilen yeni localhost27989 replica ile tekrar başarı alındı.
+34 korunan kaynak ve audit kontrolü başarılı. Yeni canlı kaynak/ücret/
+tahsilat/silme yok. 26Ekim açık,31 fiziksel oda/QT2ED0,stok52'şer,
+Exely ARI/çekim kapalı ve diğer kanal korumaları aynı. Audit11148 mühürlü
+kontrol;0 kopuk/0doğrulanamaz,2882legacy ayrı,kesilme/degradefalse.
+
+Kapanmayanlar
+Bu düzeltmeler CI+merge+gerçek server deploy+health ve dar canlı kabul
+olmadan LIVE_PASS değildir. 19 sayfalık ilk envanter sayfa gezisidir;
+tüm filtre/rol/iptal/çıktı kombinasyonlarının kabulü değildir. Kasa kullanıcı
+PIN'i atlatılmaz; resmî KBS/dış değerlendirme teslimi sağlayıcıya bağlıdır.
+Gerçek otomatik gelir motoru ve ana matristeki diğer açık varyantlar ayrı
+kalır. Çoklu açık folyo hedefi belirsizse çamaşırhane formu korumalı durur;
+rasgele ilk folyo seçilmez. Canlı veri silme/anonimleştirme yapılmadı.
+full_frontdesk_scope_complete=false.

@@ -195,6 +195,28 @@ async def get_revenue_report(
     }
 
 
+@sub_router.get("/reports/manager-daily-operations")
+async def get_manager_daily_operations(
+    date_str: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("reports")),
+    _perm=Depends(require_op("view_reports")),
+):
+    from fastapi import HTTPException
+
+    from modules.pms_core.manager_daily_operations import manager_daily_operations
+
+    if date_str is not None and (len(date_str) != 10 or _parse_date(date_str, "date_str").isoformat() != date_str):
+        raise HTTPException(422, "date_str YYYY-MM-DD formatında olmalı")
+    day = _parse_date(date_str, "date_str") if date_str else await _default_business_date(current_user.tenant_id)
+    result = await manager_daily_operations(db, current_user.tenant_id, day)
+    # Cancellations are events, not stay overlaps (a cancelled future stay may
+    # therefore be absent from the selected night's cohort).
+    cancelled = await db.bookings.find({"tenant_id": current_user.tenant_id, "status": {"$in": ["cancelled", "canceled"]}}, {"_id": 0, "cancelled_at": 1, "canceled_at": 1, "updated_at": 1}).to_list(None)
+    result["cancellations"] = sum(as_date(row.get("cancelled_at") or row.get("canceled_at") or row.get("updated_at")) == day for row in cancelled)
+    return result
+
+
 @sub_router.get("/reports/daily-summary")
 @cached(ttl=30, key_prefix="report_daily_summary_v2")
 async def get_daily_summary(

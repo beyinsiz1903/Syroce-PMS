@@ -23,8 +23,13 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         previous = await db.folio_charges.find_one({"id": charge_id, "tenant_id": tenant_id}, **kw)
         if previous and order.get("folio_charged"):
             return {"id": order_id, "status": "delivered", "folio_charge": {"charged": True, "amount": previous["total"], "entry_id": order.get("folio_entry_id"), "replayed": True}}
-        if not booking or not folio or folio.get("status") != "open" or booking.get("status") != "checked_in":
+        if not booking or not folio or folio.get("status") != "open" or booking.get("status") not in {"checked_in", "in_house"}:
             raise HTTPException(409, "Teslim için aynı rezervasyona bağlı açık folyo ve içeride misafir gereklidir")
+        if order.get("status") not in {"pending", "in_progress", "ready"}:
+            raise HTTPException(409, "İptal veya tamamlanmış sipariş tekrar teslim edilemez")
+        room = await db.rooms.find_one({"tenant_id": tenant_id, "room_number": order.get("room_number")}, **kw)
+        if not room or (booking.get("room_id") and booking["room_id"] != room.get("id")) or (not booking.get("room_id") and booking.get("room_number") != order.get("room_number")):
+            raise HTTPException(409, "Sipariş odası ve güncel konaklama eşleşmiyor; kaynak incelemesi gereklidir")
         try:
             amount = Decimal(str(order.get("total")))
             if not amount.is_finite() or amount <= 0 or amount > Decimal("1e9") or amount != amount.quantize(Decimal("0.01")):
@@ -39,6 +44,9 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         day = (settings or {}).get("business_date")
         if not day:
             raise HTTPException(409, "Açık iş günü doğrulanamadı")
+        closed = await db.night_audit_runs.find_one({"tenant_id": tenant_id, "business_date": day, "status": {"$in": ["completed", "completed_with_exceptions"]}}, **kw)
+        if closed:
+            raise HTTPException(409, "Kapanmış iş gününe çamaşırhane ücreti işlenemez")
         # Serialize sequence allocation for two different deliveries on one folio.
         await db.folios.update_one({"id": folio_id, "tenant_id": tenant_id}, {"$inc": {"laundry_post_revision": 1}}, **kw)
         key = f"laundry:{order_id}"
