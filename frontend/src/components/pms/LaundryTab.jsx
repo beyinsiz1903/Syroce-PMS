@@ -54,6 +54,7 @@ const LaundryTab = () => {
   });
   const [roomLookupBusy, setRoomLookupBusy] = useState(false);
   const [roomError, setRoomError] = useState('');
+  const [folioOptions, setFolioOptions] = useState([]);
   const lookupVersion = useRef(0);
   const request = useRef(null);
   const submitting = useRef(false);
@@ -62,12 +63,13 @@ const LaundryTab = () => {
   const changeDialog = open => {
     lookupVersion.current += 1;
     setRoomLookupBusy(false);
-    if (!request.current) { setOrderForm(emptyOrder()); setRoomError(''); setItemToAdd(p => ({ ...p, quantity: 1 })); }
+    if (!request.current) { setOrderForm(emptyOrder()); setRoomError(''); setFolioOptions([]); setItemToAdd(p => ({ ...p, quantity: 1 })); }
     setShowNewOrder(open);
   };
   const changeRoom = value => {
     lookupVersion.current += 1;
     setRoomLookupBusy(false); setRoomError('Oda bilgisini doğrulayın');
+    setFolioOptions([]);
     setOrderForm(p => ({ ...p, room_number: value, guest_name: '', booking_id: '', folio_id: '' }));
   };
 
@@ -114,6 +116,7 @@ const LaundryTab = () => {
     const version = ++lookupVersion.current;
     const number = roomNumber.trim();
     setOrderForm(p => ({ ...p, guest_name: '', booking_id: '', folio_id: '' }));
+    setFolioOptions([]);
     if (!number) return;
     setRoomLookupBusy(true);
     setRoomError('');
@@ -127,7 +130,16 @@ const LaundryTab = () => {
           booking_id: res.data.booking_id || '',
           folio_id: res.data.folio_id || ''
         }));
-        if (!res.data.folio_id) setRoomError(res.data.folio_selection_required ? 'Birden fazla açık folyo var; rezervasyon detayından hedef hesabı seçin.' : 'Bu konaklamaya ait açık folyo bulunamadı.');
+        if (res.data.folio_selection_required) {
+          const windows = await axios.get(`/folio-windows/booking/${encodeURIComponent(res.data.booking_id)}`);
+          if (version !== lookupVersion.current) return;
+          if (!Array.isArray(windows.data)) throw new Error('Invalid folio list');
+          const open = windows.data.filter(row => row.status === 'open' && row.currency === currency && typeof row.folio_id === 'string' && row.folio_id);
+          if (new Set(open.map(row => row.folio_id)).size !== open.length) throw new Error('Ambiguous folio list');
+          setFolioOptions(open);
+          setOrderForm(p => ({ ...p, folio_id: '' }));
+          setRoomError(open.length ? 'Ücretin işleneceği açık folyoyu seçin.' : 'Hizmet para biriminde açık folyo bulunamadı.');
+        } else if (!res.data.folio_id) setRoomError('Bu konaklamaya ait açık folyo bulunamadı.');
       } else {
         setRoomError(`Oda ${number} için aktif konaklama bulunamadı`);
       }
@@ -319,6 +331,10 @@ const LaundryTab = () => {
     delivered: {
       label: 'Teslim Edildi',
       color: 'bg-gray-100 text-gray-600'
+    },
+    cancelled: {
+      label: 'İptal Edildi',
+      color: 'bg-red-50 text-red-700'
     }
   };
   const orderTotal = orderForm.items.reduce((s, i) => s + (i.total || 0), 0);
@@ -360,6 +376,7 @@ const LaundryTab = () => {
                 <SelectItem value="in_progress">Isleniyor</SelectItem>
                 <SelectItem value="ready">{t('cm.components_pms_LaundryTab.hazir')}</SelectItem>
                 <SelectItem value="delivered">Teslim Edildi</SelectItem>
+                <SelectItem value="cancelled">İptal Edildi</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -419,6 +436,9 @@ const LaundryTab = () => {
                           {order.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Başla</Button>}
                           {order.status === 'in_progress' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>{t('cm.components_pms_LaundryTab.hazir_04e6f')}</Button>}
                           {order.status === 'ready' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'delivered')}>Teslim Et</Button>}
+                          {['pending', 'in_progress', 'ready'].includes(order.status) && !order.folio_charged && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={async () => {
+                            if (await confirmDialog({ message: 'Sipariş iptal edilsin mi? Kayıt korunur; folyoya ücret işlenmez.' })) updateStatus(order.id, 'cancelled');
+                          }}>İptal Et</Button>}
                         </div>
                       </div>
                     </div>
@@ -516,6 +536,19 @@ const LaundryTab = () => {
                 <Input aria-label="Misafir adı" value={orderForm.guest_name} readOnly />
               </div>
             </div>
+            {folioOptions.length > 0 && <div className="space-y-1">
+              <Label htmlFor="laundry-folio">Ücretin işleneceği folyo</Label>
+              <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" id="laundry-folio" aria-label="Ücretin işleneceği folyo" disabled={locked || roomLookupBusy} value={orderForm.folio_id} onChange={event => {
+                const value = event.target.value;
+                if (!folioOptions.some(row => row.folio_id === value)) return;
+                setOrderForm(p => ({ ...p, folio_id: value })); setRoomError('');
+              }}>
+                <option value="" disabled>Hedef folyoyu seçin</option>
+                {folioOptions.map(row => <option key={row.folio_id} value={row.folio_id}>
+                  {row.folio_number || `Hesap ${row.window_number}`} · {row.folio_type === 'agency' ? 'Acente' : row.folio_type === 'company' ? 'Şirket' : 'Misafir'} · {row.currency}
+                </option>)}
+              </select>
+            </div>}
             {roomError && <p role="alert" className="text-sm text-amber-700">{roomError}</p>}
             {request.current && !loading && <p role="status" className="text-sm text-amber-700">Önceki isteğin sonucu belirsiz. Aynı siparişi ve istek anahtarını koruyarak yeniden deneyin.</p>}
             <div className="grid grid-cols-2 gap-3">

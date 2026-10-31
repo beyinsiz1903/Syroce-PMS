@@ -1,18 +1,58 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-const { get, post, toast } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
-vi.mock('axios', () => ({ default: { get, post } }));
+const { get, post, patch, toast } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('axios', () => ({ default: { get, post, patch } }));
 vi.mock('sonner', () => ({ toast }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key.split('.').pop() }) }));
 vi.mock('@/lib/currency', () => ({ cachedTenantCurrency: () => 'TRY', formatCurrency: value => String(value) }));
 import LaundryTab from '@/components/pms/LaundryTab';
+const originalScrollIntoView = Element.prototype.scrollIntoView;
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const found = (name, booking, folio) => ({ data: { found: true, guest_name: name, booking_id: booking, folio_id: folio } });
 beforeEach(() => {
-  get.mockReset(); post.mockReset(); toast.error.mockReset();
+  Element.prototype.scrollIntoView = vi.fn();
+  get.mockReset(); post.mockReset(); patch.mockReset(); toast.error.mockReset();
   get.mockImplementation(url => Promise.resolve({ data: url === '/laundry/items' ? { items: [{ id: 'shirt', code: 'shirt', name: 'Gömlek', price: 30 }] } : { orders: [] } }));
 });
-afterEach(cleanup);
+
+it('requires an explicit open same-currency target when the stay has multiple folios', async () => {
+  await open();
+  get.mockImplementation(url => Promise.resolve({ data: url.startsWith('/bookings/active-by-room/') ? { found: true, guest_name: 'Elif', booking_id: 'b105', folio_id: null, folio_selection_required: true } : [
+    { folio_id: 'guest', folio_number: 'F-1', status: 'open', folio_type: 'guest', currency: 'TRY' },
+    { folio_id: 'agency', folio_number: 'F-2', status: 'open', folio_type: 'agency', currency: 'TRY' },
+    { folio_id: 'closed', folio_number: 'F-CLOSED', status: 'closed', currency: 'TRY' },
+    { folio_id: 'fx', folio_number: 'F-USD', status: 'open', currency: 'USD' },
+  ] }));
+  await lookup('105');
+  fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(submit()).toBeDisabled();
+  const target = screen.getByRole('combobox', { name: 'Ücretin işleneceği folyo' });
+  await waitFor(() => expect(target).toBeEnabled());
+  await screen.findByRole('option', { name: /F-2/ });
+  expect(screen.queryByRole('option', { name: /F-CLOSED|F-USD/ })).not.toBeInTheDocument();
+  fireEvent.change(target, { target: { value: 'agency' } });
+  expect(target).toHaveValue('agency');
+  expect(submit()).toBeEnabled();
+  post.mockResolvedValue({ data: {} });
+  fireEvent.click(submit());
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(post.mock.calls[0][1]).toEqual(expect.objectContaining({ booking_id: 'b105', folio_id: 'agency' }));
+});
+
+it('does not overwrite a new room with a late multi-folio read and shows cancellation truthfully', async () => {
+  const pending = deferred();
+  get.mockImplementation(url => Promise.resolve({ data: url === '/laundry/items' ? { items: [] } : { orders: [{ id: 'cancelled', room_number: '105', guest_name: 'Elif', status: 'cancelled', total: 30, currency: 'TRY' }] } }));
+  await open();
+  expect(screen.getByText('İptal Edildi', { exact: true })).toBeInTheDocument();
+  get.mockImplementation(url => url.startsWith('/folio-windows/') ? pending.promise : Promise.resolve({ data: { found: true, guest_name: 'Elif', booking_id: 'b105', folio_selection_required: true } }));
+  await lookup('105');
+  fireEvent.change(room(), { target: { value: '102' } });
+  await act(async () => pending.resolve({ data: [{ folio_id: 'old', status: 'open', currency: 'TRY' }] }));
+  expect(guest()).toHaveValue('');
+  expect(screen.queryByRole('combobox', { name: 'Ücretin işleneceği folyo' })).not.toBeInTheDocument();
+  expect(submit()).toBeDisabled();
+});
+afterEach(() => { cleanup(); if (originalScrollIntoView) Element.prototype.scrollIntoView = originalScrollIntoView; else delete Element.prototype.scrollIntoView; });
 const open = async () => {
   render(<LaundryTab />);
   await waitFor(() => expect(get).toHaveBeenCalledWith('/laundry/items'));

@@ -796,37 +796,44 @@ async def period_report(
 ):
     """
     Tarih aralığı dönem raporu (yyyy-mm-dd, dahil).
-    Aralıkta opened_at olan tüm vardiyaların toplu özetini döner.
-    Varsayılan: son 7 gün.
+    İş günü aralığındaki açılış, kapanış ve hareketlerin toplu özeti.
+    Damgasız eski kayıtlarda işlem saati korunur.
     """
     open_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     if not end_date:
         end_date = open_business_date
-    if not start_date:
-        start_date = (datetime.fromisoformat(end_date).date() - timedelta(days=7)).isoformat()
     try:
-        s_dt = datetime.fromisoformat(start_date)
         e_dt = datetime.fromisoformat(end_date)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Tarih formatı YYYY-MM-DD olmalı")
+        if not start_date:
+            start_date = (e_dt.date() - timedelta(days=7)).isoformat()
+        s_dt = datetime.fromisoformat(start_date)
+        if len(start_date) != 10 or len(end_date) != 10 or s_dt.date().isoformat() != start_date or e_dt.date().isoformat() != end_date:
+            raise ValueError("Non-canonical day")
+        next_day = e_dt + timedelta(days=1)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(status_code=400, detail="Geçerli tarih aralığı YYYY-MM-DD olmalı") from None
     if e_dt < s_dt:
         raise HTTPException(status_code=400, detail="Bitiş tarihi başlangıçtan önce olamaz")
     # Bitiş tarihinin sonuna kadar dahil
     s_iso = s_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     e_iso = e_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
 
-    # Aralık ile ÇAKIŞAN tüm vardiyaları çek: opened_at <= e_iso (aralık bitişinden
-    # önce açılmış) ve (kapalı değil VEYA closed_at >= s_iso). Sonra her vardiyanın
-    # transactions array'inden created_at aralık içinde olanları sayarız — böylece
-    # tx-bazlı doğru filtreleme yapılır.
+    # Accounting-day stamps outrank wall-clock creation timestamps. A shift
+    # opened on Oct31 while the business day is Oct26 must still be selected
+    # for Oct26; a wall-clock prefilter silently hides all of its movements.
+    accounting_range = {"$gte": start_date, "$lte": end_date}
+    bson_range = {"$gte": s_dt, "$lt": next_day}
+    accounting_candidates = [
+        {field: bounds} for field in ("business_date", "closed_business_date") for bounds in (accounting_range, bson_range)
+    ] + [{"transactions": {"$elemMatch": {"business_date": bounds}}} for bounds in (accounting_range, bson_range)]
     cursor = db.cashier_shifts.find(
         {
             "tenant_id": current_user.tenant_id,
-            "opened_at": {"$lte": e_iso},
             "$or": [
-                {"closed_at": {"$exists": False}},
-                {"closed_at": None},
-                {"closed_at": {"$gte": s_iso}},
+                *accounting_candidates,
+                {"$and": [{"opened_at": {"$lte": e_iso}}, {"$or": [
+                    {"closed_at": {"$exists": False}}, {"closed_at": None}, {"closed_at": {"$gte": s_iso}},
+                ]}]},
             ],
         },
         sort=[("opened_at", 1)],
@@ -873,8 +880,8 @@ async def period_report(
         # Vardiya tx'lerinden aralıkta olanları filtrele
         all_txns = s.get("transactions") or []
         txns_in_range = [t for t in all_txns if _txn_in_range(t)]
-        if not txns_in_range and not _shift_open_in_range(s):
-            # Vardiyanın hiçbir tx'i aralıkta değil ve açılışı da değilse atla
+        if not txns_in_range and not _shift_open_in_range(s) and not _shift_close_in_range(s):
+            # Aralıkta açılış, kapanış veya hareket yoksa atla.
             continue
 
         totals["shift_count"] += 1
@@ -883,8 +890,7 @@ async def period_report(
         else:
             totals["closed_shift_count"] += 1
 
-        # Vardiya bazlı toplamları (opening/closing) yalnızca opened_at aralık
-        # içindeyse dahil et — yoksa önceki dönemden devreden vardiyanın açılışı
+        # Açılışı yalnızca açılış iş günü aralıktaysa dahil et — yoksa devreden vardiyanın açılışı
         # bu döneme yanlışlıkla eklenir.
         opening_in = float(s.get("opening_amount") or 0) if _shift_open_in_range(s) else 0.0
         # cash_in/cash_out yalnız aralıktaki nakit tx'lerden hesapla
@@ -894,7 +900,7 @@ async def period_report(
         totals["cash_in_total"] += c_in
         totals["cash_out_total"] += c_out
         totals["expected_total"] += opening_in + c_in - c_out
-        # closing/difference yalnız closed_at aralıktaysa dahil
+        # Kapanış/fark yalnız kapanış iş günü aralıktaysa dahil.
         if s.get("closing_amount") is not None and _shift_close_in_range(s):
             totals["closing_total"] += float(s.get("closing_amount") or 0)
         if s.get("difference") is not None and _shift_close_in_range(s):
@@ -1132,7 +1138,7 @@ async def _laundry_binding(tenant_id, room_number, body):
     if not folio:
         raise HTTPException(409, "Bu konaklamaya ait açık folyo seçilmelidir")
     guest = await db.guests.find_one({"tenant_id": tenant_id, "id": booking.get("guest_id")}, {"_id": 0, "name": 1}) if booking.get("guest_id") else None
-    return booking_id, folio["id"], (guest or {}).get("name") or booking.get("guest_name") or booking.get("primary_guest_name") or ""
+    return booking_id, folio, (guest or {}).get("name") or booking.get("guest_name") or booking.get("primary_guest_name") or ""
 
 
 def _laundry_input(body):
@@ -1188,10 +1194,13 @@ async def create_laundry_order(
     previous = await replay()
     if previous:
         return previous
-    booking_id, folio_id, guest_name = await _laundry_binding(current_user.tenant_id, data["room_number"], data)
+    booking_id, folio, guest_name = await _laundry_binding(current_user.tenant_id, data["room_number"], data)
     catalog = {item["code"]: item for item in await _get_laundry_items_array(current_user.tenant_id) if item.get("active") is not False}
     hotel = await db.hotel_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "currency": 1}) or {}
     currency = str(hotel.get("currency") or "TRY").upper()
+    if folio.get("currency") != currency:
+        raise HTTPException(409, "Hizmet para biriminde açık folyo seçilmelidir; otomatik kur dönüşümü yapılmaz")
+    folio_id = folio["id"]
     lines = []
     for line in data["items"]:
         item = catalog.get(line["code"])

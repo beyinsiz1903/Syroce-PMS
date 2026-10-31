@@ -13,6 +13,7 @@ import logging
 import math
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pymongo.errors import DuplicateKeyError
@@ -40,6 +41,19 @@ DEFAULT_UPSELL_PRICES = {
 }
 
 
+def _upsell_price(raw):
+    """Validate before float conversion; never round a financial input silently."""
+    if isinstance(raw, bool) or not isinstance(raw, (str, int, float, Decimal)):
+        raise ValueError("Geçersiz fiyat")
+    try:
+        value = Decimal(str(raw).strip())
+        if not value.is_finite() or not 0 <= value <= 1_000_000 or value != value.quantize(Decimal("0.01")):
+            raise ValueError("Fiyat 0–1.000.000 arasında ve en fazla iki ondalık olmalıdır")
+        return float(value)
+    except (InvalidOperation, OverflowError) as exc:
+        raise ValueError("Geçersiz fiyat") from exc
+
+
 async def _get_upsell_prices(tenant_id: str) -> dict:
     """Return per-tenant upsell prices, falling back to defaults for any missing key."""
     prices = dict(DEFAULT_UPSELL_PRICES)
@@ -48,11 +62,10 @@ async def _get_upsell_prices(tenant_id: str) -> dict:
         for k, v in doc["prices"].items():
             if k in prices:
                 try:
-                    fv = float(v)
-                except (TypeError, ValueError):
+                    fv = _upsell_price(v)
+                except (TypeError, ValueError, OverflowError):
                     continue
-                if fv >= 0:
-                    prices[k] = fv
+                prices[k] = fv
     return prices
 
 
@@ -526,6 +539,7 @@ async def update_upsell_settings(
       - 'prices' must be a dict.
       - Only the keys in DEFAULT_UPSELL_PRICES are accepted; any other key returns 400.
       - Values must be finite numbers (no NaN/Inf), >= 0 and <= 1_000_000.
+      - More than two decimal places are rejected, never rounded silently.
       - At least one valid price must be supplied.
 
     Concurrency: each provided price is written with a per-field $set
@@ -549,20 +563,10 @@ async def update_upsell_settings(
         if key not in incoming:
             continue
         raw = incoming[key]
-        # bool is a subclass of int in Python — explicitly reject it
-        if isinstance(raw, bool):
-            raise HTTPException(status_code=400, detail=f"{key} icin gecersiz fiyat")
         try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail=f"{key} icin gecersiz fiyat")
-        if not math.isfinite(value):
-            raise HTTPException(status_code=400, detail=f"{key} icin gecersiz fiyat")
-        if value < 0:
-            raise HTTPException(status_code=400, detail=f"{key} fiyati negatif olamaz")
-        if value > 1_000_000:
-            raise HTTPException(status_code=400, detail=f"{key} fiyati cok yuksek")
-        sanitized[key] = round(value, 2)
+            sanitized[key] = _upsell_price(raw)
+        except (TypeError, ValueError, OverflowError):
+            raise HTTPException(status_code=400, detail=f"{key}: fiyat 0–1.000.000 arasında, en fazla iki ondalık olmalıdır") from None
 
     if not sanitized:
         raise HTTPException(status_code=400, detail="Guncellenecek fiyat bulunamadi")

@@ -227,7 +227,7 @@ describe('financial and destructive mutation safety', () => {
     await waitFor(() => expect(positiveProps.onPaymentDone).toHaveBeenCalledTimes(1));
   });
 
-  it('keeps bank deposits behind one successful peer PIN verification', async () => {
+  it('keeps bank deposits behind one successful own-password verification', async () => {
     get.mockImplementation((url) => {
       if (url === '/cashier/current-shift') {
         return Promise.resolve({
@@ -261,10 +261,10 @@ describe('financial and destructive mutation safety', () => {
       name: 'cm.components_pms_CashierTab.yatirmayi_kaydet',
     }));
 
-    expect(await screen.findByText('Banka yatırma işleminden önce PIN doğrulayın')).toBeInTheDocument();
+    expect(await screen.findByText('Banka yatırma işleminden önce giriş şifrenizi doğrulayın')).toBeInTheDocument();
     expect(post).not.toHaveBeenCalledWith('/cashier/bank-deposit', expect.anything(), expect.anything());
 
-    fireEvent.change(screen.getByPlaceholderText('PIN / şifre'), { target: { value: 'TEST-PIN' } });
+    fireEvent.change(screen.getByLabelText('Mevcut kullanıcının giriş şifresi'), { target: { value: 'TEST-PIN' } });
     const verifyButton = screen.getByRole('button', { name: 'Doğrula' });
     fireEvent.click(verifyButton);
     fireEvent.click(verifyButton);
