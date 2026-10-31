@@ -1,4 +1,5 @@
 import React from 'react';
+import { MobileRouteGate } from '../../src/components/MobileRouteGate';
 import { Pressable, View, type ColorValue } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,6 +78,10 @@ function HeaderActions({ showApprovals }: { showApprovals: boolean }) {
 // header shortcut. All gating is cosmetic; the backend enforces every action,
 // so RBAC is unchanged.
 export default function HomeLayout() {
+  return <MobileRouteGate><HomeLayoutContent /></MobileRouteGate>;
+}
+
+function HomeLayoutContent() {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   const approvalsAccess = useAuthStore((s) => s.approvalsAccess);

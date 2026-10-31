@@ -1,0 +1,86 @@
+MOBİL YETKİ / YÖNLENDİRME / RAPOR KABULÜ — 01.11.2026
+
+Kapsam
+Expo / React Native uygulamasının giriş, departman menüsü, derin bağlantı,
+işlem yetkisi ve finansal rapor sunumu. Üretim verisi değiştirilmedi.
+PMS #1477 ana dala kullanıcı tarafından alındı; mobil dal f4adf6615 tabanına
+hızlı ileri alındı. Bu değişiklik yalnız mobile/ ve bu rapordur.
+
+Giderilen bulgular
+1. Şifreli giriş, 2FA ve oturum geri yükleme farklı yetki hesaplıyordu.
+   Üç yol aynı deriveMobileAccess fonksiyonuna bağlandı. Sunucunun page_access,
+   module_scopes ve gerçek permission değerleri esas alınıyor; operation alias
+   view_finance_reports yerine view_financial_reports kullanılıyor.
+2. Kat hizmetleri ve kısıtlı hesaplar ön büroya zorlanıyordu. Yetkili açılış
+   ekranı seçiliyor; sınırlanmış admin koşulsuz tüm ekranları dolaşamıyor.
+3. Gizli tab, ekranı veya sorgusunu engellemiyordu. Altı grup düzeninde ekran
+   yüklenmeden erişim kontrolü var. Yetkisiz derin bağlantı güvenli ana ekrana
+   dönüyor. Misafir/personel oturumu birbirinin yerine kullanılmıyor.
+4. Ana sayfa, profil ve departman menülerinin görünürlüğü aynı politikayı
+   kullanıyor. SPA/MICE/POS/Revenue için mevcut hub abonelik sözlüğü kullanılıyor;
+   kapalı/bilinmeyen paket derin bağlantıda da açılmıyor. Backend'de karşılığı
+   bulunmayan yeni scope adı uydurulmadı; mevcut rol/plan korumaları gevşetilmedi.
+5. Salt okuma, rezervasyon düzenleme veya tahsilat hakkı sayılmıyor. Oda durum
+   değişikliği, görev atama, rezervasyon düzenleme, fiyat değiştirme ve ödeme
+   için ayrı işlem yetkileri kontrol ediliyor. Backend son yetki merciidir.
+6. Finans özeti, detay, paylaşım metni ve firma yaşlandırması dövizleri ayrı
+   koruyor. Eksik/null tutar sıfır TL yapılmıyor. Null tahsilat oranı render'ı
+   çökertmiyor. Eksik kaynak ve kur uyarısı korunuyor. Paylaşımda segment tarih
+   filtresi finansal özetin tarihi gibi sunulmuyor; PMS iş günü yazılıyor.
+7. Muhasebe istemcisi night-audit döviz kırılımlarını düşürmüyor. Karma dövizli
+   toplam birleştirilerek grafik çizilmiyor. Gider/fatura/öneri kaydının para
+   birimi yoksa TRY tahmin edilmiyor. Yetkisiz night-audit sorgusu başlamıyor.
+8. GM tahsilattan ADR/RevPAR türetiyordu. Oda göstergeleri web daily-flash'in
+   aynı iş günü ve döviz bazlı işlenmiş oda gelirinden alınıyor. İşlenmemiş oda
+   tahakkuku uyarısı saklanıyor. GM doluluk/giriş/çıkış, ortak hub kaynağına
+   bağlandı. İş günü finansı ve güncel fiziksel doluluk ayrımı açık.
+9. Revenue 30 günlük finansal kartları eski tek-sayı motoru yerine web
+   /reports/revenue sözleşmesini kullanıyor. Backend kendi iş günü aralığını
+   seçiyor. Para birimi/tutarı eksik AI fiyat önerisi yön tavsiyesi yapılmıyor.
+10. Kapatılan modülden, soğuk rapor bağlantısından ve departman yığınından
+    profil/yetkili modüllere geri dönüş var; kapalı GM tabları gösterilmiyor.
+
+Doğrulama
+- Düzeltme öncesi iki sunucu erişim regresyon testi başarısız; kanıt korundu.
+- TypeScript typecheck başarılı.
+- Mobil Node unit paketi: 210 passed. Bunlar 210 bağımsız canlı iş akışı DEĞİL.
+- Yerel salt okunur preview API paketi: 3 passed.
+- Backend kullanıcı erişimi, module-scope, oda gelir paydası ve rapor bütünlüğü
+  seçili sözleşme paketi: 81 passed. İzole test env; üretim DB bağlantısı yok.
+- Ayrıca web /reports/revenue endpoint'inin manuel ek kaynak, çoklu döviz ve
+  ücretsiz oda paydası regresyonları: 3 passed (81 paketiyle çakışmaz).
+- Expo Doctor 21/21 başarılı. İlk ağsız denemede 2 metadata kontrolü erişemedi;
+  resmi servislerle tekrar çalıştırma başarılı; ilk kanıt silinmedi.
+- validate:config başarılı. Mevcut Google Play service-account dış hesap
+  adımı uyarısı sürüyor; bu PR mağaza hesabı yapılandırmaz.
+- iOS Hermes/JS export başarılı. Bu, imzalı iOS uygulama build'i veya fiziksel
+  cihaz testi değildir. Mağaza/OTA gönderimi, otomatik merge/deploy yapılmadı.
+- CUA ile normal yerel UI: finance, housekeeping, scoped admin, delegated 2FA,
+  manager. Giriş/çıkış, /auth/me geri yükleme, menü eşleşmesi, yetkisiz rezervasyon
+  ve muhasebe linkleri, kapalı SPA linki ve güvenli geri dönüş kontrol edildi.
+- Yerel HTTP izlerinde HK'nin finans, kısıtlı admin'in muhasebe, finance'ın
+  reddedilen rezervasyon ve kapalı SPA'nın detay sorgusu sayısı sıfır.
+- EUR 120 / USD 200 örnekleri toplam/detay/paylaşım üretiminde ayrı; EUR 60 /
+  USD 100 ADR ve EUR 30 / USD 50 RevPAR gösterildi. Kasten yanlış eski GM
+  99999 değerleri kullanılmadı; hub %25, eski GM %75 yerine esas alındı.
+- Finans detayının 390 px iframe/Expo Web görünümü görsel incelendi. Bu bir
+  native iPhone/Android çalışma testi değildir. Paylaşım metni test edildi;
+  gerçek kişilere finansal paylaşım gönderilmedi.
+
+Kanıt
+Çalışma alanı mobile-role-report-20261101.J2bHUJ/:
+server-access-before.txt, unit-handoff.txt, preview-api.txt,
+backend-contracts-final.txt, backend-standard-report-contracts.txt,
+doctor-network.txt, ios-handoff.txt,
+denied-request-audit.json, qa-http*.jsonl, finance-phone-390.png,
+finance-report-ax.txt, gm-canonical-sources-ax.txt, hk-denied-finance-ax.txt,
+2fa-profile-final-ax.txt, restricted-admin-menu-ax.txt, paid-module-denied-ax.txt.
+Yapay UI servisinin desteklemediği yardımcı endpoint 404'leri üretim hatası
+veya başarılı modül kabulü sayılmadı. Başarısız/ara kanıtlar korunmuştur.
+
+Sınırlar / yayın kapıları
+Bu kontrol bütün mobil modüllerin her cihazda, her kullanıcıda ve her iş
+senaryosunda hatasız olduğuna dair sertifika değildir. Kamera/OCR, biyometri,
+gerçek push, fiziksel iOS/Android ve çevrimdışı cihaz davranışı bu turda canlı
+çalıştırılmadı. CI, merge ve mobil dağıtım sonrası gerçek oturum/cihaz kabulü
+ayrı kapılardır. Backend erişim/abonelik/nesne/tenant kontrolleri kaldırılmadı.

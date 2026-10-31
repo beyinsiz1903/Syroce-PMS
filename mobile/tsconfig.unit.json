@@ -52,6 +52,8 @@
     "src/utils/__tests__/reservationPresentation.test.ts",
     "src/state/roleAccess.ts",
     "src/state/__tests__/roleAccess.test.ts",
+    "src/state/__tests__/serverAccess.test.ts",
+    "src/navigation/__tests__/routeAccess.test.ts",
     "src/utils/departmentScreens.ts",
     "src/utils/__tests__/departmentScreens.test.ts",
     "src/utils/checkinCapture.ts",

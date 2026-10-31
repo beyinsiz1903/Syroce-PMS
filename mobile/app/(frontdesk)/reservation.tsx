@@ -20,6 +20,8 @@ import {
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { invalidateRoomOccupancy } from '../../src/cache/roomOccupancy';
+import { useAuthStore } from '../../src/state/authStore';
+import { mobileOperationAllowed } from '../../src/state/roleAccess';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
@@ -154,7 +156,10 @@ export default function ReservationDetailScreen() {
   const separatePayer = hasSeparatePayer({ ...booking, payment_model: booking?.payment_model || otaData?.payment_model || undefined, folios: detail.data?.folios });
   const readOnly = detail.data?.read_only === true;
   const pricingIssue = detail.data?.summary?.pricing_reconciliation_required === true;
-  const canManage = !!booking && detail.isSuccess && !detail.isFetching && !readOnly && !offline;
+  const user = useAuthStore((s) => s.user);
+  const canOperate = !!booking && detail.isSuccess && !detail.isFetching && !readOnly && !offline;
+  const canManage = canOperate && mobileOperationAllowed(user, 'edit_booking');
+  const canOverrideRate = canManage && mobileOperationAllowed(user, 'override_rate');
   const money = reservationMoneySummary({
     summaryTotal: detail.data?.summary?.gross_total,
     summaryBalance: detail.data?.summary?.reservation_total_due,
@@ -166,7 +171,7 @@ export default function ReservationDetailScreen() {
     payments: detail.data?.payments,
     currency,
   });
-  const canTakePayment = canManage && !separatePayer && !pricingIssue && !!currency && money.balance !== undefined && money.balance > 0;
+  const canTakePayment = canOperate && mobileOperationAllowed(user, 'post_payment') && !separatePayer && !pricingIssue && !!currency && money.balance !== undefined && money.balance > 0;
 
   const qc = useQueryClient();
 
@@ -228,6 +233,8 @@ export default function ReservationDetailScreen() {
   };
 
   const openPanel = (next: 'dates' | 'room' | 'rate' | 'guests' | 'payment') => {
+    if (next === 'rate' && !canOverrideRate) return;
+    if (next === 'payment' ? !canTakePayment : !canManage) return;
     setActionError(null);
     setSuccessMsg(null);
     setCancelConfirming(false);
@@ -294,6 +301,7 @@ export default function ReservationDetailScreen() {
 
   const datesMutation = useMutation({
     mutationFn: () => {
+      if (!canManage) throw new Error('Rezervasyonu düzenleme yetkiniz yok.');
       const ci = toISODate(checkIn);
       const co = toISODate(checkOut);
       if (!ci || !co || co <= ci) {
@@ -315,6 +323,7 @@ export default function ReservationDetailScreen() {
 
   const rateMutation = useMutation({
     mutationFn: () => {
+      if (!canOverrideRate) throw new Error('Fiyat değiştirme yetkiniz yok.');
       const value = parseFloat((newRate || '').replace(',', '.'));
       if (!Number.isFinite(value) || value < 0) {
         return Promise.reject(new Error(tr.reservations.invalidRate));
@@ -338,6 +347,7 @@ export default function ReservationDetailScreen() {
 
   const guestsMutation = useMutation({
     mutationFn: () => {
+      if (!canManage) throw new Error('Rezervasyonu düzenleme yetkiniz yok.');
       const body: ReservationUpdate = {};
       const aRaw = (adults || '').trim();
       const chRaw = (children || '').trim();
@@ -368,7 +378,10 @@ export default function ReservationDetailScreen() {
   });
 
   const roomMutation = useMutation({
-    mutationFn: (room: AvailabilityRoom) => assignRoom(id, room.id),
+    mutationFn: (room: AvailabilityRoom) => {
+      if (!canManage) throw new Error('Rezervasyonu düzenleme yetkiniz yok.');
+      return assignRoom(id, room.id);
+    },
     onSuccess: () => {
       haptic.success();
       refreshAll();
@@ -382,7 +395,10 @@ export default function ReservationDetailScreen() {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => cancelReservation(id),
+    mutationFn: () => {
+      if (!canManage) throw new Error('Rezervasyonu düzenleme yetkiniz yok.');
+      return cancelReservation(id);
+    },
     onSuccess: () => {
       haptic.success();
       refreshAll();
@@ -550,11 +566,11 @@ export default function ReservationDetailScreen() {
         )}
       </Card>
 
-      {!isCancelled && canManage ? (
+      {!isCancelled && (canManage || canTakePayment) ? (
         <Card>
           <H2>{tr.reservations.manage}</H2>
           <View style={{ marginTop: spacing.md }}>
-            <Button title={tr.reservations.takePayment} icon="card-outline" variant={panel === 'payment' ? 'primary' : 'success'} onPress={() => openPanel('payment')} fullWidth />
+            <Button title={tr.reservations.takePayment} disabled={!canTakePayment} icon="card-outline" variant={panel === 'payment' ? 'primary' : 'success'} onPress={() => openPanel('payment')} fullWidth />
           </View>
           {actionError ? (
             <Body style={{ color: c.danger, marginTop: spacing.sm }}>{actionError}</Body>
@@ -567,6 +583,7 @@ export default function ReservationDetailScreen() {
               style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'dates' ? 'primary' : 'secondary'}
               onPress={() => openPanel('dates')}
+              disabled={!canManage}
             />
             <Button
               title={tr.reservations.changeRoom}
@@ -574,6 +591,7 @@ export default function ReservationDetailScreen() {
               style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'room' ? 'primary' : 'secondary'}
               onPress={() => openPanel('room')}
+              disabled={!canManage}
             />
             <Button
               title={tr.reservations.overrideRate}
@@ -581,6 +599,7 @@ export default function ReservationDetailScreen() {
               style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'rate' ? 'primary' : 'secondary'}
               onPress={() => openPanel('rate')}
+              disabled={!canOverrideRate}
             />
             <Button
               title={tr.reservations.editGuests}
@@ -588,6 +607,7 @@ export default function ReservationDetailScreen() {
               style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'guests' ? 'primary' : 'secondary'}
               onPress={() => openPanel('guests')}
+              disabled={!canManage}
             />
           </View>
 

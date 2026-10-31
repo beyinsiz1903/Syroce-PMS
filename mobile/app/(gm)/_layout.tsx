@@ -1,4 +1,5 @@
 import React from 'react';
+import { MobileRouteGate } from '../../src/components/MobileRouteGate';
 import type { ColorValue } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +8,8 @@ import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { OperationalHeader } from '../../src/components/OperationalHeader';
+import { HeaderBackButton } from '../../src/components/HeaderBackButton';
+import { ROUTES } from '../../src/navigation/routes';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -17,12 +20,17 @@ function tabIcon(active: IoniconName, inactive: IoniconName) {
 }
 
 export default function GMLayout() {
+  return <MobileRouteGate><GMLayoutContent /></MobileRouteGate>;
+}
+
+function GMLayoutContent() {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   // Cosmetic mirror of the backend `view_finance_reports` permission. When the
   // role lacks it we hide the Reports tab (`href: null`); the backend still
   // enforces the permission on every report endpoint, so this never weakens RBAC.
   const financeReports = useAuthStore((s) => s.financeReports);
+  const managerAccess = useAuthStore((s) => s.managerAccess);
 
   return (
     <Tabs
@@ -44,21 +52,23 @@ export default function GMLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: tr.tabs.overview, tabBarIcon: tabIcon('speedometer', 'speedometer-outline') }}
+        options={{ href: managerAccess ? undefined : null, title: tr.tabs.overview, tabBarIcon: tabIcon('speedometer', 'speedometer-outline') }}
       />
       <Tabs.Screen
         name="reports"
         options={{
           title: tr.manager.reportsTab,
+          headerLeft: () => <HeaderBackButton fallback={ROUTES.homeProfile} />,
           href: financeReports ? undefined : null,
           tabBarIcon: tabIcon('bar-chart', 'bar-chart-outline'),
         }}
       />
-      <Tabs.Screen name="report-detail" options={{ href: null, title: 'Rapor detayı' }} />
+      <Tabs.Screen name="report-detail" options={{ href: null, title: 'Rapor detayı', headerLeft: () => <HeaderBackButton fallback={ROUTES.homeProfile} /> }} />
       <Tabs.Screen
         name="more"
         options={{
           title: tr.tabs.settings,
+          href: managerAccess ? undefined : null,
           tabBarLabel: tr.tabs.more,
           tabBarIcon: tabIcon('ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline'),
         }}

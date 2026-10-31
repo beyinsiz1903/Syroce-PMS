@@ -47,6 +47,7 @@ import { getInHouse } from '../../src/api/bookings';
 import { haptic } from '../../src/hooks/useHaptic';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { useAuthStore } from '../../src/state/authStore';
+import { mobileOperationAllowed } from '../../src/state/roleAccess';
 import { useOnline } from '../../src/hooks/useOnline';
 import { canConfirmRoomInspection, cleaningElapsedMinutes, indexBookingsByRoomNumber, roomNumberKey, roomPresentation, RoomPresentation } from '../../src/utils/roomPresentation';
 
@@ -189,6 +190,9 @@ const RoomCard: React.FC<{
   onDamage,
 }) => {
   const c = useTheme();
+  const user = useAuthStore((s) => s.user);
+  const canUpdate = mobileOperationAllowed(user, 'update_room_status');
+  const canAssign = mobileOperationAllowed(user, 'assign_task');
   const accent = presentation.blockedStatus ? c.danger : roomStatusColor(room.status, c);
   const key = presentation.blockedStatus || (presentation.cleaning === 'ready' ? 'inspected' : presentation.cleaning);
   const label = key === 'unknown' || key === 'blocked' ? tr.housekeeping.statusUnknown : tr.housekeeping.statuses[key];
@@ -363,7 +367,7 @@ const RoomCard: React.FC<{
                 variant="outline"
                 icon="alert-circle-outline"
                 fullWidth
-                disabled={busy !== null || celebrate}
+                disabled={busy !== null || celebrate || !canUpdate}
                 onPress={() => onDamage(room)}
                 testID="hk-room-damage"
               />
@@ -395,7 +399,7 @@ const RoomCard: React.FC<{
               variant="ghost"
               onPress={() => onStatus(room)}
               testID="hk-room-status"
-              disabled={busy !== null || celebrate || !occupancyKnown || actionsDisabled}
+              disabled={busy !== null || celebrate || !occupancyKnown || actionsDisabled || !canUpdate}
               style={{ flex: 1, minWidth: 150, minHeight: 48 }}
             />
             <Button
@@ -403,7 +407,7 @@ const RoomCard: React.FC<{
               variant="ghost"
               onPress={() => onAssign(room)}
               testID="hk-room-assign"
-              disabled={busy !== null || celebrate || actionsDisabled}
+              disabled={busy !== null || celebrate || actionsDisabled || !canAssign}
               style={{ flex: 1, minWidth: 150, minHeight: 48 }}
             />
           </View>
@@ -446,6 +450,9 @@ export default function RoomsScreen() {
   const qc = useQueryClient();
   const online = useOnline();
   const userName = useAuthStore((state) => state.user?.name);
+  const user = useAuthStore((state) => state.user);
+  const canUpdate = mobileOperationAllowed(user, 'update_room_status');
+  const canAssign = mobileOperationAllowed(user, 'assign_task');
   const [floor, setFloor] = useState<string>('all');
   const rooms = useQuery({ queryKey: ['rooms'], queryFn: listRooms });
   const roomTasks = useQuery({ queryKey: ['room-tasks'], queryFn: listRoomTasks });
@@ -486,6 +493,7 @@ export default function RoomsScreen() {
   });
 
   const openAssign = (r: Room) => {
+    if (!canAssign) return;
     haptic.tap();
     setAssignRoom(r);
     setStaffSel(null);
@@ -499,7 +507,7 @@ export default function RoomsScreen() {
   };
 
   const submitAssign = async () => {
-    if (!assignRoom || submitting || !online) return;
+    if (!canAssign || !assignRoom || submitting || !online) return;
     if (!staffSel) return;
     setSubmitting(true);
     setAssignError(false);
@@ -648,6 +656,7 @@ export default function RoomsScreen() {
   // Complete only the caller's active cleaning task. Never promote cleaning
   // directly to inspected or overwrite the room's occupancy status.
   const markClean = async (r: Room): Promise<boolean> => {
+    if (!canUpdate) return false;
     const presentation = roomPresentation(r, !!bookingByRoomNo[roomNumberKey(r.room_number)], tasksByRoom.get(r.id) || []);
     const task = (tasksByRoom.get(r.id) || []).find((item) => item.task_type === 'cleaning' && item.status === 'in_progress' && item.assigned_to === userName);
     if (!task || presentation.blockedStatus || !occupancyKnown || !online) return false;
@@ -665,6 +674,7 @@ export default function RoomsScreen() {
   // Minibar Eksik / Ariza Bildir → gercek "report-issue" kaydi. Ariza türü
   // backend'de ek bir muhendislik gorevi de acar. Basari yaniti await edilir.
   const reportQuick = async (r: Room, kind: 'minibar' | 'fault'): Promise<boolean> => {
+    if (!canUpdate) return false;
     try {
       await reportIssue({
         room_id: r.id,
@@ -700,7 +710,7 @@ export default function RoomsScreen() {
     return STATUS_OPTIONS.filter((status) => status !== 'inspected' || canConfirmRoomInspection(room, hasBooking, tasks));
   };
   const allowedStatuses = (room: Room): StatusOption[] => {
-    if (!occupancyKnown || !roomTasks.isSuccess || !online) return [];
+    if (!canUpdate || !occupancyKnown || !roomTasks.isSuccess || !online) return [];
     const current = (rooms.data || []).find((item) => item.id === room.id);
     return current ? statusesForRoom(current, !!bookingByRoomNo[roomNumberKey(current.room_number)], tasksByRoom.get(current.id) || []) : [];
   };
@@ -893,7 +903,7 @@ export default function RoomsScreen() {
               room={item}
               presentation={presentation}
               occupancyKnown={occupancyKnown && roomTasks.isSuccess}
-              actionsDisabled={offline}
+              actionsDisabled={offline || !canUpdate}
               canCompleteCleaning={occupancyKnown && roomTasks.isSuccess && !presentation.blockedStatus && tasks.some((task) => task.task_type === 'cleaning' && task.status === 'in_progress' && task.assigned_to === userName)}
               assignee={assignee}
               openCount={(tasksByRoom.get(item.id) || []).length}
@@ -983,7 +993,7 @@ export default function RoomsScreen() {
                         bg={c.primary}
                         fg={c.primaryText}
                         loading={pending}
-                        disabled={!owned || offline || startMut.isPending || completeMut.isPending}
+                        disabled={!canUpdate || !owned || offline || startMut.isPending || completeMut.isPending}
                       />
                     ) : null}
                     <ActionButton
@@ -994,7 +1004,7 @@ export default function RoomsScreen() {
                       bg={c.success}
                       fg="#ffffff"
                       loading={finishing}
-                      disabled={!owned || offline || !inProgress || startMut.isPending || completeMut.isPending}
+                      disabled={!canUpdate || !owned || offline || !inProgress || startMut.isPending || completeMut.isPending}
                     />
                   </SegmentedActions>
                 </View>

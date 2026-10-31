@@ -13,6 +13,8 @@ import {
   hasProcurementAccess,
   hasRevenueAccess,
   hasSpaAccess,
+  deriveMobileAccess,
+  type ServerAccessContext,
 } from '../state/roleAccess';
 
 // Hub tile keys, in the exact render order of app/(departments)/index.tsx.
@@ -28,6 +30,7 @@ export type HubTile =
   | 'pos';
 
 export type HubAccessContext = {
+  user?: ServerAccessContext;
   financeReports?: boolean;
   maintenanceAccess?: boolean;
   pageAccess?: Record<string, boolean>;
@@ -50,6 +53,12 @@ const HUB_WORKSPACES: Partial<Record<HubTile, { page: string; scope: string }>> 
 // tile is covered by one place. Cosmetic only — the backend still enforces
 // every read/write behind each screen.
 export function visibleHubTiles(rawRole: string | undefined, access: HubAccessContext = {}): HubTile[] {
+  if (access.user) {
+    const a = deriveMobileAccess(access.user);
+    if (a.role === 'guest_app') return [];
+    return (['spa', 'mice', 'cashier', 'accounting', 'maintenance', 'procurement', 'hr', 'revenue', 'pos'] as const)
+      .filter((key) => a[`${key}Access`]);
+  }
   const tiles: HubTile[] = [];
   if (hasSpaAccess(rawRole)) tiles.push('spa');
   if (hasMiceAccess(rawRole)) tiles.push('mice');

@@ -39,7 +39,8 @@ import {
   type Expense,
   type InventoryItem,
 } from '../../src/api/accounting';
-import { formatCurrency, formatDate } from '../../src/utils/format';
+import { formatDate } from '../../src/utils/format';
+import { reportAmountLabel, reportCountLabel, reportRowTotals, reportTotalsLabel } from '../../src/utils/reportPresentation';
 
 type Tab = 'summary' | 'expenses' | 'invoices' | 'inventory';
 const TABS: Tab[] = ['summary', 'expenses', 'invoices', 'inventory'];
@@ -122,7 +123,8 @@ function isPendingInvoice(inv: AccountingInvoice): boolean {
 export default function AccountingScreen() {
   const c = useTheme();
   const a = tr.departments.accounting;
-  const financeReports = useAuthStore((s) => s.financeReports);
+  const financeReports = useAuthStore((s) => s.accountingAccess);
+  const nightAuditAccess = useAuthStore((s) => s.nightAuditAccess);
 
   const [tab, setTab] = useState<Tab>('summary');
   const [expenseSearch, setExpenseSearch] = useState('');
@@ -136,7 +138,7 @@ export default function AccountingScreen() {
   const summaryQ = useQuery({
     queryKey: ['acc-financial-summary'],
     queryFn: () => getFinancialSummary(),
-    enabled: financeReports,
+    enabled: financeReports && nightAuditAccess,
   });
   const expensesQ = useQuery({
     queryKey: ['acc-expenses', range.start_date, range.end_date],
@@ -276,7 +278,7 @@ export default function AccountingScreen() {
         </View>
         <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
           <Body style={{ fontWeight: '600' }}>
-            {formatCurrency(e.total_amount ?? e.amount, 'TRY')}
+            {reportAmountLabel(e.total_amount ?? e.amount, e.currency)}
           </Body>
           {e.payment_status ? (
             <Badge
@@ -333,7 +335,7 @@ export default function AccountingScreen() {
           ) : (
             <View />
           )}
-          <Body style={{ fontWeight: '600' }}>{formatCurrency(inv.total, 'TRY')}</Body>
+          <Body style={{ fontWeight: '600' }}>{reportAmountLabel(inv.total, inv.currency)}</Body>
         </View>
         {inv.due_date ? (
           <Muted style={{ marginTop: spacing.xs }}>
@@ -375,7 +377,7 @@ export default function AccountingScreen() {
   };
 
   const summary = summaryQ.data;
-  const revenueCategories = summary
+  const revenueCategories = summary?.currency
     ? Object.entries(summary.revenue.by_category).sort(
         (x, y) => (y[1]?.total ?? 0) - (x[1]?.total ?? 0),
       )
@@ -395,6 +397,7 @@ export default function AccountingScreen() {
   const expenseChartData: ChartDatum[] = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of expenses) {
+      if (!e.currency || e.currency !== summary?.currency) continue;
       const key = e.category || a.uncategorized;
       m.set(key, (m.get(key) ?? 0) + (e.total_amount ?? e.amount ?? 0));
     }
@@ -405,7 +408,7 @@ export default function AccountingScreen() {
 
   // KDV: günlük özetteki vergi kırılımı (oran → tutar).
   const vatChartData: ChartDatum[] = useMemo(() => {
-    if (!summary) return [];
+    if (!summary?.currency) return [];
     return Object.entries(summary.tax.breakdown)
       .map(([rate, amount]) => ({ label: `%${rate}`, value: amount ?? 0 }))
       .filter((d) => d.value > 0);
@@ -413,7 +416,7 @@ export default function AccountingScreen() {
 
   // Kasa Akışı: ödeme yöntemine göre tahsilat dağılımı (günlük özet).
   const paymentChartData: ChartDatum[] = useMemo(() => {
-    if (!summary) return [];
+    if (!summary?.currency) return [];
     const labels = a.paymentMethodLabels;
     return Object.entries(summary.payments.by_method)
       .map(([method, v]) => ({
@@ -426,7 +429,7 @@ export default function AccountingScreen() {
   // Kasa Akışı karşılaştırması: aynı iş gününün tahakkuku,
   // tahsilatı ve aralarındaki fark. Bu fark kâr/zarar değildir.
   const cashFlowBars: ChartDatum[] = useMemo(() => {
-    if (!summary) return [];
+    if (!summary?.currency) return [];
     return [
       { label: a.revenueWithTax, value: summary.revenue.total_with_tax },
       { label: a.payments, value: summary.payments.total },
@@ -434,7 +437,7 @@ export default function AccountingScreen() {
     ];
   }, [summary, a.revenueWithTax, a.payments, a.netPosition]);
 
-  const fmtTRY = (n: number) => formatCurrency(n, 'TRY');
+  const fmtTRY = (n: number) => reportAmountLabel(n, summary?.currency);
 
   return (
     <ScrollView
@@ -442,6 +445,8 @@ export default function AccountingScreen() {
       contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{a.title}</H1>
+      {!summary?.currency && <Muted>Para birimleri ayrı gösterilir. Tek para birimi doğrulanmadığında birleşik grafik çizilmez.</Muted>}
+      {summary?.degraded && <Muted>Finansal kaynaklardan biri eksik; özet kısmi.</Muted>}
 
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
         {TABS.map((value) => (
@@ -456,13 +461,13 @@ export default function AccountingScreen() {
             <KpiRow>
               <KpiCard
                 label={a.todayRevenue}
-                value={formatCurrency(summary?.revenue.total_with_tax, 'TRY')}
+                value={summaryQ.isError ? '—' : reportTotalsLabel(summary?.revenue.total_with_tax_by_currency)}
                 icon="cash-outline"
                 tone="success"
               />
               <KpiCard
                 label={a.collections}
-                value={formatCurrency(summary?.payments.total, 'TRY')}
+                value={summaryQ.isError ? '—' : reportTotalsLabel(summary?.payments.total_by_currency)}
                 icon="card-outline"
                 tone="info"
               />
@@ -470,13 +475,13 @@ export default function AccountingScreen() {
             <KpiRow>
               <KpiCard
                 label={a.netPosition}
-                value={formatCurrency(summary?.net_position, 'TRY')}
+                value={summaryQ.isError ? '—' : reportTotalsLabel(summary?.net_position_by_currency)}
                 icon="trending-up-outline"
                 tone="default"
               />
               <KpiCard
                 label={a.openFolios}
-                value={String(summary?.open_folios.receivable_count ?? 0)}
+                value={summaryQ.isError ? '—' : reportCountLabel(summary?.open_folios.receivable_count)}
                 icon="folder-open-outline"
                 tone={(summary?.open_folios.receivable_count ?? 0) > 0 ? 'warning' : 'default'}
               />
@@ -484,13 +489,13 @@ export default function AccountingScreen() {
             <KpiRow>
               <KpiCard
                 label={`${a.monthExpenses} · ${a.monthRange}`}
-                value={formatCurrency(monthExpenseTotal, 'TRY')}
+                value={expensesQ.isError || !expensesQ.data ? '—' : reportTotalsLabel(reportRowTotals(expenses))}
                 icon="receipt-outline"
                 tone="default"
               />
               <KpiCard
                 label={a.pendingInvoices}
-                value={String(pendingInvoiceCount)}
+                value={invoicesQ.isError || !invoicesQ.data ? '—' : reportCountLabel(pendingInvoiceCount)}
                 icon="document-text-outline"
                 tone={pendingInvoiceCount > 0 ? 'warning' : 'default'}
               />
@@ -524,13 +529,13 @@ export default function AccountingScreen() {
                   tone={auditTone(summary.audit_status)}
                 />
               </View>
-              <SummaryRow label={a.revenueWithTax} value={formatCurrency(summary.revenue.total_with_tax, 'TRY')} />
-              <SummaryRow label={a.tax} value={formatCurrency(summary.tax.total, 'TRY')} />
-              <SummaryRow label={a.payments} value={formatCurrency(summary.payments.total, 'TRY')} />
-              <SummaryRow label={a.netPosition} value={formatCurrency(summary.net_position, 'TRY')} />
+              <SummaryRow label={a.revenueWithTax} value={reportTotalsLabel(summary.revenue.total_with_tax_by_currency)} />
+              <SummaryRow label={a.tax} value={reportTotalsLabel(summary.tax.total_by_currency)} />
+              <SummaryRow label={a.payments} value={reportTotalsLabel(summary.payments.total_by_currency)} />
+              <SummaryRow label={a.netPosition} value={reportTotalsLabel(summary.net_position_by_currency)} />
               <SummaryRow
                 label={a.openFolioBalance}
-                value={`${formatCurrency(summary.open_folios.balance.receivable, 'TRY')} · ${summary.open_folios.receivable_count}`}
+                value={`${reportTotalsLabel(Object.fromEntries(Object.entries(summary.open_folios.balance_by_currency || {}).map(([code, bucket]) => [code, bucket.receivable])))} · ${summary.open_folios.receivable_count}`}
                 last
               />
               <Muted style={{ marginTop: spacing.md, fontSize: 11 }}>
@@ -560,7 +565,7 @@ export default function AccountingScreen() {
                     >
                       <DonutChart
                         data={revenueChartData}
-                        centerValue={formatCurrency(summary.revenue.total_with_tax, 'TRY')}
+                        centerValue={reportAmountLabel(summary.revenue.total_with_tax, summary.currency)}
                         centerLabel={a.centerTotal}
                       />
                       <ChartLegend data={revenueChartData} formatValue={fmtTRY} />
@@ -568,11 +573,11 @@ export default function AccountingScreen() {
                     <View style={{ height: spacing.lg }} />
                     <BarList data={revenueChartData} formatValue={fmtTRY} />
                     <View style={{ height: spacing.md }} />
-                    <SummaryRow label={a.revenueNet} value={formatCurrency(summary.revenue.total, 'TRY')} />
-                    <SummaryRow label={a.revenueWithTax} value={formatCurrency(summary.revenue.total_with_tax, 'TRY')} last />
+                    <SummaryRow label={a.revenueNet} value={reportTotalsLabel(summary.revenue.total_by_currency)} />
+                    <SummaryRow label={a.revenueWithTax} value={reportTotalsLabel(summary.revenue.total_with_tax_by_currency)} last />
                   </>
                 ) : (
-                  <EmptyState icon="cash-outline" title={a.noRevenueData} />
+                  <EmptyState icon="cash-outline" title={summary && !summary.currency ? 'Para birimleri birleştirilmedi. Dövizli tutarları yukarıdaki özetten inceleyin.' : a.noRevenueData} />
                 )}
               </Card>
             </>
@@ -595,13 +600,13 @@ export default function AccountingScreen() {
                     >
                       <Muted>{a.expenseByCategory}</Muted>
                       <Body style={{ fontWeight: '700' }}>
-                        {formatCurrency(monthExpenseTotal, 'TRY')}
+                        {reportTotalsLabel(reportRowTotals(expenses))}
                       </Body>
                     </View>
                     <BarList data={expenseChartData} formatValue={fmtTRY} />
                   </>
                 ) : (
-                  <EmptyState icon="receipt-outline" title={a.noExpenseData} />
+                  <EmptyState icon="receipt-outline" title={summary && !summary.currency ? 'Para birimleri birleştirilmedi. Dövizli tutarları yukarıdaki özetten inceleyin.' : a.noExpenseData} />
                 )}
               </Card>
             </>
@@ -623,14 +628,14 @@ export default function AccountingScreen() {
                     >
                       <DonutChart
                         data={vatChartData}
-                        centerValue={formatCurrency(summary.tax.total, 'TRY')}
+                        centerValue={reportAmountLabel(summary.tax.total, summary.currency)}
                         centerLabel={a.vat}
                       />
                       <ChartLegend data={vatChartData} formatValue={fmtTRY} />
                     </View>
                   </>
                 ) : (
-                  <EmptyState icon="pricetags-outline" title={a.noVatData} />
+                  <EmptyState icon="pricetags-outline" title={summary && !summary.currency ? 'Para birimleri birleştirilmedi. Dövizli tutarları yukarıdaki özetten inceleyin.' : a.noVatData} />
                 )}
               </Card>
             </>
@@ -653,7 +658,7 @@ export default function AccountingScreen() {
                     ) : null}
                   </>
                 ) : (
-                  <EmptyState icon="swap-horizontal-outline" title={a.noCashFlowData} />
+                  <EmptyState icon="swap-horizontal-outline" title={summary && !summary.currency ? 'Para birimleri birleştirilmedi. Dövizli tutarları yukarıdaki özetten inceleyin.' : a.noCashFlowData} />
                 )}
               </Card>
             </>
@@ -745,7 +750,7 @@ export default function AccountingScreen() {
               >
                 <Muted>{a.totalValue}</Muted>
                 <Body style={{ fontWeight: '600' }}>
-                  {formatCurrency(inventoryQ.data.total_value, 'TRY')}
+                  {reportAmountLabel(inventoryQ.data.total_value, inventoryQ.data.currency)}
                 </Body>
               </View>
               {inventoryQ.data.low_stock_count > 0 ? (
@@ -808,15 +813,15 @@ export default function AccountingScreen() {
               />
               <DetailRow
                 label={a.subtotal}
-                value={formatCurrency(selectedInvoice.subtotal, 'TRY')}
+                value={reportAmountLabel(selectedInvoice.subtotal, selectedInvoice.currency)}
               />
               <DetailRow
                 label={a.vat}
-                value={formatCurrency(selectedInvoice.total_vat, 'TRY')}
+                value={reportAmountLabel(selectedInvoice.total_vat, selectedInvoice.currency)}
               />
               <DetailRow
                 label={a.total}
-                value={formatCurrency(selectedInvoice.total, 'TRY')}
+                value={reportAmountLabel(selectedInvoice.total, selectedInvoice.currency)}
               />
               <DetailRow
                 label={a.issueDate}

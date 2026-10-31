@@ -23,18 +23,60 @@ export type ServerAccessContext = {
  * refreshes them; authorization remains exclusively on the backend.
  */
 export function hasServerAccess(user: ServerAccessContext | undefined, page: string, permission?: string): boolean | undefined {
-  if (!user || (!user.page_access && !user.effective_permissions && user.module_scopes === undefined)) return undefined;
-  if (user.page_access && Object.prototype.hasOwnProperty.call(user.page_access, page)) return !!user.page_access[page];
-  if (permission && user.effective_permissions?.includes(permission)) return true;
-  // A token response can contain permissions while an older server has not
-  // yet published page_access. Keep the legacy cosmetic map in that mixed
-  // deployment rather than hiding a working, backend-authorized workflow.
+  if (!user) return undefined;
+  if (user.role === 'super_admin') return true;
+  if (user.module_scopes != null && !Array.isArray(user.module_scopes)) return false;
+  // /auth/me publishes a complete page map. An omitted key is not a grant.
+  if (user.page_access) {
+    return user.page_access[page] === true
+      && (!permission || !user.effective_permissions || user.effective_permissions.includes(permission));
+  }
+  const workspace = PAGE_POLICY[page];
+  if (workspace && Array.isArray(user.module_scopes)
+    && !user.module_scopes.includes('*') && !user.module_scopes.includes(workspace.scope)) return false;
+  if (user.effective_permissions) {
+    const required = [...(workspace?.permissions || []), ...(permission ? [permission] : [])];
+    return !!workspace && required.every((key) => user.effective_permissions!.includes(key));
+  }
   return undefined;
+}
+
+// Exact vocabulary from backend/modules/pms_core/user_access_catalog.json.
+// Operation aliases (e.g. view_finance_reports) are NOT permission values.
+const PAGE_POLICY: Record<string, { scope: string; permissions: string[] }> = {
+  frontdesk: { scope: 'frontdesk', permissions: ['view_bookings'] },
+  calendar: { scope: 'frontdesk', permissions: ['view_bookings'] },
+  rooms: { scope: 'frontdesk', permissions: ['view_bookings'] },
+  bookings: { scope: 'frontdesk', permissions: ['view_bookings'] },
+  guests: { scope: 'frontdesk', permissions: ['view_bookings'] },
+  housekeeping: { scope: 'housekeeping', permissions: ['view_hk_board'] },
+  finance: { scope: 'finance', permissions: ['view_financial_reports'] },
+  reports: { scope: 'reports', permissions: ['view_reports'] },
+  cashier: { scope: 'cashier', permissions: ['view_folio'] },
+  procurement: { scope: 'procurement', permissions: ['view_procurement'] },
+  hr: { scope: 'hr', permissions: ['view_hr'] },
+  maintenance: { scope: 'maintenance', permissions: [] },
+  pos: { scope: 'pos', permissions: [] },
+  night_audit: { scope: 'night_audit', permissions: [] },
+};
+
+export function mobileOperationAllowed(user: ServerAccessContext | null | undefined, permission: string): boolean {
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  if (user.effective_permissions) return user.effective_permissions.includes(permission);
+  // Conservative compatibility for older servers without effective context.
+  const role = user.role?.trim().toLowerCase();
+  if (role === 'admin' || role === 'supervisor') return true;
+  if (permission === 'assign_task') return role === 'housekeeping';
+  if (permission === 'update_room_status') return ['housekeeping', 'front_desk'].includes(role || '');
+  if (permission === 'post_payment') return ['finance', 'front_desk'].includes(role || '');
+  if (['edit_booking', 'create_booking', 'checkin', 'checkout'].includes(permission)) return role === 'front_desk';
+  return false;
 }
 
 export function normalizeRole(raw: string | undefined): AppRole {
   if (!raw) return 'other';
-  const r = raw.toLowerCase();
+  const r = raw.trim().toLowerCase();
   if (['front_desk', 'reception', 'frontdesk', 'receptionist'].includes(r)) return 'front_desk';
   if (['housekeeping', 'housekeeper', 'hk'].includes(r)) return 'housekeeping';
   if (['gm', 'general_manager', 'manager', 'owner', 'super_admin', 'admin'].includes(r)) return 'gm';
@@ -165,4 +207,45 @@ export function hasDepartmentAccess(raw: string | undefined): boolean {
     hasRevenueAccess(raw) ||
     hasPosAccess(raw)
   );
+}
+
+/** One derivation for password login, 2FA and restored sessions. UI only;
+ * backend object, operation and subscription guards remain authoritative. */
+export function deriveMobileAccess(user: ServerAccessContext | null | undefined) {
+  const raw = user?.role;
+  const role = normalizeRole(raw);
+  const page = (key: string, fallback: boolean, permission?: string) =>
+    hasServerAccess(user || undefined, key, permission) ?? fallback;
+  const financial = user?.effective_permissions
+    ? user.effective_permissions.includes('view_financial_reports') || raw === 'super_admin'
+    : canViewFinanceReports(raw);
+  const frontdeskAccess = page('frontdesk', role === 'front_desk' || isAllAccessRole(raw));
+  const housekeepingAccess = page('housekeeping', role === 'housekeeping' || isAllAccessRole(raw));
+  const financeReports = page('reports', financial, 'view_financial_reports');
+  const accountingAccess = page('finance', financial, 'view_financial_reports');
+  const nightAuditAccess = financial && page('night_audit', financial);
+  // Current mobile cashier reads finance-grade endpoints as well as folios.
+  const cashierAccess = financial && page('cashier', canViewFinanceReports(raw)) && financeReports;
+  // Work-order reads also retain the backend's housekeeping-role guard.
+  const maintenanceAccess = page('maintenance', hasMaintenanceAccess(raw)) && hasMaintenanceAccess(raw);
+  const procurementAccess = page('procurement', hasProcurementAccess(raw));
+  const hrAccess = page('hr', hasHrAccess(raw));
+  const posAccess = page('pos', hasPosAccess(raw)) && hasPosAccess(raw);
+  const spaAccess = hasSpaAccess(raw); // No backend page/scope named "spa".
+  const miceAccess = hasMiceAccess(raw); // No backend page/scope named "mice".
+  const revenueAccess = financial && financeReports;
+  const managerAccess = (role === 'gm' || raw === 'supervisor') && financial && (accountingAccess || financeReports);
+  const approvalsAccess = hrAccess || (user?.effective_permissions
+    ? user.effective_permissions.includes('system_settings') : hasApprovalsAccess(raw));
+  // Only unrestricted admins get an unconditional role switcher. Scoped
+  // tenant admins must observe the same page denies as every other user.
+  const allAccess = raw === 'super_admin' || (isAllAccessRole(raw)
+    && frontdeskAccess && housekeepingAccess && managerAccess && accountingAccess
+    && cashierAccess && maintenanceAccess && procurementAccess && hrAccess && posAccess);
+  return { role, allAccess, frontdeskAccess, housekeepingAccess, managerAccess,
+    financeReports, accountingAccess, nightAuditAccess, cashierAccess, spaAccess, miceAccess,
+    maintenanceAccess, procurementAccess, hrAccess, revenueAccess, posAccess,
+    approvalsAccess,
+    deptAccess: role !== 'guest_app' && [spaAccess, miceAccess, cashierAccess, accountingAccess,
+      maintenanceAccess, procurementAccess, hrAccess, revenueAccess, posAccess].some(Boolean) };
 }

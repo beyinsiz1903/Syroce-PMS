@@ -8,7 +8,8 @@ export type FinanceSnapshot = {
   report_date: string;
   business_date?: string;
   pending_ar: {
-    total: number;
+    total: number | null;
+    complete?: boolean;
     by_currency?: Record<string, { total: number; '0-30_days': number; '30-60_days': number; '60_plus_days': number; overdue_invoices_count: number }>;
     overdue_breakdown: {
       '0-30_days': number;
@@ -27,7 +28,8 @@ export type FinanceSnapshot = {
   mtd_collections: {
     currency?: string;
     amount: number;
-    collection_rate_percentage: number;
+    collection_rate_percentage: number | null;
+    collection_rate_complete?: boolean;
     conversion_issue_count?: number;
   };
   accounting_invoices: {
@@ -42,11 +44,42 @@ export async function getFinanceSnapshot(): Promise<FinanceSnapshot> {
   return api.get<FinanceSnapshot>('/api/reports/finance-snapshot');
 }
 
+export type DailyFlash = {
+  date: string;
+  revenue: {
+    basis?: string;
+    adr_by_currency?: Record<string, number>;
+    rev_par_by_currency?: Record<string, number>;
+    posting_pending?: boolean;
+  };
+};
+
+// Same posted-room KPI contract as the web Flash Report; never collected
+// payments divided by occupancy, and never a client-side FX calculation.
+export function getDailyFlash(date?: string): Promise<DailyFlash> {
+  return api.get<DailyFlash>('/api/reports/daily-flash', { date_str: date });
+}
+
+export type RevenuePeriod = {
+  start_date: string; end_date: string; revenue_basis?: string;
+  total_revenue_by_currency?: Record<string, number>;
+  adr_by_currency?: Record<string, number>;
+  rev_par_by_currency?: Record<string, number>;
+};
+
+// Server selects the 30-day window ending at the PMS business date.
+export function getRevenuePeriod(): Promise<RevenuePeriod> {
+  return api.get<RevenuePeriod>('/api/reports/revenue');
+}
+
 export type SegmentStat = {
   bookings: number;
   nights: number;
-  revenue: number;
-  adr: number;
+  revenue: number | null;
+  adr: number | null;
+  revenue_by_currency?: Record<string, number>;
+  adr_by_currency?: Record<string, number>;
+  invalid_amounts?: number;
 };
 
 export type MarketSegmentReport = {
@@ -69,6 +102,10 @@ export async function getMarketSegment(
 }
 
 export type CompanyAgingEntry = {
+  currency?: string;
+  company_id?: string;
+  account_id?: string;
+  unaged_balance?: number;
   company_name: string;
   corporate_code: string;
   total_balance: number;
@@ -83,7 +120,10 @@ export type CompanyAgingEntry = {
 
 export type CompanyAgingReport = {
   report_date: string;
-  total_ar: number;
+  total_ar: number | null;
+  total_ar_by_currency?: Record<string, number>;
+  complete?: boolean;
+  aging_complete?: boolean;
   company_count: number;
   companies: CompanyAgingEntry[];
 };

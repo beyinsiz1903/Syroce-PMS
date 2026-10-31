@@ -82,7 +82,7 @@ export const manager = {
   // Vitrin: gelir egilimi grafigi (son 7/30 gun, gercek tarihsel veri).
   kasa: 'Kasa',
   revenueTrendTitle: 'Gelir Eğilimi',
-  revenueTrendHint: 'Girişe göre günlük gelir',
+  revenueTrendHint: 'İş gününe göre işlenmiş gelir',
   trend7: 'Son 7 gün',
   trend30: 'Son 30 gün',
   noTrendData: 'Henüz eğilim verisi yok',

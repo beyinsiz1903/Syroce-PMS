@@ -11,7 +11,7 @@ export const accounting = {
   // Cockpit / daily financial summary
   today: 'Bu Ay',
   monthRange: 'Bu Ay',
-  todayRevenue: 'Bugünkü Gelir',
+  todayRevenue: 'İş Günü Tahakkuku',
   collections: 'Tahsilat',
   netPosition: 'Tahakkuk–Tahsilat Farkı',
   openFolios: 'Tahsilat Bekleyen Folyo',

@@ -8,6 +8,7 @@ import { api } from './client';
 // intentionally NOT exposed here — this surface is read-only.
 
 export type Expense = {
+  currency?: string;
   id: string;
   expense_number?: string;
   category?: string;
@@ -23,6 +24,7 @@ export type Expense = {
 };
 
 export type AccountingInvoice = {
+  currency?: string;
   id: string;
   invoice_number?: string;
   invoice_type?: string;
@@ -50,14 +52,20 @@ export type InventoryItem = {
 };
 
 export type InventorySummary = {
+  currency?: string;
   items: InventoryItem[];
   low_stock_count: number;
   total_value: number;
 };
 
 export type FinancialSummary = {
+  currency?: string;
+  degraded?: boolean;
+  net_position_by_currency?: Record<string, number>;
   business_date?: string;
   revenue: {
+    total_by_currency?: Record<string, number>;
+    total_with_tax_by_currency?: Record<string, number>;
     total: number;
     total_with_tax: number;
     by_category: Record<
@@ -66,13 +74,15 @@ export type FinancialSummary = {
     >;
     charges_count: number;
   };
-  tax: { total: number; breakdown: Record<string, number> };
+  tax: { total: number; total_by_currency?: Record<string, number>; breakdown: Record<string, number> };
   payments: {
+    total_by_currency?: Record<string, number>;
     total: number;
     by_method: Record<string, { amount: number; count: number }>;
     payments_count: number;
   };
   open_folios: {
+    balance_by_currency?: Record<string, { total: number; receivable: number; overpayment: number }>;
     count: number;
     receivable_count: number;
     overpayment_count: number;
@@ -107,6 +117,7 @@ export async function listInvoices(params?: {
 export async function getInventory(): Promise<InventorySummary> {
   const res = await api.get<Partial<InventorySummary>>('/api/accounting/inventory');
   return {
+    currency: res?.currency,
     items: res?.items ?? [],
     low_stock_count: res?.low_stock_count ?? 0,
     total_value: res?.total_value ?? 0,
@@ -126,24 +137,37 @@ export async function getFinancialSummary(
     date ? { date } : undefined,
   );
   if (!res) return null;
+  if (!res.revenue || !res.payments || !res.tax || !res.open_folios) throw new Error('Finansal özet eksik; yeniden deneyin.');
+  const currencies = [...new Set([
+    ...Object.keys(res.revenue.total_by_currency || {}), ...Object.keys(res.payments.total_by_currency || {}),
+    ...Object.keys(res.tax.total_by_currency || {}), ...Object.keys(res.open_folios.balance_by_currency || {}),
+  ])];
   return {
+    currency: currencies.length === 1 ? currencies[0] : undefined,
+    degraded: res.degraded,
+    net_position_by_currency: res.net_position_by_currency,
     business_date: res.business_date,
     revenue: {
+      total_by_currency: res.revenue.total_by_currency,
+      total_with_tax_by_currency: res.revenue.total_with_tax_by_currency,
       total: res.revenue?.total ?? 0,
       total_with_tax: res.revenue?.total_with_tax ?? 0,
       by_category: res.revenue?.by_category ?? {},
       charges_count: res.revenue?.charges_count ?? 0,
     },
     tax: {
+      total_by_currency: res.tax.total_by_currency,
       total: res.tax?.total ?? 0,
       breakdown: res.tax?.breakdown ?? {},
     },
     payments: {
+      total_by_currency: res.payments.total_by_currency,
       total: res.payments?.total ?? 0,
       by_method: res.payments?.by_method ?? {},
       payments_count: res.payments?.payments_count ?? 0,
     },
     open_folios: {
+      balance_by_currency: res.open_folios.balance_by_currency,
       count: res.open_folios?.count ?? 0,
       receivable_count: res.open_folios?.receivable_count ?? 0,
       overpayment_count: res.open_folios?.overpayment_count ?? 0,

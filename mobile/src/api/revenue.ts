@@ -9,6 +9,7 @@ import { api } from './client';
 // the screen.
 
 export type PricingStrategy = {
+  currency?: string;
   current_rate?: number;
   recommended_rate?: number;
   auto_pricing_enabled?: boolean;
@@ -18,6 +19,7 @@ export type PricingStrategy = {
 };
 
 export type PriceAdjustment = {
+  currency?: string;
   id?: string;
   date?: string;
   reason?: string;
@@ -28,6 +30,7 @@ export type PriceAdjustment = {
 };
 
 export type PricingInsight = {
+  currency?: string;
   room_type?: string;
   current_rate?: number;
   suggested_rate?: number;
@@ -134,6 +137,7 @@ export async function getOccupancyForecast(days = 7): Promise<OccupancyForecast>
 // Channel mix — backend computes booking/revenue share per source channel plus
 // direct-booking share. This is distribution data, not rate-parity data.
 export type ChannelStat = {
+  currency?: string;
   channel?: string;
   bookings?: number;
   revenue?: number;

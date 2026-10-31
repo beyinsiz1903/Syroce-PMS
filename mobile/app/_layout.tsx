@@ -10,13 +10,10 @@ import { useAuthStore } from '../src/state/authStore';
 import { useSettingsStore } from '../src/state/settingsStore';
 import { useTheme, useResolvedScheme } from '../src/theme';
 import {
-  DEPARTMENTS_SEGMENT,
   GROUP_SEGMENTS,
-  HOME_SEGMENT,
   ROUTES,
-  groupForRole,
-  rootForRole,
 } from '../src/navigation/routes';
+import { mobileHome } from '../src/navigation/routeAccess';
 import { setupOfflineCache } from '../src/cache/persister';
 import { markSync } from '../src/cache/offlineMeta';
 import { flushPosQueue, refreshPosQueueCount, type QueueScope } from '../src/cache/posQueue';
@@ -42,7 +39,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
-  const { user, role, allAccess, deptAccess, loading, hydrate } = useAuthStore();
+  const { user, loading, hydrate } = useAuthStore();
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
   useEffect(() => { setNativeErrorRoute(`/${segments.join('/')}`); }, [segments]);
 
@@ -74,36 +71,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // All-access users (super_admin/admin) may sit inside ANY role group, so
-    // we only redirect them out of the auth flow or an unknown segment — never
-    // out of a sibling group they intentionally switched into. Single-role
-    // users stay pinned to their own group.
-    if (allAccess) {
-      if (inAuth || !GROUP_SEGMENTS.includes(first as (typeof GROUP_SEGMENTS)[number])) {
-        router.replace(rootForRole(role));
-      }
-      return;
+    // Each group prevents unauthorized children from mounting. The root
+    // navigator must remain mounted while hydration/redirects complete.
+    if (inAuth || !GROUP_SEGMENTS.includes(first as (typeof GROUP_SEGMENTS)[number])) {
+      router.replace(mobileHome(user));
     }
-
-    // Guests keep their dedicated experience, pinned to their own group.
-    if (role === 'guest_app') {
-      if (inAuth || first !== '(guest)') {
-        router.replace(rootForRole(role));
-      }
-      return;
-    }
-
-    // The mobile product is intentionally centred on the shared operational
-    // front-desk shell. This only controls navigation: every write remains
-    // checked by backend RBAC.
-    if (first === '(frontdesk)') return;
-    if (first === HOME_SEGMENT) return;
-    const inDepartments = first === DEPARTMENTS_SEGMENT;
-    if (inDepartments && deptAccess) return;
-    if (first === groupForRole(role)) return;
-
-    router.replace(rootForRole(role));
-  }, [user, role, allAccess, deptAccess, loading, rootNavigationState?.key, segments, router]);
+  }, [user, loading, rootNavigationState?.key, segments, router]);
 
   return <>{children}</>;
 }

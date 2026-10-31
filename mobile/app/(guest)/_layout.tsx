@@ -1,4 +1,5 @@
 import React from 'react';
+import { MobileRouteGate } from '../../src/components/MobileRouteGate';
 import { Tabs } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -11,6 +12,10 @@ import { ROUTES } from '../../src/navigation/routes';
 const backOptions = { headerLeft: () => <HeaderBackButton fallback={ROUTES.guest} /> };
 
 export default function GuestLayout() {
+  return <MobileRouteGate><GuestLayoutContent /></MobileRouteGate>;
+}
+
+function GuestLayoutContent() {
   const c = useTheme();
   return (
     <Tabs

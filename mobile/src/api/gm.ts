@@ -33,6 +33,7 @@ export type GmHousekeeping = {
 
 // Channel performance over the last 30 days (by booking source).
 export type GmChannel = {
+  currency?: string;
   source: string;
   bookings: number;
   revenue: number;
@@ -100,6 +101,8 @@ export type PickupPoint = {
 };
 
 export type PickupAnalysis = {
+  currency?: string;
+  revenue_basis?: string;
   historical: PickupPoint[];
   forecast: PickupPoint[];
   summary: {
@@ -150,6 +153,7 @@ export type BudgetMonth = {
 };
 
 export type BudgetOverview = {
+  actual_basis?: string;
   year: number;
   currency: string;
   months: BudgetMonth[];

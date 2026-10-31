@@ -1,4 +1,5 @@
 import React from 'react';
+import { MobileRouteGate } from '../../src/components/MobileRouteGate';
 import { Stack } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -10,6 +11,10 @@ import { ROUTES } from '../../src/navigation/routes';
 // department screens (Accounting / Maintenance, future tasks) can be added
 // as new files in this folder WITHOUT touching role routing or this layout.
 export default function DepartmentsLayout() {
+  return <MobileRouteGate><DepartmentsLayoutContent /></MobileRouteGate>;
+}
+
+function DepartmentsLayoutContent() {
   const c = useTheme();
   return (
     <Stack
@@ -20,7 +25,7 @@ export default function DepartmentsLayout() {
         // Departmanlar ayri bir Stack'in ilk ekrani oldugu icin native geri
         // butonu kendiliginden olusmaz. Kullanici bu alanda kapana kisilmasin;
         // gezinme gecmisi varsa geldigi ekrana, soguk acilista Ayarlar'a doner.
-        headerLeft: () => <HeaderBackButton fallback={ROUTES.frontdeskMore} />,
+        headerLeft: () => <HeaderBackButton fallback={ROUTES.homeProfile} />,
         headerTintColor: c.text,
         contentStyle: { backgroundColor: c.bg },
       }}
