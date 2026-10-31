@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '@/lib/currency';
+import { CASHIER_TIME_ZONE_LABEL, cashierCalendarDay, formatCashierTime, formatCashierTimestamp } from '@/lib/cashierTime';
 
 const DIFF_THRESHOLD = 50;
 const CURRENCIES = [
@@ -28,9 +29,27 @@ const CURRENCIES = [
   { code: 'GBP', label: 'GBP (£)' },
 ];
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
-const monthAgoIso = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
+const todayIso = () => cashierCalendarDay();
+const monthAgoIso = () => cashierCalendarDay(new Date(Date.now() - 30 * 86400000));
 const formatTry = value => formatCurrency(value, 'TRY', { decimals: 2 });
+
+// Stable component identity: a count change must not remount the focused input.
+const DenominationGrid = ({ counts, setCounts }) => (
+  <div className="grid grid-cols-2 gap-3">
+    {[
+      ['cash_200', '200 TL'], ['cash_100', '100 TL'], ['cash_50', '50 TL'],
+      ['cash_20', '20 TL'], ['cash_10', '10 TL'], ['cash_5', '5 TL'],
+      ['cash_1', '1 TL'], ['coin_1', '1 TL (Bozuk)'],
+      ['coin_050', '50 Krş'], ['coin_025', '25 Krş']
+    ].map(([key, label]) => (
+      <div key={key} className="flex items-center gap-2">
+        <Label htmlFor={`cashier-denomination-${key}`} className="w-24 text-xs">{label}</Label>
+        <Input id={`cashier-denomination-${key}`} type="number" min="0" className="h-8 text-xs"
+          value={counts[key]} onChange={e => setCounts(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))} />
+      </div>
+    ))}
+  </div>
+);
 
 const CashierTab = () => {
   const { t } = useTranslation();
@@ -89,7 +108,7 @@ const CashierTab = () => {
   const verifyPin = async () => {
     const pin = pinValue.trim();
     if (pinSubmittingRef.current) return;
-    if (!pin) { toast.error('PIN gerekli'); return; }
+    if (!pin) { toast.error('Giriş şifreniz gerekli'); return; }
     pinSubmittingRef.current = true;
     setPinSubmitting(true);
     try {
@@ -107,12 +126,12 @@ const CashierTab = () => {
           e.response.headers?.['retry-after'] ??
           e.response.data?.retry_after ??
           null;
-        const detail = e.response?.data?.detail || t('pms.cashierActions.pinTimeout', 'Çok fazla PIN denemesi, lütfen bekleyin');
+        const detail = t('pms.cashierActions.passwordTimeout', 'Çok fazla doğrulama denemesi, lütfen bekleyin');
         toast.error(retry ? `${detail} (${retry}s)` : detail);
       } else if (e?.response?.status === 401) {
-        toast.error(e.response?.data?.detail || 'PIN hatalı');
+        toast.error('Giriş şifreniz doğrulanamadı');
       } else {
-        toast.error('PIN doğrulanamadı: ' + (e.response?.data?.detail || e.message));
+        toast.error('Giriş şifresi doğrulanamadı: ' + (e.response?.data?.detail || e.message));
       }
       pinSubmittingRef.current = false;
       setPinSubmitting(false);
@@ -160,7 +179,7 @@ const CashierTab = () => {
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
-  const openShift = () => requirePin(t('pms.cashierActions.pinBeforeOpenShift', 'Vardiya açmadan önce PIN doğrulayın'), doOpenShift);
+  const openShift = () => requirePin(t('pms.cashierActions.passwordBeforeOpenShift', 'Vardiya açmadan önce giriş şifrenizi doğrulayın'), doOpenShift);
 
   const calcTotal = (counts) =>
     (counts.cash_200 * 200) + (counts.cash_100 * 100) + (counts.cash_50 * 50) +
@@ -189,7 +208,7 @@ const CashierTab = () => {
       toast.error(`Fark ${DIFF_THRESHOLD} TL'yi aştığı için açıklama zorunlu`);
       return;
     }
-    requirePin(t('pms.cashierActions.pinBeforeCloseShift', 'Vardiya kapatmadan önce PIN doğrulayın'), doCloseShift);
+    requirePin(t('pms.cashierActions.passwordBeforeCloseShift', 'Vardiya kapatmadan önce giriş şifrenizi doğrulayın'), doCloseShift);
   };
 
   const handoverShift = async () => {
@@ -221,8 +240,8 @@ const CashierTab = () => {
     const fx = cur === 'TRY' ? 1 : Number(manualTxn.fx_rate);
     if (cur !== 'TRY' && (!manualTxn.fx_rate.trim() || !Number.isFinite(fx) || fx <= 0)) { toast.error('Yabancı para için kur girin'); return; }
     const label = direction === 'in'
-      ? t('pms.cashierActions.pinBeforeCashIn', 'Nakit girişi öncesi PIN doğrulayın')
-      : t('pms.cashierActions.pinBeforeCashOut', 'Kasa çıkışı öncesi PIN doğrulayın');
+      ? t('pms.cashierActions.passwordBeforeCashIn', 'Nakit girişi öncesi giriş şifrenizi doğrulayın')
+      : t('pms.cashierActions.passwordBeforeCashOut', 'Kasa çıkışı öncesi giriş şifrenizi doğrulayın');
     requirePin(label, () => doSubmitManual(direction, amt, cur, fx));
   };
 
@@ -252,7 +271,7 @@ const CashierTab = () => {
     const amt = parseFloat(bankDeposit.amount);
     if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
     if (!bankDeposit.bank_name.trim()) { toast.error('Banka adı zorunlu'); return; }
-    requirePin(t('pms.cashierActions.pinBeforeBankDeposit', 'Banka yatırma işleminden önce PIN doğrulayın'), () => doSubmitBankDeposit(amt));
+    requirePin(t('pms.cashierActions.passwordBeforeBankDeposit', 'Banka yatırma işleminden önce giriş şifrenizi doğrulayın'), () => doSubmitBankDeposit(amt));
   };
 
   const doSubmitBankDeposit = async (amt) => {
@@ -297,7 +316,8 @@ const CashierTab = () => {
       return /[",\n;]/.test(s) ? `"${s}"` : s;
     };
     lines.push(['Donem Raporu', `${periodData.start_date} - ${periodData.end_date}`].map(escape).join(','));
-    lines.push(['Olusturuldu', periodData.generated_at || '', periodData.generated_by || ''].map(escape).join(','));
+    lines.push(['Saat dilimi', CASHIER_TIME_ZONE_LABEL].map(escape).join(','));
+    lines.push(['Olusturuldu', formatCashierTimestamp(periodData.generated_at, { seconds: true }), periodData.generated_by || ''].map(escape).join(','));
     lines.push('');
     lines.push(['TOPLAMLAR'].map(escape).join(','));
     lines.push(['Vardiya sayisi', t.shift_count || 0].map(escape).join(','));
@@ -381,7 +401,7 @@ const CashierTab = () => {
   const countedTotal = calcTotal(closingCounts);
   const expectedCash = shift ? (shift.opening_amount || 0) + cashInTotal - cashOutTotal : 0;
   const difference = countedTotal - expectedCash;
-  const shiftBusinessDate = String(shift?.business_date || shift?.opened_at || '').slice(0, 10);
+  const shiftBusinessDate = shift?.business_date ? String(shift.business_date).slice(0, 10) : (shift?.opened_at ? cashierCalendarDay(shift.opened_at) : '');
   const staleShift = Boolean(shiftBusinessDate && shiftBusinessDate < todayIso());
 
   const txnTypeLabel = useCallback((type) => {
@@ -416,7 +436,7 @@ const CashierTab = () => {
 
   const exportTransactionsCsv = () => {
     if (!filteredTransactions.length) { toast.error('Dışa aktarılacak işlem yok'); return; }
-    const header = ['Saat', 'Tip', 'Yon', 'Yontem', 'Aciklama', 'Tutar', 'Para Birimi', 'Kullanici', 'Ref'];
+    const header = [`Saat (${CASHIER_TIME_ZONE_LABEL})`, 'Tip', 'Yon', 'Yontem', 'Aciklama', 'Tutar', 'Para Birimi', 'Kullanici', 'Ref'];
     const escape = (v) => {
       let s = (v ?? '').toString();
       // Formula injection guard — Excel/Sheets formula triggers
@@ -425,7 +445,7 @@ const CashierTab = () => {
       return /[",\n;]/.test(s) ? `"${s}"` : s;
     };
     const rows = filteredTransactions.map(t => [
-      (t.timestamp || t.created_at || '').slice(0, 19).replace('T', ' '),
+      formatCashierTimestamp(t.timestamp || t.created_at, { seconds: true }),
       txnTypeLabel(t.type),
       t.direction === 'in' ? 'Giris' : 'Cikis',
       methodLabel(t.method),
@@ -439,7 +459,7 @@ const CashierTab = () => {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+    const stamp = formatCashierTimestamp(new Date()).replace(/[ .:]/g, '-');
     a.href = url; a.download = `vardiya-islemler-${stamp}.csv`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
@@ -449,23 +469,6 @@ const CashierTab = () => {
   const printReport = () => {
     if (typeof window !== 'undefined') window.print();
   };
-
-  const DenominationGrid = ({ counts, setCounts }) => (
-    <div className="grid grid-cols-2 gap-3">
-      {[
-        ['cash_200', '200 TL'], ['cash_100', '100 TL'], ['cash_50', '50 TL'],
-        ['cash_20', '20 TL'], ['cash_10', '10 TL'], ['cash_5', '5 TL'],
-        ['cash_1', '1 TL'], ['coin_1', '1 TL (Bozuk)'],
-        ['coin_050', '50 Krş'], ['coin_025', '25 Krş']
-      ].map(([key, label]) => (
-        <div key={key} className="flex items-center gap-2">
-          <Label className="w-24 text-xs">{label}</Label>
-          <Input type="number" min="0" className="h-8 text-xs"
-            value={counts[key]} onChange={e => setCounts(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))} />
-        </div>
-      ))}
-    </div>
-  );
 
   const statusLabel = (s) => {
     if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700">{t('cm.components_pms_CashierTab.acik')}</Badge>;
@@ -536,7 +539,7 @@ const CashierTab = () => {
                   <span className="text-emerald-600 mx-2">|</span>
                   <span className="text-emerald-700">{t('cm.components_pms_CashierTab.acan')} <strong>{shift.opened_by_name || shift.cashier_name || shift.cashier_email}</strong></span>
                   <span className="text-emerald-600 mx-2">|</span>
-                  <span className="text-emerald-700">{t('cm.components_pms_CashierTab.baslangic')} {shift.opened_at?.slice(0, 16).replace('T', ' ')}</span>
+                  <span className="text-emerald-700">{t('cm.components_pms_CashierTab.baslangic')} {formatCashierTimestamp(shift.opened_at)} · {CASHIER_TIME_ZONE_LABEL}</span>
                   {shift.handover_from_name && (
                     <>
                       <span className="text-emerald-600 mx-2">|</span>
@@ -552,8 +555,8 @@ const CashierTab = () => {
             <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
-                <p className="font-semibold">Vardiya {shiftBusinessDate} tarihinden beri açık</p>
-                <p className="text-amber-800">Aşağıdaki tutarlar bugünü değil, vardiyanın açıldığı andan bugüne kadar kaydedilen işlemleri kapsar. Günlük mutabakat için vardiyayı kapatıp yeni vardiya açın.</p>
+                <p className="font-semibold">Vardiyanın iş günü: {shiftBusinessDate}</p>
+                <p className="text-amber-800">İş günü takvim tarihinden farklıdır; bu tarih vardiyanın açılış saati değildir. Tutarlar bu vardiyanın hareketlerini kapsar. Gün sonu ve vardiya kapanışı ayrı işlemlerdir.</p>
               </div>
             </div>
           )}
@@ -656,7 +659,7 @@ const CashierTab = () => {
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-gray-400">{(t.timestamp || t.created_at || '').slice(11, 16)}</span>
+                        <span className="text-gray-400" title={`${formatCashierTimestamp(t.timestamp || t.created_at)} · ${CASHIER_TIME_ZONE_LABEL}`}>{formatCashierTime(t.timestamp || t.created_at)}</span>
                         <span className={`font-medium ${t.direction === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>
                           {t.direction === 'in' ? '+' : '-'}{formatTry(t.amount)}
                         </span>
@@ -723,7 +726,7 @@ const CashierTab = () => {
                           <span className="text-gray-700 font-medium">{s.cashier_name || s.cashier_email || 'Kasiyer'}</span>
                           {statusLabel(s.status)}
                         </div>
-                        <p className="text-gray-400 mt-0.5">{s.opened_at?.slice(0, 16).replace('T', ' ')} - {s.closed_at?.slice(11, 16) || 'Açık'}</p>
+                        <p className="text-gray-400 mt-0.5">{formatCashierTimestamp(s.opened_at)} — {s.closed_at ? formatCashierTimestamp(s.closed_at) : 'Açık'} · {CASHIER_TIME_ZONE_LABEL}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -995,10 +998,11 @@ const CashierTab = () => {
               <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg text-xs">
                 <div><span className="text-gray-500">Kasiyer:</span> <strong>{reportData.cashier_name || reportData.cashier_email || '-'}</strong></div>
                 <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.durum')}</span> <strong>{reportData.status === 'open' ? 'Açık' : reportData.status === 'handed_over' ? 'Devredildi' : 'Kapalı'}</strong></div>
-                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.acilis_a2719')}</span> {reportData.opened_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
-                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis_d60bf')}</span> {reportData.closed_at?.slice(0, 16).replace('T', ' ') || 'Açık'}</div>
-                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.rapor_zamani')}</span> {reportData.generated_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
+                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.acilis_a2719')}</span> {formatCashierTimestamp(reportData.opened_at)}</div>
+                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis_d60bf')}</span> {reportData.closed_at ? formatCashierTimestamp(reportData.closed_at) : 'Açık'}</div>
+                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.rapor_zamani')}</span> {formatCashierTimestamp(reportData.generated_at)}</div>
                 <div><span className="text-gray-500">Raporu Alan:</span> {reportData.generated_by || '-'}</div>
+                <div className="col-span-2">{CASHIER_TIME_ZONE_LABEL}</div>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -1183,7 +1187,7 @@ const CashierTab = () => {
                 <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded text-xs">
                   <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.aralik')}</span> <strong>{periodData.start_date} → {periodData.end_date}</strong></div>
                   <div><span className="text-gray-500">Vardiya:</span> <strong>{periodData.totals?.shift_count || 0}</strong> ({periodData.totals?.open_shift_count || 0} {t('cm.components_pms_CashierTab.acik_e1734')}</div>
-                  <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.olusturuldu')}</span> {periodData.generated_at?.slice(0, 16).replace('T', ' ')}</div>
+                  <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.olusturuldu')}</span> {formatCashierTimestamp(periodData.generated_at)} · {CASHIER_TIME_ZONE_LABEL}</div>
                   <div><span className="text-gray-500">Raporu Alan:</span> {periodData.generated_by || '-'}</div>
                 </div>
 
@@ -1327,17 +1331,19 @@ const CashierTab = () => {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5" /> PIN doğrulama
+              <KeyRound className="w-5 h-5" /> Giriş şifresiyle doğrulama
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-gray-600">{pinGate.label}</p>
+            <p className="text-sm text-gray-600">Ayrı bir kasa PIN’i yoktur. Bu işlem için oturum açtığınız kullanıcının mevcut giriş şifresini girin; başka bir kullanıcının şifresini kullanmayın.</p>
             <Input
               type="password"
               autoFocus
-              inputMode="numeric"
+              inputMode="text"
               autoComplete="off"
-              placeholder="PIN / şifre"
+              aria-label="Mevcut kullanıcının giriş şifresi"
+              placeholder="Giriş şifreniz"
               value={pinValue}
               onChange={(e) => setPinValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !pinSubmitting) verifyPin(); }}

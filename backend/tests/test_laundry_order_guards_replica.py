@@ -158,3 +158,17 @@ async def test_status_input_and_role_tenant_boundaries_fail_closed(acceptance):
     a.user.tenant_id = "other-tenant"
     assert (await create(a)).status_code == 409
     assert (await a.api.patch("/api/laundry/orders/wash", json={"status": "ready"})).status_code == 404
+
+
+async def test_explicit_multi_folio_target_is_preserved_and_wrong_currency_rejected_at_creation(acceptance):
+    a = acceptance
+    await a.db.folios.insert_many([
+        {"id": "agency", "tenant_id": "qa", "booking_id": "synthetic-stay", "status": "open", "currency": "USD"},
+        {"id": "wrong-currency", "tenant_id": "qa", "booking_id": "synthetic-stay", "status": "open", "currency": "TRY"},
+    ])
+    result = await create(a, payload(folio_id="agency"))
+    assert result.status_code == 200 and result.json()["folio_id"] == "agency"
+    before = await a.db.tenant_settings.find_one({"tenant_id": "qa"})
+    rejected = await create(a, payload(folio_id="wrong-currency"))
+    assert rejected.status_code == 409
+    assert await a.db.tenant_settings.find_one({"tenant_id": "qa"}) == before

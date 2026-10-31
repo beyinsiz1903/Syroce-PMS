@@ -1,4 +1,15 @@
 ÖN BÜRO TAM KONTROL KABULÜ — DEVAM EDİYOR, TAMAMLANDI DEĞİL
+31Ekim son toplu tur:PR1474merge/gerçekdeploy41218184706/health48a27e58
+doğrulandı;Müdür gerçekleşen25/31ve çamaşırhane create/retry/start/ready/
+cancel dar canlı geçti. Kullanıcı kaynak/amaç onayıyla mevcut şifre normal
+UI'da kullanıldı; ayrıPINbarajı yok.0açılış/100giriş/40çıkış/60sayım/sıfır
+fark/Z/fullreload geçti,iki yapay hareket ve iptal sipariş kaydı korunur.
+Dönem raporu iş günü ön filtresi canlı FAIL; yeni paket testli düzeltir.
+Upsell gecikmiş yanıt/ayar okuma/fiyat sınırı, çok-folyo seçimi ve kasa
+açıklama/odak kusurları da aynı pakette.559backend/88yerel ek kontrol geçti;
+34eski kaynak veauditaynı.19ailefullfalse; yeni kodun canlı kabulü ayrı.
+Güncel ayrıntı:docs/frontdesk-batch-control-acceptance-20261031.txt.
+Aşağıdaki PR1474canlıdeğil/PINbekliyor ifadeleri TARİHÇEDİR.
 31Ekim devam: Çamaşırhane oda/konaklama/folyo bağlama, gerçek ilk HTTP
 oluşturma yolunda sunucu fiyatı, güvenli tekrar ve durum sınırları;
 Müdür Raporu gerçekleşen doluluk/kohort ayrımı için yeni kusurlar bulundu.
