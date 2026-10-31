@@ -8,7 +8,7 @@ set -e
 
 echo "Verifying..."
 python3 -c "
-import litellm, openai, pydantic_settings, msgpack, pymongo, dns, tornado
+import litellm, openai, pydantic_settings, msgpack, pymongo, dns, tornado, pyasn1
 from importlib.metadata import version
 from packaging.version import Version
 
@@ -18,12 +18,14 @@ assert Version(version('msgpack')) >= Version('1.2.3')
 assert Version(pymongo.version) >= Version('4.18.3')
 assert Version(version('dnspython')) >= Version('2.9.0')
 assert Version(tornado.version) >= Version('6.6.0')
+assert Version(pyasn1.__version__) >= Version('0.6.5')
 print(f'litellm: OK')
 print(f'openai: {openai.__version__}')
 print('pydantic-settings: OK')
 print('msgpack: OK')
 print('pymongo/dnspython: OK')
 print('tornado: OK')
+print('pyasn1: OK')
 print('All imports OK')
 "
 

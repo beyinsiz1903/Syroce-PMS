@@ -44,7 +44,8 @@ packaging==26.0
 passlib==1.7.4
 platformdirs==4.5.0
 propcache==0.4.1
-pyasn1==0.6.4
+# CVE-2026-119194/119195/119196/119197: linear-time ASN.1 decoder fixes.
+pyasn1==0.6.5
 pyasn1_modules==0.4.2
 pycountry==26.2.16
 pycparser==2.23

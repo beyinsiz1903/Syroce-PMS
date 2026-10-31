@@ -124,6 +124,7 @@
     "vitest": "^4.1.4"
   },
   "resolutions": {
+    "follow-redirects": "1.16.2",
     "minimatch": "10.2.5",
     "nanoid": "3.3.18",
     "nth-check": ">=2.0.1",
@@ -154,6 +155,7 @@
     "smol-toml": "^1.8.0"
   },
   "overrides": {
+    "follow-redirects": "1.16.2",
     "ajv": "^6.14.0",
     "minimatch": "10.2.5",
     "nth-check": ">=2.0.1",
