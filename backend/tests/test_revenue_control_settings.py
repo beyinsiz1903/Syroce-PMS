@@ -29,7 +29,7 @@ def test_physical_inventory_only_and_snapshot_does_not_claim_enforcement():
     assert validate_patch(patch(), {"Junior Suite"})[0] == {"hurdle_rates": HURDLE}
 
 
-@pytest.mark.parametrize("value", [-1, True, "12", None, float("nan"), float("inf"), 1e10])
+@pytest.mark.parametrize("value", [-1, True, "12", None, float("nan"), float("inf"), 1e10, 10**500])
 def test_invalid_money_is_not_coerced_to_zero(value):
     body = patch()
     body["hurdle_rates"]["Junior Suite"]["bar"] = value
