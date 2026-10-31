@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +30,12 @@ const SERVICE_TYPES = [{
   name: 'Express (3 Saat)',
   multiplier: 2
 }];
+const emptyOrder = () => ({ room_number: '', guest_name: '', booking_id: '', folio_id: '', service_type: 'wash_iron', items: [], notes: '', priority: 'normal' });
+const money = raw => {
+  const value = Number(raw);
+  return String(raw).trim() !== '' && Number.isFinite(value) && value >= 0 && value <= 1e9 && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6 ? value : null;
+};
+const lineTotal = (price, quantity, service) => Math.round((price * quantity * SERVICE_TYPES.find(s => s.code === service).multiplier + Number.EPSILON) * 100) / 100;
 const LaundryTab = () => {
   const {
     t
@@ -41,21 +47,29 @@ const LaundryTab = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [orderForm, setOrderForm] = useState({
-    room_number: '',
-    guest_name: '',
-    booking_id: '',
-    folio_id: '',
-    service_type: 'wash_iron',
-    items: [],
-    notes: '',
-    priority: 'normal'
-  });
+  const [orderForm, setOrderForm] = useState(emptyOrder);
   const [itemToAdd, setItemToAdd] = useState({
     code: '',
     quantity: 1
   });
   const [roomLookupBusy, setRoomLookupBusy] = useState(false);
+  const [roomError, setRoomError] = useState('');
+  const lookupVersion = useRef(0);
+  const request = useRef(null);
+  const submitting = useRef(false);
+  const locked = loading || Boolean(request.current);
+  useEffect(() => () => { lookupVersion.current += 1; }, []);
+  const changeDialog = open => {
+    lookupVersion.current += 1;
+    setRoomLookupBusy(false);
+    if (!request.current) { setOrderForm(emptyOrder()); setRoomError(''); setItemToAdd(p => ({ ...p, quantity: 1 })); }
+    setShowNewOrder(open);
+  };
+  const changeRoom = value => {
+    lookupVersion.current += 1;
+    setRoomLookupBusy(false); setRoomError('Oda bilgisini doğrulayın');
+    setOrderForm(p => ({ ...p, room_number: value, guest_name: '', booking_id: '', folio_id: '' }));
+  };
 
   // Ayarlar sekmesi state
   const [newItem, setNewItem] = useState({
@@ -96,47 +110,49 @@ const LaundryTab = () => {
 
   // Oda no → aktif misafir autofill
   const lookupRoomGuest = async roomNumber => {
-    if (!roomNumber || !roomNumber.trim()) return;
+    if (locked) return;
+    const version = ++lookupVersion.current;
+    const number = roomNumber.trim();
+    setOrderForm(p => ({ ...p, guest_name: '', booking_id: '', folio_id: '' }));
+    if (!number) return;
     setRoomLookupBusy(true);
+    setRoomError('');
     try {
-      const res = await axios.get(`/bookings/active-by-room/${encodeURIComponent(roomNumber.trim())}`);
+      const res = await axios.get(`/bookings/active-by-room/${encodeURIComponent(number)}`);
+      if (version !== lookupVersion.current) return;
       if (res.data?.found) {
         setOrderForm(p => ({
           ...p,
-          guest_name: res.data.guest_name || p.guest_name,
+          guest_name: res.data.guest_name || '',
           booking_id: res.data.booking_id || '',
           folio_id: res.data.folio_id || ''
         }));
-        toast.success(`Misafir bulundu: ${res.data.guest_name || '(isimsiz)'}`);
+        if (!res.data.folio_id) setRoomError(res.data.folio_selection_required ? 'Birden fazla açık folyo var; rezervasyon detayından hedef hesabı seçin.' : 'Bu konaklamaya ait açık folyo bulunamadı.');
       } else {
-        toast.info(`Oda ${roomNumber} için aktif misafir yok`);
-        setOrderForm(p => ({
-          ...p,
-          booking_id: '',
-          folio_id: ''
-        }));
+        setRoomError(`Oda ${number} için aktif konaklama bulunamadı`);
       }
     } catch {
-      // sessiz
+      if (version === lookupVersion.current) setRoomError('Oda bilgisi alınamadı; yeniden doğrulayın.');
     } finally {
-      setRoomLookupBusy(false);
+      if (version === lookupVersion.current) setRoomLookupBusy(false);
     }
   };
   const addItem = () => {
+    const quantity = Number(itemToAdd.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000) { toast.error('Miktar 1–1000 arasında tam sayı olmalıdır'); return; }
     const item = activeItems.find(i => i.code === itemToAdd.code);
     if (!item) {
       toast.error('Ürün seçin');
       return;
     }
-    const svc = SERVICE_TYPES.find(s => s.code === orderForm.service_type);
     setOrderForm(p => ({
       ...p,
       items: [...p.items, {
         code: item.code,
         name: item.name,
         price: item.price,
-        quantity: itemToAdd.quantity,
-        total: item.price * itemToAdd.quantity * (svc?.multiplier || 1)
+        quantity,
+        total: lineTotal(item.price, quantity, p.service_type)
       }]
     }));
     setItemToAdd({
@@ -151,30 +167,30 @@ const LaundryTab = () => {
     }));
   };
   const submitOrder = async () => {
-    if (!orderForm.room_number || orderForm.items.length === 0) {
-      toast.error('Oda numarasi ve en az bir urun gerekli');
+    if (submitting.current) return;
+    if (!request.current && (roomLookupBusy || roomError || !orderForm.booking_id || !orderForm.folio_id || orderForm.items.length === 0)) {
+      toast.error('Aktif konaklama, açık folyo ve en az bir ürün gereklidir');
       return;
     }
+    submitting.current = true;
+    request.current ||= { key: crypto.randomUUID(), payload: structuredClone(orderForm) };
     setLoading(true);
     try {
-      await axios.post('/laundry/orders', orderForm);
+      await axios.post('/laundry/orders', request.current.payload, { headers: { 'Idempotency-Key': request.current.key } });
+      request.current = null;
       toast.success('Çamaşır siparişi oluşturuldu');
-      setShowNewOrder(false);
-      setOrderForm({
-        room_number: '',
-        guest_name: '',
-        booking_id: '',
-        folio_id: '',
-        service_type: 'wash_iron',
-        items: [],
-        notes: '',
-        priority: 'normal'
-      });
+      changeDialog(false);
       loadOrders();
-    } catch {
-      toast.error('Çamaşır siparişi oluşturulamadı');
+    } catch (error) {
+      if (error?.response?.status >= 400 && error.response.status < 500) {
+        request.current = null;
+        toast.error(error.response.data?.detail || 'Sipariş reddedildi; bilgileri kontrol edin.');
+      } else {
+        toast.error('Sipariş sonucu doğrulanamadı. Aynı istek anahtarıyla yeniden kontrol edebilirsiniz; yeni sipariş oluşturmayın.');
+      }
     }
     setLoading(false);
+    submitting.current = false;
   };
   const updateStatus = async (orderId, newStatus) => {
     try {
@@ -209,8 +225,8 @@ const LaundryTab = () => {
   const createItem = async () => {
     const code = newItem.code.trim().toLowerCase();
     const name = newItem.name.trim();
-    const price = parseFloat(newItem.price);
-    if (!code || !name || isNaN(price) || price < 0) {
+    const price = money(newItem.price);
+    if (!code || !name || price === null) {
       toast.error('Kod, ad ve geçerli fiyat zorunludur');
       return;
     }
@@ -239,8 +255,8 @@ const LaundryTab = () => {
     });
   };
   const saveEdit = async id => {
-    const price = parseFloat(editDraft.price);
-    if (!editDraft.name.trim() || isNaN(price) || price < 0) {
+    const price = money(editDraft.price);
+    if (!editDraft.name.trim() || price === null) {
       toast.error('Geçerli ad ve fiyat girin');
       return;
     }
@@ -323,7 +339,7 @@ const LaundryTab = () => {
 
         <TabsContent value="orders" className="space-y-4">
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setShowNewOrder(true)} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={() => changeDialog(true)} className="bg-blue-600 hover:bg-blue-700">
               <Plus className="w-4 h-4 mr-2" /> {t('cm.components_pms_LaundryTab.yeni_siparis')}
             </Button>
             <Button variant="outline" onClick={loadOrders}>
@@ -480,7 +496,7 @@ const LaundryTab = () => {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showNewOrder} onOpenChange={setShowNewOrder}>
+      <Dialog open={showNewOrder} onOpenChange={changeDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> {t('cm.components_pms_LaundryTab.yeni_camasir_siparisi')}</DialogTitle>
@@ -488,11 +504,8 @@ const LaundryTab = () => {
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>{t('cm.components_pms_LaundryTab.oda_no')}</Label>
-                <Input value={orderForm.room_number} onChange={e => setOrderForm(p => ({
-                ...p,
-                room_number: e.target.value
-              }))} onBlur={e => lookupRoomGuest(e.target.value)} placeholder="101" />
+                <Label htmlFor="laundry-room">{t('cm.components_pms_LaundryTab.oda_no')}</Label>
+                <Input id="laundry-room" disabled={locked} value={orderForm.room_number} onChange={e => changeRoom(e.target.value)} onBlur={e => lookupRoomGuest(e.target.value)} placeholder="101" />
               </div>
               <div>
                 <Label>
@@ -500,18 +513,18 @@ const LaundryTab = () => {
                   {roomLookupBusy && <span className="ml-2 text-xs text-blue-500">araniyor...</span>}
                   {orderForm.booking_id && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">{t('cm.components_pms_LaundryTab.aktif')}</Badge>}
                 </Label>
-                <Input value={orderForm.guest_name} onChange={e => setOrderForm(p => ({
-                ...p,
-                guest_name: e.target.value
-              }))} />
+                <Input aria-label="Misafir adı" value={orderForm.guest_name} readOnly />
               </div>
             </div>
+            {roomError && <p role="alert" className="text-sm text-amber-700">{roomError}</p>}
+            {request.current && !loading && <p role="status" className="text-sm text-amber-700">Önceki isteğin sonucu belirsiz. Aynı siparişi ve istek anahtarını koruyarak yeniden deneyin.</p>}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Hizmet Tipi</Label>
-                <Select value={orderForm.service_type} onValueChange={v => setOrderForm(p => ({
+                <Select disabled={locked} value={orderForm.service_type} onValueChange={v => setOrderForm(p => ({
                 ...p,
-                service_type: v
+                service_type: v,
+                items: p.items.map(item => ({ ...item, total: lineTotal(item.price, item.quantity, v) }))
               }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -521,7 +534,7 @@ const LaundryTab = () => {
               </div>
               <div>
                 <Label>Oncelik</Label>
-                <Select value={orderForm.priority} onValueChange={v => setOrderForm(p => ({
+                <Select disabled={locked} value={orderForm.priority} onValueChange={v => setOrderForm(p => ({
                 ...p,
                 priority: v
               }))}>
@@ -537,7 +550,7 @@ const LaundryTab = () => {
             <div className="border rounded-lg p-3 space-y-2">
               <Label>{t('cm.components_pms_LaundryTab.urun_ekle')}</Label>
               <div className="flex gap-2">
-                <Select value={itemToAdd.code} onValueChange={v => setItemToAdd(p => ({
+                <Select disabled={locked} value={itemToAdd.code} onValueChange={v => setItemToAdd(p => ({
                 ...p,
                 code: v
               }))}>
@@ -546,18 +559,18 @@ const LaundryTab = () => {
                     {activeItems.map(i => <SelectItem key={i.code} value={i.code}>{i.name} ({formatCurrency(i.price, i.currency || currency)})</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Input type="number" min="1" className="w-16" value={itemToAdd.quantity} onChange={e => setItemToAdd(p => ({
+                <Input aria-label="Ürün miktarı" disabled={locked} type="number" min="1" max="1000" step="1" className="w-20" value={itemToAdd.quantity} onChange={e => setItemToAdd(p => ({
                 ...p,
-                quantity: parseInt(e.target.value) || 1
+                quantity: e.target.value
               }))} />
-                <Button size="sm" onClick={addItem}><Plus className="w-4 h-4" /></Button>
+                <Button aria-label="Ürün ekle" disabled={locked} size="sm" onClick={addItem}><Plus className="w-4 h-4" /></Button>
               </div>
               {orderForm.items.length > 0 && <div className="space-y-1 mt-2">
                   {orderForm.items.map((item, i) => <div key={item.id || i} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1">
                       <span>{item.name} x{item.quantity}</span>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{formatCurrency(item.total, item.currency || currency)}</span>
-                        <Button size="sm" variant="ghost" className="h-5 w-5 p-0 text-red-500" onClick={() => removeItem(i)}>x</Button>
+                        <Button disabled={locked} size="sm" variant="ghost" className="h-5 w-5 p-0 text-red-500" onClick={() => removeItem(i)}>x</Button>
                       </div>
                     </div>)}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
@@ -566,11 +579,11 @@ const LaundryTab = () => {
                   </div>
                 </div>}
             </div>
-            <div><Label>Not</Label><Input value={orderForm.notes} onChange={e => setOrderForm(p => ({
+            <div><Label>Not</Label><Input disabled={locked} value={orderForm.notes} onChange={e => setOrderForm(p => ({
               ...p,
               notes: e.target.value
             }))} placeholder={t('cm.components_pms_LaundryTab.ozel_talimatlar')} /></div>
-            <Button onClick={submitOrder} disabled={loading} className="w-full">
+            <Button onClick={submitOrder} disabled={loading || (!request.current && (roomLookupBusy || Boolean(roomError) || !orderForm.booking_id || !orderForm.folio_id || !orderForm.items.length))} className="w-full">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
               {t('cm.components_pms_LaundryTab.siparis_olustur')} ({formatCurrency(orderTotal, currency)})
             </Button>

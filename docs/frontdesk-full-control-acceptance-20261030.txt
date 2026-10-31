@@ -1,4 +1,12 @@
 ÖN BÜRO TAM KONTROL KABULÜ — DEVAM EDİYOR, TAMAMLANDI DEĞİL
+31Ekim devam: Çamaşırhane oda/konaklama/folyo bağlama, gerçek ilk HTTP
+oluşturma yolunda sunucu fiyatı, güvenli tekrar ve durum sınırları;
+Müdür Raporu gerçekleşen doluluk/kohort ayrımı için yeni kusurlar bulundu.
+Canlı yazı yapılmadan kanıtlandı ve testli düzeltme hazırlandı. Yerel222
+ilişkili test geçti; tam headCI ve yeni deploy sonrası dar canlı kabul
+ayrıdır.34korunankaynak/audit aynı; eski hizmetler tekrarlanmadı.
+Ayrıntı:docs/frontdesk-laundry-manager-acceptance-20261031.txt.
+full_frontdesk_scope_complete=false ve diğer açık aileler korunur.
 31Ekim10:41UTC:PR1470gerçekdeploy914b62bd doğrulandı.UDFsayı/boolean/
 0-Hayır/kısmikayıt/409/UIreload,odaDNDyazı/aktör/iz ve minibar yönlendirme
 altkümesi geçti.Ancakoda listesi/arama/cacheDNDalanını atladığı için

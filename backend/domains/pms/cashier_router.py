@@ -1,10 +1,12 @@
 import asyncio
+import hashlib
+import json
 import logging
 import re
 import time
 import uuid
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 
@@ -1112,6 +1114,50 @@ async def _get_laundry_orders_array(tenant_id: str) -> list[dict]:
     return (settings or {}).get("laundry_orders") or []
 
 
+_LAUNDRY_MULTIPLIERS = {"wash_iron": Decimal("1"), "dry_clean": Decimal("1.5"), "iron_only": Decimal("0.5"), "express": Decimal("2")}
+_LAUNDRY_TRANSITIONS = {"pending": {"in_progress", "ready", "cancelled"}, "in_progress": {"ready", "cancelled"}, "ready": {"cancelled"}, "delivered": set(), "cancelled": set()}
+
+
+async def _laundry_binding(tenant_id, room_number, body):
+    booking = await _find_active_booking_by_room(tenant_id, room_number)
+    if not booking:
+        raise HTTPException(409, "Sipariş için odada aktif konaklama gereklidir")
+    booking_id = booking.get("id") or booking.get("booking_id")
+    if body.get("booking_id") and body["booking_id"] != booking_id:
+        raise HTTPException(409, "Oda ve rezervasyon eşleşmiyor; oda bilgisini yenileyin")
+    if body.get("folio_id"):
+        folio = await db.folios.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "id": body["folio_id"], "status": "open"}, {"_id": 0})
+    else:
+        folio = await _find_open_folio_for_booking(tenant_id, booking_id)
+    if not folio:
+        raise HTTPException(409, "Bu konaklamaya ait açık folyo seçilmelidir")
+    guest = await db.guests.find_one({"tenant_id": tenant_id, "id": booking.get("guest_id")}, {"_id": 0, "name": 1}) if booking.get("guest_id") else None
+    return booking_id, folio["id"], (guest or {}).get("name") or booking.get("guest_name") or booking.get("primary_guest_name") or ""
+
+
+def _laundry_input(body):
+    room = str(body.get("room_number") or "").strip()
+    service = body.get("service_type", "wash_iron")
+    priority = body.get("priority", "normal")
+    raw = body.get("items")
+    if not room or len(room) > 40 or not isinstance(service, str) or service not in _LAUNDRY_MULTIPLIERS or not isinstance(priority, str) or priority not in {"normal", "high", "urgent"}:
+        raise HTTPException(400, "Oda, hizmet tipi veya öncelik geçersiz")
+    if any(body.get(field) is not None and not isinstance(body[field], str) for field in ("booking_id", "folio_id", "notes")) or len(body.get("notes") or "") > 500:
+        raise HTTPException(400, "Rezervasyon, folyo veya not bilgisi geçersiz")
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 100:
+        raise HTTPException(400, "1–100 ürün satırı gereklidir")
+    lines = []
+    for line in raw:
+        if not isinstance(line, dict) or not isinstance(line.get("code"), str):
+            raise HTTPException(400, "Ürün kodu ve miktar gereklidir")
+        quantity = _cashier_number(line.get("quantity"), "Miktar", positive=True, money=False)
+        if quantity != int(quantity) or quantity > 1000:
+            raise HTTPException(400, "Miktar 1–1000 arasında tam sayı olmalıdır")
+        lines.append({"code": line["code"].strip().lower(), "quantity": int(quantity)})
+    return {"room_number": room, "service_type": service, "priority": priority, "items": lines,
+            "notes": str(body.get("notes") or "").strip(), "booking_id": body.get("booking_id") or "", "folio_id": body.get("folio_id") or ""}
+
+
 @router.get("/laundry/orders")
 async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None, current_user: User = Depends(get_current_user)):
     orders = await _get_laundry_orders_array(current_user.tenant_id)
@@ -1127,38 +1173,48 @@ async def create_laundry_order(
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),  # v99 DW
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    if not body.get("room_number"):
-        raise HTTPException(status_code=400, detail="Oda numarasi gerekli")
-    if not body.get("items") or len(body["items"]) == 0:
-        raise HTTPException(status_code=400, detail="En az bir urun gerekli")
+    data = _laundry_input(body)
+    key = idempotency_key or str(uuid.uuid4())
+    if not key.strip() or len(key) > 128:
+        raise HTTPException(400, "İstek anahtarı geçersiz")
+    fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    async def replay():
+        previous = next((row for row in await _get_laundry_orders_array(current_user.tenant_id) if row.get("request_key") == key), None)
+        if previous and previous.get("request_hash") != fingerprint:
+            raise HTTPException(409, "Bu istek anahtarı farklı bir sipariş için kullanıldı; önce kayıtla uzlaştırın")
+        return previous
+    previous = await replay()
+    if previous:
+        return previous
+    booking_id, folio_id, guest_name = await _laundry_binding(current_user.tenant_id, data["room_number"], data)
+    catalog = {item["code"]: item for item in await _get_laundry_items_array(current_user.tenant_id) if item.get("active") is not False}
+    hotel = await db.hotel_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "currency": 1}) or {}
+    currency = str(hotel.get("currency") or "TRY").upper()
+    lines = []
+    for line in data["items"]:
+        item = catalog.get(line["code"])
+        if not item or (item.get("currency") and item["currency"] != currency):
+            raise HTTPException(400, "Ürün aktif katalogda veya aynı para biriminde değil")
+        price = Decimal(str(_cashier_number(item.get("price"), "Katalog fiyatı")))
+        total = (price * line["quantity"] * _LAUNDRY_MULTIPLIERS[data["service_type"]]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        lines.append({**line, "name": item["name"], "price": float(price), "total": float(total), "currency": currency})
+    total = _cashier_number(sum(Decimal(str(line["total"])) for line in lines), "Toplam", positive=True)
     now = datetime.utcnow()
-    total = sum(_safe_float(i.get("total", 0)) for i in body["items"])
-
-    # Aktif misafir/folio autofill (frontend göndermediyse de bağlamak için)
-    booking_id = body.get("booking_id") or ""
-    folio_id = body.get("folio_id") or ""
-    guest_name = body.get("guest_name") or ""
-    if not booking_id:
-        active = await _find_active_booking_by_room(current_user.tenant_id, body.get("room_number", ""))
-        if active:
-            booking_id = active.get("id") or active.get("booking_id") or ""
-            if not guest_name:
-                guest_name = active.get("guest_name") or active.get("primary_guest_name") or ""
-    if booking_id and not folio_id:
-        folio = await _find_open_folio_for_booking(current_user.tenant_id, booking_id)
-        if folio:
-            folio_id = folio.get("id") or ""
 
     doc = {
         "id": str(uuid.uuid4()),
-        "room_number": body.get("room_number", ""),
+        "room_number": data["room_number"],
         "guest_name": guest_name,
-        "service_type": body.get("service_type", "wash_iron"),
-        "items": body.get("items", []),
+        "service_type": data["service_type"],
+        "items": lines,
         "total": total,
-        "notes": body.get("notes", ""),
-        "priority": body.get("priority", "normal"),
+        "currency": currency,
+        "request_key": key,
+        "request_hash": fingerprint,
+        "notes": data["notes"],
+        "priority": data["priority"],
         "status": "pending",
         "booking_id": booking_id,
         "folio_id": folio_id,
@@ -1167,11 +1223,15 @@ async def create_laundry_order(
         "created_at": now.isoformat(),
         "created_by": current_user.email,
     }
-    await db.tenant_settings.update_one(
-        {"tenant_id": current_user.tenant_id},
-        {"$setOnInsert": {"tenant_id": current_user.tenant_id}, "$push": {"laundry_orders": doc}},
-        upsert=True,
+    result = await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id, "laundry_orders": {"$not": {"$elemMatch": {"request_key": key}}}},
+        {"$push": {"laundry_orders": doc}},
     )
+    if not result.modified_count:
+        previous = await replay()
+        if previous:
+            return previous
+        raise HTTPException(409, "Sipariş kaydı doğrulanamadı; kaynağı yenileyin")
     return doc
 
 
@@ -1182,6 +1242,8 @@ async def update_laundry_order(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
+    if set(body) != {"status"}:
+        raise HTTPException(422, "Bu uç yalnız sipariş durumunu günceller; mali kaynak değiştirilemez")
     if body.get("status") == "delivered":
         from core.laundry_delivery import deliver_laundry
         from routers.reservation_detail import _refresh_cached_folio_balance, _run_post_commit_hook, invalidate_financial_report_caches
@@ -1194,15 +1256,25 @@ async def update_laundry_order(
         await _run_post_commit_hook(lambda: _refresh_cached_folio_balance(current_user.tenant_id, order["folio_id"]), operation="laundry_delivery_balance")
         invalidate_financial_report_caches(current_user.tenant_id)
         return delivered
-    update_fields = {k: v for k, v in body.items() if k not in ("id", "tenant_id")}
+    order = next((row for row in await _get_laundry_orders_array(current_user.tenant_id) if row.get("id") == order_id), None)
+    if not order:
+        raise HTTPException(404, "Sipariş bulunamadı")
+    target, previous = body["status"], order.get("status")
+    if not isinstance(target, str) or target not in _LAUNDRY_TRANSITIONS:
+        raise HTTPException(400, "Geçersiz sipariş durumu")
+    if target == previous:
+        return {"id": order_id, "status": target, "folio_charge": None}
+    if target not in _LAUNDRY_TRANSITIONS.get(previous, set()):
+        raise HTTPException(409, "Bu sipariş durum geçişine izin verilmiyor")
+    update_fields = {"status": target}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     set_doc = {f"laundry_orders.$.{k}": v for k, v in update_fields.items()}
     result = await db.tenant_settings.update_one(
-        {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
+        {"tenant_id": current_user.tenant_id, "laundry_orders": {"$elemMatch": {"id": order_id, "status": previous, "folio_charged": {"$ne": True}}}},
         {"$set": set_doc},
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Siparis bulunamadi")
+        raise HTTPException(status_code=409, detail="Sipariş başka işlemde değişti; yenileyin")
 
     return {"id": order_id, "status": update_fields.get("status", "updated"), "folio_charge": None}
 
@@ -1213,8 +1285,13 @@ async def delete_laundry_order(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
+    order = next((row for row in await _get_laundry_orders_array(current_user.tenant_id) if row.get("id") == order_id), None)
+    if not order:
+        raise HTTPException(404, "Sipariş bulunamadı")
+    if order.get("folio_charged") or order.get("status") == "delivered":
+        raise HTTPException(409, "Folyoya işlenmiş siparişin kaynak kaydı silinemez")
     result = await db.tenant_settings.update_one(
-        {"tenant_id": current_user.tenant_id},
+        {"tenant_id": current_user.tenant_id, "laundry_orders": {"$elemMatch": {"id": order_id, "status": order.get("status"), "folio_charged": {"$ne": True}}}},
         {"$pull": {"laundry_orders": {"id": order_id}}},
     )
     if result.modified_count == 0:
@@ -1294,11 +1371,15 @@ async def create_laundry_item(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
-    code = (body.get("code") or "").strip().lower()
-    name = (body.get("name") or "").strip()
-    price = _safe_float(body.get("price", 0))
-    if not code or not name:
+    if not isinstance(body.get("code"), str) or not isinstance(body.get("name"), str):
+        raise HTTPException(400, "Kod ve ad metin olmalıdır")
+    code = body["code"].strip().lower()
+    name = body["name"].strip()
+    price = _cashier_number(body.get("price"), "Fiyat")
+    if not code or len(code) > 40 or not name or len(name) > 120:
         raise HTTPException(status_code=400, detail="Kod ve ad zorunludur")
+    if "active" in body and not isinstance(body["active"], bool):
+        raise HTTPException(400, "Aktif bilgisi boolean olmalıdır")
     if price < 0:
         raise HTTPException(status_code=400, detail="Fiyat negatif olamaz")
 
@@ -1315,11 +1396,12 @@ async def create_laundry_item(
         "created_at": datetime.utcnow().isoformat(),
         "created_by": current_user.email,
     }
-    await db.tenant_settings.update_one(
-        {"tenant_id": current_user.tenant_id},
-        {"$setOnInsert": {"tenant_id": current_user.tenant_id}, "$push": {"laundry_items": new_item}},
-        upsert=True,
+    result = await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id, "laundry_items": {"$not": {"$elemMatch": {"code": code}}}},
+        {"$push": {"laundry_items": new_item}},
     )
+    if not result.modified_count:
+        raise HTTPException(409, "Ürün kodu eşzamanlı değişti; kataloğu yenileyin")
     return new_item
 
 
@@ -1332,17 +1414,19 @@ async def update_laundry_item(
 ):
     set_fields = {}
     if "name" in body:
-        name = (body.get("name") or "").strip()
-        if not name:
+        name = body["name"].strip() if isinstance(body["name"], str) else ""
+        if not name or len(name) > 120:
             raise HTTPException(status_code=400, detail="Ad bos olamaz")
         set_fields["name"] = name
     if "price" in body:
-        price = _safe_float(body.get("price", 0))
+        price = _cashier_number(body.get("price"), "Fiyat")
         if price < 0:
             raise HTTPException(status_code=400, detail="Fiyat negatif olamaz")
         set_fields["price"] = price
     if "active" in body:
-        set_fields["active"] = bool(body["active"])
+        if not isinstance(body["active"], bool):
+            raise HTTPException(400, "Aktif bilgisi boolean olmalıdır")
+        set_fields["active"] = body["active"]
     if not set_fields:
         raise HTTPException(status_code=400, detail="Guncellenecek alan yok")
     set_fields["updated_at"] = datetime.utcnow().isoformat()
