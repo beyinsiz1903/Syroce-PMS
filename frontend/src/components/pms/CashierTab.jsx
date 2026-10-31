@@ -32,6 +32,24 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const monthAgoIso = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
 const formatTry = value => formatCurrency(value, 'TRY', { decimals: 2 });
 
+// Stable component identity: a count change must not remount the focused input.
+const DenominationGrid = ({ counts, setCounts }) => (
+  <div className="grid grid-cols-2 gap-3">
+    {[
+      ['cash_200', '200 TL'], ['cash_100', '100 TL'], ['cash_50', '50 TL'],
+      ['cash_20', '20 TL'], ['cash_10', '10 TL'], ['cash_5', '5 TL'],
+      ['cash_1', '1 TL'], ['coin_1', '1 TL (Bozuk)'],
+      ['coin_050', '50 Krş'], ['coin_025', '25 Krş']
+    ].map(([key, label]) => (
+      <div key={key} className="flex items-center gap-2">
+        <Label htmlFor={`cashier-denomination-${key}`} className="w-24 text-xs">{label}</Label>
+        <Input id={`cashier-denomination-${key}`} type="number" min="0" className="h-8 text-xs"
+          value={counts[key]} onChange={e => setCounts(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))} />
+      </div>
+    ))}
+  </div>
+);
+
 const CashierTab = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -89,7 +107,7 @@ const CashierTab = () => {
   const verifyPin = async () => {
     const pin = pinValue.trim();
     if (pinSubmittingRef.current) return;
-    if (!pin) { toast.error('PIN gerekli'); return; }
+    if (!pin) { toast.error('Giriş şifreniz gerekli'); return; }
     pinSubmittingRef.current = true;
     setPinSubmitting(true);
     try {
@@ -107,12 +125,12 @@ const CashierTab = () => {
           e.response.headers?.['retry-after'] ??
           e.response.data?.retry_after ??
           null;
-        const detail = e.response?.data?.detail || t('pms.cashierActions.pinTimeout', 'Çok fazla PIN denemesi, lütfen bekleyin');
+        const detail = t('pms.cashierActions.passwordTimeout', 'Çok fazla doğrulama denemesi, lütfen bekleyin');
         toast.error(retry ? `${detail} (${retry}s)` : detail);
       } else if (e?.response?.status === 401) {
-        toast.error(e.response?.data?.detail || 'PIN hatalı');
+        toast.error('Giriş şifreniz doğrulanamadı');
       } else {
-        toast.error('PIN doğrulanamadı: ' + (e.response?.data?.detail || e.message));
+        toast.error('Giriş şifresi doğrulanamadı: ' + (e.response?.data?.detail || e.message));
       }
       pinSubmittingRef.current = false;
       setPinSubmitting(false);
@@ -160,7 +178,7 @@ const CashierTab = () => {
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
-  const openShift = () => requirePin(t('pms.cashierActions.pinBeforeOpenShift', 'Vardiya açmadan önce PIN doğrulayın'), doOpenShift);
+  const openShift = () => requirePin(t('pms.cashierActions.passwordBeforeOpenShift', 'Vardiya açmadan önce giriş şifrenizi doğrulayın'), doOpenShift);
 
   const calcTotal = (counts) =>
     (counts.cash_200 * 200) + (counts.cash_100 * 100) + (counts.cash_50 * 50) +
@@ -189,7 +207,7 @@ const CashierTab = () => {
       toast.error(`Fark ${DIFF_THRESHOLD} TL'yi aştığı için açıklama zorunlu`);
       return;
     }
-    requirePin(t('pms.cashierActions.pinBeforeCloseShift', 'Vardiya kapatmadan önce PIN doğrulayın'), doCloseShift);
+    requirePin(t('pms.cashierActions.passwordBeforeCloseShift', 'Vardiya kapatmadan önce giriş şifrenizi doğrulayın'), doCloseShift);
   };
 
   const handoverShift = async () => {
@@ -221,8 +239,8 @@ const CashierTab = () => {
     const fx = cur === 'TRY' ? 1 : Number(manualTxn.fx_rate);
     if (cur !== 'TRY' && (!manualTxn.fx_rate.trim() || !Number.isFinite(fx) || fx <= 0)) { toast.error('Yabancı para için kur girin'); return; }
     const label = direction === 'in'
-      ? t('pms.cashierActions.pinBeforeCashIn', 'Nakit girişi öncesi PIN doğrulayın')
-      : t('pms.cashierActions.pinBeforeCashOut', 'Kasa çıkışı öncesi PIN doğrulayın');
+      ? t('pms.cashierActions.passwordBeforeCashIn', 'Nakit girişi öncesi giriş şifrenizi doğrulayın')
+      : t('pms.cashierActions.passwordBeforeCashOut', 'Kasa çıkışı öncesi giriş şifrenizi doğrulayın');
     requirePin(label, () => doSubmitManual(direction, amt, cur, fx));
   };
 
@@ -252,7 +270,7 @@ const CashierTab = () => {
     const amt = parseFloat(bankDeposit.amount);
     if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
     if (!bankDeposit.bank_name.trim()) { toast.error('Banka adı zorunlu'); return; }
-    requirePin(t('pms.cashierActions.pinBeforeBankDeposit', 'Banka yatırma işleminden önce PIN doğrulayın'), () => doSubmitBankDeposit(amt));
+    requirePin(t('pms.cashierActions.passwordBeforeBankDeposit', 'Banka yatırma işleminden önce giriş şifrenizi doğrulayın'), () => doSubmitBankDeposit(amt));
   };
 
   const doSubmitBankDeposit = async (amt) => {
@@ -450,23 +468,6 @@ const CashierTab = () => {
     if (typeof window !== 'undefined') window.print();
   };
 
-  const DenominationGrid = ({ counts, setCounts }) => (
-    <div className="grid grid-cols-2 gap-3">
-      {[
-        ['cash_200', '200 TL'], ['cash_100', '100 TL'], ['cash_50', '50 TL'],
-        ['cash_20', '20 TL'], ['cash_10', '10 TL'], ['cash_5', '5 TL'],
-        ['cash_1', '1 TL'], ['coin_1', '1 TL (Bozuk)'],
-        ['coin_050', '50 Krş'], ['coin_025', '25 Krş']
-      ].map(([key, label]) => (
-        <div key={key} className="flex items-center gap-2">
-          <Label className="w-24 text-xs">{label}</Label>
-          <Input type="number" min="0" className="h-8 text-xs"
-            value={counts[key]} onChange={e => setCounts(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))} />
-        </div>
-      ))}
-    </div>
-  );
-
   const statusLabel = (s) => {
     if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700">{t('cm.components_pms_CashierTab.acik')}</Badge>;
     if (s === 'handed_over') return <Badge className="bg-blue-100 text-blue-700">Devredildi</Badge>;
@@ -552,8 +553,8 @@ const CashierTab = () => {
             <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
-                <p className="font-semibold">Vardiya {shiftBusinessDate} tarihinden beri açık</p>
-                <p className="text-amber-800">Aşağıdaki tutarlar bugünü değil, vardiyanın açıldığı andan bugüne kadar kaydedilen işlemleri kapsar. Günlük mutabakat için vardiyayı kapatıp yeni vardiya açın.</p>
+                <p className="font-semibold">Vardiyanın iş günü: {shiftBusinessDate}</p>
+                <p className="text-amber-800">İş günü takvim tarihinden farklıdır; bu tarih vardiyanın açılış saati değildir. Tutarlar bu vardiyanın hareketlerini kapsar. Gün sonu ve vardiya kapanışı ayrı işlemlerdir.</p>
               </div>
             </div>
           )}
@@ -1327,17 +1328,19 @@ const CashierTab = () => {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5" /> PIN doğrulama
+              <KeyRound className="w-5 h-5" /> Giriş şifresiyle doğrulama
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-gray-600">{pinGate.label}</p>
+            <p className="text-sm text-gray-600">Ayrı bir kasa PIN’i yoktur. Bu işlem için oturum açtığınız kullanıcının mevcut giriş şifresini girin; başka bir kullanıcının şifresini kullanmayın.</p>
             <Input
               type="password"
               autoFocus
-              inputMode="numeric"
+              inputMode="text"
               autoComplete="off"
-              placeholder="PIN / şifre"
+              aria-label="Mevcut kullanıcının giriş şifresi"
+              placeholder="Giriş şifreniz"
               value={pinValue}
               onChange={(e) => setPinValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !pinSubmitting) verifyPin(); }}

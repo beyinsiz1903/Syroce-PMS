@@ -87,7 +87,11 @@ const UpsellTab = ({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const selectionRequestRef = useRef(0);
+  const settingsRequestRef = useRef(0);
+  const settingsSavingRef = useRef(false);
+  useEffect(() => () => { selectionRequestRef.current += 1; settingsRequestRef.current += 1; }, []);
   const [priceDefaults, setPriceDefaults] = useState({});
   const [priceForm, setPriceForm] = useState({
     late_checkout: '',
@@ -95,10 +99,15 @@ const UpsellTab = ({
     airport_transfer: ''
   });
   const openSettings = useCallback(async () => {
+    const requestId = ++settingsRequestRef.current;
     setSettingsOpen(true);
     setSettingsLoading(true);
+    setSettingsReady(false);
+    setPriceForm({ late_checkout: '', early_checkin: '', airport_transfer: '' });
+    setPriceDefaults({});
     try {
       const res = await axios.get('/ai/upsell/settings');
+      if (settingsRequestRef.current !== requestId) return;
       const prices = res.data?.prices || {};
       setPriceDefaults(res.data?.defaults || {});
       setPriceForm({
@@ -106,20 +115,28 @@ const UpsellTab = ({
         early_checkin: prices.early_checkin != null ? String(prices.early_checkin) : '',
         airport_transfer: prices.airport_transfer != null ? String(prices.airport_transfer) : ''
       });
+      setSettingsReady(true);
     } catch {
-      toast.error('Fiyat ayarları yüklenemedi');
+      if (settingsRequestRef.current === requestId) toast.error('Fiyat ayarları yüklenemedi');
+    } finally {
+      if (settingsRequestRef.current === requestId) setSettingsLoading(false);
     }
-    setSettingsLoading(false);
   }, []);
+  const closeSettings = open => {
+    if (settingsSavingRef.current) return;
+    if (!open) { settingsRequestRef.current += 1; setSettingsReady(false); }
+    setSettingsOpen(open);
+  };
   const savePriceSettings = async () => {
+    if (!settingsReady || settingsLoading || settingsSavingRef.current) return;
     const payload = {
       prices: {}
     };
     for (const f of PRICE_FIELDS) {
       const raw = priceForm[f.key];
-      if (raw === '' || raw == null) continue;
+      if (raw == null || String(raw).trim() === '') continue;
       const num = Number(raw);
-      if (!Number.isFinite(num) || num < 0) {
+      if (!Number.isFinite(num) || num < 0 || num > 1_000_000 || Math.abs(num * 100 - Math.round(num * 100)) > 1e-6) {
         toast.error(`${f.label} için geçerli bir fiyat girin`);
         return;
       }
@@ -129,14 +146,17 @@ const UpsellTab = ({
       toast.error('En az bir fiyat girmelisiniz');
       return;
     }
+    settingsSavingRef.current = true;
     setSettingsSaving(true);
     try {
       await axios.put('/ai/upsell/settings', payload);
       toast.success('Upsell fiyatları güncellendi');
       setSettingsOpen(false);
+      setSettingsReady(false);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Fiyat kaydı başarısız');
     }
+    settingsSavingRef.current = false;
     setSettingsSaving(false);
   };
   const loadAllOffers = useCallback(async () => {
@@ -228,17 +248,21 @@ const UpsellTab = ({
   };
   const regenerateOffers = async () => {
     if (!selectedBooking) return;
+    const requestId = ++selectionRequestRef.current;
     setLoading(true);
     try {
       const res = await generateOffers(selectedBooking);
+      if (selectionRequestRef.current !== requestId) return;
       setOffers(res.data.offers || []);
       toast.success(`${res.data.total_offers} yeni teklif üretildi`);
       loadAllOffers();
       loadInsights();
     } catch (err) {
+      if (selectionRequestRef.current !== requestId) return;
       toast.error(err.response?.data?.detail || 'Teklif üretilemedi');
+    } finally {
+      if (selectionRequestRef.current === requestId) setLoading(false);
     }
-    setLoading(false);
   };
   const handleOfferAction = async (offerId, action) => {
     setLoadingAction(offerId);
@@ -276,7 +300,7 @@ const UpsellTab = ({
         </div>
       </div>
 
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+      <Dialog open={settingsOpen} onOpenChange={closeSettings}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('cm.components_pms_UpsellTab.upsell_fiyat_ayarlari')}</DialogTitle>
@@ -294,7 +318,7 @@ const UpsellTab = ({
                       {f.label}
                     </Label>
                     <div className="flex items-center gap-2">
-                      <Input id={`upsell-price-${f.key}`} type="number" min="0" step="0.01" inputMode="decimal" value={priceForm[f.key]} onChange={e => setPriceForm(prev => ({
+                      <Input id={`upsell-price-${f.key}`} type="number" min="0" max="1000000" step="0.01" inputMode="decimal" disabled={settingsSaving || !settingsReady} value={priceForm[f.key]} onChange={e => setPriceForm(prev => ({
                   ...prev,
                   [f.key]: e.target.value
                 }))} placeholder={def != null ? `Varsayılan: ${def}` : ''} data-testid={`input-upsell-price-${f.key}`} />
@@ -305,10 +329,10 @@ const UpsellTab = ({
           })}
             </div>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSettingsOpen(false)} disabled={settingsSaving}>
+            <Button variant="outline" onClick={() => closeSettings(false)} disabled={settingsSaving}>
               {t('cm.components_pms_UpsellTab.vazgec')}
             </Button>
-            <Button onClick={savePriceSettings} disabled={settingsLoading || settingsSaving} data-testid="btn-save-upsell-prices">
+            <Button onClick={savePriceSettings} disabled={settingsLoading || settingsSaving || !settingsReady} data-testid="btn-save-upsell-prices">
               {settingsSaving ? 'Kaydediliyor...' : 'Kaydet'}
             </Button>
           </DialogFooter>

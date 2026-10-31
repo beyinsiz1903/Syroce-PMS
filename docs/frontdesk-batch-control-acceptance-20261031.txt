@@ -1,0 +1,112 @@
+ÖN BÜRO — TOPLU KONTROL VE SINIR DÜZELTMELERİ, 31 EKİM 2026
+Durum: Bu paket yerel doğrulanmıştır; yeni kodun CI/merge/deploy/canlı
+kabulü ayrı kapıdır. full_frontdesk_scope_complete=false.
+
+Önceki sürümün doğrulanmış yayını
+PR1474 head67a94167, merge48a27e584a3d3ea30a7d3a0d81c30da1bb0fe2f4.
+PR15success/3expectedskip; main CI41216583786 ve UI CI41216583765 başarılı.
+Gerçek serverdeploy41218184706, Deploy to Server16:08:18–16:11:41UTC
+başarılı; health aynı48a27e58/healthy. Önceki41217141493 serverSKIPPED
+olduğu için yayın sayılmadı. Bu tur yeni merge/deploy başlatılmadı.
+
+PR1474 dar canlı kabulü
+Müdür Raporu:25/26/30Ekim seçili iş günü gerçekleşen oda/gece/kohort
+kaynakları ortak günlük ve Flash raporuyla eşit.26Ekim25dolu/6boş/31oda;
+bu seçili iş günü gecesi, anlık resepsiyon durumu diye sunulmaz.
+Çamaşırhane:105oda için kanonik konaklama/açıkfolyo/aktif gömlek tarifesi
+ile tek30TRY sipariş; aynı anahtarla başarılı tekrar aynıID, değişen
+içerik409; başlat→hazır→iptal. İptal kaynağı korundu, folyoya ücret/ödeme
+eklenmedi. Altı400/409 negatif ve terminal yeniden açma/teslim/keyfî
+toplam PATCH retleri geçti. Eski siparişler ve hizmetler tekrar edilmedi.
+
+Yeni canlı kasa kabulü — yalnız açıkça yapay muhasebe hareketi
+Kullanıcı, mevcut demo giriş şifresinin normal kasa doğrulamasında
+kullanımını kaynağı ve hedefiyle açıkça onayladı. Ayrı PIN icat edilmedi,
+şifre değiştirilmedi/kaydedilmedi/loglanmadı, doğrulama atlanmadı.
+Normal UI:0açılış→100TRY yapay kasa girişi→40TRY yapay kasa çıkışı→
+60TRY sayım→sıfır farkla kapanış. Gerçek nakit/banka/kart/folyo tahsilatı
+yok. İki hareketin ayrı kalıcı anahtarı, aktörü ve notu sunucuda doğrulandı.
+Fark-60 iken açıklamasız kapanış engeli görüldü;50+10sayımı ve açık yapay
+notla kapanış yapıldı. X/Z:0+100−40=60, sayım60, fark0, iki hareket.
+Fullreload:aktif vardiya yok, tek yeni kapalı60TRYvardiya ve Z kaydı kalıcı;
+eski vardiyalar aynen korundu.26Ekim açık iş günü değiştirilmedi.
+
+Bulunan kusurlar ve bu paketteki düzeltmeler
+1 Dönem raporu, takvim31Ekim'de açılıp iş günü26Ekim'e kaydedilen vardiyayı
+  Mongo opened_at ön filtresinde kaybediyordu. Canlı dönem raporu kabulü
+  BAŞARISIZ olarak korunur; X/Z geçişi bunu örtmez. Adaylar artık tenant
+  içinde açılış/kapanış/hareket iş gününden seçilir; ISOgün ve BSONdamgası
+  desteklenir, eski damgasız kayıtta saat fallback korunur. Yalnız kapanış
+  olan gün atlanmaz. Bozuk/tam-saat/reversed/aşırı tarih kontrollü400;
+  varsayılan başlangıç hesaplanmadan bitiş parametresi doğrulanır.
+2 Kasa UI ayrı sayısal PIN istiyormuş izlenimi veriyordu. Mevcut kendi
+  giriş şifresi açık anlatılır; klavye metin türünde, alan password kalır.
+  peer-verify, mevcut kullanıcı sınırı, throttle ve çift gönderim koruması
+  korunur. Sayım bileşeni üst seviyeye taşındı:her rakamda yeniden mount
+  olup odak kaybetmez. İş günü, vardiya açılış zamanı diye sunulmaz.
+3 Çamaşırhanede birden çok açık folyo için seçici yoktu. Yetkili normal
+  folyo-window okumasından yalnız açık/hizmet para birimindeki hedefler
+  gösterilir; hedef zorunlu, ilk hesap otomatik seçilmez. Oda/form değişimi
+  gecikmiş yanıtı geçersiz kılar. API başka para birimindeki hedefi409 ile
+  kaynaksız reddeder; kur tahmini/dönüşümü yok. İptal ayrı durum/filtre ve
+  onaylı eylem olarak görünür; iptal kaynağı korunur, teslim edilmiş ücret
+  silinmez. Çok-folyo varyantı yerel replica+UI testli, henüz canlı değil.
+4 Upsell yeniden üretim yanıtı yeni seçilen rezervasyonun üstüne yazabiliyor,
+  ayar okuması başarısız olduğunda eski form kaydedilebiliyordu. İstek
+  sürümü/kapalı form koruması, yükleme bitmeden kayıt engeli, tek save,
+  kayıtta disabled alanlar eklendi. Sunucu500haneli sayı/NaN/Inf/bool/
+  negatif/>1milyon/>2ondalık girdiyi yazmadan400 reddeder. Sessiz yuvarlama
+  yok, açık0 korunur, kısmi tenant alan güncellemesi korunur. Bozuk eski
+  değer teklif fiyatına geçmez; mevcut varsayılan okunur, tarihçe yazılmaz.
+
+Yerel doğrulama
+backend-batch-final-v4.xml:559passed,18mevcut live_server deselected;
+18başarı sayılmaz. Yerel gerçek replica setleri ve üretim router sırası
+ile HTTP, rollback/eşzamanlılık, tenant/rol, kaynak→folyo→rapor ilişkileri.
+compliance-night-control-supplement.xml:88passed; yerel KBS fail-closed ve
+günsonu önizleme/projeksiyon/bilanço kaynakları. Resmîteslim veya canlı
+gün kapatma değildir. Örtüşen koşuların sayıları birbirine eklenmez.
+cashier-security-supplement.xml:35passed; kimlik/tenant/kendi şifresi ve
+iki deneme sınırı/bütçe reseti. Üç son backendXML testkimlikleri birleşimi
+682ayrıpassed;559+88+35koşuları arasında örtüşme yok, önceki koşular eklenmez.
+Tam son UI:frontend-full-batch-final-v3.xml431dosya/2369passed0fail0skip.
+Önceki v2 de431dosya/2369passed; eklenmez. v1'deki eski placeholder beklentisi
+erişilebilir yeni alan etiketiyle güncellendi; tüm güvenlik assertleri durur.
+İlk kusur/regresyon/ortam koşuları silinmedi; gate/ignore/zaman sınırları
+değişmedi. Genel backendRuff/changedUIESLint/Vitebuild/diff ve10locale
+quality çeviri kontrolü başarılı. Temiz frozen1.16.2 kurulumda UI koşuldu;
+ortak node_modules değiştirilmedi. Bu sonuçlar tam uzak CI yerine geçmez.
+
+Kalıcı işletici kanıtları (kişisel/finansal ham kayıtlar Git'e alınmaz)
+frontdesk-batch-closure-20261031/release1474-gate.json
+frontdesk-batch-closure-20261031/manager1474-v2-acceptance.json
+frontdesk-batch-closure-20261031/manager1474-live.png
+frontdesk-batch-closure-20261031/laundry1474-lifecycle-acceptance.json
+frontdesk-batch-closure-20261031/laundry1474-negative-acceptance.json
+frontdesk-batch-closure-20261031/cashier-live-lifecycle-acceptance.json
+frontdesk-batch-closure-20261031/cashier-period-live-acceptance.json (false)
+frontdesk-batch-closure-20261031/cashier-z-closed60.png
+frontdesk-batch-closure-20261031/cashier-closed-reload-live.png
+frontdesk-batch-closure-20261031/final-batch-protected-source-acceptance.json
+Normal API yazılarının ayrı kalıcı request/result ve idempotency kayıtları
+aynı dizinde korunur. Bir login503 ve sürücü sözleşme hatasında duruldu;
+bilinen başarılı yazılar tekrar edilmeden kaynak anahtarıyla uzlaştırıldı.
+Başarısız kanıt dosyaları ezilmedi,503kök nedeni biliniyor iddiası yok.
+
+Son koruma kabulü
+34eski kaynak kontrolü +audittrue; yeni iptal siparişi ve tek kasa vardiyası
+iki hareketiyle ayrı uzlaştırıldı.11225mühür kontrolü/0kopuk/0unverifiable,
+2882legacy_skippedayrı;truncated/degradedfalse.31oda/QT2ED0,iki stok52,
+eski borç5468TRY,25/26/30mali kaynaklar ve cari aynı; kanallar kapalı,
+26Ekim açık. Yeni hizmet/ücret/folyo tahsilatı/seed/stock/arşiv tekrarı yok.
+
+Sonraki kapı ve gerçek kalanlar
+Yeni PR'ın tam headCI→kullanıcımerge→gerçekserverdeploy→healthSHA; sonra
+SADECE mevcut kapalı sentetik vardiyanın26Ekim dönem raporuna dahil olduğunu
+100giriş/40çıkış/60kapanış/iki hareket/sıfırfark ile salt okunur doğrula.
+Vardiya/para/sipariş yeniden oluşturulmaz. Yeni Upsell ve çok-folyo UI
+varyantlarının güncel canlı kabulü ayrıca gerekir; eski hizmetler korunur.
+19sayfanın tüm çıktı/rol/filtre/alternatif işlem aileleri bu sayılarla
+tamamlandı sayılmaz. Gerçek otomatik gelir/BAR motor bağlantısı; resmîKBS
+ve dış platform teslimi; canlı ödeme/iade/depozito/günsonu diğer varyantları
+ayrı açık kapsamdır. Gerçek kişi silinmez ve eski finansal kaynak değişmez.
