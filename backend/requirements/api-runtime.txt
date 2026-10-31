@@ -42,7 +42,9 @@ numpy==2.3.4
 
 # Optional tracing runtime. These imports are feature-gated, but a clean
 # production image must contain them whenever an OTLP endpoint is configured.
-opentelemetry-api==1.44.0
-opentelemetry-sdk==1.44.0
-opentelemetry-exporter-otlp-proto-grpc==1.44.0
-opentelemetry-exporter-otlp-proto-common==1.44.0
+# CVE-2026-114603: bounded, linear-time inbound tracestate parsing.
+# API/SDK/exporter versions form one resolver-compatible release set.
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-grpc==1.45.1
+opentelemetry-exporter-otlp-proto-common==1.45.1

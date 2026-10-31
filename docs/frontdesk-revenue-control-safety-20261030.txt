@@ -1,4 +1,11 @@
 GELİR KONTROLLERİ — KAYIT GÜVENLİĞİ, TAM KAPSAMIN SONU DEĞİL
+31Ekim06:40UTC son durum:PR1467 canlı541328be;PR1468 merge54e94916.
+PR1468headCI15success/3skip,merge-main security-scan FAIL;gerçek deploy
+sunucu adımı SKIPPED. Büyük integer sınırı henüz canlı sayılmaz.
+Yeni güvenlik düzeltmesi fix/pyasn1-security-065;ayrıntı ve kanıt rotası:
+docs/frontdesk-release-security-20261031.txt. Bu tur canlı yazı yok.
+Aşağıdaki39391c36/CIbekliyor notları tarihçedir;güvenlik gate atlanmaz.
+
 31Ekim güncellemesi:PR1467 main541328be'ye merge edildi;PRhead CI15başarı,
 3beklenen skip. Son büyükJSONinteger sınırı merge dışında kaldığından
 ayrı dar takipPR'ına taşındı. Son okuma canlı39391c36;mainCI sürüyordu,

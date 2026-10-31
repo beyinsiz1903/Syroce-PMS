@@ -1,0 +1,70 @@
+31 EKİM — PR1468 SONRASI GÜVENLİK GATE'İ, CANLI KABUL DEĞİL
+
+PR1468 head:c23a9b80fd7ba782a0e0880c752cb41795066afd
+Merge:54e94916a6b9264c2fd8e1fe8de35b5bf2b4acd0 (31Ekim02:00UTC).
+PR head CI15success/3beklenen skip. Ancak merge-main CI güvenlikte durdu:
+https://github.com/beyinsiz1903/Syroce-PMS/actions/runs/41157943691/job/124408996799
+Gerçek satırlar:pyasn1 0.6.4;CVE-2026-119194/119195/119196/119197;
+hepsi için yamalı sürüm0.6.5. CI'nın CRITICAL mesajı genel gate metnidir;
+bu dört upstream bildirim HIGH olarak sınıflandırılmıştır.
+
+Yeşil deploy run başarıyla YAYINLANDI anlamına gelmedi:
+https://github.com/beyinsiz1903/Syroce-PMS/actions/runs/41158506608/job/124410536694
+Deploy to Server=SKIPPED. Diğer41159373998run da skipped.
+31Ekim06:40:50UTC health541328be377d4bc2054bcf67f9bebc4f136ca178;
+yani öncekiPR1467 canlı,PR1468 henüz canlı değil. Bu tur canlı yazı yok.
+
+Dar düzeltme:fix/pyasn1-security-065
+base.txt pyasn1==0.6.5;post_install gerçek kurulu sürümü>=0.6.5 doğrular.
+16saf parser/pin/RSA testi:REAL,parçalı BIT/OCTET STRING,nested octet,
+indefinite ANY'nin EOC/remainder davranışı,BER/CER/DER çakışan TagSet,
+2048bit yerel RSA PKCS1 roundtrip/imza. Küçük sentetik girdiler kullanılır;
+üretim parserına saldırı veya zaman eşikli/flaky benchmark yapılmaz.
+0.6.4 negatif kontrolde üç codec11.834 karşılaştırmayla sınırı aştı;
+0.6.5 aynı testten geçti. Bu kontrol güvenlik regresyonunun gerçekten
+etkilenmiş sürümü yakaladığını gösterir; evrensel güvenlik iddiası değildir.
+
+Ek üretim runtime taraması,all.txt CI kapsamından ayrı api-runtime.txt'te
+opentelemetry-api1.44.0/CVE-2026-114603 buldu (MODERATE). API/SDK/ikiOTLP
+exporter birlikte1.45.1'e yükseltildi;uyumlu transitive set resolver seçimi.
+Dört pin testi ve beş yerel gerçek runtime testi:geçerli header sırası,
+çoklu header/tekrarlı anahtar reddi,bozuk whitespace girdisinde doğrulanan
+str.split kullanımı,gerçek SDK span'ının yalnız in-memory exporter'a
+gitmesi/import uyumu. İlk yerel testte varsayılan 8KiB/log beklentisi
+doğrulanmadı:kurulu1.45.1wheel lineer split içeriyor,bu limit/log sansürü
+iddiası YOKTUR. Test ve kaynak incelemesiyle açıklanıp ilk kanıt korundu;
+uygulama logger'ı/deploy guard'ı değiştirilmedi.
+Bu yama tracing'i açmaz,collector'a veri göndermez veya telemetry ayarını
+değiştirmez. Ürün/önbüro davranış kodu bu güvenlik yamasında değişmez.
+
+Upstream kaynaklar:
+https://github.com/pyasn1/pyasn1/releases/tag/v0.6.5
+https://github.com/pyasn1/pyasn1/security/advisories/GHSA-fm9c-5rcf-2q5p
+https://github.com/pyasn1/pyasn1/security/advisories/GHSA-2qm8-x737-gmw5
+https://github.com/pyasn1/pyasn1/security/advisories/GHSA-9m75-vc3g-4x39
+https://github.com/pyasn1/pyasn1/security/advisories/GHSA-mm57-4v3p-rchx
+https://github.com/open-telemetry/opentelemetry-python/security/advisories/GHSA-xcq7-p3pf-p88h
+
+Yerel kanıt dizini:frontdesk-security1468-20261031/ (workspace root).
+release-gate-blocked.json gerçek gate/health/diagnostic satırları.
+security-frontdesk-final.xml:207passed,0skip;16yeni ASN.1 testi dahildir.
+security-revenue-clean-final.xml:temizAPIruntime68passed,0skip;
+önceki207ile örtüşür,ayrı4OTELpin testi içerir;toplanmaz.
+otel-runtime-v2.xml:5passed,yalnız yerel/in-memory tracing.
+api-runtime-audit-patched.json:0yeni/unignored açık,2öncekiECDSAalias
+satırı mevcut CI ignore listesiyle hariç. pip check ve post_install geçti.
+Genel backend Ruff,bash syntax,requirements duplicate guard,diff temiz.
+Temiz macOS/Python3.13 API-runtime ortamı ayrı resolver/pip-check/post-install
+kontrolüdür;GitHub Linux/Python3.11 tam CI veya canlı kabul yerine geçmez.
+Temel ignore'sız audit'te yalnız öncekiECDSA/CVE-2024-23342 iki alias satırı
+kaldı. Mevcut CI ignore listesiyle temel audit temiz;bu istisna yeni değildir.
+API-runtime taramasının ilk OpenTelemetry bulgusu/ilk test-harness hataları
+silinmez;son yamalı audit ve son temiz-runtime testleri ayrı dosyalardır.
+Hiçbir workflow,CI gate,ignore listesi veya karantina değişmedi.
+
+SONRA:bu yeni branch PR'ının tam son-head CI'si,merge-main ikiworkflow,
+gerçek sunucu deploy adımı ve health/lineage doğrulanmadan yeni canlı kabul
+yok. Önceki stok/arşiv/hizmet/QR/KVKK/kontenjan fazları TEKRARLANMAZ.
+31oda/QT2ED0,stok52'şer,5468TRY eski yapay borç,26Ekim açık ve kapalı
+kanal guard'ları yürürlükte. Tüm19aile full_scope_complete=false kalır;
+otomatik revenue motoru bağlantısı ve diğer PENDING kontroller kapanmadı.
