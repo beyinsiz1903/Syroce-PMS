@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { History, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 
 const ACTION_COLORS = {
   create: 'bg-emerald-100 text-emerald-800',
@@ -14,12 +15,6 @@ const ACTION_COLORS = {
 const actionBadge = (a) => {
   const key = (a || '').split(':')[0];
   return ACTION_COLORS[key] || 'bg-amber-100 text-amber-800';
-};
-
-const fmt = (ts) => {
-  if (!ts) return '';
-  try { return new Date(ts).toLocaleString('tr-TR'); }
-  catch { return ts; }
 };
 
 const Diff = ({ before, after, changed }) => {
@@ -96,7 +91,7 @@ const EntityHistoryDrawer = ({ entityType, entityId, title, onClose }) => {
                   <Badge className={`${actionBadge(entry.operation)} border-0 text-[10px]`}>
                     {entry.operation || '—'}
                   </Badge>
-                  <span className="text-xs text-slate-600">{fmt(entry.timestamp)}</span>
+                  <span title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-xs text-slate-600">{formatHotelEventTimestamp(entry.timestamp)}</span>
                   {entry.actor_id && (
                     <span className="text-xs text-slate-500">· {entry.actor_id}</span>
                   )}

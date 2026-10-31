@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Shield, CheckCircle, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 const SecurityLogs = () => {
   const {
     t
@@ -47,8 +48,8 @@ const SecurityLogs = () => {
                 <Badge className={log.success ? 'bg-green-500' : 'bg-red-500'}>
                   {log.success ? 'Başarılı' : 'Başarısız'}
                 </Badge>
-                <div className="text-gray-500 mt-1">
-                  {new Date(log.timestamp).toLocaleTimeString('tr-TR')}
+                <div title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-gray-500 mt-1">
+                  {formatHotelEventTimestamp(log.timestamp)}
                 </div>
               </div>
             </div>)}

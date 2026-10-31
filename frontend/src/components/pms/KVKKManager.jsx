@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -246,7 +247,7 @@ const KVKKManager = () => {
                       </div>
                       <div className="text-xs text-muted-foreground">{tv('user')} {log.user} | {tv('target')} {log.target}</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">{log.timestamp ? new Date(log.timestamp).toLocaleString('tr-TR') : ''}</div>
+                    <div title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-xs text-muted-foreground">{formatHotelEventTimestamp(log.timestamp)}</div>
                   </div>
                 ))}
               </div>

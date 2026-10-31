@@ -12,10 +12,13 @@ import { useTranslation } from 'react-i18next';
 import { folioLabel, reservationLabel, roomLabel } from '@/utils/displayIdentifiers';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp, hotelEventDay } from '@/lib/hotelEventTime';
 
 const getDateOffset = (offsetDays) => {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
+  // Offset calendar days after selecting the hotel day; do not use UTC's day
+  // or the workstation timezone around hotel midnight.
+  const d = new Date(`${hotelEventDay()}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + offsetDays);
   return d.toISOString().split("T")[0];
 };
 
@@ -138,6 +141,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
               <p className="text-xs md:text-sm text-gray-600">
                 Her night audit adımı için ayrıntılı kayıt: kim, ne zaman, hangi odada, hangi işlem.
               </p>
+              <p className="text-xs text-gray-500">İşlem zamanı: {HOTEL_EVENT_TIME_ZONE_LABEL}. İş günü ayrı gösterilir.</p>
             </div>
           </div>
         </div>
@@ -273,8 +277,8 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                 <table className="w-full text-xs md:text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-600">
-                      <th className="py-2 pr-3">Tarih</th>
-                      <th className="py-2 pr-3">Saat</th>
+                      <th className="py-2 pr-3">İş günü</th>
+                      <th className="py-2 pr-3">İşlem zamanı</th>
                       <th className="py-2 pr-3">Kullanıcı</th>
                       <th className="py-2 pr-3">Durum</th>
                       <th className="py-2 pr-3">Aksiyon</th>
@@ -286,16 +290,14 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                   </thead>
                   <tbody>
                     {logs.map((log) => {
-                      const ts = log.timestamp ? new Date(log.timestamp) : null;
-                      const dateStr = ts ? ts.toLocaleDateString("tr-TR") : "-";
-                      const timeStr = ts ? ts.toLocaleTimeString("tr-TR") : "-";
+                      const timeStr = formatHotelEventTimestamp(log.timestamp);
                       const isExpanded = expandedId === log.id;
 
                       return (
                         <React.Fragment key={log.id}>
                           <tr className="border-b last:border-0 hover:bg-gray-50">
-                            <td className="py-2 pr-3 whitespace-nowrap">{log.audit_date || dateStr}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap">{timeStr}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap">{log.audit_date || '—'}</td>
+                            <td title={HOTEL_EVENT_TIME_ZONE_LABEL} className="py-2 pr-3 whitespace-nowrap">{timeStr}</td>
                             <td className="py-2 pr-3 whitespace-nowrap">{log.user_name || log.user_id || "-"}</td>
                             <td className="py-2 pr-3">{renderStatusBadge(log.status)}</td>
                             <td className="py-2 pr-3 whitespace-nowrap">{renderActionLabel(log)}</td>

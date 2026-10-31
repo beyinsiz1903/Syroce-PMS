@@ -1,0 +1,72 @@
+PMS EVENT CLOCK AND REJECTED-DEPARTURE ACCEPTANCE — 1 NOVEMBER 2026
+
+Scope: fix/pms-log-clock-and-workflow-acceptance, based on main 1cf9b3e4.
+This is a bounded QA acceptance, not a claim that every PMS combination or
+external provider delivery is certified. No production business write was made.
+
+Findings and fixes
+1. Reservation history sliced raw UTC strings; security/system/entity/KVKK
+   audit screens used the browser timezone. A common event parser now treats
+   legacy suffixless API datetimes as UTC and renders Europe/Istanbul once.
+   Explicit offsets are respected. The display zone is labelled. Calendar-only
+   business/stay/service dates are not converted into fabricated instants.
+   Cashier public helper defaults remain backward-compatible.
+2. A rejected checkout pre-posted the unposted room remainder. The following
+   night audit could then post the same night again. Both service paths now
+   evaluate the durable planned balance and business-date/override guards
+   before materializing the room remainder. Approved prepaid checkout still
+   completes revenue; a denied attempt does not create that room charge.
+3. A duplicate payment reference hit its unique index as an unhandled 500.
+   The index remains enforced; the API returns 409 before balance/cashier
+   mutations. A same-key idempotent replay still returns the original payment.
+4. Night-audit preview used UTC calendar date while normal run guards used
+   Türkiye date. Preview now agrees after hotel midnight without shifting the
+   authoritative operating day. Financial summary selects the latest tenant/
+   day run, not an earlier superseded dry run.
+5. System-log CSV retains the raw source timestamp AND labelled display time,
+   escapes fields, prevents spreadsheet formula execution, and disables export
+   after load failure. Late older responses cannot replace a newer refresh.
+
+Verification
+- Frontend full pinned clean environment: 437 files, 2425 passed, zero skip.
+  TZ=UTC. Focused 49 are a subset, additionally passed in America/New_York and
+  Europe/Istanbul; do not add those counts to the full-suite count.
+- Backend selected unit + real localhost replica report/folio/RBAC/offline/RNL
+  suite: 95 passed. This is not the full backend CI suite.
+- Changed-source ESLint, Ruff, production Vite build, theme guard and diff
+  whitespace check. No security/CI gate or ignore list was changed.
+- Before-fix artifacts retain nine failing UI clock tests, denied-checkout
+  regression failures, duplicate-reference failure and stale-audit-status
+  failure. Intermediate environment/fixture failures were not deleted.
+- An extra legacy Phase5 test probe has six failures reproduced with original
+  main V2 source as well. They are not counted as passes and are not presented
+  as regressions fixed here; existing CI exclusions were not expanded.
+
+Normal full-stack QA, provider egress blocked, explicit localhost DB only
+- New isolated QA hotel 900032, one room, one 31 Oct -> 1 Nov stay, 100 TRY.
+- 40 TRY spa and 20 TRY food with explicit service day/time; 5 TRY wrong
+  charge voided. 70 deposit - 20 partial refund + 10 interim = 60 net paid.
+- Safe retries preserve original IDs; debt checkout 402; no room remainder
+  left by the denied request. Dry run does not advance the day. Actual local
+  night close advances 31 Oct -> 1 Nov once; second close is rejected 409.
+- Exactly one room charge of 100; final extra payment 100; folio due zero,
+  checkout persisted. First duplicate-reference 500 was read-reconciled as
+  having no new payment before a distinct new reference/key was submitted.
+- Manual cash in 40/out 10; X and Z: in 220, out 30, counted/expected 190,
+  difference zero, six durable transactions. No real money/card/provider use.
+- Day 31 revenue 160, net payments 60; day 1 revenue 0/payments 100. Two-day
+  totals revenue/payments 160/160; no cross-day payment fabrication. The shift
+  spans operating days: day-31 period is not equal to whole-shift Z by design.
+- Real browser QA screenshots show 1 Nov 00:19 opening/creation and 01:02
+  checkout/closing, explicitly Europe/Istanbul, for source 31 Oct UTC events.
+
+Evidence (preserved outside the git source tree)
+pms-log-workflow-20261031.eaW350/: before/after XML, full UI log/build,
+normal request/result pairs, corrected-night-hotel/ reports and source rows,
+qa-z-clock-ui.png, qa-guest-clock-ui.png, qa-history-clock-ui.png.
+Earlier rejected fixtures and their source rows remain intact, not reseeded.
+
+Production release is still PR1476's 1cf9b3e4 until this PR is merged/deployed.
+Fresh release/health guards and 34 protected source comparisons passed GET-only.
+After merge/deploy, exact head/real deploy job/health and the bounded live UI
+acceptance must be repeated. Local QA is never substituted for that gate.

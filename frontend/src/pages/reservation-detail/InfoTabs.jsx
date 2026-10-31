@@ -18,6 +18,7 @@ import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
 import { exelyReservationDetails } from '@/utils/exelyReservation';
 import { reservationPaymentSummary } from './paymentSummary';
 import { latestCollectionPayment, paymentMethod } from '@/lib/folioPayments';
+import { HOTEL_EVENT_TIME_ZONE_LABEL } from '@/lib/hotelEventTime';
 const ALERT_LEVEL_BG = {
   danger: 'bg-red-50 border-red-300 text-red-800',
   warning: 'bg-amber-50 border-amber-300 text-amber-800',
@@ -221,20 +222,11 @@ export function GeneralInfoTab({
             <StatCard icon={CalendarDays} label="Giriş Tarihi" value={fmtDate(booking?.check_in)} sub={booking?.check_in_time || booking?.checkin_time || '14:00'} tone="emerald" />
             <StatCard icon={CalendarClock} label="Çıkış Tarihi" value={fmtDate(booking?.check_out)} sub={booking?.check_out_time || booking?.checkout_time || '12:00'} tone="amber" />
             <StatCard icon={Moon} label="Konaklama Süresi" value={`${nights} gece`} tone="indigo" />
-            {booking?.created_at && <StatCard icon={Clock} label="Rezervasyon Tarihi" value={fmtDate(booking.created_at)} sub={new Date(booking.created_at).toLocaleTimeString('tr-TR', {
-            hour: '2-digit',
-            minute: '2-digit'
-          })} tone="slate" />}
+            {booking?.created_at && <StatCard icon={Clock} label="Rezervasyon Tarihi" value={fmtDateTime(booking.created_at)} sub={HOTEL_EVENT_TIME_ZONE_LABEL} tone="slate" />}
           </div>
           {(booking?.checked_in_at || booking?.checked_out_at) && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {booking?.checked_in_at && <StatCard icon={CheckCircle2} label="Gerçekleşen Giriş" value={new Date(booking.checked_in_at).toLocaleString('tr-TR', {
-            dateStyle: 'short',
-            timeStyle: 'short'
-          })} tone="emerald" />}
-              {booking?.checked_out_at && <StatCard icon={CheckCircle2} label="Gerçekleşen Çıkış" value={new Date(booking.checked_out_at).toLocaleString('tr-TR', {
-            dateStyle: 'short',
-            timeStyle: 'short'
-          })} tone="slate" />}
+              {booking?.checked_in_at && <StatCard icon={CheckCircle2} label="Gerçekleşen Giriş" value={fmtDateTime(booking.checked_in_at)} sub={HOTEL_EVENT_TIME_ZONE_LABEL} tone="emerald" />}
+              {booking?.checked_out_at && <StatCard icon={CheckCircle2} label="Gerçekleşen Çıkış" value={fmtDateTime(booking.checked_out_at)} sub={HOTEL_EVENT_TIME_ZONE_LABEL} tone="slate" />}
             </div>}
         </section>
 

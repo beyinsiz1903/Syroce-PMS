@@ -16,6 +16,7 @@ import {
 } from '@/utils/paymentClassification';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { calculateFinancialLine, parseMoney, parseQuantity, parseTaxRate } from '@/lib/financialInput';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 const VAT_OPTIONS = [{
   value: '0',
   label: '%0'
@@ -476,8 +477,8 @@ th{background:#f5f5f5}
                                     {charge.voided && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">İPTAL</span>}
                                   </div>
                                   <div className="text-xs text-gray-500 capitalize">{charge.charge_category}</div>
-                                  <div className="text-xs text-gray-400">
-                                    {new Date(charge.created_at || charge.date).toLocaleString()}
+                                  <div title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-xs text-gray-400">
+                                    {formatHotelEventTimestamp(charge.created_at || charge.date)}
                                   </div>
                                   {hasDiscount && <div className="text-xs text-amber-700 mt-1">
                                       İndirim: −{money(charge.discount_amount)}
@@ -524,7 +525,7 @@ th{background:#f5f5f5}
                                 <div className="text-xs text-gray-500 capitalize">{payment.payment_type}</div>
                                 {payment.reference && <div className="text-xs text-gray-400">Ref: {payment.reference}</div>}
                                 <div className="text-xs text-gray-400">
-                                  {new Date(payment.created_at || payment.processed_at).toLocaleString()}
+                                  {formatHotelEventTimestamp(payment.created_at || payment.processed_at)} · {HOTEL_EVENT_TIME_ZONE_LABEL}
                                 </div>
                                 {payment.voided && payment.void_reason && <div className="text-xs text-red-600 mt-1">İade nedeni: {payment.void_reason}</div>}
                               </div>
@@ -750,7 +751,7 @@ th{background:#f5f5f5}
                 <div className="text-right">
                   <div className="text-3xl font-light text-gray-400 tracking-widest uppercase mb-2">PROFORMA</div>
                   <div className="text-sm text-gray-700"><span className="font-medium">Fatura No:</span> {proforma.folio?.folio_number}</div>
-                  <div className="text-sm text-gray-700"><span className="font-medium">Tarih:</span> {new Date(proforma.generated_at).toLocaleString()}</div>
+                  <div className="text-sm text-gray-700"><span className="font-medium">Düzenleme zamanı:</span> {formatHotelEventTimestamp(proforma.generated_at)} · {HOTEL_EVENT_TIME_ZONE_LABEL}</div>
                 </div>
               </div>
 
@@ -960,7 +961,7 @@ th{background:#f5f5f5}
                           {op.reason && <div className="text-xs text-gray-700 mt-1">Neden: {op.reason}</div>}
                           {(op.charge_ids || []).length > 0 && <div className="text-xs text-gray-500">{op.charge_ids.length} işlem aktarıldı</div>}
                           <div className="text-[11px] text-gray-400 mt-1">
-                            {op.performed_by_name || op.performed_by} • {op.performed_at ? new Date(op.performed_at).toLocaleString() : ''}
+                            {op.performed_by_name || op.performed_by} • {op.performed_at ? formatHotelEventTimestamp(op.performed_at) : '—'} · {HOTEL_EVENT_TIME_ZONE_LABEL}
                           </div>
                         </div>
                         {op.amount != null && <div className="font-bold">{money(op.amount)}</div>}

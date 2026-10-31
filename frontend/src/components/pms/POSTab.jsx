@@ -12,8 +12,9 @@ import {
   Plus, Monitor, AlertCircle, ExternalLink,
 } from 'lucide-react';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp, hotelEventDay } from '@/lib/hotelEventTime';
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => hotelEventDay();
 const posMoney = (value, code) => /^[A-Z]{3}$/.test(code || '') ? formatCurrency(value, code, { decimals: 2 }) : `${Number(value).toLocaleString('tr-TR')} (para birimi bilinmiyor)`;
 
 const POSTab = ({ businessDate }) => {
@@ -191,7 +192,7 @@ const POSTab = ({ businessDate }) => {
                         {order.guest_name ? ` • ${order.guest_name}` : ''}
                       </div>
                       <div className="text-xs text-gray-400">
-                        {order.created_at ? new Date(order.created_at).toLocaleString(i18n.language) : ''}
+                        <span title={HOTEL_EVENT_TIME_ZONE_LABEL}>{order.created_at ? formatHotelEventTimestamp(order.created_at) : '—'}</span>
                         {order.items_count != null ? ` • ${order.items_count} ${tc('items')}` : ''}
                       </div>
                     </div>

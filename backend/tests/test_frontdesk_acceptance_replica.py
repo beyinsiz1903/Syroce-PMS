@@ -173,3 +173,24 @@ async def test_foreign_payment_requires_explicit_cashier_fx_before_any_durable_w
     result = await acceptance.api.post(url, json={**payload, "currency": "TRY", "received_to_try_rate": 40})
     assert result.status_code == 422
     assert (await acceptance.db.bookings.find_one({"id": "synthetic-stay"}))["paid_amount"] == 0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_payment_reference_is_a_conflict_without_balance_or_cashier_mutation(acceptance):
+    a = acceptance
+    await a.db.payments.create_index([('tenant_id', 1), ('booking_id', 1), ('reference', 1)], unique=True, name='uniq_payment_reference_active')
+    url = '/api/frontdesk/folio/synthetic-stay/payment'
+    body = {'amount': 10, 'currency': 'USD', 'method': 'card', 'received_to_try_rate': 40, 'reference': 'LOCAL-QA-UNIQUE-REF'}
+    first = await a.api.post(url, json=body, headers={'Idempotency-Key': 'reference-first'})
+    assert first.status_code == 200, first.text
+    before_folio = await a.db.folios.find_one({'id': 'synthetic-folio'})
+    before_booking = await a.db.bookings.find_one({'id': 'synthetic-stay'})
+    before_cash = await a.db.cashier_transactions.count_documents({})
+    replay = await a.api.post(url, json=body, headers={'Idempotency-Key': 'reference-first'})
+    assert replay.status_code == 200 and replay.json()['id'] == first.json()['id']
+    conflict = await a.api.post(url, json={**body, 'amount': 20}, headers={'Idempotency-Key': 'reference-conflict'})
+    assert conflict.status_code == 409, conflict.text
+    assert await a.db.payments.count_documents({}) == 1
+    assert await a.db.folios.find_one({'id': 'synthetic-folio'}) == before_folio
+    assert await a.db.bookings.find_one({'id': 'synthetic-stay'}) == before_booking
+    assert await a.db.cashier_transactions.count_documents({}) == before_cash

@@ -20,6 +20,7 @@ import { promptDialog } from '@/lib/dialogs';
 import CallButton from '@/components/contact-center/CallButton';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 
 export const normalizeGuestNotes = (value) => {
   if (value == null || value === '') return [];
@@ -358,7 +359,7 @@ const Guest360Dialog = ({
               <div className="space-y-2 max-h-32 overflow-y-auto mb-2">
                 {guestNotes.map((note, idx) => (
                   <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
-                    <div className="font-semibold">{note.created_by}{note.created_at ? ` · ${new Date(note.created_at).toLocaleString('tr-TR')}` : ''}</div>
+                    <div title={HOTEL_EVENT_TIME_ZONE_LABEL} className="font-semibold">{note.created_by}{note.created_at ? ` · ${formatHotelEventTimestamp(note.created_at)}` : ''}</div>
                     <div>{note.text}</div>
                   </div>
                 ))}
