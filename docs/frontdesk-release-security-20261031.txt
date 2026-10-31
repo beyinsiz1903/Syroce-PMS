@@ -1,5 +1,30 @@
 31 EKİM — PR1468 SONRASI GÜVENLİK GATE'İ, CANLI KABUL DEĞİL
 
+PR1469 ilk head430aa44846e009db636958ff465e5568f097d76c sonrası takip:
+Python audit gate geçti(0unignored/2öncekiECDSAalias),ama Node runtime
+audit'i follow-redirects1.16.1/GHSA-mrwp-f3q8-3g9p/CVE-2026-116689'da
+durdu. Başarısız iş:
+https://github.com/beyinsiz1903/Syroce-PMS/actions/runs/41178828401/job/124472031045
+Bu,artık giderilmiş pyasn1/OTEL sorununun tekrarı değildir.
+Yarn resolution+npm override1.16.2;iki lockfile yalnız bu pakette güncellendi.
+Registry tarball SHA512 resmi npm metadata'sıyla doğrulandı. Yeni6Node
+regresyonu yalnız127.0.0.1ephemeral iki HTTP server/sentetik başlık kullanır:
+aynırealm/çaprazrealm/array-form header'da çaprazorigin credential silme,
+built-inAuthorization/Cookie koruması,aynıorigin custom başlığı koruma,
+kurulu sürüm/iki package-manager pin/lock kontrolü.
+Doğrudan kütüphane testi yapılır;Axios'ta gerçek veri sızıntısı yaşandığı
+iddiası YOKTUR. Upstream advisory de Axios1.20.0 için reproduksiyon
+olmadığını açıklar;runtime bağımlılık bulgusu yamalanır,gategevşetilmez.
+https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-mrwp-f3q8-3g9p
+https://github.com/follow-redirects/follow-redirects/releases/tag/v1.16.2
+DonmuşYarnkurulumu ve6yeniNode testi geçti. Runtime audit artık0high/
+0critical,3low+1moderate;Yarnexit6. Aynıyüksek/kritikbitmask24korundu;
+low/moderate açıklar saklanmadı ve yok sayıldı diye raporlanmaz.
+Asılfrontend/node_modules başka checkout'a bağlı olduğundan değiştirilmedi.
+İzoleQA kaynak kopyası/yeni bağımlılıklar kullanıldı;ilk özel modules-folder
+isim çözümleme hatası yalnız yerel kurulumdu,standartnode_modules ile
+giderildi. Uygulama/CIkoruması değiştirilmedi. ÜretimVitebuild başarılı.
+
 PR1468 head:c23a9b80fd7ba782a0e0880c752cb41795066afd
 Merge:54e94916a6b9264c2fd8e1fe8de35b5bf2b4acd0 (31Ekim02:00UTC).
 PR head CI15success/3beklenen skip. Ancak merge-main CI güvenlikte durdu:
