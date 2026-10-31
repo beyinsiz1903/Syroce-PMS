@@ -1,0 +1,80 @@
+Concierge — 10 kategori kalıcı veri ve akış kabulü • 31 Ekim 2026
+
+Kapsam ve canlı sürüm
+Yalnız Demo Hotel 100001. PR1472 head 5c114610787acbe696801078204280c1f3a72a0b,
+merge/live d598f20bba401b8768ac56dbacb2a3590c8f8287. Exact-head 15 başarılı
+kontrol + 3 beklenen skip; main ve frontend CI başarılı. Gerçek sunucu deploy
+41201009580 / Deploy to Server başarılı, health aynı SHA ve healthy.
+Eski atlanan server job başarı yerine kullanılmadı. 26 Ekim iş günü açık,
+Exely ARI/pull ve HotelRunner kapalı, V2 bağlantılar paused kaldı.
+
+Canlı sonuç
+10 yeni istek, 10 farklı kategori, mevcut 1 kayıt ile toplam 11 kalıcı kaynak.
+Restoran, transfer, tur/gezi, bilet, SPA, vale, paket/kargo, emanet kasası,
+uyandırma ve diğer talep kategorilerinin hepsinde veri vardır.
+Mevcut 102 ve 103 oda misafirleri/açık TRY folyoları normal API ile doğrulandı.
+Uydurma kimlik/telefon, gerçek sağlayıcı rezervasyonu, satın alma, fiziksel
+hizmet teslimi veya tahsilat kaydı oluşturulmadı. İnsan isimleri mevcut
+otel kayıtlarından, SPA/transfer/otopark fiyatları kayıtlı tarifelerden alındı.
+Üç fiyat (1500 / 850 / 150 TRY) yalnız fiyat bilgisi; gelir ve folyo ücreti değil.
+Yeni kaynakların charge_to_folio=false ve folio_charge_id boş kalması doğrulandı.
+
+Restoran normal UI'da oluşturuldu; saat 19:00→19:30 düzenlendi ve başlatıldı.
+Diğer dokuz kayıt normal yetkili API ile bir kez oluşturuldu. İç bilgi hazırlığı
+olan tur ve emanet kasası notları başlatılıp tamamlandı. Vale ve oda konforu
+koordinasyonu başlatıldı. Satın alınmamış bilet iç talebi UI'da iptal edildi,
+silinmedi. Bekleyen 4, işlemde 3, tamamlanan 3, iptal 1 = toplam 11.
+10 kategori filtresi, misafir/oda araması, 3 durum filtresi ve tam tarayıcı
+yenilemesi doğrulandı. Silme yapılmadı; geçmiş fazlar tekrar edilmedi.
+
+Mali ve kaynak korumaları
+31 fiziksel oda/QT2ED0, rezervasyonlar, misafir kaynakları, cari, stok,
+25/26/30 Ekim mali özetleri, KBS kuyruk, gelir ayarları, katalog, SPA/ulaşım
+tarifeleri, vardiya ve ham oda kaynakları önce/sonra aynı. Üç hedef konaklamanın
+tam mali detayları ve folyo pencereleri aynı. Önceki 600 TRY tur kaydı değişmedi;
+mevcut tek canonical ücret doğrulandı, tekrar işlenmedi. Eski vergi/kur/para
+birimi değiştirilmedi. Audit:11056 kontrol, 0 kopuk/0 doğrulanamaz;
+2882 legacy satır ayrıca skipped, truncated=false/degraded=false.
+Ücretsiz iç isteklerin bütün geçişleri mühürlü mali audit olayı iddiası değildir:
+normal kaynak created_by/updated_by ve özel kalıcı istek/sonuç kanıtı korunur.
+
+Bu dalın giderdiği hatalar (henüz canlı kabul sayılmaz)
+1 Eski room_id bağlantılı aktif konaklama Concierge oda aramasında bulunamıyordu.
+  Artık tenant içi aktif fiziksel oda→room_id yetkili eşleşme; room_number yalnız
+  gerçek legacy fallback. Çelişkili oda/konaklama veya çoklu aktif konaklama
+  fail-closed. Misafir tenant içi profilden, açık folyo doğrulanarak alınır.
+2 Oda değişirken önceki misafir/folyo korunuyor, yavaş eski yanıt yeni formu
+  bozabiliyordu. Alanlar hemen temizlenir, eski yanıtlar sequence ile atılır,
+  debounce/okuma sırasında kayıt kapalı; kapanan formun yanıtı geri yazılmaz.
+3 Birden fazla açık folyoda keyfî ilk hesap seçimi engellendi:
+  otomatik eşleşme boş bırakılır, seçim gereği gösterilir, ücretlendirme kapalı.
+  API'de açıkça verilen hesap da aynı tenant/konaklama/açık durum kontrolündedir.
+4 NaN/Infinity/bool/fractional pax ve iki ondalığı aşan tutarlar source oluşmadan
+  veya değişmeden reddedilir. UI 1.5 kişiyi sessizce 15'e dönüştürmez.
+5 Dar ekranda action kolonu metni birkaç piksele sıkıştırıyordu. Kartlar küçük
+  ekranda alt alta; metin kolonu esnek ve tam genişlikte. Yerel 518px ve1280px
+  görsel karşılaştırma yapıldı. Ücretlendirilmemiş fiyatlar açıkça fiyat bilgisi.
+6 confirmed kayıtları toplam KPI'dan düşüyordu; global durum toplamı düzeltildi.
+
+Yerel doğrulama ve sınırlar
+Yeni gerçek LOCAL Mongo replica kategori/eşleşme paketi:42 test; currency2 ile44.
+Concierge/departman/folyo/rapor hedefli regresyon:174 passed (86 mevcut utcnow
+deprecation uyarısı). İlk kırmızı kanıt24failed/6passed korundu. İlk geniş seçimde
+localhost:8000 HTTP uygulaması isteyen ayrı transfer-history testinin3 setup
+hatası vardı; çalışmayan altyapı başarılı sayılmadı, XML silinmedi. Son174 test
+paketi yalnız gerçek yerel fixture kullanan dosyalardan oluşur; CI gate değişmedi.
+Tam UI paketi2357passed; son fiyat açıklaması/i18n düzeltmesi sonrası aynı6 hedef
+test tekrar geçti (ayrı toplam yapılmaz). ESLint, Ruff, üretim build ve diff temiz.
+Yeni PR'ın CI'si ayrıca doğrulanır; bu dal otomatik merge/deploy edilmez.
+Bu sonuç sadece Concierge10 kategori kapsamıdır; tüm Ön Büro/19 modül veya
+gerçek sağlayıcı hizmetlerinin eksiksiz kabul edildiği anlamına gelmez.
+
+Özel kanıtlar (repo dışında, önceki dosyalar korunur)
+Çalışma alanı / concierge-categories-20261031/acceptance.json
+plan.json, created.json, restaurant-ui-create-intent.json,
+restaurant-create-reconciled.json, ui-actions-intent.json,
+ui-actions-reconciled.json ve kategori başına kalıcı request/result dosyaları.
+ui-category-filters.json, ui-search.json, ui-*-reloaded.*, ui-live-wide-final.png.
+backend-regression-v2.xml (ilk HTTP setup hatası), backend-regression-v3.xml,
+frontend-full-tests-v2.json, ui-live-narrow-before-fix.png ve
+ui-local-narrow-fixed.png (yerel örnek; canlı düzeltme kanıtı değildir).

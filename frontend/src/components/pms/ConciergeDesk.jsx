@@ -93,6 +93,17 @@ const ConciergeDesk = () => {
   const [roomLookupBusy, setRoomLookupBusy] = useState(false);
   const [roomLookupHint, setRoomLookupHint] = useState(null);
   const lookupTimerRef = useRef(null);
+  const lookupSequenceRef = useRef(0);
+  const invalidateLookup = useCallback(() => {
+    ++lookupSequenceRef.current;
+    clearTimeout(lookupTimerRef.current);
+    setRoomLookupBusy(false);
+  }, []);
+
+  useEffect(() => () => {
+    ++lookupSequenceRef.current;
+    clearTimeout(lookupTimerRef.current);
+  }, []);
 
   const loadRequests = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -126,45 +137,54 @@ const ConciergeDesk = () => {
     return () => clearInterval(id);
   }, [loadRequests]);
 
-  const lookupRoom = useCallback(async (roomNo) => {
+  const lookupRoom = useCallback(async (roomNo, sequence) => {
     const room = (roomNo || '').trim();
     if (!room) {
-      setRoomLookupHint(null);
       return;
     }
-    setRoomLookupBusy(true);
     try {
       const res = await axios.get(`/concierge/active-room/${encodeURIComponent(room)}`);
+      if (sequence !== lookupSequenceRef.current) return;
       if (res.data?.found) {
         setForm(prev => ({
           ...prev,
-          guest_name: prev.guest_name?.trim() ? prev.guest_name : (res.data.guest_name || ''),
+          guest_name: res.data.guest_name || '',
           booking_id: res.data.booking_id || '',
           folio_id: res.data.folio_id || '',
         }));
-        setRoomLookupHint({ ok: true, name: res.data.guest_name || '—', folio: !!res.data.folio_id });
+        setRoomLookupHint({ ok: true, name: res.data.guest_name || '—', folio: !!res.data.folio_id,
+          selectionRequired: !!res.data.folio_selection_required });
       } else {
         setRoomLookupHint({ ok: false });
-        setForm(prev => ({ ...prev, booking_id: '', folio_id: '' }));
       }
     } catch {
-      setRoomLookupHint(null);
+      if (sequence === lookupSequenceRef.current) setRoomLookupHint({ ok: false, error: true });
     } finally {
-      setRoomLookupBusy(false);
+      if (sequence === lookupSequenceRef.current) setRoomLookupBusy(false);
     }
   }, []);
 
   const onRoomChange = (val) => {
-    setForm(prev => ({ ...prev, room_number: val }));
-    if (lookupTimerRef.current) clearTimeout(lookupTimerRef.current);
-    lookupTimerRef.current = setTimeout(() => lookupRoom(val), 500);
+    const sequence = ++lookupSequenceRef.current;
+    clearTimeout(lookupTimerRef.current);
+    setForm(prev => ({ ...prev, room_number: val, guest_name: '', booking_id: '', folio_id: '', charge_to_folio: false }));
+    setRoomLookupHint(null);
+    setRoomLookupBusy(!!val.trim());
+    if (val.trim()) lookupTimerRef.current = setTimeout(() => lookupRoom(val, sequence), 500);
   };
 
   const validate = () => {
+    if (roomLookupBusy || roomLookupHint?.error) return false;
     if (!form.type) { toast.error(tc('validationType')); return false; }
     if (!form.room_number?.trim()) { toast.error(tc('validationRoom')); return false; }
     const amt = Number(form.amount || 0);
-    if (Number.isNaN(amt) || amt < 0) { toast.error(tc('validationAmount')); return false; }
+    if (!Number.isFinite(amt) || amt < 0 || amt > 1_000_000_000 || Math.abs(amt * 100 - Math.round(amt * 100)) > 0.00001) {
+      toast.error(tc('validationAmount')); return false;
+    }
+    const pax = Number(form.pax);
+    if (!Number.isInteger(pax) || pax < 1 || pax > 99) {
+      toast.error(tc('validationPax', { defaultValue: 'Kişi sayısı 1–99 arasında tam sayı olmalıdır.' })); return false;
+    }
     return true;
   };
 
@@ -175,7 +195,7 @@ const ConciergeDesk = () => {
     details: form.details.trim(),
     date: form.date,
     time: form.time,
-    pax: parseInt(form.pax, 10) || 1,
+    pax: Number(form.pax),
     notes: form.notes.trim(),
     priority: form.priority,
     amount: Number(form.amount || 0),
@@ -204,6 +224,7 @@ const ConciergeDesk = () => {
   };
 
   const startEdit = (req) => {
+    invalidateLookup();
     setEditingId(req.id);
     setForm({
       type: req.type || '',
@@ -278,6 +299,7 @@ const ConciergeDesk = () => {
   };
 
   const closeDialog = () => {
+    invalidateLookup();
     setShowNew(false);
     setEditingId(null);
     setForm(emptyForm());
@@ -339,7 +361,7 @@ const ConciergeDesk = () => {
             <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
             {tc('refresh')}
           </Button>
-          <Button onClick={() => { setEditingId(null); setForm(emptyForm()); setRoomLookupHint(null); setShowNew(true); }}>
+          <Button onClick={() => { invalidateLookup(); setEditingId(null); setForm(emptyForm()); setRoomLookupHint(null); setShowNew(true); }}>
             <Plus className="w-4 h-4 mr-1" /> {tc('newRequest')}
           </Button>
         </div>
@@ -402,7 +424,7 @@ const ConciergeDesk = () => {
             <CardContent className="p-8 text-center space-y-3">
               <ConciergeBell className="w-10 h-10 text-slate-300 mx-auto" />
               <p className="text-slate-500">{tc('emptyHint')}</p>
-              <Button onClick={() => { setEditingId(null); setForm(emptyForm()); setShowNew(true); }}>
+              <Button onClick={() => { invalidateLookup(); setEditingId(null); setForm(emptyForm()); setRoomLookupHint(null); setShowNew(true); }}>
                 <Plus className="w-4 h-4 mr-1" /> {tc('createCta')}
               </Button>
             </CardContent>
@@ -415,12 +437,12 @@ const ConciergeDesk = () => {
           return (
             <Card key={req.id}>
               <CardContent className="p-3">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between" data-testid="concierge-request-row">
+                  <div className="flex w-full items-start gap-3 min-w-0 flex-1">
                     <div className="p-2 rounded-lg bg-slate-100 shrink-0">
                       <Icon className="h-4 w-4 text-slate-700" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1 break-words">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-slate-900">{req.guest_name || '—'}</span>
                         <StatusBadge intent="neutral">{tc('room')} {req.room_number || '—'}</StatusBadge>
@@ -429,7 +451,8 @@ const ConciergeDesk = () => {
                         {req.amount > 0 && (
                           <StatusBadge intent={req.folio_charge_id ? 'success' : 'warning'} icon={Wallet}>
                             {formatCurrency(req.amount, req.currency || cachedTenantCurrency())}
-                            {req.folio_charge_id ? ' · ' + tc('folioCharged') : (req.charge_to_folio ? ' · ' + tc('folioPending') : '')}
+                            {' · ' + tc(req.folio_charge_id ? 'folioCharged' : (req.charge_to_folio ? 'folioPending' : 'priceInfo'),
+                              { defaultValue: 'Fiyat bilgisi' })}
                           </StatusBadge>
                         )}
                       </div>
@@ -444,7 +467,7 @@ const ConciergeDesk = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex shrink-0 items-center gap-2 flex-wrap">
                     <StatusBadge intent={intent}>{tc(STATUS_MAP[req.status] || 'statusPending')}</StatusBadge>
                     {req.status === 'pending' && (
                       <Button size="sm" variant="outline" disabled={isBusy} onClick={() => updateStatus(req.id, 'in_progress')}>
@@ -524,10 +547,9 @@ const ConciergeDesk = () => {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>{tc('roomNo')} *</Label>
-                <Input value={form.room_number}
+                <Label htmlFor="concierge-room">{tc('roomNo')} *</Label>
+                <Input id="concierge-room" value={form.room_number}
                   onChange={e => onRoomChange(e.target.value)}
-                  onBlur={() => lookupRoom(form.room_number)}
                   inputMode="numeric"
                   placeholder="101" />
                 {roomLookupBusy && <p className="text-xs text-slate-500 mt-1"><Loader2 className="w-3 h-3 animate-spin inline mr-1" />{tc('lookingUp')}</p>}
@@ -537,18 +559,23 @@ const ConciergeDesk = () => {
                     {tc('roomMatched', { name: roomLookupHint.name })}
                     {roomLookupHint.folio
                       ? <span className="ml-1 text-slate-500">· {tc('linkedFolio')}</span>
-                      : <span className="ml-1 text-amber-700">· {tc('noOpenFolio')}</span>}
+                      : <span className="ml-1 text-amber-700">· {roomLookupHint.selectionRequired
+                        ? tc('folioSelectionRequired', { defaultValue: 'Birden fazla açık folyo var; bu formda otomatik ücretlendirme kapalıdır.' })
+                        : tc('noOpenFolio')}</span>}
                   </p>
                 )}
                 {!roomLookupBusy && roomLookupHint && !roomLookupHint.ok && (
                   <p className="text-xs text-amber-700 mt-1">
-                    <AlertCircle className="w-3 h-3 inline mr-1" />{tc('roomNotFound')}
+                    <AlertCircle className="w-3 h-3 inline mr-1" />{roomLookupHint.error
+                      ? tc('roomLookupError', { defaultValue: 'Oda eşleşmesi doğrulanamadı. Oda bilgisini yeniden girip kontrol edin.' })
+                      : tc('roomNotFound')}
                   </p>
                 )}
               </div>
               <div>
-                <Label>{tc('guestName')}</Label>
-                <Input value={form.guest_name}
+                <Label htmlFor="concierge-guest">{tc('guestName')}</Label>
+                <Input id="concierge-guest" value={form.guest_name}
+                  disabled={roomLookupBusy}
                   onChange={e => setForm(p => ({ ...p, guest_name: e.target.value }))} />
               </div>
             </div>
@@ -565,9 +592,9 @@ const ConciergeDesk = () => {
                   onChange={e => setForm(p => ({ ...p, time: e.target.value }))} />
               </div>
               <div>
-                <Label>{tc('paxLabel')}</Label>
-                <Input type="number" min="1" step="1" value={form.pax}
-                  onChange={e => setForm(p => ({ ...p, pax: e.target.value.replace(/\D/g, '') }))} />
+                <Label htmlFor="concierge-pax">{tc('paxLabel')}</Label>
+                <Input id="concierge-pax" type="number" min="1" max="99" step="1" value={form.pax}
+                  onChange={e => setForm(p => ({ ...p, pax: e.target.value }))} />
               </div>
             </div>
 
@@ -622,7 +649,7 @@ const ConciergeDesk = () => {
             </div>
 
             <div className="flex gap-2 pt-1">
-              <Button className="flex-1" onClick={editingId ? saveEdit : createRequest} disabled={submitting}>
+              <Button className="flex-1" onClick={editingId ? saveEdit : createRequest} disabled={submitting || roomLookupBusy || roomLookupHint?.error}>
                 {submitting
                   ? (editingId ? tc('saving') : tc('creating'))
                   : (editingId ? tc('saveBtn') : tc('createRequest'))}
