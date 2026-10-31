@@ -57,6 +57,7 @@ export default function ProfileUdfPage() {
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [values, setValues] = useState({});
   const [savingValues, setSavingValues] = useState(false);
+  const [valuesConflict, setValuesConflict] = useState(false);
 
   const handleErr = useCallback((title, e) => {
     toast({
@@ -125,18 +126,28 @@ export default function ProfileUdfPage() {
     try {
       const id = g.id || g._id;
       const r = await api.get(`/profile-udf/guests/${id}`);
-      setSelectedGuest({ id, name: r.data.guest_name });
+      setSelectedGuest({ id, name: r.data.guest_name, revision: r.data.revision });
       setValues(r.data.values || {});
+      setDefs(r.data.definitions || []);
+      setValuesConflict(false);
     } catch (e) { handleErr("Misafir UDF yüklenemedi", e); }
   };
 
   const saveValues = async () => {
-    if (!selectedGuest) return;
+    if (!selectedGuest || !/^[a-f0-9]{64}$/.test(selectedGuest.revision || '') || valuesConflict || savingValues) return;
     setSavingValues(true);
     try {
-      await api.put(`/profile-udf/guests/${selectedGuest.id}`, { values });
+      // Preserve inactive/legacy keys on the server, but do not submit them as
+      // unknown editable definitions. The revision still covers the whole map.
+      const editableValues = Object.fromEntries(defs.filter(def => Object.hasOwn(values, def.key)).map(def => [def.key, values[def.key]]));
+      const result = await api.put(`/profile-udf/guests/${selectedGuest.id}`, { values: editableValues, expected_revision: selectedGuest.revision });
+      setValues(result.data.values);
+      setSelectedGuest(previous => ({ ...previous, revision: result.data.revision }));
       toast({ title: "UDF değerleri kaydedildi" });
-    } catch (e) { handleErr("Kaydedilemedi", e); }
+    } catch (e) {
+      if (e.response?.status === 409) setValuesConflict(true);
+      handleErr("Kaydedilemedi", e);
+    }
     finally { setSavingValues(false); }
   };
 
@@ -340,7 +351,7 @@ export default function ProfileUdfPage() {
                       <TableCell><code className="text-xs">{d.key}</code></TableCell>
                       <TableCell className="font-medium">{d.label}</TableCell>
                       <TableCell>{TYPES.find((t) => t.v === d.type)?.l || d.type}</TableCell>
-                      <TableCell className="text-center">{d.required ? "" : ""}</TableCell>
+                      <TableCell className="text-center">{d.required ? "Evet" : "Hayır"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {(d.options || []).join(", ")}
                       </TableCell>
@@ -445,8 +456,14 @@ export default function ProfileUdfPage() {
                         </div>
                       ))
                     )}
+                    {(valuesConflict || !/^[a-f0-9]{64}$/.test(selectedGuest.revision || '')) && (
+                      <div role="alert" className="text-sm text-amber-700">
+                        Kaynak sürümü doğrulanamadı veya değişti. Kaydetmeden önce yeniden yükleyin.
+                        <Button variant="outline" onClick={() => loadGuestUdf(selectedGuest)} disabled={savingValues}>Misafiri yeniden yükle</Button>
+                      </div>
+                    )}
                     {defs.length > 0 && (
-                      <Button onClick={saveValues} disabled={savingValues} data-testid="button-udf-save">
+                      <Button onClick={saveValues} disabled={savingValues || valuesConflict || !/^[a-f0-9]{64}$/.test(selectedGuest.revision || '')} data-testid="button-udf-save">
                         {savingValues ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
                         {t('cm.pages_ProfileUdfPage.kaydet')}
                       </Button>

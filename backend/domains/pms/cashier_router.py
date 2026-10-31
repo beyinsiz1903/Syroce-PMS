@@ -194,6 +194,8 @@ async def close_shift(
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
+    if shift.get("mice_pending_ids"):
+        raise HTTPException(409, "Bekleyen banket finans işlemi var; önce tamamlayıp yenileyin")
     now = datetime.utcnow()
     counted_amount = _cashier_number(body.get("counted_amount", 0), "Sayılan tutar")
     expected = (
@@ -201,7 +203,15 @@ async def close_shift(
         + _safe_float(shift.get("cash_in", 0))
         - _safe_float(shift.get("cash_out", 0))
     )
-    difference = counted_amount - expected
+    difference = round(counted_amount - expected, 2)
+    notes = body.get("notes", "")
+    if not isinstance(notes, str) or len(notes) > 2000:
+        raise HTTPException(400, "Kapanış açıklaması geçersiz (en fazla 2000 karakter).")
+    notes = notes.strip()
+    # Match the existing cashier UI threshold; direct API calls must not drop
+    # the explanation or bypass the same difference control.
+    if abs(difference) >= 50 and not notes:
+        raise HTTPException(400, "50 TL ve üzeri kasa farkında açıklama zorunludur.")
     close_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     closed = await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id, "status": "open", "cash_in": shift.get("cash_in"), "cash_out": shift.get("cash_out"), "$or": [{"mice_pending_ids": {"$exists": False}}, {"mice_pending_ids": {"$size": 0}}]},
@@ -215,6 +225,8 @@ async def close_shift(
                 "closing_denominations": body.get("denomination_counts", body.get("denominations", {})),
                 "closed_by": current_user.email,
                 "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
+                "closed_by_id": current_user.id,
+                "closing_notes": notes,
                 "closed_business_date": close_business_date,
             }
         },
@@ -229,6 +241,7 @@ async def close_shift(
         "closed_at": now.isoformat(),
         "closed_by": current_user.email,
         "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
+        "closing_notes": notes,
     }
 
 
@@ -945,6 +958,7 @@ async def period_report(
                 "transaction_count_period": len(txns_in_range),
                 "closing_amount": s.get("closing_amount"),
                 "difference": s.get("difference"),
+                "closing_notes": s.get("closing_notes") or "",
             }
         )
 
@@ -1000,6 +1014,8 @@ def _build_shift_report(shift: dict) -> dict:
         "opened_by_name": shift.get("opened_by_name"),
         "closed_at": shift.get("closed_at"),
         "closed_by_name": shift.get("closed_by_name"),
+        "closed_by_id": shift.get("closed_by_id"),
+        "closing_notes": shift.get("closing_notes") or "",
         "opening_amount": opening,
         "cash_in": cash_in,
         "cash_out": cash_out,
