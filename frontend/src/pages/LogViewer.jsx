@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -8,6 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, FileText, Search, RefreshCw, Download, Filter, AlertCircle, AlertTriangle, Info, Bug } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp, hotelEventDay } from '@/lib/hotelEventTime';
+
+const csvCell = value => {
+  const raw = String(value ?? '');
+  const safe = /^[\s]*[=+@-]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
+};
+export const buildSystemLogCsv = logs => '\uFEFF' + [
+  ['Timestamp (source UTC/offset)', 'İşlem zamanı', 'Saat dilimi', 'Level', 'User', 'Action', 'Message'],
+  ...logs.map(log => [log.timestamp, formatHotelEventTimestamp(log.timestamp), HOTEL_EVENT_TIME_ZONE_LABEL, log.level, log.user, log.action, log.message]),
+].map(row => row.map(csvCell).join(',')).join('\r\n');
 
 const LogViewer = ({ user }) => {
   const { t } = useTranslation();
@@ -19,25 +30,32 @@ const LogViewer = ({ user }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const requestVersion = useRef(0);
 
   useEffect(() => {
     loadLogs();
+    return () => { requestVersion.current += 1; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedLevel]);
 
   const loadLogs = async () => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
       setLoadError(false);
+      setLogs([]);
+      setLogLevels({});
       const params = new URLSearchParams();
       if (selectedLevel) params.append('level', selectedLevel);
       if (searchQuery) params.append('search', searchQuery);
       params.append('limit', '100');
 
       const res = await axios.get(`/system/logs?${params.toString()}`);
+      if (version !== requestVersion.current) return;
       setLogs(res.data.logs || []);
       setLogLevels(res.data.log_levels || {});
     } catch (error) {
+      if (version !== requestVersion.current) return;
       setLoadError(true);
       console.error('Failed to load logs', {
         status: error?.response?.status || null,
@@ -45,8 +63,10 @@ const LogViewer = ({ user }) => {
       });
       toast.error('Loglar yüklenemedi');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (version === requestVersion.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -80,16 +100,16 @@ const LogViewer = ({ user }) => {
   };
 
   const exportLogs = () => {
-    const csvContent = logs.map(log => 
-      `${log.timestamp},${log.level},${log.user},${log.action},"${log.message}"`
-    ).join('\n');
-    
-    const blob = new Blob([`Timestamp,Level,User,Action,Message\n${csvContent}`], { type: 'text/csv' });
+    if (loading || loadError || !logs.length) return;
+    const blob = new Blob([buildSystemLogCsv(logs)], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `logs_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `logs_${hotelEventDay()}.csv`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
     toast.success('Loglar indirildi');
   };
 
@@ -117,7 +137,7 @@ const LogViewer = ({ user }) => {
             </Button>
             <div>
               <h1 className="text-xl font-bold">Sistem Logları</h1>
-              <p className="text-xs text-gray-300">Desktop Log Viewer</p>
+              <p className="text-xs text-gray-300">{HOTEL_EVENT_TIME_ZONE_LABEL}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -125,6 +145,8 @@ const LogViewer = ({ user }) => {
               variant="ghost"
               size="sm"
               onClick={exportLogs}
+              aria-label="Logları CSV indir"
+              disabled={loading || loadError || !logs.length}
               className="text-white hover:bg-white/20"
             >
               <Download className="w-4 h-4" />
@@ -133,6 +155,7 @@ const LogViewer = ({ user }) => {
               variant="ghost"
               size="sm"
               onClick={handleRefresh}
+              aria-label="Logları yenile"
               disabled={refreshing}
               className="text-white hover:bg-white/20 p-2"
             >
@@ -222,8 +245,8 @@ const LogViewer = ({ user }) => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge className="text-xs">{log.level}</Badge>
-                        <span className="text-xs text-gray-500">
-                          {new Date(log.timestamp).toLocaleString('tr-TR')}
+                        <span title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-xs text-gray-500">
+                          {formatHotelEventTimestamp(log.timestamp)}
                         </span>
                         <span className="text-xs text-gray-600 font-medium">{log.user}</span>
                         {log.action && (

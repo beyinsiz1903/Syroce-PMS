@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ArrowLeft, Clock, Filter, Search, User, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye, Globe, Monitor, ShieldCheck, ShieldAlert, Download, LockKeyhole } from "lucide-react";
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 const API = "";
 const MODULE_LABELS = {
   pms: "PMS",
@@ -187,7 +188,7 @@ export function TimelineEvent({
   t,
   i18n
 }) {
-  const time = event.timestamp ? new Date(event.timestamp).toLocaleString(i18n.language) : "—";
+  const time = formatHotelEventTimestamp(event.timestamp);
   return <div data-testid={`timeline-event-${event.id || event.operation_name}`} className="border-l-2 border-gray-200 pl-4 pb-4 relative">
       <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-gray-400" />
       <div className="flex items-start justify-between">
@@ -201,7 +202,7 @@ export function TimelineEvent({
             </Badge>
           </div>
           <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500 flex-wrap">
-            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{time}</span>
+            <span title={HOTEL_EVENT_TIME_ZONE_LABEL} className="flex items-center gap-1"><Clock className="w-3 h-3" />{time}</span>
             <span className="flex items-center gap-1 break-all"><User className="w-3 h-3 shrink-0" />{auditActorLabel(event)}{event.actor_role ? ` · ${event.actor_role}` : ''}</span>
             {event.target_id && <span className="font-mono break-all">{String(event.target_id).startsWith('/api/') ? auditRequestPath(event) || String(event.target_id).split(/[?#]/)[0] : String(event.target_id)}</span>}
             {event.ip_address && <span data-testid="event-ip" className="flex items-center gap-1 font-mono" title={t("cm.pages_AuditTimelinePage.ip_adresi")}>
@@ -515,7 +516,7 @@ export default function AuditTimelinePage({
                     <p className="text-xs text-gray-600">{auditEntityLabel(entityTrail.entity_type)}: {entityTrail.entity_id} ({entityTrail.count || 0}{t("cm.pages_AuditTimelinePage.events")}</p>
                     {(entityTrail.trail || []).map((t, i) => <div key={t.id || i} className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
                         <p className="text-gray-800">{auditActionLabel(t.operation_name || t.operation || t.action)}</p>
-                        <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString(i18n.language) : "—"}</p>
+                        <p title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-gray-500">{formatHotelEventTimestamp(t.timestamp)}</p>
                         <p className="text-gray-600">İşlemi yapan: {auditActorLabel(t)}</p>
                         {t.evidence_source === 'reservation_activity_log' && <p className="text-gray-500">Rezervasyon işlem kaydı · imzalı denetim zincirinden ayrı kaynak</p>}
                         {(t.override_reason || t.metadata?.reason) && <p className="text-gray-700">Açıklama: {t.override_reason || t.metadata.reason}</p>}

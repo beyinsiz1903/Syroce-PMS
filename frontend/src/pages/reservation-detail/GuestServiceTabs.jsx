@@ -9,6 +9,7 @@ import {
   Clock, CreditCard, Home, History
 } from 'lucide-react';
 import { API, fmtCurrency, fmtDate, fmtTs, EmptyState, FormField, SelectField } from './helpers';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, hotelEventEpoch } from '@/lib/hotelEventTime';
 import { useTranslation } from 'react-i18next';
 
 export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
@@ -153,7 +154,7 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
   const allEvents = [
     ...(history || []).map(h => ({ ...h, _src: 'activity' })),
     ...(roomMoves || []).map(rm => ({ ...rm, _src: 'room_move', action: 'room_changed', actor: rm.moved_by, created_at: rm.moved_at, details: { from_room: rm.from_room_number, to_room: rm.to_room_number, reason: rm.reason } })),
-  ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  ].sort((a, b) => (hotelEventEpoch(b.created_at) ?? -Infinity) - (hotelEventEpoch(a.created_at) ?? -Infinity));
 
   const labels = {
     payment_recorded: 'Ödeme kaydedildi', transferred_to_cari: 'Cariye aktarildi', agency_payment_recorded: 'Acente ödemesi',
@@ -189,6 +190,7 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
   return (
     <div data-testid="history-tab" className="space-y-3">
       <div className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_GuestServiceTabs.islem_gecmisi')}</div>
+      <p className="text-xs text-muted-foreground">{HOTEL_EVENT_TIME_ZONE_LABEL}</p>
       {allEvents.length === 0 ? <EmptyState icon={History} text="Henüz işlem geçmişi yok" /> : (
         <div className="relative">
           <div className="absolute left-4 top-0 bottom-0 w-px bg-gray-200" />

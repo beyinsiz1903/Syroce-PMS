@@ -14,6 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 from common.context import OperationContext
 from core.booking_atomicity import (
@@ -830,7 +831,13 @@ async def add_folio_payment(
 
         await ensure_active_shift(current_user.tenant_id, method_value)
 
-        await db.payments.insert_one(dict(payment_doc))
+        try:
+            await db.payments.insert_one(dict(payment_doc))
+        except DuplicateKeyError as exc:
+            # Keep the unique-index race guard, but return an actionable
+            # conflict before any folio/booking/cashier mutation. A matching
+            # idempotency-key replay was already reconciled above.
+            raise HTTPException(409, "Bu ödeme referansı zaten kullanılmış. Yeni tahsilat eklemeden önce mevcut ödeme kaydını kontrol edin.") from exc
         await db.folios.update_one(
             {"id": folio["id"], "tenant_id": current_user.tenant_id},
             {"$inc": {"balance": -amount}},

@@ -1,6 +1,11 @@
-import { fmtDate, fmtTs, fmtTL, statusLabel } from '../helpers';
+import { fmtDate, fmtDateTime, fmtTs, fmtTL, statusLabel } from '../helpers';
 
 describe('reservation-detail/helpers', () => {
+  it('formats event datetimes but preserves calendar-only stay values', () => {
+    expect(fmtDateTime('2026-10-31T22:05:00')).toBe('01.11.2026 01:05');
+    expect(fmtDateTime('2026-10-26')).toBe('2026-10-26');
+    expect(fmtDateTime(null)).toBe('-');
+  });
   describe('fmtDate', () => {
     it('returns dash for null/undefined', () => {
       expect(fmtDate(null)).toBe('-');
@@ -29,7 +34,7 @@ describe('reservation-detail/helpers', () => {
 
     it('formats timestamp string to date-time', () => {
       const result = fmtTs('2025-06-15T14:30:45.000Z');
-      expect(result).toBe('2025-06-15 14:30');
+      expect(result).toBe('15.06.2025 17:30');
     });
 
     it('handles short strings', () => {

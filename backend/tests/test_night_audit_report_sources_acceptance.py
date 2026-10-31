@@ -10,6 +10,21 @@ pytest_plugins = ("tests.test_report_ledger_mongo_acceptance",)
 pytestmark = pytest.mark.asyncio
 
 
+async def test_daily_summary_uses_latest_tenant_day_audit_not_superseded_dry_run(ledger_db):
+    db = ledger_db
+    await db.night_audit_runs.insert_many([
+        {'tenant_id': 'qa', 'business_date': '2026-10-31', 'status': 'rerun_superseded', 'started_at': '2026-10-31T21:00:00Z'},
+        {'tenant_id': 'qa', 'business_date': '2026-10-31', 'status': 'completed', 'started_at': '2026-10-31T21:01:00Z'},
+        {'tenant_id': 'other', 'business_date': '2026-10-31', 'status': 'failed', 'started_at': '2026-10-31T22:00:00Z'},
+        {'tenant_id': 'qa', 'business_date': '2026-11-01', 'status': 'running', 'started_at': '2026-10-31T22:01:00Z'},
+    ])
+    service = FinancialService()
+    service._db = db
+    result = await service.get_daily_financial_summary(OperationContext(tenant_id='qa', actor_id='qa'), '2026-10-31')
+    assert result.ok and not result.data['degraded']
+    assert result.data['audit_status'] == 'completed'
+
+
 async def test_daily_range_and_reconciliation_share_extras_refunds_dates_and_currencies(ledger_db):
     db = ledger_db
     tid, day = "qa", "2026-10-30"

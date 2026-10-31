@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, FileText, RefreshCw, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 
 const MobileLogViewer = ({ user }) => {
   const { t } = useTranslation();
@@ -174,8 +175,8 @@ const MobileLogViewer = ({ user }) => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <Badge className="text-xs">{log.level}</Badge>
-                        <span className="text-xs text-gray-500">
-                          {new Date(log.timestamp).toLocaleTimeString('tr-TR')}
+                        <span title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-xs text-gray-500">
+                          {formatHotelEventTimestamp(log.timestamp)}
                         </span>
                         <span className="text-xs text-gray-600 font-medium">{log.user}</span>
                       </div>

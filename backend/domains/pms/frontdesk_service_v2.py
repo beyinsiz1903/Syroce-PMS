@@ -13,6 +13,7 @@ from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_transition_guard import enforce_business_date_transition
+from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_REVOKE, enqueue_lock_command
 
 logger = logging.getLogger(__name__)
@@ -255,18 +256,6 @@ class FrontdeskServiceV2:
                 "INVALID_STATUS",
             )
 
-        try:
-            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
-
-            await reconcile_unposted_room_charge(
-                self._db,
-                tenant_id=ctx.tenant_id,
-                booking=booking,
-                posted_by=f"checkout:{ctx.actor_id}",
-            )
-        except ValueError as exc:
-            return ServiceResult.fail(str(exc), "ROOM_CHARGE_RECONCILIATION_FAILED")
-
         # ── Auto-post Konaklama Vergisi (Türkiye) ──────────────────────
         # Tenant config'inde `auto_post=True` ise checkout sırasında, balance
         # kontrolünden ÖNCE konaklama vergisini folio'ya idempotent olarak
@@ -371,6 +360,14 @@ class FrontdeskServiceV2:
                 }
             )
 
+        # Use durable rows + the confirmed unposted remainder, not a cached
+        # zero/credit balance that depends on pre-posting room charges.
+        ledger_filter = {"booking_id": booking_id, "tenant_id": ctx.tenant_id}
+        charges = await self._db.folio_charges.find(ledger_filter, {"_id": 0}).to_list(10_000)
+        payments = await self._db.payments.find(ledger_filter, {"_id": 0}).to_list(10_000)
+        extra_charges = await self._db.extra_charges.find(ledger_filter, {"_id": 0}).to_list(10_000)
+        total_balance = round(calculate_departure_balance(charges, payments, extra_charges, booking_total=booking.get("total_amount", 0)), 2)
+
         if total_balance > 0.01 and not force:
             return ServiceResult.fail(
                 f"Outstanding balance: {total_balance:.2f}",
@@ -391,6 +388,22 @@ class FrontdeskServiceV2:
                     "Force checkout requires supervisor or admin role",
                     "INSUFFICIENT_PERMISSION",
                 )
+
+        try:
+            checkout_day, _scheduled_day = await enforce_business_date_transition(
+                self._db, tenant_id=ctx.tenant_id, booking=booking, operation="check_out", error_cls=ValueError)
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "BUSINESS_DATE_MISMATCH")
+
+        try:
+            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+            await reconcile_unposted_room_charge(
+                self._db, tenant_id=ctx.tenant_id, booking=booking,
+                posted_by=f"checkout:{ctx.actor_id}",
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "ROOM_CHARGE_RECONCILIATION_FAILED")
 
         # Close folios
         if auto_close_folios and total_balance <= 0.01:
@@ -455,6 +468,7 @@ class FrontdeskServiceV2:
                     "$set": {
                         "status": "checked_out",
                         "checked_out_at": checked_out_at.isoformat(),
+                        "checked_out_business_date": checkout_day.isoformat(),
                         "checked_out_by": ctx.actor_id,
                         "force_checkout": force,
                         "checkout_reason": reason,

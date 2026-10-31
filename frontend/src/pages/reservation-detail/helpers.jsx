@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { moneyInputProps } from '@/lib/moneyInput';
+import { formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 
 export const API = "";
 
@@ -14,9 +15,16 @@ export const fmtDate = (d) => {
 };
 export const fmtDateTime = (d) => {
   if (!d) return '-';
-  return new Date(d).toLocaleString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  return formatHotelEventTimestamp(d, { seconds: false });
 };
-export const fmtTs = (d) => (d || '').toString().slice(0, 16).replace('T', ' ');
+export const fmtTs = (d) => {
+  if (!d) return '';
+  // Some legacy callers supply a calendar-only value: retain that day, do not
+  // fabricate midnight or shift the business/service calendar.
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  return formatHotelEventTimestamp(d, { seconds: false });
+};
 export const fmtTL = (v) => (v || 0).toLocaleString('tr-TR');
 export const fmtCurrency = (v, currency) => {
   const code = (currency || 'TL').toUpperCase();

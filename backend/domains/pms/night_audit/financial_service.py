@@ -116,6 +116,7 @@ class FinancialService:
             self._db.night_audit_runs.find_one(
                 {"tenant_id": ctx.tenant_id, "business_date": business_date},
                 {"_id": 0},
+                sort=[("started_at", -1), ("created_at", -1)],
                 max_time_ms=_FIN_AGG_MAX_MS,
             ),
             return_exceptions=True,

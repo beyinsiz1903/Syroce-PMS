@@ -1744,8 +1744,10 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
     prop_id = property_id or DEFAULT_PROPERTY
 
     settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
-    bd = (settings or {}).get("business_date") or _now().date().isoformat()
-    cal = _now().date().isoformat()
+    # Match the normal run router's Türkiye calendar guard after 21:00 UTC.
+    # Business date remains authoritative and is never timezone-shifted.
+    cal = _now().astimezone(ZoneInfo("Europe/Istanbul")).date().isoformat()
+    bd = (settings or {}).get("business_date") or cal
     drift = (dt_date.fromisoformat(cal) - dt_date.fromisoformat(bd)).days
 
     blockers: list[dict] = []
