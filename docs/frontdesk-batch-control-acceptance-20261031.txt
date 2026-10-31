@@ -58,6 +58,20 @@ Bulunan kusurlar ve bu paketteki düzeltmeler
   negatif/>1milyon/>2ondalık girdiyi yazmadan400 reddeder. Sessiz yuvarlama
   yok, açık0 korunur, kısmi tenant alan güncellemesi korunur. Bozuk eski
   değer teklif fiyatına geçmez; mevcut varsayılan okunur, tarihçe yazılmaz.
+5 Kullanıcının Z saatleri bulgusu:UTC16:34/16:45 kaynak, Türkiye'de19:34/
+  19:45 olması gerekirken string slice ile16:34/16:45 gösteriliyordu.
+  Önceki X/Z LIVE_PASS yalnız tutar/not/durum içindi; saat gösterimi ayrı
+  canlı FAIL kaydıyla korunur. Kasa açılış/kapanış/geçmiş/işlem/X-Z/dönem
+  oluşturulma/CSV/çıktı artık ortak Europe/Istanbul biçimini ve açık Türkiye
+  saati etiketini kullanır. Soneksiz datetime.utcnow kaynakları UTC kabul
+  edilir, Z/offset kaynak yalnız bir kez dönüştürülür. İş günü ve dönem
+  seçimi takvim günüdür, kaydırılmaz. Depo zamanları ve mali kayıtlar
+  değiştirilmez; tarayıcının saat dilimi farklı olsa da aynı gösterimdir.
+  İlk iki UI regresyonu önceki gösterimde başarısızdı; sonrasında NY saat
+  diliminde28odaklı test geçti, gece yarısı/offset/boş/CSV/print kapsandı.
+  Saat düzeltmesi sonrası tamUI433dosya/2384passed0fail0skip; son küçük
+  eski-damgasız açılış günü fallback/ESLint windowqualifier değişimi sonrası
+  NYsaat diliminde28odaklı test ayrıca geçti. Yeni headCI/canlı kabulü ayrı.
 
 Yerel doğrulama
 backend-batch-final-v4.xml:559passed,18mevcut live_server deselected;
@@ -69,7 +83,9 @@ gün kapatma değildir. Örtüşen koşuların sayıları birbirine eklenmez.
 cashier-security-supplement.xml:35passed; kimlik/tenant/kendi şifresi ve
 iki deneme sınırı/bütçe reseti. Üç son backendXML testkimlikleri birleşimi
 682ayrıpassed;559+88+35koşuları arasında örtüşme yok, önceki koşular eklenmez.
-Tam son UI:frontend-full-batch-final-v3.xml431dosya/2369passed0fail0skip.
+Tam UIv3:frontend-full-batch-final-v3.xml431dosya/2369passed0fail0skip.
+Saat followup:frontend-full-batch-final-v4-timezone.xml433dosya/2384passed;
+cashier-timezone-fixed-v3-final.xml28passed son dokunuşları kapsar.
 Önceki v2 de431dosya/2369passed; eklenmez. v1'deki eski placeholder beklentisi
 erişilebilir yeni alan etiketiyle güncellendi; tüm güvenlik assertleri durur.
 İlk kusur/regresyon/ortam koşuları silinmedi; gate/ignore/zaman sınırları
