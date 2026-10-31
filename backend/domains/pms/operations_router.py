@@ -1,8 +1,9 @@
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from core.database import db
 from core.security import get_current_user
@@ -53,42 +54,80 @@ def _normalize_currency(value: object, fallback: str = "TRY") -> str:
 
 
 async def _lookup_active_booking_for_room(tenant_id: str, room_number: str) -> dict | None:
-    """Return the active (checked_in/in_house) booking for a room, with folio_id if any."""
+    """Resolve a physical room first; never guess between active stays or folios."""
     if not room_number:
         return None
     try:
-        booking = await db.bookings.find_one(
-            {
-                "tenant_id": tenant_id,
-                "room_number": str(room_number),
-                "status": {"$in": ["checked_in", "in_house"]},
-            },
-            {"_id": 0},
-        )
-    except Exception:
-        return None
-    if not booking:
-        return None
-    booking_id = booking.get("id") or booking.get("booking_id") or ""
-    folio_id = ""
-    if booking_id:
-        try:
-            folio = await db.folios.find_one(
-                {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
-                {"_id": 0, "id": 1, "folio_number": 1},
-            )
-            if folio:
-                folio_id = folio.get("id") or ""
-        except Exception:
-            folio_id = ""
+        rooms = await db.rooms.find({"tenant_id": tenant_id, "room_number": str(room_number), "$and": [
+            {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
+            {"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]},
+        ]}, {"_id": 0, "id": 1}).limit(2).to_list(2)
+        if not rooms:
+            return None
+        if len(rooms) != 1 or not rooms[0].get("id"):
+            raise HTTPException(409, "Oda eşleşmesi belirsiz; oda kayıtlarını kontrol edin")
+        # room_id is authoritative. Only genuinely legacy rows may fall back to a number.
+        bookings = await db.bookings.find({"tenant_id": tenant_id,
+            "status": {"$in": ["checked_in", "in_house"]}, "$or": [
+                {"room_id": rooms[0]["id"]},
+                {"room_id": {"$in": [None, ""]}, "room_number": str(room_number)},
+            ]}, {"_id": 0}).limit(2).to_list(2)
+        if not bookings:
+            return None
+        if len(bookings) != 1:
+            raise HTTPException(409, "Bu odada birden fazla aktif konaklama var; eşleşmeyi kontrol edin")
+        booking = bookings[0]
+        booking_id = booking.get("id") or booking.get("booking_id") or ""
+        guest_id = booking.get("guest_id") or ""
+        guest = await db.guests.find_one({"tenant_id": tenant_id, "id": guest_id}, {"_id": 0, "name": 1}) if guest_id else None
+        folios = await db.folios.find({"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
+            {"_id": 0, "id": 1}).limit(2).to_list(2) if booking_id else []
+    except PyMongoError as exc:
+        raise HTTPException(503, "Oda ve folyo eşleşmesi şu anda doğrulanamıyor; tekrar kontrol edin") from exc
     return {
         "booking_id": booking_id,
-        "guest_name": booking.get("guest_name") or booking.get("primary_guest_name") or "",
-        "room_number": booking.get("room_number") or room_number,
-        "folio_id": folio_id,
+        "guest_id": guest_id,
+        "guest_name": (guest or {}).get("name") or booking.get("guest_name") or booking.get("primary_guest_name") or "",
+        "room_number": room_number,
+        "folio_id": folios[0].get("id", "") if len(folios) == 1 else "",
+        "folio_selection_required": len(folios) > 1,
         "check_in": booking.get("check_in"),
         "check_out": booking.get("check_out"),
     }
+
+
+def _concierge_number(value, *, party_size=False):
+    message = "Kişi sayısı 1–99 arasında tam sayı olmalıdır" if party_size else "Tutar 0–1.000.000.000 arasında, en fazla iki ondalıklı olmalıdır"
+    try:
+        if isinstance(value, bool):
+            raise ValueError
+        number = Decimal(str(value))
+        if not number.is_finite():
+            raise ValueError
+        if party_size:
+            if not 1 <= number <= 99 or number != number.to_integral_value():
+                raise ValueError
+            return int(number)
+        if not 0 <= number <= 1_000_000_000 or number != number.quantize(Decimal("0.01")):
+            raise ValueError
+        return float(number)
+    except (ValueError, InvalidOperation):
+        raise HTTPException(400, message) from None
+
+
+async def _concierge_binding(tenant_id, room_number, body):
+    lookup = await _lookup_active_booking_for_room(tenant_id, room_number)
+    booking_id = str(body.get("booking_id") or (lookup or {}).get("booking_id") or "").strip()
+    folio_id = str(body.get("folio_id") or (lookup or {}).get("folio_id") or "").strip()
+    if booking_id and (not lookup or booking_id != lookup["booking_id"]):
+        raise HTTPException(409, "Seçilen oda ve konaklama eşleşmiyor; oda bilgisini yenileyin")
+    if folio_id:
+        folio = await db.folios.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "id": folio_id, "status": "open"}, {"_id": 0, "id": 1})
+        if not folio:
+            raise HTTPException(409, "Seçilen folyo bu konaklamaya ait açık bir hesap değil")
+    if body.get("charge_to_folio") and not folio_id:
+        raise HTTPException(409, "Ücretlendirme için açık folyo seçilmelidir")
+    return lookup, booking_id, folio_id
 
 
 @router.get("/concierge/active-room/{room_number}")
@@ -136,14 +175,14 @@ async def get_concierge_requests(
     for d in docs:
         d["id"] = str(d.pop("_id"))
         d["currency"] = _normalize_currency(d.get("currency"), tenant_currency)
-    counts = {"total": total, "pending": 0, "in_progress": 0, "completed": 0, "cancelled": 0}
+    counts = {"total": total, **dict.fromkeys(_VALID_CONCIERGE_STATUSES, 0)}
     # Aggregate başarısızsa count_documents'tan gelen `total`'ı koru (regression guard).
     if agg_rows is not _AGG_FAIL:
         for row in agg_rows:
             key = row.get("_id") or "pending"
             if key in counts:
                 counts[key] = row.get("n", 0)
-        counts["total"] = sum(v for k, v in counts.items() if k != "total")
+        counts["total"] = sum(row.get("n", 0) for row in agg_rows)
     return {"requests": docs, "total": total, "skip": safe_skip, "limit": safe_limit, "counts": counts}
 
 
@@ -163,21 +202,15 @@ async def create_concierge_request(
     priority = body.get("priority") or "normal"
     if priority not in _VALID_PRIORITIES:
         priority = "normal"
-    pax = _safe_int(body.get("pax", 1), 1)
-    if pax < 1:
-        pax = 1
-    amount = _safe_float(body.get("amount", 0), 0.0)
-    if amount < 0:
-        raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
+    pax = _concierge_number(body.get("pax", 1), party_size=True)
+    amount = _concierge_number(body.get("amount", 0))
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     currency = _normalize_currency(body.get("currency"), tenant_currency)
     charge_to_folio = bool(body.get("charge_to_folio") or False)
 
     # Cross-check active booking for the room (auto-fill missing guest/booking/folio)
-    lookup = await _lookup_active_booking_for_room(current_user.tenant_id, room_number)
-    booking_id = (body.get("booking_id") or (lookup or {}).get("booking_id") or "").strip()
-    folio_id = (body.get("folio_id") or (lookup or {}).get("folio_id") or "").strip()
-    guest_name = (body.get("guest_name") or "").strip() or ((lookup or {}).get("guest_name") or "")
+    lookup, booking_id, folio_id = await _concierge_binding(current_user.tenant_id, room_number, body)
+    guest_name = (lookup or {}).get("guest_name") or (body.get("guest_name") or "").strip()
 
     doc = {
         "_id": str(uuid.uuid4()),
@@ -256,9 +289,7 @@ async def update_concierge_request(
             if value not in _VALID_PRIORITIES:
                 value = "normal"
         elif field == "amount":
-            value = _safe_float(value, 0.0)
-            if value < 0:
-                raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
+            value = _concierge_number(value)
         elif field == "currency":
             tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
             value = _normalize_currency(value, tenant_currency)
@@ -267,10 +298,16 @@ async def update_concierge_request(
         update_set[field] = value
 
     if "pax" in body:
-        pax_val = _safe_int(body.get("pax", 1), 1)
-        if pax_val < 1:
-            pax_val = 1
-        update_set["pax"] = pax_val
+        update_set["pax"] = _concierge_number(body["pax"], party_size=True)
+
+    # Re-resolve changed room/link fields, but do not rebind historical completed services.
+    if any(field in body and body[field] != existing.get(field) for field in ("room_number", "booking_id", "folio_id")):
+        link_body = {**existing, **update_set}
+        if "room_number" in body and body["room_number"] != existing.get("room_number"):
+            link_body = {**link_body, "booking_id": body.get("booking_id", ""), "folio_id": body.get("folio_id", "")}
+        lookup, booking_id, folio_id = await _concierge_binding(current_user.tenant_id, link_body["room_number"], link_body)
+        update_set.update(booking_id=booking_id, folio_id=folio_id, room_match_found=bool(lookup),
+            guest_name=(lookup or {}).get("guest_name") or (body.get("guest_name") or ""))
 
     # Status transition
     new_status = body.get("status")
@@ -286,7 +323,7 @@ async def update_concierge_request(
         raise HTTPException(409, "Ücretlendirilmiş hizmet durumu folyo düzeltmesi olmadan değiştirilemez")
     if existing.get("folio_charge_id") and any(
         field in body and body[field] != existing.get(field)
-        for field in ("amount", "currency", "booking_id", "folio_id", "charge_to_folio", "type", "details", "date", "time", "notes")
+        for field in ("amount", "currency", "booking_id", "folio_id", "charge_to_folio", "type", "details", "date", "time", "notes", "room_number", "guest_name", "pax")
     ):
         raise HTTPException(409, "Ücretlendirilmiş hizmet kaynağı değiştirilemez")
     if new_status == "completed" and merged.get("charge_to_folio") and float(merged.get("amount") or 0) > 0:

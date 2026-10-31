@@ -18,10 +18,10 @@ async def test_concierge_request_defaults_to_tenant_currency(monkeypatch):
         operations_router,
         "db",
         SimpleNamespace(
-            bookings=SimpleNamespace(find_one=AsyncMock(return_value=None)),
             concierge_requests=SimpleNamespace(insert_one=insert_one),
         ),
     )
+    monkeypatch.setattr(operations_router, "_lookup_active_booking_for_room", AsyncMock(return_value=None))
 
     result = await operations_router.create_concierge_request(
         body={"type": "spa", "room_number": "101", "amount": 25},
