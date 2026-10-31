@@ -1,4 +1,12 @@
 ÖN BÜRO TAM KONTROL KABULÜ — DEVAM EDİYOR, TAMAMLANDI DEĞİL
+31Ekim10:41UTC:PR1470gerçekdeploy914b62bd doğrulandı.UDFsayı/boolean/
+0-Hayır/kısmikayıt/409/UIreload,odaDNDyazı/aktör/iz ve minibar yönlendirme
+altkümesi geçti.Ancakoda listesi/arama/cacheDNDalanını atladığı için
+yeniden açmadurumuhatalı;release1470acceptance.passed=falsekorundu.
+fix/room-dnd-read-modeldar düzeltme16yenitestiçeren103yereltesttengeçti.
+Yenikodcanlıdeğil;tüm19ailefalse,kasaPINveeskidiğerPENDINGaçık.
+Ayrıntı:docs/frontdesk-dnd-read-model-20261031.txt.
+Aşağıdaki1470deploybekliyor notu TARİHÇEDİR.
 31Ekim devam:51canlı okuma/3gün6gelir kaynağı mutabakatı geçti;9korunan
 kaynak aynı. Kalan incelemede oda DND kimlik/alan sınırı,UDF sayı/boolean/
 eşzamanlılık,eski sabit minibar yolu ve kasa kapanış açıklaması kusurları

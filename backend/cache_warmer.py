@@ -179,7 +179,7 @@ class CacheWarmer:
         """Cache only a proven-complete active, nonvirtual tenant room list."""
         cache_key = f"rooms:{tenant_id}"
         try:
-            projection = {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1, "room_status": 1, "housekeeping_status": 1, "hk_status": 1, "floor": 1, "capacity": 1, "base_price": 1, "max_occupancy": 1, "tenant_id": 1, "is_virtual": 1}
+            projection = {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1, "room_status": 1, "housekeeping_status": 1, "hk_status": 1, "dnd": 1, "floor": 1, "capacity": 1, "base_price": 1, "max_occupancy": 1, "tenant_id": 1, "is_virtual": 1}
             query = {
                 "tenant_id": tenant_id,
                 "$and": [
