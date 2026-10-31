@@ -192,14 +192,14 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict], *, 
     """
     # Cached room snapshots can predate a mobile task completion (which writes
     # housekeeping_status/room_status) or a maintenance block. Refresh these
-    # operational fields in one tenant-scoped read, without mutating the cache
+    # operational fields (including DND) in one tenant-scoped read, without mutating the cache
     # itself or including guest/financial data.
     rooms = [dict(room) for room in rooms]
     status_fields = ("status", "room_status", "housekeeping_status", "hk_status")
     if refresh_status:
         room_ids = [room["id"] for room in rooms if room.get("id")]
         if room_ids:
-            fields = (*status_fields, "cleaning_started_at", "current_task_id", "assigned_cleaner")
+            fields = (*status_fields, "dnd", "cleaning_started_at", "current_task_id", "assigned_cleaner")
             projection = {"_id": 0, "id": 1, **dict.fromkeys(fields, 1)}
             current_by_id = {
                 room["id"]: room
@@ -449,6 +449,7 @@ async def get_rooms(
         "room_status": 1,
         "housekeeping_status": 1,
         "hk_status": 1,
+        "dnd": 1,
         "floor": 1,
         "capacity": 1,
         "max_occupancy": 1,

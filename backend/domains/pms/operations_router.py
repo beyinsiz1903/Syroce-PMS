@@ -761,6 +761,9 @@ async def update_room_features(
     )
     if not result.matched_count:
         raise HTTPException(409, "DND eşzamanlı değişti; yeniden yükleyin.")
+    from routers.pms_rooms import _invalidate_room_list_caches
+
+    _invalidate_room_list_caches(tenant_id)
     return {"id": room_id, "status": "updated", "dnd": body["dnd"], "already_applied": False}
 
 

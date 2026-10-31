@@ -1,0 +1,61 @@
+PR1470 CANLI KABULÜ / DND OKUMA MODELİ TAKİBİ — 31 EKİM 2026
+
+Canlı sürüm:914b62bd8dd3baec3a1e6848e0c2a455e955ef90.
+PR1470 head15success+3expectedskip;merge-main/frontend CI başarılı.
+Gerçek deploy41191538860,Deploy to Server10:08:54–10:11:58UTC
+başarılı;healthaynıSHA. Önceki41190751705yeşilrun içindeki serveradımı
+SKIPPED idi ve yayın kanıtı sayılmadı. Yeni deploy başlatılmadı.
+
+Yalnız DemoHotel100001/tenant5bad4a34-6ee3-4566-9053-741b7375a9cf:
+- DND'de boolean/alan allowlist400,eski beklenen durum409,oda değişmedi.
+- QT2ED0DND arayüzden açıldı/kapandı,başlangıçkapalıduruma döndü.
+  İki kalıcı features_audit olayı;aktör/önce-sonra doğrulandı. Bilinen
+  başarılıdurum için aynı-değer isteği already_applied=true,iz çoğaltmadı.
+- İki açıkça yapay OPSİYONEL UDF tanımı tutuldu;eski tanım değişmedi.
+  Yalnız Ada AcceptanceTest profilinde NaN/Infinity/bool/500hanelisayı/
+  yanlışboolean/bilinmeyenanahtar400;0/False ve kısmi kayıt geçti;
+  eskisürüm409. Aktör normal tek-misafir API'sinden doğrulandı.
+  ListeGuestşeması aktörü içermediği için ilk okuyucu assert'i durdu;
+  başarılıyazılar tekrarlanmadan ayrıntı API'siyle uzlaştırıldı.
+  UI0/Hayır kaydı ve tam reload/yeniden arama/yeniden seçim kalıcı.
+- Eski sabitfiyatlı minibar yolundan mevcut /minibar katalog/stok
+  ekranına geçiş doğrulandı;sepet0,tüketim/ücret eklenmedi.
+- Dokuzkorunankaynak aynı;31oda/QT2ED0,stok52'şer,5468TRYhizmetkaynağı,
+  26EkimAÇIK,ExelyARI/pullkapalı,HotelRunnerkapalı,V2pausedkorundu.
+  Audit10973mühürlü/0kopuk/0unverifiable;2882legacy_skippedayrı,
+  truncated/degradedfalse. Yeni vardiya/ödeme/günsonu/sağlayıcı/DByazısıyok.
+
+KABULDE BULUNAN EKSİK — başlığı yeşile çevirmeyin:
+GET /api/pms/rooms normal/arama projection'ı DND'yi döndürmüyordu.
+PATCHbaşarılı olsa da tekrar açılanpanel KAPALI görünebiliyordu.
+Redis/warmer canlıalan tazelemesi ve warmprojection da DND'yi atlıyordu.
+Normal /api/pms/housekeeping/rooms kaynağı gerçekDND/ikiolay/aktörü
+doğruladı. Başarılı UI isteği kör tekrar edilmedi. İlk başarısızkanıt
+korundu;release1470acceptance.passed=false,korunankaynak/UDFaltkümesi
+ayrıca true. DNDreloadbaşarısızlığı ve tam19aile kapsamı açık kalır.
+
+DAR DÜZELTME / fix/room-dnd-read-model:
+1 DB ve oda-no arama projection'ına yalnız dnd ekle;tam audit geçmişi
+  geniş oda listesine eklenmez.
+2 Redis/warmercache hit'inde tenant-scoped taze operational read DND'yi
+  de taşır;True/False/eski-belgede-yok ayrımı korunur,cache nesnesi değişmez.
+3 Yeni warm snapshot dnd'yi korur.
+4 Yalnız başarılı CASdeğişimi sonrası mevcut tenantroomcache'leri
+  invalidatedilir;no-op/eski sürüm/lost-race olay/invalidasyon çoğaltmaz.
+Yetki/tenant/allowlist/CAS/aktörkuralları ve finans/stok kodu değişmedi.
+
+Testler:103passed/0failure/0error/0skip. 16yeni test (13unit+3gerçek
+localhostreplicaHTTP) bu103içinde;önceki94ayrıtoplanmaz.
+İlkred:10fail+3pass;JWTtestkurulumundakiilkshortkeyhatası ayrı saklandı.
+GenelbackendRuff/diff temiz. Frontend/bağımlılık/CIgate/ignoredeğişmedi;
+PR1470'in2307UI sonucu tarihîdir,yeni canlıkabul veya yeniUIkoşusu değildir.
+
+İşleticiözelkanıtı:frontdesk-release1470-20261031/.
+Özellikle release-gate.json,room-negative-acceptance.json,
+dnd-open-ui-result.json,dnd-close-ui-result.json,udf-api-acceptance.json,
+udf-ui-acceptance.json,ui-udf-values-reloaded.png,acceptance.json,
+dnd-read-before-v2.xml,dnd-read-replica.xml.
+Kasa pozitifakışı uygulamada kullanıcıPINdoğrulaması bekler;APIbaypas yok.
+YeniPRtamCI+merge+gerçekdeploy+health sonrası yalnız eksik DNDreloadcanlı
+kabulü çalıştırılır. EskiUDFtanımları/başarılıkayıtlar/stok/hizmet/QR/
+KVKK/kontenjan/arşiv fazları yeniden oluşturulmaz. Evrenselhatasızlık yok.
