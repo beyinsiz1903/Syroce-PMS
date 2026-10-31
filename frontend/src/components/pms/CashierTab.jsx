@@ -989,6 +989,9 @@ const CashierTab = () => {
           </DialogHeader>
           {reportData && (
             <div className="space-y-4 text-sm" id="cashier-report">
+              {reportData.closing_notes && <div className="rounded border p-3 whitespace-pre-wrap" data-testid="cashier-closing-notes">
+                <strong>Kapanış açıklaması:</strong> {reportData.closing_notes}
+              </div>}
               <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg text-xs">
                 <div><span className="text-gray-500">Kasiyer:</span> <strong>{reportData.cashier_name || reportData.cashier_email || '-'}</strong></div>
                 <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.durum')}</span> <strong>{reportData.status === 'open' ? 'Açık' : reportData.status === 'handed_over' ? 'Devredildi' : 'Kapalı'}</strong></div>

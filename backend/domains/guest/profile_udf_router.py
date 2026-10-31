@@ -12,7 +12,10 @@ null gönderin.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import math
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -65,6 +68,17 @@ class UdfDefinition(BaseModel):
 
 class UdfValuesPayload(BaseModel):
     values: dict[str, Any]
+    expected_revision: str | None = Field(None, pattern=r"^[a-f0-9]{64}$")
+
+
+def values_revision(values):
+    if not isinstance(values, dict):
+        raise HTTPException(409, "Eski özel alanlar nesne olmalı; önce veri uzlaştırması gerekli.")
+    try:
+        raw = json.dumps(values, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(409, "Eski özel alanlar geçersiz; önce veri uzlaştırması gerekli.") from exc
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 # ---------- Definitions ----------
@@ -163,6 +177,7 @@ async def get_guest_udf_values(guest_id: str, user: User = Depends(get_current_u
         "guest_name": guest.get("full_name") or guest.get("name") or guest.get("email"),
         "definitions": defs,
         "values": values,
+        "revision": values_revision(values),
     }
 
 
@@ -173,13 +188,26 @@ def _coerce_value(v: Any, d: dict) -> Any:
     t = d["type"]
     if t == "number":
         try:
-            return float(v)
-        except (ValueError, TypeError) as e:
+            if isinstance(v, bool):
+                raise ValueError("boolean is not a numeric profile value")
+            number = float(v)
+            if not math.isfinite(number):
+                raise ValueError("non-finite profile value")
+            return number
+        except (ValueError, TypeError, OverflowError) as e:
             raise HTTPException(400, f"'{d['key']}' alanı sayı olmalı") from e
     if t == "boolean":
         if isinstance(v, bool):
             return v
-        return str(v).lower() in ("true", "1", "yes", "evet")
+        if type(v) is int and v in (0, 1):
+            return bool(v)
+        if isinstance(v, str):
+            value = v.strip().casefold()
+            if value in ("true", "1", "yes", "evet"):
+                return True
+            if value in ("false", "0", "no", "hayır", "hayir"):
+                return False
+        raise HTTPException(400, f"'{d['key']}' alanı açık bir evet/hayır değeri olmalı")
     if t == "date":
         # ISO date (YYYY-MM-DD veya YYYY-MM-DDTHH:MM…)
         try:
@@ -227,11 +255,15 @@ async def set_guest_udf_values(
     by_key = {d["key"]: d for d in defs}
 
     # Mevcut değerleri al, payload ile MERGE et
-    merged = dict(guest.get("custom_fields", {}) or {})
+    original_values = guest.get("custom_fields", {}) or {}
+    current_revision = values_revision(original_values)
+    merged = dict(original_values)
+    if payload.expected_revision is not None and payload.expected_revision != current_revision:
+        raise HTTPException(409, "Misafir özel alanları başka bir oturumda değişti; yeniden yükleyin.")
     for k, v in (payload.values or {}).items():
         d = by_key.get(k)
         if not d:
-            continue  # tanımsız anahtarları sessizce at
+            raise HTTPException(400, f"Tanımsız özel alan: {k}")
         merged[k] = _coerce_value(v, d)
 
     # Required kontrolü (None/"" sayılır; False/0 geçerlidir)
@@ -245,14 +277,19 @@ async def set_guest_udf_values(
     if missing:
         raise HTTPException(400, f"Zorunlu alanlar boş: {', '.join(missing)}")
 
-    await db.guests.update_one(
-        {"$or": [{"id": guest_id}, {"_id": guest_id}], "tenant_id": user.tenant_id},
+    # Preserve unselected fields and reject a stale whole-map merge.
+    result = await db.guests.update_one(
+        {"_id": guest["_id"], "tenant_id": user.tenant_id,
+         "custom_fields": guest["custom_fields"] if "custom_fields" in guest else {"$exists": False}},
         {
             "$set": {
                 "custom_fields": merged,
                 "custom_fields_updated_at": datetime.now(UTC).isoformat(),
                 "custom_fields_updated_by": user.email,
+                "custom_fields_updated_by_id": user.id,
             }
         },
     )
-    return {"ok": True, "values": merged}
+    if not result.matched_count:
+        raise HTTPException(409, "Misafir özel alanları eşzamanlı değişti; yeniden yükleyin.")
+    return {"ok": True, "values": merged, "revision": values_revision(merged)}

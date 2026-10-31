@@ -1,4 +1,18 @@
 ÖN BÜRO TAM KONTROL KABULÜ — DEVAM EDİYOR, TAMAMLANDI DEĞİL
+31Ekim devam:51canlı okuma/3gün6gelir kaynağı mutabakatı geçti;9korunan
+kaynak aynı. Kalan incelemede oda DND kimlik/alan sınırı,UDF sayı/boolean/
+eşzamanlılık,eski sabit minibar yolu ve kasa kapanış açıklaması kusurları
+bulundu;fix/frontdesk-room-udf-boundaries dalında testli düzeltme hazır.
+Yeni kodun canlı kabulü deploy bekler;tam19aile kapanışı hâlâ FALSE.
+Ayrıntı:docs/frontdesk-room-udf-control-acceptance-20261031.txt.
+31Ekim08:43UTC:Güncel canlı55245bcf(PR1469),gerçek server deploy41184165812
+başarılı;PRhead15success/3expectedskip,merge-main/frontend/imajlar geçti.
+Gelir planlama API10ret/aynı-değer bölüm izolasyonu/0TRYidari not tekilleşmesi
+veUIboş-kesirli doğrulama canlı geçti.9kaynak/25,26,30maliözetler aynı;
+audit10906sealed/0break/0unverifiable,2882legacy_skip ayrı.
+Kanıt işletici alanında frontdesk-release1469-20261031/acceptance.json ve
+ui-acceptance.json;frontdesk-release1469-sonuc-20261031.txt okunur rapor.
+Gerçek otomatik gelir motoru ve tüm19aile kapanışı PENDING kalır.
 Güncelleme:PR1466 gerçek deploy39391c36 sonrası dar kontenjan/görev/
 KVKKaudit/panel yanıt kabulü geçti; aşağıdaki ilk durum tarihçedir.
 Yeni kanıt ve kalan gelir kontrol düzeltmesi ayrıntıları:
@@ -106,29 +120,39 @@ Kapsam matrisi — kalanlar açık, bu PR ile bütün modüller kapatılmaz
   tüm detay sekmeleri/çıktı/iptal/alternatif akış matrisi PENDING.
 Kat Hizmetleri/Odalar: önceki kısmi kabul korunur; tüm toplu/görsel/blok
   kontrol ailelerinin güncel uçtan uca matrisi PENDING.
+  DND publicid/alan allowlist/atomik iz ve güvenli minibar yönlendirmesi
+  yeni LOCAL_PASS;gerçek yeni deploy sonrası ilgili LIVE kabul PENDING.
 Misafirler/Rezervasyonlar: arama/sıralama/profil önceki kabulü korunur;
   UDF/birleştirme/uyuşmazlık ve bütün detay aileleri PENDING.
+  UDF numeric/boolean/required/partial map/CAS/browser revision yerel geçti;
+  yeni deploy sonrası pozitif/kalıcılık canlı kabulü PENDING.
 Kasa: ödeme/iade/vardiya/gün sonu yerel lifecycle mevcut, gerçek banka yok;
   güncel canlı tam işlem kabulü PENDING. Canlı26Ekim kapatılmadı.
+  Canlı dönem/Zkaynak ve PINguard okuması geçti;PINdenenmedi/atlatılmadı.
+  Kapanış notu/50TL API açıklama şartı yeni LOCAL_PASS,deploy sonrası canlı
+  vardiya için mevcut kullanıcı PIN doğrulaması gerekir;APIile baypas yok.
 Upsell: önceki yapay teklif→folyo ve31oda raporu LIVE_PASS; tüm ayar,
   red/kapasite/sınır varyantları güncel matriste PENDING.
 Raporlar/Flash/Müdür: önceki kaynak/forecast mutabakatı + geniş yerel paket;
   bütün çıktı/filtre/rol/boş-hatalı okuma ailelerinin kapanışı PENDING.
 Görevler: yeni live create/start/complete/reload/QR sonucu geçti;
-  interpolation/actor/paging düzeltmeleri yerel; deploy sonrası PENDING.
+  PR1466 interpolation/actor/paging dar canlı kabulü geçti;eski kayıtlar
+  tekrar oluşturulmaz. Tüm durum/rol/negatif ailelerin kapanışı PENDING.
 Geri Bildirim: internal/survey/department canlı kaynak ve filtreleri geçti;
   external yerel sözleşme testi; gerçek dış yayın/teslim EXTERNAL_BLOCKED.
-Kontenjan: canlı oda tipi DEFECT; yeni doğru sözleşme/release/reload
-  yalnız yerel kabul; deploy sonrası dar canlı kabul PENDING.
+Kontenjan: PR1466 fiziksel JuniorSuite/release0/tekserbest bırakma/reload
+  dar canlı kabulü geçti. GerçekARI yapılmadı;başka varyantlar PENDING.
 POS/Çamaşırhane/Concierge ve bağlı SPA/MICE/Transfer/Otopark/Aktivite/Salon/
   Oda Servisi: eski kalıcı hizmet→folyo→rapor kanıtları korunur; bunlar tüm
   görünür düğme/olumsuz senaryo/ayar kombinasyonları değildir, PENDING.
-Gelir Kontrolleri:3tab ve walk-out aç/vazgeç okunur kontrol edildi.
-  Ayarların BAR/rezervasyon engeline gerçek etkisi ve bölüm izolasyonu
-  PENDING/ayrı düzeltme gerekir; canlı ticari ayar değiştirilmedi.
+Gelir Kontrolleri:PR1467–1469 üçtab/planlama uyarısı/31+0kapasite/—sayacı,
+  bölüm izolasyonu/versiyon409/boş-kesirli-sınır400/tek0TRYidarinot ve
+  başarılı tekrar/çelişkili409 canlı geçti.Üç eski işbölümü aynı kaldı.
+  Pozitif not API ile yapıldı;UIpozitif submit/tüm rol-variantlar kapanmadı.
+  Ayarların gerçek BAR/rezervasyon/gün-fiyatı motoruna bağlantısı PENDING.
 KBS: sağlayıcı/geçerli kimlik olmadan gerçek resmî teslim EXTERNAL_BLOCKED;
   koruma gevşetilmez, teslim yapılmış sayılmaz.
-KVKK: idari access canlı geçti; audit düzeltmesi deploy sonrası PENDING;
+KVKK: idari access/PR1466 atomik audit/aktör/tekrar dar canlı geçti;
   gerçek geri döndürülemez kişi silme canlıda çalıştırılmadı.
 
 Son kabulün kapanma kuralı

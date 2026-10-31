@@ -1,0 +1,65 @@
+ÖN BÜRO KALAN KONTROLLER — ODA / ÖZEL ALAN / KASA DÜZELTMESİ
+31 Ekim 2026 | temel canlı/main:55245bcf35ee0398ebef42d307fe9772cba0bc0c
+Dal:fix/frontdesk-room-udf-boundaries. Yeni kod henüz canlı kabul değildir.
+
+Giderilen hata aileleri
+1 Oda özellikleri _id yerine public id ile çağrıldığında bulunamıyordu;
+  gövde de DND dışındaki keyfî oda alanlarını değiştirebiliyordu. Yalnız
+  boolean DND ve isteğe bağlı önceki DND kabul edilir. Public kimlik önce
+  çözülür; eski _id yalnız farklı public kimliği olmayan kayıtta geçerlidir.
+  Tenant sınırı korunur. DND ve aktör/önce-sonra izi aynı oda güncellemesinde
+  atomik saklanır; aynı değer iz çoğaltmaz, eşzamanlı değişiklik409 olur.
+  UI çift gönderimi engeller; oda değişince eski DND/yanıt yeni odaya taşınmaz.
+2 Oda panelindeki eski sabit minibar fiyatları/vergi-kur-stok kontrolünü
+  kullanmayan doğrudan ücret yolu kaldırıldı. Mevcut /minibar katalog/stok/
+  yetki/idempotency çalışma alanına açık yönlendirme var; operatör orada
+  ilgili odayı seçer. Eski tüketim/stok kayıtları değiştirilmedi. Sabit
+  %30/%50/%100 ve ücretsiz çıkış garantisi yerine güncel rezervasyon
+  politikasından hesaplama gerektiği açıklandı; yeni ücret uydurulmadı.
+3 Misafir UDF sayı dönüşümü NaN/Infinity/bool/taşan integer kabul ediyordu;
+  yanlış boolean metni sessiz false oluyordu. Kontrollü400 ile reddedilir;
+  geçerli0/False/ondalık/negatif iş değerleri korunur. Bilinmeyen anahtar
+  sahte başarıyla atılmaz. GET/PUT sürüm hash'i ve veritabanı compare-and-set
+  başka operatörün değişikliğinin ezilmesini409 ile durdurur. Eski API
+  istemcileri için sürüm alanı opsiyoneldir; yeni UI sürümsüz kaydetmez,
+  409sonrası açık yeniden yükleme ister. Seçilmemiş eski alanlar korunur.
+  Geçersiz tarihî map/NaN düzeltilmiş gibi yazılmaz,409uzlaştırma gerekir.
+  Zorunlu sütunundaki boş hücreler Evet/Hayır gösterir; aktör kimliği saklanır.
+4 Kasa kapanışında notes gövdesi saklanmıyor ve UI'nin mevcut50TL fark
+  açıklama şartı API'de yoktu. Açıklama doğrulanır;50TL ve üstü farkta
+  zorunlu,aktörle aynı atomik kapanışta saklanır;dönem ve Z raporuna taşınır.
+  Rapor UI'sı açıklamayı metin olarak gösterir,yazdırma alanına dahil eder.
+  Bekleyen MICE finans işlemi hem ilk kontrolde hem CAS filtresinde engeldir.
+  Tarihî not boşlukları geriye dönük doldurulmaz,gerçek ödeme yapılmaz.
+
+Canlı salt-okunur kabul
+51normal modül/rapor okuması başarılı;önce/sonra9korunan kaynak aynı.
+25/26/30Ekimde mali özet,günlük,Flash,Müdür gelir,kategori ve mutabakat
+gelirleri para birimi başına eşleşti. Tahsilatlar ayrı eşleşti;ödenmemiş
+bakiyeler temizlenmiş sayılmadı.26Ekimde23uyuşmazlık/açık bakiye gösterimi
+korundu.30gün forecast31fiziksel oda ve karma dövizleri toplamama kontrolü
+geçti. Bunlar bütün filtre/çıktı/rol ailesinin kapanışı değildir.
+Kasa25–30Ekim dönem raporu canlı:UI1kapalıvardiya,24işlem,13240TRYnakit,
+30439.90TRYkart ve19150TRYhavale;gerçek banka transferi değil,kaynak kaydı.
+Vardiya açılışında PIN ekranı görüldü,boş doğrulama kapalı;iptal edildi.
+PIN denenmedi/atlatılmadı;pozitif canlı vardiya/para/gün sonu yapılmadı.
+İlk6hızlı sayfa AX kaydı yükleme kabuğu içerdiğinden kabul sayılmadı.
+Yeni canlı kayıt oluşturulmadı;eski stok/arşiv/hizmet/QR fazları tekrarlanmadı.
+31oda/QT2ED0,stok52'şer,26Ekim açık,ExelyARI/pull veHotelRunnerkapalı,
+V2paused,eski5468TRY hizmet kaynağı korunur. Başka tesise işlem yok.
+
+Kanıt işletici alanında:frontdesk-remaining-20261031/
+Son geniş backend226passed/0failure/0skip;8önceden manifestte live_server
+testi offline seçimden ayrıdır,başarılı teste eklenmez. Eski görev/KVKK/
+kontenjan replica paketi aynen korundu;yeniler ayrı room_udf dosyasındadır.
+Tam UI2307passed/0failure/0skip;son legacy-UDF gönderim filtresi aynı
+sayılı tam koşuda ve hedefli testte yeniden doğrulanır. Build/ESLint/Ruff temiz.
+İlk red31ve7hata gerçek kusurları gösterdi. Port guard/çalışmayan local
+server/ResizeObserver ve localhostlisten izni altyapı hataları ayrı korundu;
+guard/timeout/assertion/ignore/CI gate gevşetilmedi.
+surface-read-result.json,pre/post-surface-protected-result.json,
+report-source-acceptance.json,ui-cash-period.txt,ui-cash-pin-gate.txt.
+Yerel ilk hata ve altyapı sonuçları silinmez;bakınız sonuç raporu.
+Tam19aile kabulü full_scope_complete=false;gerçekotomatikgelirmotoru,
+dışKBS/dışyorum teslimi ve kalan canlı pozitif senaryolar ayrı açık kalır.
+Yeni kod için tamheadCI+merge+gerçekserverdeploy+health eşleşmesi gerekir.

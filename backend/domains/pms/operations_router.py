@@ -730,12 +730,38 @@ async def update_room_features(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
-    update_fields["features_updated_at"] = datetime.utcnow().isoformat()
-    result = await db.rooms.update_one({"_id": room_id, "tenant_id": current_user.tenant_id}, {"$set": update_fields})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Room not found")
-    return {"id": room_id, "status": "updated"}
+    # This endpoint edits DND, not inventory identity or arbitrary room fields.
+    if set(body) - {"dnd", "expected_dnd"} or not isinstance(body.get("dnd"), bool):
+        raise HTTPException(400, "Yalnız boolean DND durumu değiştirilebilir.")
+    if "expected_dnd" in body and not isinstance(body["expected_dnd"], bool):
+        raise HTTPException(400, "Önceki DND durumu geçersiz.")
+    tenant_id = current_user.tenant_id
+    room = await db.rooms.find_one({"tenant_id": tenant_id, "id": room_id})
+    if not room:
+        # Legacy _id is only an alias when no different public ID is present.
+        room = await db.rooms.find_one({"tenant_id": tenant_id, "_id": room_id,
+            "$or": [{"id": {"$exists": False}}, {"id": None}, {"id": ""}]})
+    if not room:
+        raise HTTPException(404, "Room not found")
+    previous = room.get("dnd", False)
+    if not isinstance(previous, bool) or not isinstance(room.get("features_audit", []), list):
+        raise HTTPException(409, "Oda özellik kaydı uzlaştırılmalı; yeniden yükleyin.")
+    if "expected_dnd" in body and body["expected_dnd"] != previous:
+        raise HTTPException(409, "DND başka bir oturumda değişti; yeniden yükleyin.")
+    if body["dnd"] == previous:
+        return {"id": room_id, "status": "updated", "dnd": previous, "already_applied": True}
+    now = datetime.now(UTC).isoformat()
+    event = {"id": str(uuid.uuid4()), "action": "room_dnd_updated", "actor_id": current_user.id,
+             "timestamp": now, "before": {"dnd": previous}, "after": {"dnd": body["dnd"]}}
+    result = await db.rooms.update_one(
+        {"_id": room["_id"], "tenant_id": tenant_id,
+         "dnd": room["dnd"] if "dnd" in room else {"$exists": False}},
+        {"$set": {"dnd": body["dnd"], "features_updated_at": now, "features_updated_by_id": current_user.id},
+         "$push": {"features_audit": event}},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "DND eşzamanlı değişti; yeniden yükleyin.")
+    return {"id": room_id, "status": "updated", "dnd": body["dnd"], "already_applied": False}
 
 
 @router.get("/revenue/settings")
