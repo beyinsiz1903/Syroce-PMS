@@ -32,7 +32,7 @@ export type Folio = {
   folio_type?: string;
   payor_type?: string;
   currency?: string;
-  balance?: number;
+  balance?: number | null;
   charges?: FolioCharge[];
   payments?: FolioPayment[];
 };
@@ -202,8 +202,8 @@ export type FolioChargeCategory =
 export type FolioPaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'online';
 
 // GET /api/folio/{folio_id} → { folio, charges, payments, balance }
-export async function getFolioById(folioId: string): Promise<Folio | null> {
-  const res = await api.get<FolioResponse>(`/api/folio/${folioId}`);
+export async function getFolioById(folioId: string, fresh = false): Promise<Folio | null> {
+  const res = await api.get<FolioResponse>(`/api/folio/${encodeURIComponent(folioId)}`, fresh ? { nocache: true } : undefined);
   return normalizeFolio(res);
 }
 
@@ -232,6 +232,7 @@ export async function postFolioPayment(
   body: {
     amount: number;
     method: FolioPaymentMethod;
+    currency: string;
     payment_type?: string;
   },
   idempotencyKey: string,

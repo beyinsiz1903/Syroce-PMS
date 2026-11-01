@@ -1,0 +1,90 @@
+MOBİL REZERVASYON / ÖDEME KABULÜ — 01.11.2026
+
+Kapsam ve taban
+Kullanıcının mobil rezervasyon ve ödeme akışını test etme talebi. Taban main
+3ce2f27bb32c259505b835e31016e555a738ddda. Merge, deploy, OTA veya mağaza yayını
+yapılmadı. Gerçek misafir, kart numarası, banka veya PSP tahsilatı kullanılmadı.
+
+Giderilen bulgular
+1. Departman folyosu EUR tutarı TRY olarak gösteriyordu. Folyonun ve hareketin
+   kendi para birimi korunuyor; eksik/null bakiye sıfır veya ödenmiş sayılmıyor.
+   İptal/başarısız hareketler net tahsilata eklenmiyor, iadeler düşülüyor.
+2. Folyo görüntüleme hakkı ücret/ödeme ekleme hakkı gibi kullanılıyordu.
+   post_charge ve post_payment ayrı kontrol ediliyor; yetkisiz sorgu başlamıyor.
+   Backend RBAC/tenant denetimleri değiştirilmedi veya gevşetilmedi.
+3. Folyo ödeme/ücret yazımından önce güncel kimlik, açık durum, para birimi ve
+   bakiye okunuyor. GET /api/folio/{id} normal nocache query'sini kabul ediyor;
+   mevcut cache wrapper bu okuma için önbelleği atlıyor. Bu bir backend yetki
+   atlama değildir. Ekran onayından sonra kapanan folyoya yeni ödeme yazılmıyor.
+4. Folyo ödeme tutarı güncel bakiyeye karşı doğrulanıyor, para birimi açıkça
+   gönderiliyor. Aynı belirsiz işlem aynı anahtarı koruyor; tutar/yöntem değişirse
+   yeni niyet anahtarı üretiliyor. Ara ödeme/final tipi retry sırasında değişmiyor.
+5. Gerçek olmayan takvim tarihleri, kesirli/sonunda metin bulunan kişi sayısı ve
+   parseFloat ile kısmen kabul edilen fiyatlar reddediliyor. İptal rezervasyon
+   ekranında ödeme açılmıyor. Başarılı finans yazımı ortak rapor okumalarını
+   eskimiş olarak işaretliyor; yalnız bağlı ekranlar hemen tekrar okuyor.
+
+Gerçek UI — yerel, durumu değişen sahte API (üretime proxy YOK)
+- Güncel Expo Web'de EUR folyo: 1.000 EUR, 1.200 tutarlı fazla ödeme reddedildi.
+- 200,25 EUR ara ödeme sunucuda işlendiği anda yanıt kesildi. Ağ tekrarı aynı
+  anahtarla işlendi: tek ödeme ve 799,75 EUR bakiye; ikinci tahsilat yok.
+- Salt okunur finance oturumunda folyo görünüyor, ücret/ödeme aksiyonları yok.
+- Onay penceresi açıkken folyo kapatıldı. Onayla yalnız taze GET yaptı, durum
+  değişikliği mesajı gösterdi; ek ödeme POST'u/ödeme kaydı oluşmadı.
+- Web: 2,5 yetişkin girdisi reddedildi. 2 yetişkin/1 çocuk, 20–22 Kasım, oda702,
+  1.500,50 TRY kayıt çift tıklamada bir kez oluştu. Liste ve detay aynı kayıtta.
+  500,25 + 1.000,25 TRY = 1.500,50; açık bakiye sıfır, Ödeme Al devre dışı.
+- Native iPhone17Pro/iOS26.5, Xcode26.6 ile bu kaynaklardan yeni Debug build:
+  normal giriş/çıkış ve Safari üzerinden uygulama derin bağlantısı çalıştı.
+  24–26 Kasım oda701, 2 yetişkin/1 çocuk, 1.800,50 TRY yeni rezervasyon oluşturuldu.
+  600,25 + 1.200,25 TRY ödeme; final düğmesine çift dokunmada toplam iki hareket,
+  açık bakiye sıfır ve Ödeme Al devre dışı. Liste → doğru detay geçişi doğrulandı.
+- İlk simülatör paketinde uygulamanın Keychain entitlement'ı eksikti. Yalnız
+  oluşturulan/commit edilmeyen iOS test projesine uygulamanın kendi Keychain
+  grubu eklenerek normal test imzası tamamlandı; SecureStore devre dışı bırakılmadı.
+  Bu, dağıtımdaki mağaza paketinde hata bulunduğu iddiası değildir.
+- Sahte servisin desteklemediği GM vb. yardımcı endpoint 404'leri bu akışların
+  veya bütün modüllerin başarılı kabulü sayılmadı.
+
+Canlı Demo Hotel — normal mobil API sözleşmeleri (native UI testi DEĞİL)
+- Tenant/hotel100001, mevcut main release, Exely TEST501694 ARI kapalı, otomatik
+  rezervasyon çekimi kapalı ve diğer connector'lar pasif doğrulandı.
+- Önceden müsaitliği okunan oda101, 20–22 Kasım, 2 yapay yetişkin, 1.500,50 TRY
+  tek yeni rezervasyon oluşturuldu; gerçek iletişim/kimlik bilgisi yok.
+- Normal /frontdesk/folio/{booking}/payment ile 500,25 ve 1.000,25 TRY manuel
+  kart yöntemi kaydı işlendi. Bu endpoint external_record_only muhasebe kaydıdır;
+  kart numarası/ödeme gateway'i kullanılmadı. Her ödeme aynı anahtarla bir kez
+  bilerek tekrarlandı: sonuç aynı, nihai hareket sayısı iki, paid_amount1.500,50,
+  full-detail reservation_total_due0.
+- finance-snapshot aynı iş günü2026-10-26: net tahsilat artışı1.500,50 TRY ve
+  hareket sayısı artışı2. night-audit/financial-summary aynı tutarı TRY kırılımında
+  gösterdi. Gelecek konaklama ödemesi, işlenmiş oda geliri gibi sunulmadı.
+- Aktif vardiya yoktu; bu turda vardiya/gün sonu değiştirilmedi. Oluşturulan
+  Demo Hotel rezervasyonu ve iki ödeme kaydı kullanıcının isteğiyle korundu.
+  Son kontrollerde ARI/otomatik çekim hâlâ kapalı. Diğer rezervasyonlara dokunulmadı.
+
+Otomatik kontroller
+- TypeScript typecheck başarılı; mobil unit222 passed; preview API3 passed.
+- Seçili backend folyo cache / ödeme idempotency paketi19 passed; Ruff başarılı.
+  Bu paket DB'siz fake/mock kullanır, canlı API testi yerine geçmez.
+- validate:config başarılı. Önceden var olan Google Play service-account dış
+  hesap uyarısı sürüyor; bu PR hesap/mağaza ayarı yapmaz.
+- iOS Simulator Debug native build başarılı. Üretilen mobile/ios ve DerivedData
+  commit edilmedi. git diff --check başarılı.
+
+Kalıcı yerel kanıtlar
+Çalışma alanı mobile-reservation-payment-20261101.SEBURk/:
+fixture-api.mjs, fixture-partial-lost-response.json, fixture-final-state.json,
+web-settled-reservation.png, web-folio-reader.png, web-closed-before-confirm.png,
+ios-settled-reservation.png, ios-debug-keychain.log, live-demo-flow.py,
+live-demo/plan.json, operations.json, initial-detail.json, after-payment-1.json,
+after-payment-2.json, baseline-finance.json, final-finance.json,
+final-financial-summary.json, result.json. Kimlik doğrulama tokenları kaydedilmedi.
+
+Sınırlar
+Native test yerel sentetik servisle; canlı backend kontrolü ayrı normal API
+testidir. Fiziksel iPhone/Android, bankadan gerçek tahsilat/3DS, PSP iadesi ve
+App Store/TestFlight sürümünün uçtan uca kabulü bu turda yapılmadı. Yeni backend
+nocache desteği ve mobil düzeltmeler PR merge/deploy/mobil dağıtımından sonra
+yeniden doğrulanmalıdır. Frontend taze okuması backend eşzamanlılık/authorization
+kurallarının yerini tutmaz; bütün mobil modüller tamamlandı denmiyor.

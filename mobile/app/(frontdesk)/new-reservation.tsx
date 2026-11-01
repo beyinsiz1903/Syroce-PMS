@@ -12,6 +12,7 @@ import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { addDaysISO } from '../../src/utils/reservationCalendar';
 import { parsePaymentAmount } from '../../src/utils/paymentEntry';
+import { reservationDateInput, reservationGuestCount } from '../../src/utils/reservationEntry';
 import { errorMessage } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
 
@@ -59,7 +60,7 @@ export default function NewReservationScreen() {
   const [done, setDone] = useState(false);
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
-  const datesValid = !!checkIn && !!checkOut && checkOut > checkIn;
+  const datesValid = !!reservationDateInput(checkIn) && !!reservationDateInput(checkOut) && checkOut > checkIn;
   const roomsQ = useQuery({
     queryKey: ['new-reservation-availability', checkIn, checkOut],
     queryFn: () => getAvailability(checkIn, checkOut),
@@ -90,17 +91,15 @@ export default function NewReservationScreen() {
   const mutation = useMutation({
     mutationFn: async () => {
       const total = parsePaymentAmount(amount);
-      const adultCount = Number(adults);
-      const childCount = Number(children || '0');
+      const adultCount = reservationGuestCount(adults, 1);
+      const childCount = reservationGuestCount(children || '0', 0);
       if (
         !guestName.trim() ||
         !datesValid ||
         !room ||
         total === null ||
-        !Number.isInteger(adultCount) ||
-        adultCount < 1 ||
-        !Number.isInteger(childCount) ||
-        childCount < 0
+        adultCount === null ||
+        childCount === null
       ) {
         throw new Error(tr.reservations.invalidReservation);
       }

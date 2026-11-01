@@ -40,6 +40,7 @@ import { formatDate } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
 import { postBookingPayment } from '../../src/api/folio';
+import { reservationDateInput as toISODate, reservationGuestCount, reservationRateInput } from '../../src/utils/reservationEntry';
 import {
   SIMPLE_PAYMENT_METHODS,
   parsePaymentAmount,
@@ -59,20 +60,6 @@ import {
   paymentStatusLabel,
   hasSeparatePayer,
 } from '../../src/utils/reservationPresentation';
-
-// DD.MM.YYYY → YYYY-MM-DD (same normaliser the list screen uses). Returns
-// undefined for blank / unparseable input so the caller can reject it.
-function toISODate(input: string): string | undefined {
-  const v = (input || '').trim();
-  if (!v) return undefined;
-  const dm = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
-  if (dm) {
-    const [, d, m, y] = dm;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  return undefined;
-}
 
 // ISO string → DD.MM.YYYY for prefilling the edit fields.
 function toDisplayDate(iso?: string): string {
@@ -171,7 +158,7 @@ export default function ReservationDetailScreen() {
     payments: detail.data?.payments,
     currency,
   });
-  const canTakePayment = canOperate && mobileOperationAllowed(user, 'post_payment') && !separatePayer && !pricingIssue && !!currency && money.balance !== undefined && money.balance > 0;
+  const canTakePayment = canOperate && !['cancelled', 'canceled'].includes((currentStatus || '').toLowerCase()) && mobileOperationAllowed(user, 'post_payment') && !separatePayer && !pricingIssue && !!currency && money.balance !== undefined && money.balance > 0;
 
   const qc = useQueryClient();
 
@@ -324,8 +311,8 @@ export default function ReservationDetailScreen() {
   const rateMutation = useMutation({
     mutationFn: () => {
       if (!canOverrideRate) throw new Error('Fiyat değiştirme yetkiniz yok.');
-      const value = parseFloat((newRate || '').replace(',', '.'));
-      if (!Number.isFinite(value) || value < 0) {
+      const value = reservationRateInput(newRate);
+      if (value === null) {
         return Promise.reject(new Error(tr.reservations.invalidRate));
       }
       if ((reason || '').trim().length < 3) {
@@ -351,12 +338,12 @@ export default function ReservationDetailScreen() {
       const body: ReservationUpdate = {};
       const aRaw = (adults || '').trim();
       const chRaw = (children || '').trim();
-      const a = parseInt(aRaw, 10);
-      const ch = chRaw === '' ? 0 : parseInt(chRaw, 10);
-      if (!Number.isInteger(a) || a < 1 || a > 50) {
+      const a = reservationGuestCount(aRaw, 1);
+      const ch = reservationGuestCount(chRaw || '0', 0);
+      if (a === null) {
         return Promise.reject(new Error(tr.reservations.invalidGuests));
       }
-      if (!Number.isInteger(ch) || ch < 0 || ch > 50) {
+      if (ch === null) {
         return Promise.reject(new Error(tr.reservations.invalidGuests));
       }
       body.adults = a;
@@ -446,6 +433,7 @@ export default function ReservationDetailScreen() {
       haptic.success();
       paymentAttempt.current = null;
       await detail.refetch();
+      void qc.invalidateQueries();
       refreshAll();
       closePanel();
       setSuccessMsg(tr.reservations.paymentSaved);
