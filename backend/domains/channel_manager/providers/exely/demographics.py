@@ -72,6 +72,69 @@ def _date(value: Any) -> str:
         raise ReadReservationError("EXELY_READ_STAY_INVALID") from None
 
 
+async def inspect_reconciliation(tenant_id: str, connection: dict[str, Any], number: str, client) -> dict[str, Any]:
+    """Read-only, allowlisted comparison; never return guest/contact payloads.
+
+    A zero-match failure used to be indistinguishable from identical rooms.
+    Inspect both provider reads before returning even diagnostic evidence.
+    This endpoint cannot apply a plan or acknowledge a reservation.
+    """
+    reservation = await db.exely_reservations.find_one({
+        "tenant_id": tenant_id, "property_id": str(connection["hotel_code"]), "external_id": number,
+    }, {"_id": 0})
+    _require(bool(reservation), "EXELY_READ_LOCAL_RESERVATION_NOT_FOUND")
+    remote = await client.booking(number)
+    _require(str(remote.get("propertyId")) == str(connection["hotel_code"]) and remote.get("number") == number,
+             "EXELY_READ_BOOKING_SCOPE_MISMATCH")
+    snapshot_hash = _rest_hash(remote)
+    _require(_rest_hash(await client.booking(number)) == snapshot_hash, "EXELY_READ_REMOTE_CHANGED")
+    try:
+        await reconciliation_plan(tenant_id, connection, reservation, remote)
+        status = "ready"
+    except ReadReservationError as exc:
+        status = str(exc)
+
+    def safe_id(value):
+        value = str(value) if value is not None else ""
+        return value if value.isascii() and value.isdecimal() and len(value) <= 32 else None
+
+    def services(items, *, soap=False):
+        return [{
+            "id": safe_id(item.get("provider_id" if soap else "id")),
+            "inclusive": item.get("inclusive") if type(item.get("inclusive")) is bool else None,
+            "amount": str(_money(item.get("amount") if soap else (item.get("total") or {}).get("priceAfterTax")))
+            if (item.get("amount") if soap else (item.get("total") or {}).get("priceAfterTax")) is not None else None,
+        } for item in items or []]
+
+    source_rooms = []
+    for room in reservation.get("rooms") or []:
+        mapping = await db.exely_room_mappings.find_one(inbound_mapping_query(
+            tenant_id, str(room.get("room_type_code") or ""), str(room.get("rate_plan_code") or "")), {"_id": 0})
+        source_rooms.append({
+            "index": safe_id(room.get("index_number")),
+            "mapped_room_type_id": safe_id((mapping or {}).get("exely_room_code")),
+            "arrival": _date(room.get("check_in") or reservation.get("checkin_date")),
+            "departure": _date(room.get("check_out") or reservation.get("checkout_date")),
+            "amount": str(_money(room.get("amount"))), "services": services(room.get("services"), soap=True),
+        })
+    return {
+        "status": status, "property_id": str(connection["hotel_code"]), "reservation_id": number,
+        "rest_snapshot_hash": snapshot_hash, "source_total": str(_money(reservation.get("total"))),
+        "rest_total": str(_money((remote.get("total") or {}).get("priceAfterTax"))),
+        "currency_matches": remote.get("currencyCode") == reservation.get("currency"),
+        "source_rooms": source_rooms,
+        "rest_rooms": [{
+            "index": item.get("index") if type(item.get("index")) is int else None,
+            "room_type_id": safe_id((item.get("roomType") or {}).get("id")),
+            "arrival": _date((item.get("stayDates") or {}).get("arrivalDateTime")),
+            "departure": _date((item.get("stayDates") or {}).get("departureDateTime")),
+            "amount": str(_money((item.get("total") or {}).get("priceAfterTax"))),
+            "services": services(item.get("services")),
+        } for item in remote.get("roomStays") or []],
+        "applied": False, "provider_write_count": 0,
+    }
+
+
 def verified_booking(booking: dict[str, Any]) -> bool:
     proof = booking.get("exely_demographics") or {}
     ages = booking.get("children_ages")
@@ -126,7 +189,10 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
         _require(bool(mapping), "EXELY_READ_ROOM_MAPPING_MISSING")
         check_in = _date(room.get("check_in") or reservation.get("checkin_date"))
         check_out = _date(room.get("check_out") or reservation.get("checkout_date"))
-        amount = _money(room.get("amount") or (reservation.get("total") if len(rooms) == 1 else 0))
+        # Zero-price accommodation is not a missing amount. The booking total
+        # may contain paid extra services and must not replace an explicit zero.
+        raw_amount = room.get("amount")
+        amount = _money(raw_amount if raw_amount is not None else (reservation.get("total") if len(rooms) == 1 else 0))
         candidates = [item for item in remaining if (
             isinstance(item, dict)
             and str((item.get("roomType") or {}).get("id")) == str(mapping.get("exely_room_code"))
@@ -136,6 +202,7 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
         )]
         # Do not guess the relation between SOAP's one-based RoomStay indexes
         # and Connect's indexes, or distribute ages across identical rooms.
+        _require(bool(candidates), "EXELY_READ_ROOM_JOIN_NOT_FOUND")
         _require(len(candidates) == 1, "EXELY_READ_ROOM_JOIN_AMBIGUOUS")
         remote_room = candidates[0]
         remaining.remove(remote_room)

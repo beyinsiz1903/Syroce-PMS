@@ -282,6 +282,85 @@ async def test_identical_multiroom_stays_are_held_instead_of_distributing_childr
         await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
 
 
+async def test_inspection_shows_amount_mismatch_without_leaking_or_writing(scenario):
+    database, reservation, _, remote = scenario
+    reservation["total"] = 420
+    database.exely_reservations.documents[0] = deepcopy(reservation)
+    remote["total"]["priceAfterTax"] = 420
+    remote["roomStays"][0]["total"]["priceAfterTax"] = 420
+    remote["roomStays"][0]["guests"] = [{"name": "SECRET-GUEST", "email": "private@example.com"}]
+    remote["roomStays"][0]["services"] = [{"id": "5001517", "inclusive": False,
+        "total": {"priceAfterTax": 300}, "name": "SECRET-SERVICE", "description": "SECRET-NOTE"}]
+    before = deepcopy(vars(database))
+    client = SimpleNamespace(booking=AsyncMock(return_value=remote))
+    result = await demo.inspect_reconciliation("tenant-a", CONNECTION, NUMBER, client)
+    assert client.booking.await_count == 2
+    assert result["status"] == "EXELY_READ_ROOM_JOIN_NOT_FOUND"
+    assert result["source_rooms"][0]["amount"] == "120"
+    assert result["rest_rooms"][0]["amount"] == "420"
+    assert result["rest_rooms"][0]["services"] == [{"id": "5001517", "inclusive": False, "amount": "300"}]
+    assert result["rest_rooms"][0]["index"] == 0
+    assert result["applied"] is False and result["provider_write_count"] == 0
+    assert "SECRET" not in str(result) and "private@example.com" not in str(result)
+    for key in vars(database):
+        assert getattr(database, key).documents == before[key].documents
+
+
+@pytest.mark.parametrize("drift", ["foreign_tenant", "remote_scope", "snapshot_change"])
+async def test_inspection_scope_and_snapshot_fences(scenario, drift):
+    database, _, _, remote = scenario
+    changed = deepcopy(remote)
+    if drift == "remote_scope":
+        changed["propertyId"] = "999"
+    elif drift == "snapshot_change":
+        changed["roomStays"][0]["total"]["priceAfterTax"] = 121
+    client = SimpleNamespace(booking=AsyncMock(side_effect=[remote, changed] if drift == "snapshot_change" else [changed]))
+    before = deepcopy(database.bookings.documents)
+    with pytest.raises(read.ReadReservationError):
+        await demo.inspect_reconciliation("tenant-b" if drift == "foreign_tenant" else "tenant-a", CONNECTION, NUMBER, client)
+    assert database.bookings.documents == before
+    if drift == "foreign_tenant":
+        client.booking.assert_not_awaited()
+
+
+async def test_inspection_ready_still_never_applies_a_valid_plan(scenario):
+    database, _, _, remote = scenario
+    before = deepcopy(database.bookings.documents)
+    result = await demo.inspect_reconciliation("tenant-a", CONNECTION, NUMBER,
+        SimpleNamespace(booking=AsyncMock(return_value=remote)))
+    assert result["status"] == "ready" and result["applied"] is False
+    assert database.bookings.documents == before and database.exely_demographic_checks.documents == []
+
+
+async def test_explicit_free_room_is_not_replaced_with_extra_service_booking_total(scenario):
+    database, reservation, _, remote = scenario
+    reservation["rooms"][0]["amount"] = 0
+    database.bookings.documents[0]["total_amount"] = 0
+    remote["roomStays"][0]["total"]["priceAfterTax"] = 0
+    # The separate overall provider total remains 120 (e.g. extra services).
+    plans = await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert plans[0]["proof"]["total_amount"] == 0
+
+
+async def test_no_matching_room_is_distinct_from_multiple_matching_rooms(scenario):
+    _, reservation, _, remote = scenario
+    remote["roomStays"][0]["roomType"]["id"] = "999"
+    with pytest.raises(read.ReadReservationError, match="ROOM_JOIN_NOT_FOUND"):
+        await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+
+
+async def test_inspection_route_never_returns_credentials(monkeypatch, scenario):
+    _, _, _, remote = scenario
+    @asynccontextmanager
+    async def fake_client(connection, credentials):
+        yield SimpleNamespace(booking=AsyncMock(return_value=remote))
+    monkeypatch.setattr(api, "read_client", fake_client)
+    monkeypatch.setattr(api, "require_read_allowed", lambda *_: None)
+    monkeypatch.setattr(api, "saved_read_credentials", AsyncMock(return_value={"client_id": "SECRET-CLIENT", "client_secret": "SECRET-KEY"}))
+    result = await api.inspect_read_reservation(api.ReconcileRequest(reservation_id=NUMBER), SimpleNamespace(tenant_id="tenant-a"), None)
+    assert result["status"] == "ready" and "SECRET" not in str(result)
+
+
 @pytest.mark.parametrize("drift", ["booking", "source", "connection"])
 async def test_compare_and_swap_rejects_races_without_repricing_or_reack(scenario, drift):
     database, reservation, _, remote = scenario
@@ -409,7 +488,8 @@ async def test_explicit_test_consent_is_saved_only_after_remote_validation(monke
         read.require_read_allowed(database.exely_connections.documents[0])
 
 
-async def test_routes_enforce_permission_dependency_before_any_write(monkeypatch):
+@pytest.mark.parametrize("path", ["connect", "pause", "reconcile", "inspect"])
+async def test_routes_enforce_permission_dependency_before_any_write(monkeypatch, path):
     app = FastAPI()
     app.include_router(api.router)
     async def user():
@@ -423,7 +503,7 @@ async def test_routes_enforce_permission_dependency_before_any_write(monkeypatch
     vault = SimpleNamespace(store_provider_credentials=AsyncMock())
     monkeypatch.setattr(api, "get_secrets_manager", lambda: vault)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        response = await http.post("/read-reservation/connect", json={"client_id": "synthetic-client", "client_secret": "synthetic-secret", "reservation_id": NUMBER, "confirmation": "ENABLE_READ_RESERVATION:501694"})
+        response = await http.post(f"/read-reservation/{path}", json={"client_id": "synthetic-client", "client_secret": "synthetic-secret", "reservation_id": NUMBER, "confirmation": "ENABLE_READ_RESERVATION:501694"})
     assert response.status_code == 403
     vault.store_provider_credentials.assert_not_awaited()
 

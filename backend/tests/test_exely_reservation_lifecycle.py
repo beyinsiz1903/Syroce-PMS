@@ -744,6 +744,36 @@ async def test_pending_processor_reports_rejection_separately_from_reserved(fake
 
 
 @pytest.mark.asyncio
+async def test_same_unmapped_record_recovers_via_normal_pending_batch_and_acks_only_once(fake_db, monkeypatch):
+    """Offline R3 contract, not a substitute for provider certification wire."""
+    monkeypatch.setattr("domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold",
+                        AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}))
+    _, current = await _persist(fake_db, _canonical())
+    provider = SimpleNamespace(confirm_delivery=AsyncMock(return_value=SimpleNamespace(
+        success=True, metadata={"provider_write_count": 1})))
+    rejected = await pms_lifecycle.process_pending_reservations("tenant", provider=provider, report_mapping_rejections=True)
+    assert rejected["imported"] == 0 and rejected["acknowledgements"]["acked"] == 0
+    assert rejected["mapping_rejections"] == {"sent": 1, "provider_write_count": 1}
+    assert fake_db.bookings.documents == []
+    assert provider.confirm_delivery.await_args.kwargs["res_status"] == "Requestdenied"
+    source_hash = current["provider_payload_hash"]
+    identity = current["provider_version_identity"]
+    await _add_mapping(fake_db)
+    recovered = await pms_lifecycle.process_pending_reservations("tenant", provider=provider, report_mapping_rejections=True)
+    assert recovered["imported"] == 1 and recovered["acknowledgements"]["acked"] == 1
+    assert recovered["mapping_rejections"]["provider_write_count"] == 0
+    assert len(fake_db.bookings.documents) == 1
+    calls = provider.confirm_delivery.await_args_list
+    assert len(calls) == 2 and calls[1].kwargs.get("res_status", "Reserved") == "Reserved"
+    assert calls[1].args[1] == fake_db.bookings.documents[0]["id"]
+    after = await fake_db.exely_reservations.find_one({"provider_version_identity": identity})
+    assert after["provider_payload_hash"] == source_hash
+    assert after["delivery_confirmed"] is True
+    await pms_lifecycle.process_pending_reservations("tenant", provider=provider, report_mapping_rejections=True)
+    assert len(fake_db.bookings.documents) == 1 and provider.confirm_delivery.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_mapping_rejection_provider_wire_is_single_write_without_fake_booking():
     provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=5)
     provider._transport.send_soap = AsyncMock(return_value=f'<s:Envelope xmlns:s="{SOAP_NS}"><s:Body><OTA_NotifReportRS xmlns="{OTA_NS}"><Success/></OTA_NotifReportRS></s:Body></s:Envelope>')
