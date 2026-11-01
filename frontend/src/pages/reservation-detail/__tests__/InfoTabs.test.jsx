@@ -13,6 +13,24 @@ vi.mock('@/api/axios', () => ({
 import { GeneralInfoTab } from '../InfoTabs';
 
 describe('GeneralInfoTab', () => {
+  it('shows booked provider services separately from accommodation and receipts, including services with no code', () => {
+    render(<GeneralInfoTab booking={{ id: 'service-source', channel: 'exely', currency: 'USD',
+      total_amount: 100, provider_booking_total: 400, provider_services: [
+        { reference: '1', provider_id: '', name: 'Breakfast', quantity: 2, duration: 1,
+          start_date: '2030-11-10', amount: 300, currency: 'USD', scope: 'room' },
+        { reference: '2', name: 'Otopark', quantity: 1, duration: 1,
+          start_date: '2030-11-10', amount: 0, currency: 'USD', inclusive: true, scope: 'reservation' },
+      ] }} summary={{ accommodation_total: 100, total_payments: 0, balance: 100 }} payments={[]} />);
+    const services = screen.getByTestId('exely-booked-services');
+    expect(services).toHaveTextContent('Breakfast');
+    expect(services).toHaveTextContent('300');
+    expect(services).toHaveTextContent('Ücrete dahil');
+    expect(services).toHaveTextContent('2 adet');
+    expect(services).toHaveTextContent('Rezervasyon genelinde');
+    expect(screen.getByText('Konaklama bedeli').parentElement).toHaveTextContent('100');
+    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Tahsilat kaydı yok');
+  });
+
   it('separates the provider payment instruction and external reference from actual receipts', () => {
     render(<GeneralInfoTab booking={{ id: 'exely-channel', booking_source: 'exely',
       provider_group_reservation_id: 'exely-group', provider_channel_name: 'Liberty Channel',

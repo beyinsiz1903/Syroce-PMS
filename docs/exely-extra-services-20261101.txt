@@ -1,0 +1,43 @@
+Exely additional-service source preservation
+
+Problem: OTA_ResRetrieveRS/HotelReservation/Services and the room's ServiceRPH
+references were discarded. A booking with USD100 accommodation and USD300
+breakfast retained only the USD100 room amount, losing the service breakdown.
+Baseline replay also accepted a non-finite service amount because it never read
+the service. The discovery response discarded the service/PMS-code inventory.
+
+The parser now preserves the service reference, optional ID/code, name, quantity,
+pricing type, inclusion, currency, total, service dates, original source time and
+daily rates. Quantity/duration never multiply an already-totalled provider fee.
+Missing channel-service API codes are allowed by PMSConnect1.17 FAQ p145.
+Invalid financial data, duplicate service references and dangling references
+reject the read batch. Service-free raw payloads keep their old hash shape.
+
+Services persist through normalization, current source, immutable version and
+booking. Shared/group services have one owner; retry does not append duplicates.
+Both the PMS readback and the pre-ACK readback require the service data and room
+amount to remain present. Provider service quotes are visible on the reservation
+card, separately from accommodation and PMS receipts. They are future service
+orders, not fabricated delivered services or revenue posted on today's open day.
+Folio posting/fulfilment remains an explicit hotel operation.
+
+Live check, TEST501694 only: source20261110-501694-1200421827 is unprocessed in
+the Exely non-delivery report. Its message is “A PMS doesn’t send requests for
+new bookings to Exely.” This is not proof that its blank service mapping caused
+the failed delivery. Breakfast API ID5001517 has no provider-side PMS service
+code. Standard room code500157400 already matches the saved Syroce mappings.
+Production SHA7bba050677365caac26916a8bc1723d46bfd09c6 is healthy; scheduled
+pull and ARI are off. The target is absent from the nine local Exely sources.
+
+Do not claim this is a live import/folio/ACK acceptance. After deployment, finish
+the TEST501694 service-code configuration/readback, reconcile the exact source
+version, redeliver only1827 if necessary, and use the normal PMS pull once.
+Verify room100USD, service300USD, provider total400USD and actual collection0.
+Preserve the old1572 record, other sources, ARI gates, rates, inventory and day.
+No email may be sent without showing recipient and text to the user first.
+
+Validation: 326 focused offline backend tests passed (14 new service cases),
+23 related frontend tests passed, frontend production build and ESLint passed,
+Ruff and git diff checks passed. A broader exploratory selection also included
+an obsolete WSSE contract file (six pre-existing expectations) and seven tests
+requiring an absent localhost HTTP server; that run is not claimed as passing.

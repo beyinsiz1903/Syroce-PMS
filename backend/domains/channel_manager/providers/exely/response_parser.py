@@ -10,6 +10,8 @@ from typing import Any
 
 from defusedxml import ElementTree as safe_ET
 
+from .services import ServicePayloadError, parse_service_inventory, parse_services
+
 logger = logging.getLogger(__name__)
 
 OTA_NS = "http://www.opentravel.org/OTA/2003/05"
@@ -187,10 +189,10 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
     for hr in body.iter(_ns("HotelReservation")):
         try:
             res = _parse_hotel_reservation(hr)
-        except _ReservationIdentityError:
+        except (_ReservationIdentityError, ServicePayloadError):
             # Do not acknowledge a partial batch or expose provider IDs in logs.
             return {"success": False, "result_class": MALFORMED,
-                    "error": "Conflicting reservation identity", "reservations": [], "count": 0}
+                    "error": "Invalid reservation identity or service details", "reservations": [], "count": 0}
         if res:
             reservations.append(res)
 
@@ -287,6 +289,9 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
     rooms = []
     for room_stay in hr_el.iter(_ns("RoomStay")):
         room = {"index_number": _attr(room_stay, "IndexNumber", "")}
+        service_refs = [_attr(ref, 'RPH') for ref in room_stay.findall(f"{_ns('ServiceRPHs')}/{_ns('ServiceRPH')}")]
+        if service_refs:
+            room['service_references'] = service_refs
 
         # Room type
         for rt in room_stay.iter(_ns("RoomType")):
@@ -430,6 +435,12 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
     res.setdefault("total_guests", sum(r.get("adults", 1) + r.get("children", 0) for r in rooms) or 1)
     res.setdefault("notes", "")
 
+    services = parse_services(hr_el, rooms, res.get('currency', ''))
+    if services:
+        # Keep the legacy raw-payload hash identical for service-free bookings.
+        # A harmless parser rollout must not look like a changed provider version.
+        res['services'] = services
+
     return res
 
 
@@ -497,7 +508,8 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
             seen_rates.add(r["code"])
             unique_rates.append(r)
 
-    return {**outcome, "room_types": unique_rooms, "rate_plans": unique_rates}
+    return {**outcome, "room_types": unique_rooms, "rate_plans": unique_rates,
+            "services": parse_service_inventory(body)}
 
 
 def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
