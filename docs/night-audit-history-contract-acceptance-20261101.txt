@@ -1,0 +1,83 @@
+GÜN SONU GEÇMİŞİ SÖZLEŞMESİ — 01.11.2026
+
+Canlı kabulde bulunan hata
+78cfe2ea73569b31efa9f3e6c4398f133a227ca9 sürümünde /night-audit/logs
+sayfası /api/night-audit/history yanıtını logs/stats olarak okuyordu.
+Gerçek yanıt runs/total/limit/skip idi. Ekran başarılı HTTP yanıtına rağmen
+0 kayıt gösteriyordu. /api/night-audit/runs salt okunur kontrolde toplam197
+kayıt döndürdü. Veri kaybı veya yeniden gün sonu çalıştırma ihtiyacı yoktur.
+
+Önceki testte neden görülmedi
+PmsLogTimes.regression.test.jsx saat örneği de eski logs biçimindeydi;
+UTC dönüşümünü test ediyor, gerçek yanıt sözleşmesini test etmiyordu.
+Yeni 8 UI regresyonu düzeltmeden önce 8/8 başarısız oldu. Eski saat örneği
+canonical runs yanıtına geçirildi; test/güvenlik kapısı gevşetilmedi.
+
+Düzeltme
+- Sayfa canonical /api/night-audit/runs verisini okur; 20 satırlık server
+  sayfalaması ve filtrelenmiş total kullanılır. İlk100 satırla sessiz sınır yok.
+- Endpoint tarihleri gerçek date olarak doğrular, ters aralığı400 reddeder.
+  Filtre business_date üzerinde, durum filtresi ve tenant sınırı ile birlikte
+  hem satırlara hem total sorgusuna uygulanır. started_at + id sabit sıralama.
+- Tarih/durum değişince eski çıktı temizlenir; geç yanıt yeni filtreye yazamaz.
+  HTTP/sözleşme hatası boş başarılı sonuç gibi sunulmaz.
+- İş günü, başlangıç/bitiş Türkiye saati, gerçek/simülasyon/superseded ayrılır.
+  Bilinmeyen sayaçlar sıfır yapılmaz; sayfa sayaçları tüm dönem gibi sunulmaz.
+- Eski per-step log ekranının mali toplamları run kayıtlarına uydurulmadı.
+  Aynı günün tekrarları veya dövizler toplanmaz; günlük gelir raporu ayrı kalır.
+- Detay yalnız seçilmiş operasyon alanlarını gösterir; ham JSON/lock_token
+  gösterilmez. Liste projection'ı lock_token'ı da dışarıda bırakır.
+- require_op(view_night_audit), auth ve tenant kapıları aynen korunur.
+  Gün sonu çalıştırma/abort/resume veya herhangi bir mali yazı değişmedi.
+
+Doğrulama
+20 seçili UI (8 yeni +12 mevcut saat regresyonu) ve30 seçili backend testi
+geçti. Backend kapsamında12 yeni query/ASGI HTTP/auth/tarih/sayfalama testi
+vardır; kalan18 preview-clock ve finansal özet regresyonudur. Canlı mutasyon
+veya gerçek veritabanı entegrasyon testi sayısı gibi sunulmaz.
+ESLint, Ruff, theme guard, diff kontrolü ve Vite üretim build başarılı.
+Tam UI paketi kilit dosyasına uygun izole ortamda ayrıca tamamlanır.
+İlk yerel tam koşu localhost izniyle durdu; ikinci koşuda paylaşılan eski
+node_modules bağlantısındaki follow-redirects1.16.1 ortaya çıktı. Kilit
+dosyası1.16.2'dir. Aynı SHA256 kilidi ve1.16.2 kurulu izole ortam kullanıldı;
+ignore/skip veya pin değişikliği yapılmadı. İlk başarısız kanıtlar korunur.
+
+CUA yerel önizleme
+Normal tarih klavyesi ve durum seçimiyle stale-output temizliği, filtrenin
+1/2 kayıt ayrımı, genişletilmiş aralıkta24Ekim iş günü /1Kasım01:05:06
+Türkiye zamanı ve seçilmiş detay alanları incelendi. Bu önizleme yapaydır,
+üretimde yeni düzeltmenin canlı kabulü değildir. Geçici HTML evidence içine
+taşındı; uygulamaya veya PR'a eklenmedi. Yerel sunucu/sekme kapatıldı.
+
+Canlı sürüm koruması ve mobil sınırı
+PR1477/1478 exact-head kontrollerinin15'i başarılı,3 deployment adımı PR
+olduğu için beklenen skipped. Merge-main iki workflow ve gerçek Deploy to
+Server41278312316 başarılı; health78cfe2ea ile eşleşir. PR1477 atadır;
+aradaki değişiklikler yalnız mobile/ ve ilgili rapordur.
+34 korunan kaynak önce/sonra aynı; tek kasıtlı response değişikliği25Ekim
+audit_status:rerun_superseded→completed. Tutar/vergi/kur/folio kaynakları aynı.
+31 fiziksel oda/QT2ED0, stok52'şer,26Ekim açık iş günü ve kapalı kanallar
+korundu. 80 kalıcı audit olayında UTC→Türkiye saatleri UI ile eşleşti.
+Z kaynak16:34/16:45UTC, görünüm19:34/19:45TR; kapanış60/fark0 değişmedi.
+
+Mobil PR1478 merge edilmiş ve tüm CI geçmiş olsa da Droplet deployu bir
+native mobil yayın değildir. EAS'te son iOS pilot1.0.0(23),20Ekim2026,
+git7cf27eb1; pilot kanal son OTA6Ekim. Android build listesi boş döndü.
+Güncel kaynakla embedded build arasında Expo/notifications/router paket
+değişiklikleri bulunduğundan OTA uyumluluğu varsayılmadı. Yeni native build,
+TestFlight/store/OTA yayını bu kabulde başlatılmadı. Fiziksel cihaz kabulü ayrı.
+
+Kanıt kökü (workspace, önceki kanıtların üzerine yazılmaz)
+deploy1477-1478-acceptance-20261101.QpOLZm/
+  release-gate.json, before-acceptance.json, after-acceptance.json,
+  clock-ui-acceptance.json, mobile-source-acceptance.json,
+  canonical-runs-before.json, night-history-empty-before.png/.txt,
+  history-contract-before.json, history-ui-final-selected.json,
+  history-backend-after-v1.xml, history-fixed-local-ui.png/.txt,
+  history-filter-invalidated-local.txt, history-filtered-local.txt,
+  history-midnight-local.txt, history-details-local.txt,
+  eas-builds.json,eas-android-builds.json,eas-updates.json,eas-channels.json.
+
+Tam PMS hatasızlığı, bütün native cihaz/rol/dış teslim senaryoları veya yeni
+düzeltmenin production kabulü iddia edilmez. Normal PR/CI/merge/deploy ve
+health sonrası bu adlandırılmış gün sonu geçmişi ekranı tekrar doğrulanmalıdır.

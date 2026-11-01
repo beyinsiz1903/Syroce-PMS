@@ -25,7 +25,7 @@ beforeEach(() => {
     : path.startsWith('/security/login-logs') ? { logs: [{ ...log, success: true, email: 'local@example.invalid' }] }
       : path === '/kvkk/requests' ? { requests: [], total: 0 } : path === '/kvkk/consents' ? { consents: [], total: 0 }
         : path === '/kvkk/audit-log' ? { logs: [log] } : path === '/gdpr/retention-policy' ? { policies: [] }
-          : path === '/night-audit/history' ? { logs: [{ ...log, audit_date: '2026-10-26', status: 'completed' }], stats: null }
+          : path === '/night-audit/runs' ? { runs: [{ ...log, business_date: '2026-10-26', started_at: stamp, status: 'completed', dry_run: false }], total: 1 }
             : { logs: [log], log_levels: { INFO: 1 } } }));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });

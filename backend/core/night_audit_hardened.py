@@ -2080,17 +2080,25 @@ async def get_runs(
     limit: int = 20,
     skip: int = 0,
     status_filter: str = None,
+    start_date: str = None,
+    end_date: str = None,
 ) -> dict:
     """List night audit runs for a tenant."""
     query: dict[str, Any] = {"tenant_id": tenant_id}
     if status_filter:
         query["status"] = status_filter
+    if start_date or end_date:
+        query["business_date"] = {}
+        if start_date:
+            query["business_date"]["$gte"] = start_date
+        if end_date:
+            query["business_date"]["$lte"] = end_date
     runs = (
         await db.night_audit_runs.find(
             query,
-            {"_id": 0},
+            {"_id": 0, "lock_token": 0},
         )
-        .sort("started_at", -1)
+        .sort([("started_at", -1), ("id", -1)])
         .skip(skip)
         .limit(limit)
         .to_list(limit)
