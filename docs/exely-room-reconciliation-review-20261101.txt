@@ -1,0 +1,58 @@
+Exely room/demographic reconciliation - 1 November 2026
+
+This change is NOT a completed live demographic acceptance or R3 certificate.
+Do not mark booking 1827 verified until normal live reconciliation succeeds.
+
+Observed live state before this change
+- TEST501694 booking ending 1827: imported and ACKED, room 100 USD,
+  separately preserved Breakfast quote 300 USD, booking provider total 400 USD.
+- Secondary demographic reconciliation reports EXELY_READ_ROOM_JOIN_AMBIGUOUS.
+- The old matcher reports that same code for zero candidates and >1 candidates.
+- The actual REST room breakdown has not yet been observed; do not assert that
+  the provider room total includes service prices without live comparison.
+
+Changes
+- Preserve an explicit zero room amount instead of replacing it with the
+  booking total (which may include paid extra services).
+- Distinguish ROOM_JOIN_NOT_FOUND from ROOM_JOIN_AMBIGUOUS. Neither authorizes
+  applying inferred counts, rewriting financial data, or fabricating proof.
+- POST /api/channel-manager/exely/read-reservation/inspect accepts the existing
+  reservation_id request. It requires manage_channel_connectors, loads only the
+  current tenant/property, uses the saved connection-bound read-only client,
+  and requires two identical REST snapshots before returning a comparison.
+- The response allowlists numeric room/service identifiers, dates, totals,
+  inclusive flags, a snapshot hash, and a stable reconciliation outcome.
+  No guest/contact payload, service descriptions, credentials or raw XML.
+- Inspection never applies a plan, changes bookings/configuration, imports,
+  acknowledges, or queues ARI. Existing reconciliation fences remain intact.
+
+Post-deployment acceptance
+1. Confirm live release contains this patch, Demo 100001 / TEST501694 only.
+2. Keep ARI writes and automatic reservation polling OFF.
+3. Inspect the imported booking ending 1827, compare room identity, dates,
+   accommodation amount and service amounts against the durable SOAP source.
+4. If matching still fails, fix ONLY the observed mismatch and add its exact
+   sanitized regression fixture. Do not bypass matching or set verified by hand.
+5. Use the normal /read-reservation/reconcile path. Confirm version-fenced
+   verified proof and unchanged payments, folios, quoted services/source hashes.
+
+R3 live plan (separate from offline tests)
+- Suite is unavailable on the selected date. Prepared Deluxe / Base rate,
+  10-11 November 2026, 3 synthetic adults, 120 USD, now payable 0, no services.
+- The provider Book terms require a separate action-time approval. Until it is
+  received, no booking or mapping mutation is performed.
+- Snapshot and restore the existing Deluxe/Base mapping using its normal PATCH
+  endpoint, preserving its ID and all original configurable fields.
+- Keep ARI/polling OFF. Only temporarily detach its inbound SOAP rate alias.
+- Create the approved new booking, normal pull must hold it for missing mapping
+  and report Requestdenied without a PMS booking, Reserved ACK or inventory write.
+- Restore and read back the original mapping even if the negative phase fails.
+- Retry the SAME provider record through normal delivery/pull; check exactly one
+  PMS booking and durable positive ACK. Preserve all test evidence and records.
+- No old 1572 replay, manual import/ACK, card/bank action, email or other hotel.
+
+Local validation
+- 188 relevant offline tests passed (demographics, lifecycle, services, aliases,
+  mapping write controls and pull noise).
+- 2 real isolated local Mongo demographic CAS/tenant-isolation tests passed.
+- Ruff and git diff --check passed.
