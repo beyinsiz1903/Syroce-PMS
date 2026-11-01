@@ -141,13 +141,42 @@ def _folio_export_transactions(charges: list[dict], payments: list[dict]) -> lis
     return sorted(transactions, key=lambda transaction: str(transaction["date"]))
 
 
-async def _decrement_booking_paid_amount(tenant_id: str, booking_id: str, amount: float) -> float:
+async def _increment_booking_paid_amount(tenant_id: str, booking_id: str, amount: float, currency: str) -> None:
+    """Keep the legacy reservation counter aligned with a NEW kept receipt.
+
+    Preserve prior source credit and increment atomically, rather than replacing
+    it with the current payment rows. Exact replays return before this step;
+    cash-shift compensation also finishes before it. Never invent cross-ledger
+    conversion for a reservation counter denominated in a different currency.
+    """
+    bookings = getattr(db, "bookings", None)
+    if bookings is None:
+        return
+    booking = await bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0, "currency": 1})
+    if not booking:
+        return
+    if booking.get("currency") and _normalize_currency(booking["currency"]) != _normalize_currency(currency):
+        logger.warning("Folio receipt counter needs explicit cross-currency reconciliation")
+        return
+    await bookings.update_one(
+        {"id": booking_id, "tenant_id": tenant_id, "currency": booking.get("currency")},
+        [{"$set": {"paid_amount": {"$round": [{"$add": [{"$ifNull": ["$paid_amount", 0]}, amount]}, 2]}}}],
+    )
+
+
+async def _decrement_booking_paid_amount(tenant_id: str, booking_id: str, amount: float, currency: str | None = None) -> float:
     """Reverse only the amount previously credited to a booking payment total."""
+    projection = {"_id": 0, "paid_amount": 1}
+    if currency:
+        projection["currency"] = 1
     booking = await db.bookings.find_one(
         {"id": booking_id, "tenant_id": tenant_id},
-        {"_id": 0, "paid_amount": 1},
+        projection,
     )
     if not booking:
+        return 0.0
+    if currency and booking.get("currency") and _normalize_currency(booking["currency"]) != _normalize_currency(currency):
+        logger.warning("Folio refund counter needs explicit cross-currency reconciliation")
         return 0.0
     adjustment = min(float(booking.get("paid_amount") or 0), float(amount or 0))
     if adjustment:
@@ -955,8 +984,10 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
 
             _lg.getLogger(__name__).exception("cashier txn record failed")
 
-        # Reservation balance / payment status follow the payment, once the
-        # cashier step has decided whether it stays (never raises).
+        # The receipt is kept: increment the legacy source counter once, then
+        # refresh canonical balance/status. Neither runs on an exact replay or
+        # after cash-shift compensation has removed the payment.
+        await _increment_booking_paid_amount(current_user.tenant_id, folio["booking_id"], float(payment.amount), payment.currency)
         await _refresh_reservation_payment_state(current_user.tenant_id, folio)
 
         # Acente webhook: rezervasyon güncellendi (ödeme alındı → bakiye değişti)
@@ -1287,6 +1318,10 @@ async def void_payment(
             detail="Kapalı folyodaki ödeme iade edilemez",
         )
 
+    # Reverse the immutable transaction-time value, not a foreign ledger
+    # amount mislabeled as TRY. Missing FX evidence rejects BEFORE the void.
+    cash_snapshot = cashier_values(dict(payment))
+
     method_str = payment.get("method") or "cash"
     if hasattr(method_str, "value"):
         method_str = method_str.value
@@ -1331,6 +1366,7 @@ async def void_payment(
             current_user.tenant_id,
             payment["booking_id"],
             float(payment.get("amount") or 0),
+            currency=payment.get("currency"),
         )
 
     async def _rollback_void():
@@ -1356,7 +1392,7 @@ async def void_payment(
     try:
         await record_cash_transaction(
             tenant_id=current_user.tenant_id,
-            amount=float(payment.get("amount") or 0),
+            **cash_snapshot,
             method=method_str,
             direction="out",
             description=f"Ödeme iadesi - {reason}",

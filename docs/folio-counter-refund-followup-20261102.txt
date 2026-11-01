@@ -1,0 +1,92 @@
+PR1484 CANLI KABUL VE SAYAC / DOVIZ IADE TAKIBI — 2 KASIM 2026
+
+Canlı taban
+PR1484 tüm15 kontrolleri geçmiş, beklenen3 job atlanmış ve merge edilmiştir.
+main/backend ve frontend workflow'ları, gerçek Deploy to Server job'u ve
+/api/health aynı7a5132280435b8106a14f8ae62a9e65b6ab1b500 sürümündedir.
+Kısa süren önceki deploy workflow'u gerçek sunucu adımı yerine geçmediği için
+gerçek adımı başarılı son deploy41348697749 kontrol edilmiştir.
+
+Canlı UI kabulü
+Gün sonu geçmişindeki eski {id,email} kullanıcı nesneli iki kayıt artık
+çökmeden açılıyor.25Ekim gerçek/simülasyon ayrımı1+1,detaylar ve Türkiye
+saati27.10.2026 11:52/11:51 doğrulandı.3Ekim–2Kasım aralığında25kayıt,
+ilk sayfa1–20,ikinci sayfa21–25;completed filtresi23kayıt verdi. Yeni bir gün
+sonu çalıştırılmadı; açık PMS iş günü2026-10-26 korundu.
+
+Canlı normal-API kabulü — yalnız yeni yapay kayıt
+DemoHotel100001 / ExelyTEST501694 sandbox; ARI ve rezervasyon çekimi kapalı,
+HotelRunner bağlantısız veV2connector'larpausedkorundu. Gerçekkişi/kimlik,
+bankakartı,PSP,bankatransferi,KBS,dışsağlayıcı veya mail işlemi yok.
+SelinYalçın yapay misafir / rezervasyonfb039c59-edfb-4a7f-b3c9-fea41ded3ff4,
+27–29Kasım,2yetişkin,100USD yeni konaklama. Notu sentetik kabul olduğunu
+açıkça belirtir. Eski/mobil kabul kayıtları kullanılmadı.
+Otomatik açılan boş USD folyo kapatılarak saklandı; normal/folio/create ile
+aynı rezervasyona yeni USD folyo3df19767-8b0f-42ca-a402-d794dc1c1496 açıldı.
+Response/replay USD ve aynıfolioID.100USD konaklama+20USD hizmet toplam120USD;
+ücretin aynen tekrarı tek hareket, aynı anahtar/farklı miktar409.
+Normal credential re-auth tek denemede geçti; şifre/token kanıta yazılmadı.
+Yeni0TRY vardiya6cecc683-bdc1-4a7c-95bb-ae1dd40dbacf açıldı.50USD nakit+
+70USD manuel kart kaydı, açıkça sentetik40TRY/USD kurla2000+2800TRY olarak
+kasa/reporting karşılığına yansıdı. Kur piyasa verisi değildir; gerçek para yok.
+İki ödeme aynen tekrarlandı, yalnız iki hareket var. Yanlışcurrency/eksikTRY
+kur/refund-tahsilat422; kapalıfolyoya yeni ödeme409. Tamamlanan ödeme kapalı
+folyoda aynı anahtarla replay200 ve aynı ödemeID. İkinci para kaydı oluşmadı.
+Yeni folyo0USD veclosed; rezervasyon canonical total_payments/collected_amount
+120USD,balance/reservation_total_due0,payment_statuspaid.
+Yeni vardiya2000TRY sentetik sayımla kapandı. Zraporu2işlem, nakit2000,
+kart2800,beklenen=sayılan2000,fark0. UI'da açılış02.11.2026 00:14,kapanış00:20
+ve açıkEurope/Istanbul etiketi doğrulandı. Aktif vardiya kalmadı.
+Finance-snapshot TRY tahsilat artışı4800/hareket artışı2; işlenmiş gelir
+USD kırılımı120arttı. Farklı rapor kavramları/dövizler birbirine eklenmedi.
+Önceden var olan odalar,stok,rezervasyonlar ve önceki mobil kabul full-detail
+maskeli fingerprint'leri aynı; yalnız yeni rezervasyon eklendi. Yeni kayıtlar
+silinmedi. Başarısız harness denemeleri/kanıtlar ezilmedi; başarılı writes
+jurnale göre tekrar yürütülmedi.
+
+Ek bulgular ve bu takip düzeltmesi
+1.Ortak folyo endpoint'i canonical balance/payment_status/collected_amount
+alanlarını güncelliyor, diğer ödeme yollarının arttırdığı eski
+bookings.paid_amount sayacını atlıyordu. Canlı yeni kayıtta120USD gerçek ledger
+karşılığı ve0bakiye varken bu eski sayaç0kaldı. Eski sayaç tüketicilerinde
+uyumsuz gösterim/grup toplamı riski vardır; ledger veya tahsilat kaybı değildir.
+Yeni ödeme kasada kalıcı kabul edildikten sonra bu sayaç aynı rezervasyon
+currency'sinde, tenant scoped atomic update ile bir kez arttırılır. Aynı
+idempotency replay, değişmiş payload409 ve cash-shift rollback yeniden
+arttırmaz. Null/missing0ile başlar; önceki kaynak kredi korunur; iki ayrı
+eşzamanlı ödeme birbirinin artışını kaybetmez. Birbirinden farklı rezervasyon/
+folyo dövizine sayaç için varsayımsal kur uygulanmaz, mutabakat uyarısı verilir.
+2.Ayrı void/iade yolunda10USD/350TRY alınan yerel test ödeme iadesi kasaya
+10TRY yazılıyordu. Mevcut ortakcashier_values, orijinal ödeme üzerindeki
+değişmez alınanpara/TRYsnapshot'ını kullanacak şekilde bağlandı. Yeni piyasa
+kuruyla yeniden değerleme veya1:1varsayım yok. Kurkanıtı eksik eski dövizli
+ödeme iadesi422ile herhangi bir void/counter/kasa mutasyonundan önce durur.
+Mevcut sağlayıcı kartı/security/MICE/kapalıfolyo ve void_paymentRBAC korumaları
+aynen korunur. Tek iade ödenen sayacını geri düşürür; tekrar iade çift hareket
+oluşturmaz. Bu gerçek PSP refund testi değildir.
+
+Yerel doğrulama
+Yeni ilk paket6failed/1passed ile kusurları üretti; XMLkorundu. Son geniş
+paket133passed;9yeni loopback-replica case dahil. Identity/auth enjekte,
+gerçek routeRBACleri,balance,cashier ve Mongo atomic update davranışı çalışır.
+133sayısı mevcut folyo,rezervasyon bakiyesi,checkout,quickfolio,iade/RBAC,
+kur,Excel/payment-status ve create-folio döviz regresyonlarını da içerir;
+altküme sayıları ayrıca toplanmaz. İzole UUIDtestDB'leri dışında DB yok.
+Ruff ve diffkontrolleri çalıştırılır; yeni frontend/native değişikliği yok.
+Exact-headCI sonucu yerel paket yerine geçirilmez.
+
+Sınırlar ve sonraki kapı
+Bu takipPR henüzmerge/deploy değildir. Canlıda eski sayaç0bulgusu elle/DB
+update'iyle gizlenmedi; mevcut tarihsel veya yeni kabul kayıtları buPR ile
+toplu düzeltilmez. Yeni sayaç davranışı merge/deploy sonrası ayrı yeni bir
+sentetik işlemde doğrulanmalı; geçmiş sayaç düzeltmesi öncesinde kaynak
+ledger/ithal kredi/kur kohortu için ayrıca kontrollü mutabakat gerekir.
+İade kur kabulü bu tur yalnız yerelreplica üzerindedir, canlıda iade/ödeme
+silme yapılmadı. Kesinleşmiş kapalıfolyolar sırf test için açılmadı.
+KBS,resmi bildirim,gerçek banka/PSP/donanım/sertifikasyon veya tüm olası PMS
+varyasyonlarının bittiği iddia edilmez. İş günü hâlâ2026-10-26'dır.
+
+Kalıcı kanıt: çalışma alanı/pr1484-postdeploy-20261102.7RgfrH/
+release-gate.json,live-result.json,final-z-report.json,final-finance.json,
+history-live-pass.png,z-report-live-pass.png,history-status-filter-pass.png,
+counter-refund-before.xml,backend-final.xml ve maskeli normal-API jurnali.
