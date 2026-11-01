@@ -1,360 +1,152 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
-
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Calendar, RefreshCw, Filter, ArrowLeft, List } from "lucide-react";
-import { toast } from "sonner";
-import { useTranslation } from 'react-i18next';
-import { folioLabel, reservationLabel, roomLabel } from '@/utils/displayIdentifiers';
-import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
-import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { RefreshCw, ArrowLeft, List } from 'lucide-react';
 import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp, hotelEventDay } from '@/lib/hotelEventTime';
 
-const getDateOffset = (offsetDays) => {
-  // Offset calendar days after selecting the hotel day; do not use UTC's day
-  // or the workstation timezone around hotel midnight.
-  const d = new Date(`${hotelEventDay()}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + offsetDays);
-  return d.toISOString().split("T")[0];
+const PAGE_SIZE = 20;
+const statuses = {
+  completed: 'Tamamlandı', running: 'Çalışıyor', in_progress: 'Devam ediyor',
+  failed: 'Başarısız', blocked: 'Engellendi', partial_recovery_required: 'Kurtarma gerekli',
+  dry_run_completed: 'Simülasyon tamamlandı', rerun_superseded: 'Yerine yeni koşu işlendi',
+  aborted: 'Durduruldu',
+};
+const count = value => Number.isInteger(value) && value >= 0 ? value : '—';
+const getDateOffset = offsetDays => {
+  const day = new Date(`${hotelEventDay()}T12:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + offsetDays);
+  return day.toISOString().split('T')[0];
 };
 
-const NightAuditLogs = ({ user, tenant, onLogout }) => {
+// Canonical execution runs, not legacy per-step logs. Never sum financial
+// enrichment: simulations/re-runs share a day and currencies cannot be added.
+export default function NightAuditLogs() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
-  const [startDate, setStartDate] = useState(getDateOffset(-7));
-  const [endDate, setEndDate] = useState(getDateOffset(0));
-  const [status, setStatus] = useState("all");
-  const [logs, setLogs] = useState([]);
-  const [stats, setStats] = useState(null);
+  const [filters, setFilters] = useState(() => ({ start_date: getDateOffset(-7), end_date: getDateOffset(0), status: 'all' }));
+  const [runs, setRuns] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const requestVersion = useRef(0);
 
-  const loadLogs = async () => {
+  const loadRuns = async (nextPage = 0) => {
+    const version = ++requestVersion.current;
+    setRuns([]); setTotal(0); setLoaded(false); setError(''); setExpandedId(null);
+    if (filters.start_date && filters.end_date && filters.start_date > filters.end_date) {
+      setLoading(false); setError('Başlangıç iş günü bitişten sonra olamaz.'); return;
+    }
+    setLoading(true);
     try {
-      setLoading(true);
-      const params = {
-        limit: 100,
-        skip: 0,
-      };
-      if (startDate) params.start_date = startDate;
-      if (endDate) params.end_date = endDate;
-      if (status && status !== "all") params.status = status;
-
-      const res = await axios.get("/night-audit/history", { params });
-      setLogs(res.data.logs || []);
-      setStats(res.data.stats || null);
-    } catch (err) {
-      console.error("Failed to load night audit logs", err);
-      toast.error("Night audit logları yüklenemedi");
+      const params = { limit: PAGE_SIZE, skip: nextPage * PAGE_SIZE };
+      if (filters.start_date) params.start_date = filters.start_date;
+      if (filters.end_date) params.end_date = filters.end_date;
+      if (filters.status !== 'all') params.status = filters.status;
+      const { data } = await axios.get('/night-audit/runs', { params });
+      if (version !== requestVersion.current) return;
+      if (!Array.isArray(data?.runs) || !Number.isInteger(data.total) || data.total < data.runs.length
+        || data.runs.some(run => !run?.id || !run.business_date)
+        || new Set(data.runs.map(run => run.id)).size !== data.runs.length) throw new Error('Invalid run contract');
+      setRuns(data.runs); setTotal(data.total); setPage(nextPage); setLoaded(true);
+    } catch {
+      if (version === requestVersion.current) setError('Gün sonu geçmişi yüklenemedi. Yenile ile tekrar deneyin.');
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadLogs();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    loadRuns();
+    return () => { requestVersion.current += 1; };
+  // Filters are operator-applied, not a request on every keystroke.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleFilter = () => {
-    loadLogs();
+  const changeFilter = (name, value) => {
+    requestVersion.current += 1;
+    setFilters(previous => ({ ...previous, [name]: value }));
+    setRuns([]); setTotal(0); setPage(0); setLoaded(false); setLoading(false); setError(''); setExpandedId(null);
   };
-
-  const renderStatusBadge = (value) => {
-    const v = value || "unknown";
-    let color = "bg-gray-100 text-gray-700";
-    if (v === "completed") color = "bg-green-100 text-green-700";
-    else if (v === "failed") color = "bg-red-100 text-red-700";
-    else if (v === "in_progress") color = "bg-yellow-100 text-yellow-700";
-    return <Badge className={color}>{v}</Badge>;
-  };
-
-  const renderActionLabel = (log) => {
-    const action = log?.metadata?.action;
-    if (!action) return "general";
-    if (action === "no_show_handling") return "No-Show Handling";
-    if (action === "post_room_charges") return "Room Charges Posting";
-    return action;
-  };
-
-  const renderNoShowDetails = (log) => {
-    const details = log?.metadata?.no_show_details;
-    if (!details || !Array.isArray(details) || details.length === 0) return null;
-
-    return (
-      <div className="mt-3 border-t pt-3">
-        <div className="text-xs font-semibold text-gray-700 mb-2">No-Show Detayları</div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b text-left text-gray-600">
-                <th className="py-1 pr-2">Rezervasyon</th>
-                <th className="py-1 pr-2">Oda</th>
-                <th className="py-1 pr-2">Folio</th>
-                <th className="py-1 pr-2 text-right">Fee Posted</th>
-                <th className="py-1 pr-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {details.map((d) => (
-                <tr key={d.booking_id} className="border-b last:border-0">
-                  <td className="py-1 pr-2">{reservationLabel(d)}</td>
-                  <td className="py-1 pr-2">{roomLabel(d)}</td>
-                  <td className="py-1 pr-2">{folioLabel(d)}</td>
-                  <td className="py-1 pr-2 text-right">{d.fee_posted ? t("common.yes") : t("common.no")}</td>
-                  <td className="py-1 pr-2 text-right">
-                    {d.fee_amount ? formatCurrency(d.fee_amount, d.currency || cachedTenantCurrency()) : "-"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
+  const pageCompleted = runs.filter(run => run.status === 'completed' && run.dry_run === false).length;
+  const pageSimulations = runs.filter(run => run.dry_run === true).length;
 
   return (
-    <>
-      <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/reports")}
-              className="hidden md:inline-flex"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Reports
-            </Button>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-                <List className="w-5 h-5 text-blue-600" />
-                Night Audit Logları
-              </h1>
-              <p className="text-xs md:text-sm text-gray-600">
-                Her night audit adımı için ayrıntılı kayıt: kim, ne zaman, hangi odada, hangi işlem.
-              </p>
-              <p className="text-xs text-gray-500">İşlem zamanı: {HOTEL_EVENT_TIME_ZONE_LABEL}. İş günü ayrı gösterilir.</p>
-            </div>
-          </div>
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+      <div className="flex items-start gap-3">
+        <Button variant="outline" size="sm" onClick={() => navigate('/reports')} aria-label="Raporlara dön"><ArrowLeft className="w-4 h-4" /></Button>
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2"><List className="w-5 h-5 text-blue-600" />Gün Sonu Geçmişi</h1>
+          <p className="text-sm text-gray-600">Gerçek gün sonları, simülasyonlar ve yeniden çalıştırmalar ayrı kayıtlar olarak gösterilir.</p>
+          <p className="text-xs text-gray-500">İşlem zamanı: {HOTEL_EVENT_TIME_ZONE_LABEL}. Filtreler iş gününe uygulanır; işlem saati ayrı gösterilir.</p>
         </div>
-
-        {/* Filters + Stats */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="lg:col-span-2">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Filter className="w-4 h-4" />
-                Filtreler
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                <div>
-                  <div className="flex items-center gap-1 text-xs text-gray-600 mb-1">
-                    <Calendar className="w-3 h-3" />
-                    Başlangıç Tarihi
-                  </div>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1 text-xs text-gray-600 mb-1">
-                    <Calendar className="w-3 h-3" />
-                    Bitiş Tarihi
-                  </div>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-                <div>
-                  <div className="text-xs text-gray-600 mb-1">Durum</div>
-                  <select
-                    className="h-9 w-full border rounded-md text-sm px-2"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                  >
-                    <option value="all">{t("common.all")}</option>
-                    <option value="completed">Completed</option>
-                    <option value="failed">Failed</option>
-                    <option value="in_progress">In Progress</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={loadLogs}
-                  disabled={loading}
-                >
-                  <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-                  Yenile
-                </Button>
-                <Button size="sm" onClick={handleFilter} disabled={loading}>
-                  <Filter className="w-4 h-4 mr-1" />
-                  Uygula
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Özet İstatistikler</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs text-gray-700">
-              {stats ? (
-                <>
-                  <div className="flex justify-between">
-                    <span>Toplam Audit</span>
-                    <span className="font-semibold">{stats.total_audits}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Başarılı</span>
-                    <span className="font-semibold text-green-700">{stats.successful}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Başarısız</span>
-                    <span className="font-semibold text-red-700">{stats.failed}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Success Rate</span>
-                    <span className="font-semibold">{stats.success_rate}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Toplam Charges</span>
-                    <span className="font-semibold">
-                      {formatCurrency(stats.total_charges, stats.currency || tenant?.currency || cachedTenantCurrency())}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>İşlenen Oda Sayısı</span>
-                    <span className="font-semibold">{stats.total_rooms}</span>
-                  </div>
-                </>
-              ) : (
-                <div className="text-gray-500 text-xs">Henüz istatistik bulunmuyor.</div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Logs table */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <List className="w-4 h-4" />
-              Audit Log Kayıtları ({logs.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-16 text-gray-500 text-sm">
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-                Yükleniyor...
-              </div>
-            ) : logs.length === 0 ? (
-              <div className="py-10 text-center text-gray-500 text-sm">
-                Kayıt bulunamadı. Filtreleri değiştirip tekrar deneyin.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs md:text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-gray-600">
-                      <th className="py-2 pr-3">İş günü</th>
-                      <th className="py-2 pr-3">İşlem zamanı</th>
-                      <th className="py-2 pr-3">Kullanıcı</th>
-                      <th className="py-2 pr-3">Durum</th>
-                      <th className="py-2 pr-3">Aksiyon</th>
-                      <th className="py-2 pr-3 text-right">Oda</th>
-                      <th className="py-2 pr-3 text-right">Charges</th>
-                      <th className="py-2 pr-3 text-right">Tutar</th>
-                      <th className="py-2 pr-3 text-right">Detay</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logs.map((log) => {
-                      const timeStr = formatHotelEventTimestamp(log.timestamp);
-                      const isExpanded = expandedId === log.id;
-
-                      return (
-                        <React.Fragment key={log.id}>
-                          <tr className="border-b last:border-0 hover:bg-gray-50">
-                            <td className="py-2 pr-3 whitespace-nowrap">{log.audit_date || '—'}</td>
-                            <td title={HOTEL_EVENT_TIME_ZONE_LABEL} className="py-2 pr-3 whitespace-nowrap">{timeStr}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap">{log.user_name || log.user_id || "-"}</td>
-                            <td className="py-2 pr-3">{renderStatusBadge(log.status)}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap">{renderActionLabel(log)}</td>
-                            <td className="py-2 pr-3 text-right">{log.rooms_processed ?? "-"}</td>
-                            <td className="py-2 pr-3 text-right">{log.charges_posted ?? "-"}</td>
-                            <td className="py-2 pr-3 text-right">
-                              {log.total_amount != null || log.projected_total_by_currency || log.total_room_revenue_by_currency
-                                ? formatCurrencyBreakdown(
-                                    log.projected_total_by_currency || log.total_room_revenue_by_currency,
-                                    log.total_amount,
-                                    log.currency || tenant?.currency || cachedTenantCurrency(),
-                                  )
-                                : "-"}
-                            </td>
-                            <td className="py-2 pr-3 text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-xs"
-                                onClick={() => setExpandedId(isExpanded ? null : log.id)}
-                              >
-                                {isExpanded ? t("common.close") : "Detay"}
-                              </Button>
-                            </td>
-                          </tr>
-                          {isExpanded && (
-                            <tr className="bg-gray-50 border-b last:border-0">
-                              <td colSpan={9} className="py-2 px-3">
-                                <div className="text-xs text-gray-700">
-                                  {/* No-show detayları var ise tablo olarak göster */}
-                                  {renderNoShowDetails(log)}
-
-                                  {/* Genel metadata JSON görünümü */}
-                                  <div className="mt-3">
-                                    <div className="text-[11px] font-semibold text-gray-600 mb-1">
-                                      Ham Metadata
-                                    </div>
-                                    <pre className="bg-white border rounded p-2 text-[11px] overflow-x-auto max-h-48">
-                                      {JSON.stringify(log.metadata || {}, null, 2)}
-                                    </pre>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
-    </>
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Filtreler</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="text-sm space-y-1"><span>Başlangıç iş günü</span><Input type="date" aria-label="Başlangıç iş günü" value={filters.start_date} onChange={event => changeFilter('start_date', event.target.value)} /></label>
+            <label className="text-sm space-y-1"><span>Bitiş iş günü</span><Input type="date" aria-label="Bitiş iş günü" value={filters.end_date} onChange={event => changeFilter('end_date', event.target.value)} /></label>
+            <label className="text-sm space-y-1"><span>Durum</span><select aria-label="Durum" className="h-10 w-full border rounded-md px-2" value={filters.status} onChange={event => changeFilter('status', event.target.value)}>
+              <option value="all">Tümü</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select></label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => loadRuns(0)} disabled={loading}><RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />Yenile</Button>
+            <Button size="sm" onClick={() => loadRuns(0)} disabled={loading}>Uygula</Button>
+          </div>
+        </CardContent>
+      </Card>
+      {error && <div role="alert" className="border border-red-200 rounded-lg p-3 text-sm text-red-700 bg-red-50">{error}</div>}
+      {loaded && <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+        {[['Filtredeki toplam koşu', total], ['Bu sayfadaki gerçek tamamlanan', pageCompleted], ['Bu sayfadaki simülasyon', pageSimulations]].map(([label, value]) => (
+          <Card key={label}><CardContent className="p-4"><p className="text-gray-500">{label}</p><p className="text-xl font-semibold">{value}</p></CardContent></Card>
+        ))}
+      </div>}
+      <p className="text-xs text-gray-500">Mali tutarlar günlük gelir raporundan incelenir; aynı iş gününün simülasyon ve tekrarları burada gelir olarak toplanmaz.</p>
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Gün sonu koşuları</CardTitle></CardHeader>
+        <CardContent>
+          {loading ? <p role="status" className="py-10 text-center text-gray-500">Yükleniyor…</p>
+            : !error && !loaded ? <p className="py-10 text-center text-gray-500">Filtreleri uygulamak için Uygula düğmesine basın.</p>
+              : !error && runs.length === 0 ? <p className="py-10 text-center text-gray-500">Bu filtrelerle kayıt bulunamadı.</p>
+                : !error && <div className="overflow-x-auto"><table className="w-full text-xs md:text-sm">
+                  <thead><tr className="border-b text-left text-gray-600">
+                    {['İş günü', 'Başlangıç', 'Bitiş', 'Başlatan', 'Tür', 'Durum', 'İşlenen kayıt', 'Detay'].map(label => <th key={label} className="py-2 pr-3 whitespace-nowrap">{label}</th>)}
+                  </tr></thead>
+                  <tbody>{runs.map(run => <React.Fragment key={run.id}>
+                    <tr className="border-b last:border-0">
+                      <td className="py-2 pr-3 whitespace-nowrap">{run.business_date}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap" title={HOTEL_EVENT_TIME_ZONE_LABEL}>{formatHotelEventTimestamp(run.started_at || run.created_at)}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap" title={HOTEL_EVENT_TIME_ZONE_LABEL}>{formatHotelEventTimestamp(run.completed_at)}</td>
+                      <td className="py-2 pr-3">{run.started_by_name || run.started_by || '—'}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">{run.dry_run === true ? 'Simülasyon' : run.dry_run === false ? 'Gerçek gün sonu' : 'Belirtilmemiş'}</td>
+                      <td className="py-2 pr-3"><Badge variant="outline">{statuses[run.status] || run.status || 'Belirtilmemiş'}</Badge></td>
+                      <td className="py-2 pr-3 text-right">{count(run.processed_count)}</td>
+                      <td className="py-2 pr-3"><Button variant="ghost" size="sm" aria-expanded={expandedId === run.id} onClick={() => setExpandedId(expandedId === run.id ? null : run.id)}>{expandedId === run.id ? 'Kapat' : 'Detay'}</Button></td>
+                    </tr>
+                    {expandedId === run.id && <tr className="bg-gray-50 border-b"><td colSpan={8} className="p-3">
+                      <dl className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                        {[['Koşu kimliği', run.id], ['Aşama', run.stage], ['Başlatma kaynağı', run.trigger_source], ['Gerekçe', run.reason],
+                          ['Aday kayıt', count(run.candidate_count)], ['Atlanan kayıt', count(run.skipped_count)], ['Başarısız kayıt', count(run.failed_count)]].map(([label, value]) => (
+                          <div key={label}><dt className="text-gray-500">{label}</dt><dd className="break-words">{value ?? '—'}</dd></div>
+                        ))}
+                      </dl>
+                    </td></tr>}
+                  </React.Fragment>)}</tbody>
+                </table></div>}
+          {loaded && <div className="flex flex-wrap items-center justify-between gap-2 mt-4 text-sm">
+            <span>{total === 0 ? '0 / 0' : `${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + runs.length} / ${total}`}</span>
+            <div className="flex gap-2"><Button variant="outline" size="sm" disabled={loading || page === 0} onClick={() => loadRuns(page - 1)}>Önceki</Button>
+              <Button variant="outline" size="sm" disabled={loading || (page + 1) * PAGE_SIZE >= total} onClick={() => loadRuns(page + 1)}>Sonraki</Button></div>
+          </div>}
+        </CardContent>
+      </Card>
+    </div>
   );
-};
-
-export default NightAuditLogs;
+}

@@ -287,13 +287,21 @@ async def list_runs(
     limit: int = Query(20, ge=1, le=100),
     skip: int = Query(0, ge=0),
     status: str = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """List night audit runs."""
     from core.night_audit_hardened import get_runs
 
-    return await get_runs(current_user.tenant_id, limit, skip, status)
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="Start business date must not be after end date")
+    return await get_runs(
+        current_user.tenant_id, limit, skip, status,
+        start_date.isoformat() if start_date else None,
+        end_date.isoformat() if end_date else None,
+    )
 
 
 @router.get("/runs/{run_id}")
