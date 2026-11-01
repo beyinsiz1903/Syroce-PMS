@@ -52,7 +52,10 @@ R3 live plan (separate from offline tests)
 - No old 1572 replay, manual import/ACK, card/bank action, email or other hotel.
 
 Local validation
-- 188 relevant offline tests passed (demographics, lifecycle, services, aliases,
+- 189 relevant offline tests passed (demographics, lifecycle, services, aliases,
   mapping write controls and pull noise).
 - 2 real isolated local Mongo demographic CAS/tenant-isolation tests passed.
 - Ruff and git diff --check passed.
+- The normal pending batch was also exercised end-to-end offline: no mapping
+  -> one Requestdenied and zero PMS bookings -> restore -> one PMS booking and
+  one Reserved ACK -> repeated batch creates no duplicates or extra ACKs.
