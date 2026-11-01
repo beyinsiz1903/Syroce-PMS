@@ -278,6 +278,21 @@ export function GeneralInfoTab({
             <InfoLine label="Exely ödeme yöntemi" value={exelySource.paymentMethod || 'Belirtilmemiş'} />
           </div>
           <p className="text-xs text-slate-500">Sağlayıcının ödeme/garanti talimatıdır; PMS tahsilat kaydı değildir.</p>
+          {Array.isArray(booking.provider_services) && booking.provider_services.length > 0 && <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3" data-testid="exely-booked-services">
+            <h4 className="text-sm font-semibold text-slate-800">Rezervasyona eklenen hizmetler</h4>
+            <p className="text-xs text-slate-500">Exely sipariş bilgileri. Hizmetin verilmesi ve folyoya işlenmesi ayrıca takip edilir.</p>
+            <div className="divide-y divide-slate-100">
+              {booking.provider_services.map(service => <div key={service.reference} className="flex items-start justify-between gap-4 py-3 text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-800">{service.name}</p>
+                  <p className="text-xs text-slate-500">{service.start_date ? fmtDate(service.start_date) : 'Tarih belirtilmemiş'} · {service.duration} gün · {service.quantity} adet</p>
+                  {service.scope === 'reservation' && <p className="text-xs text-slate-500">Rezervasyon genelinde</p>}
+                </div>
+                <p className="shrink-0 tabular-nums font-medium">{service.inclusive && Number(service.amount) === 0 ? 'Ücrete dahil' : fmtCurrency(service.amount, service.currency)}</p>
+              </div>)}
+            </div>
+            {booking.provider_booking_total != null && <InfoLine label="Exely rezervasyon toplamı (hizmetler dahil)" value={fmtCurrency(booking.provider_booking_total, currency)} />}
+          </div>}
         </section>}
 
         {/* Bölüm 4: Ödeme Bilgileri */}

@@ -385,6 +385,10 @@ def _booking_fields(
         "total_amount": room_total,
         "currency": str(reservation.get("currency") or ""),
         "daily_rates": list(room.get("daily_rates") or []),
+        # Booked provider services are quotes for their source service dates,
+        # not receipts or revenue posted on today's open accounting day.
+        "provider_services": list(room.get('services') or []),
+        "provider_booking_total": float(reservation.get('total') or 0),
         "base_rate": room_total / nights,
         "paid_amount": 0.0,
         "payment_method": str(reservation.get("payment_method") or ""),
@@ -606,7 +610,8 @@ async def _readback_expectations(tenant_id: str, version_key: str, expectations:
             continue
         booking = await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": expected["pms_booking_id"]},
-            {"_id": 0, "status": 1, "provider_version_key": 1, "inventory_release_pending": 1},
+            {"_id": 0, "status": 1, "provider_version_key": 1, "inventory_release_pending": 1,
+             "provider_services": 1, "total_amount": 1},
         )
         if not booking:
             return False
@@ -615,6 +620,10 @@ async def _readback_expectations(tenant_id: str, version_key: str, expectations:
         if booking.get("provider_version_key") != version_key:
             return False
         if booking.get("inventory_release_pending"):
+            return False
+        if 'provider_services' in expected and booking.get('provider_services') != expected['provider_services']:
+            return False
+        if 'total_amount' in expected and booking.get('total_amount') != expected['total_amount']:
             return False
     return True
 
@@ -804,7 +813,8 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                         "active": True,
                     }
                 )
-                expectations.append({"pms_booking_id": booking_id, "status": "confirmed"})
+                expectations.append({"pms_booking_id": booking_id, "status": "confirmed",
+                    "provider_services": booking_doc['provider_services'], "total_amount": booking_doc['total_amount']})
                 confirmations.append({"pms_booking_id": booking_id, "room_stay_indexes": [index_number]})
 
             for row in removed:

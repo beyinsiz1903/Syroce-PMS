@@ -183,6 +183,7 @@ class ExelyProvider:
                         "connected": True,
                         "room_types": result["room_types"],
                         "rate_plans": result["rate_plans"],
+                        "services": result.get('services', []),
                     },
                     duration_ms=duration_ms,
                     metadata=metadata,
@@ -232,6 +233,7 @@ class ExelyProvider:
                     data={
                         "room_types": result["room_types"],
                         "rate_plans": result["rate_plans"],
+                        "services": result.get('services', []),
                     },
                     duration_ms=duration_ms,
                     metadata=metadata,

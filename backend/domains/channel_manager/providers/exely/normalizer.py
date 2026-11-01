@@ -7,14 +7,17 @@ used by the common ingest pipeline.
 from datetime import datetime
 from typing import Any
 
+from .services import assign_services
+
 
 def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str, Any]:
     """
     Convert Exely reservation payload (from response_parser) to canonical PMS format.
     """
     rooms = raw.get("rooms", [])
+    services_by_room = assign_services(raw.get('services') or [], rooms)
     room_details = []
-    for room in rooms:
+    for ordinal, room in enumerate(rooms):
         room_details.append(
             {
                 "index_number": str(room.get("index_number", "")),
@@ -33,6 +36,7 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
                 "guest_email": room.get("guest_email") or raw.get("guest_email", ""),
                 "guest_phone": room.get("guest_phone") or raw.get("guest_phone", ""),
                 "guest_country": room.get("guest_country") or raw.get("guest_country", ""),
+                "services": services_by_room[ordinal],
             }
         )
         if room.get("children") or room.get("children_ages"):
@@ -96,6 +100,7 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
             "commission": 0.0,
         },
         "rooms": room_details,
+        "services": list(raw.get('services') or []),
         "total_rooms": raw.get("total_rooms", len(rooms)),
         "total_guests": raw.get("total_guests", 1),
         "status": canonical_status,

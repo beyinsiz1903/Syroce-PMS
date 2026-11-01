@@ -450,6 +450,7 @@ async def discover_rooms(
                 "room_types": data.get("room_types", []),
                 "rate_plans": data.get("rate_plans", []),
                 "rooms_fetched_at": datetime.now(UTC).isoformat(),
+                "services": data.get('services', []),
             }
         },
     )
@@ -457,6 +458,7 @@ async def discover_rooms(
     return {
         "room_types": data.get("room_types", []),
         "rate_plans": data.get("rate_plans", []),
+        "services": data.get('services', []),
     }
 
 
