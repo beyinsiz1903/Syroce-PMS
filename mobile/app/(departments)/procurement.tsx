@@ -28,7 +28,6 @@ import { haptic } from '../../src/hooks/useHaptic';
 import { errorMessage } from '../../src/utils/errors';
 import {
   PROCUREMENT_TABS,
-  screenRedirectsToHub,
   type ProcurementTab,
 } from '../../src/utils/departmentScreens';
 import {
@@ -684,8 +683,7 @@ function DetailScaffold({
 // view-only.
 export default function ProcurementScreen() {
   const c = useTheme();
-  const rawRole = useAuthStore((s) => s.user?.role);
-  const procurementAccess = !screenRedirectsToHub('procurement', rawRole);
+  const procurementAccess = useAuthStore((s) => s.procurementAccess);
   const financeReports = useAuthStore((s) => s.financeReports);
   const [tab, setTab] = useState<Tab>('requests');
   const [selected, setSelected] = useState<Selected | null>(null);
@@ -706,7 +704,7 @@ export default function ProcurementScreen() {
     enabled: procurementAccess && !selected,
   });
 
-  if (screenRedirectsToHub('procurement', rawRole)) {
+  if (!procurementAccess) {
     return <Redirect href={ROUTES.departments} />;
   }
 

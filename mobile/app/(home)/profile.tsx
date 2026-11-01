@@ -13,6 +13,7 @@ import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
+import { useNavigationAccess } from '../../src/navigation/useNavigationAccess';
 import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
 
 type ModuleEntry = {
@@ -49,6 +50,11 @@ export default function ProfileScreen() {
   // (native group / departments / all-access) and the backend enforces every
   // action inside — this list never grants access, it only reveals entry points.
   const modules: ModuleEntry[] = [
+    { key: 'hr', label: 'İnsan kaynakları', route: ROUTES.hr, visible: true, icon: 'people-outline' },
+    { key: 'procurement', label: 'Satınalma', route: ROUTES.procurement, visible: true, icon: 'cart-outline' },
+    { key: 'revenue', label: 'Gelir yönetimi', route: ROUTES.revenue, visible: true, icon: 'trending-up-outline' },
+    { key: 'pos', label: 'POS', route: ROUTES.pos, visible: true, icon: 'restaurant-outline' },
+    { key: 'reports', label: 'Finansal raporlar', route: ROUTES.reportDetail, visible: financeReports, icon: 'bar-chart-outline' },
     {
       key: 'frontdesk',
       label: tr.hub.moduleFrontdesk,
@@ -106,7 +112,8 @@ export default function ProfileScreen() {
       icon: 'construct-outline',
     },
   ];
-  const visibleModules = modules.filter((m) => m.visible);
+  const canNavigate = useNavigationAccess();
+  const visibleModules = modules.filter((m) => canNavigate(m.route));
   const displayName = user?.name || user?.username || user?.email || '—';
 
   return (

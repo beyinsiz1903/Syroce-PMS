@@ -207,7 +207,7 @@ const FolioCard: React.FC<{
 export default function CashierScreen() {
   const c = useTheme();
   const router = useRouter();
-  const financeReports = useAuthStore((s) => s.financeReports);
+  const financeReports = useAuthStore((s) => s.cashierAccess);
   const [query, setQuery] = useState('');
 
   const shiftQ = useQuery({

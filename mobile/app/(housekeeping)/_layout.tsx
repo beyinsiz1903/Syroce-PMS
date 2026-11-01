@@ -1,4 +1,5 @@
 import React from 'react';
+import { MobileRouteGate } from '../../src/components/MobileRouteGate';
 import type { ColorValue } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { OperationalHeader } from '../../src/components/OperationalHeader';
+import { useAuthStore } from '../../src/state/authStore';
+import { mobileOperationAllowed } from '../../src/state/roleAccess';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -16,7 +19,12 @@ function tabIcon(active: IoniconName, inactive: IoniconName) {
 }
 
 export default function HousekeepingLayout() {
+  return <MobileRouteGate><HousekeepingLayoutContent /></MobileRouteGate>;
+}
+
+function HousekeepingLayoutContent() {
   const c = useTheme();
+  const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
   return (
     <Tabs
@@ -42,7 +50,7 @@ export default function HousekeepingLayout() {
       />
       <Tabs.Screen
         name="damage"
-        options={{ title: tr.tabs.damage, tabBarIcon: tabIcon('construct', 'construct-outline') }}
+        options={{ href: mobileOperationAllowed(user, 'update_room_status') ? undefined : null, title: tr.tabs.damage, tabBarIcon: tabIcon('construct', 'construct-outline') }}
       />
       <Tabs.Screen
         name="more"

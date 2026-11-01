@@ -1,4 +1,7 @@
 import React from 'react';
+import { MobileRouteGate } from '../../src/components/MobileRouteGate';
+import { useAuthStore } from '../../src/state/authStore';
+import { mobileTargetAllowed } from '../../src/navigation/routeAccess';
 import { Pressable, View, type ColorValue } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,7 +60,12 @@ function HeaderActions() {
 }
 
 export default function FrontDeskLayout() {
+  return <MobileRouteGate><FrontDeskLayoutContent /></MobileRouteGate>;
+}
+
+function FrontDeskLayoutContent() {
   const c = useTheme();
+  const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
   return (
     <Tabs
@@ -85,7 +93,7 @@ export default function FrontDeskLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: tr.tabs.today, tabBarIcon: tabIcon('today', 'today-outline') }}
+        options={{ href: mobileTargetAllowed(user, ROUTES.frontdesk) ? undefined : null, title: tr.tabs.today, tabBarIcon: tabIcon('today', 'today-outline') }}
       />
       <Tabs.Screen
         name="reservations"
@@ -100,6 +108,7 @@ export default function FrontDeskLayout() {
         name="calendar"
         options={{
           title: tr.calendar.openCta,
+          href: mobileTargetAllowed(user, ROUTES.reservationCalendar) ? undefined : null,
           tabBarIcon: tabIcon('calendar', 'calendar-outline'),
         }}
       />
@@ -109,7 +118,7 @@ export default function FrontDeskLayout() {
       />
       <Tabs.Screen
         name="rooms"
-        options={{ title: tr.tabs.rooms, tabBarIcon: tabIcon('bed', 'bed-outline') }}
+        options={{ href: mobileTargetAllowed(user, ROUTES.frontdeskRooms) ? undefined : null, title: tr.tabs.rooms, tabBarIcon: tabIcon('bed', 'bed-outline') }}
       />
       <Tabs.Screen
         name="messages"

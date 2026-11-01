@@ -13,12 +13,10 @@ import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
-import { screenRedirectsToHub } from '../../src/utils/departmentScreens';
 import {
   getPricingStrategy,
   listPriceAdjustments,
   getPricingInsights,
-  getRevenueDashboard,
   getOccupancyForecast,
   getChannelPerformance,
   type PriceAdjustment,
@@ -26,7 +24,12 @@ import {
   type ForecastDay,
   type ChannelStat,
 } from '../../src/api/revenue';
-import { formatCurrency, formatDate } from '../../src/utils/format';
+import { formatDate } from '../../src/utils/format';
+import { getRevenuePeriod } from '../../src/api/reports';
+import { getToday } from '../../src/api/hub';
+import { reportAmountLabel, reportTotalsLabel } from '../../src/utils/reportPresentation';
+import { todayOccupancy } from '../../src/utils/todayPresentation';
+import { reservationCurrency } from '../../src/utils/reservationPresentation';
 import { getCurrentSubscription } from '../../src/api/subscription';
 
 type Tone = 'default' | 'success' | 'warning' | 'danger' | 'info';
@@ -124,8 +127,7 @@ function channelLabel(ch?: string): string {
 // show the screen; rate mutations stay backend-gated by require_op("manage_rates").
 export default function RevenueScreen() {
   const c = useTheme();
-  const rawRole = useAuthStore((s) => s.user?.role);
-  const revenueAccess = !screenRedirectsToHub('revenue', rawRole);
+  const revenueAccess = useAuthStore((s) => s.revenueAccess);
   const subscriptionQ = useQuery({
     queryKey: ['subscription-current'],
     queryFn: getCurrentSubscription,
@@ -137,11 +139,9 @@ export default function RevenueScreen() {
     modules?.['rms.recommendations'] === true ||
     modules?.ai_pricing === true;
 
-  const dashboardQ = useQuery({
-    queryKey: ['rms-dashboard'],
-    queryFn: getRevenueDashboard,
-    enabled: revenueAccess,
-  });
+  const periodQ = useQuery({ queryKey: ['mobile-revenue-period'], queryFn: getRevenuePeriod, enabled: revenueAccess });
+  const operationsQ = useQuery({ queryKey: ['hub-today'], queryFn: getToday, enabled: revenueAccess });
+  const occupancy = todayOccupancy(operationsQ.data, operationsQ.isError);
   const channelQ = useQuery({
     queryKey: ['rms-channel-performance'],
     queryFn: () => getChannelPerformance(30),
@@ -239,7 +239,7 @@ export default function RevenueScreen() {
           <View style={{ flex: 1 }}>
             <Body style={{ fontWeight: '600' }}>{channelLabel(s.channel)}</Body>
             <Muted style={{ fontSize: 11 }}>
-              {s.bookings ?? 0} rez. · {formatCurrency(s.revenue)}
+              {s.bookings ?? 0} rez. · {reportAmountLabel(s.revenue, s.currency)}
             </Muted>
           </View>
           <Badge
@@ -276,6 +276,9 @@ export default function RevenueScreen() {
   // synthetic numbers. The card is visual only: applying a rate stays backend-
   // gated (require_op manage_rates) and is intentionally not wired here.
   const renderInsight = (ins: PricingInsight, idx: number) => {
+    if (typeof ins.current_rate !== 'number' || !Number.isFinite(ins.current_rate)
+      || typeof ins.suggested_rate !== 'number' || !Number.isFinite(ins.suggested_rate)
+      || !reservationCurrency(ins.currency)) return <Card key={`unverified-${idx}`}><Muted>Fiyat önerisinin tutarı veya para birimi doğrulanamadı.</Muted></Card>;
     const current = ins.current_rate ?? 0;
     const suggested = ins.suggested_rate ?? 0;
     const pct =
@@ -352,12 +355,12 @@ export default function RevenueScreen() {
         >
           <View>
             <Muted style={{ fontSize: 11 }}>{t.currentRate}</Muted>
-            <Body style={{ fontWeight: '600' }}>{formatCurrency(current)}</Body>
+            <Body style={{ fontWeight: '600' }}>{reportAmountLabel(current, ins.currency)}</Body>
           </View>
           <Ionicons name="arrow-forward" size={16} color={c.textMuted} />
           <View>
             <Muted style={{ fontSize: 11 }}>{t.suggestedRate}</Muted>
-            <Body style={{ fontWeight: '800', color: accent }}>{formatCurrency(suggested)}</Body>
+            <Body style={{ fontWeight: '800', color: accent }}>{reportAmountLabel(suggested, ins.currency)}</Body>
           </View>
         </View>
 
@@ -387,7 +390,7 @@ export default function RevenueScreen() {
           {a.reason ? <Muted>{a.reason}</Muted> : null}
         </View>
         <Body>
-          {formatCurrency(a.old_rate)} → {formatCurrency(a.new_rate)}
+          {reportAmountLabel(a.old_rate, a.currency)} → {reportAmountLabel(a.new_rate, a.currency)}
         </Body>
       </View>
       {a.date ? <Muted style={{ marginTop: spacing.xs }}>{formatDate(a.date)}</Muted> : null}
@@ -400,12 +403,13 @@ export default function RevenueScreen() {
       contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{t.title}</H1>
+      <Muted>İşlenmiş gelir dönemi · {periodQ.data?.start_date || '—'} → {periodQ.data?.end_date || '—'}. Para birimleri ayrı gösterilir; eksik döviz bilgisiyle tutar tahmin edilmez.</Muted>
 
       <SectionTitle title={t.cockpit} />
-      {dashboardQ.isLoading || dashboardQ.error ? (
+      {periodQ.isLoading || periodQ.error ? (
         <DepartmentListState
-          loading={dashboardQ.isLoading}
-          error={dashboardQ.error}
+          loading={periodQ.isLoading}
+          error={periodQ.error}
           isEmpty={false}
           skeletonCount={2}
         />
@@ -415,14 +419,14 @@ export default function RevenueScreen() {
             <KpiCard
               testID="kpi-adr"
               label={t.adr}
-              value={formatCurrency(dashboardQ.data?.period_30d?.adr ?? 0)}
+              value={reportTotalsLabel(periodQ.data?.adr_by_currency)}
               icon="cash-outline"
               tone="info"
             />
             <KpiCard
               testID="kpi-revpar"
               label={t.revpar}
-              value={formatCurrency(dashboardQ.data?.period_30d?.revpar ?? 0)}
+              value={reportTotalsLabel(periodQ.data?.rev_par_by_currency)}
               icon="trending-up-outline"
               tone="info"
             />
@@ -431,9 +435,9 @@ export default function RevenueScreen() {
             <KpiCard
               testID="kpi-occupancy"
               label={t.occupancyToday}
-              value={`%${(dashboardQ.data?.today_occupancy_pct ?? 0).toFixed(1)}`}
+              value={occupancy ? `%${occupancy.percentage.toFixed(1)}` : '—'}
               icon="bed-outline"
-              tone={occupancyTone(dashboardQ.data?.today_occupancy_pct)}
+              tone={occupancyTone(occupancy?.percentage)}
             />
             <KpiCard
               testID="kpi-channel-parity"
@@ -447,7 +451,7 @@ export default function RevenueScreen() {
             <KpiCard
               testID="kpi-revenue-30d"
               label={t.revenue30d}
-              value={formatCurrency(dashboardQ.data?.period_30d?.total_revenue ?? 0)}
+              value={reportTotalsLabel(periodQ.data?.total_revenue_by_currency)}
               icon="wallet-outline"
               tone="success"
             />
@@ -574,9 +578,9 @@ export default function RevenueScreen() {
             />
           ) : strategyQ.data ? (
             <Card>
-              {renderMetric(t.currentRate, formatCurrency(strategyQ.data.current_rate))}
-              {renderMetric(t.recommendedRate, formatCurrency(strategyQ.data.recommended_rate))}
-              {renderMetric(t.compAvgRate, formatCurrency(strategyQ.data.comp_avg_rate))}
+              {renderMetric(t.currentRate, reportAmountLabel(strategyQ.data.current_rate, strategyQ.data.currency))}
+              {renderMetric(t.recommendedRate, reportAmountLabel(strategyQ.data.recommended_rate, strategyQ.data.currency))}
+              {renderMetric(t.compAvgRate, reportAmountLabel(strategyQ.data.comp_avg_rate, strategyQ.data.currency))}
               {renderMetric(t.marketPosition, marketPositionLabel(strategyQ.data.market_position))}
               {renderMetric(
                 t.autoPricing,

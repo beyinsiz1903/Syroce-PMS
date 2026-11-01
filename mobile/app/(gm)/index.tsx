@@ -22,10 +22,14 @@ import {
   getNpsScore,
   getPickupAnalysis,
 } from '../../src/api/gm';
-import { getApprovals } from '../../src/api/hub';
+import { getApprovals, getToday } from '../../src/api/hub';
 import { expectedCash, getCurrentShift } from '../../src/api/cashier';
 import { formatCurrency } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
+import { getFinancialSummary } from '../../src/api/accounting';
+import { postedRoomKpis, reportAmountLabel, reportCountLabel, reportTotalsLabel } from '../../src/utils/reportPresentation';
+import { getDailyFlash } from '../../src/api/reports';
+import { todayOccupancy } from '../../src/utils/todayPresentation';
 
 function ComplaintRow({ comp }: { comp: Complaint }) {
   const c = useTheme();
@@ -102,7 +106,7 @@ function ChannelRow({ ch }: { ch: GmChannel }) {
           {ch.bookings} {tr.manager.bookings.toLowerCase()}
         </Muted>
       </View>
-      <Body style={{ color: c.success, fontWeight: '700' }}>{formatCurrency(ch.revenue)}</Body>
+      <Body style={{ color: c.success, fontWeight: '700' }}>{reportAmountLabel(ch.revenue, ch.currency)}</Body>
     </View>
   );
 }
@@ -183,6 +187,7 @@ export default function GMOverview() {
   const router = useRouter();
   const { user } = useAuthStore();
   const financeReports = useAuthStore((s) => s.financeReports);
+  const nightAuditAccess = useAuthStore((s) => s.nightAuditAccess);
   const approvalsAccess = useAuthStore((s) => s.approvalsAccess);
   const allAccess = useAuthStore((s) => s.allAccess);
 
@@ -198,6 +203,11 @@ export default function GMOverview() {
   }, []);
 
   const snapshot = useQuery({ queryKey: ['gm-snapshot'], queryFn: getGmSnapshot });
+  const operations = useQuery({ queryKey: ['hub-today'], queryFn: getToday });
+  const occupancy = todayOccupancy(operations.data, operations.isError);
+  const financial = useQuery({ queryKey: ['acc-financial-summary'], queryFn: () => getFinancialSummary(), enabled: nightAuditAccess });
+  const flash = useQuery({ queryKey: ['mobile-daily-flash', financial.data?.business_date], queryFn: () => getDailyFlash(financial.data?.business_date), enabled: financeReports });
+  const roomKpis = postedRoomKpis(flash.isError ? undefined : flash.data, financial.data?.business_date);
   const complaints = useQuery({
     queryKey: ['gm-complaints'],
     queryFn: getComplaintManagement,
@@ -250,13 +260,16 @@ export default function GMOverview() {
   const refreshing = snapshot.isFetching && !snapshot.isLoading;
   const onRefresh = useCallback(() => {
     snapshot.refetch();
+    operations.refetch();
     complaints.refetch();
     if (canLoadApprovals) approvals.refetch();
     pickup.refetch();
     nps.refetch();
     budget.refetch();
+    if (nightAuditAccess) financial.refetch();
+    if (financeReports) flash.refetch();
     if (financeReports) shift.refetch();
-  }, [snapshot, complaints, approvals, pickup, nps, budget, shift, financeReports, canLoadApprovals]);
+  }, [snapshot, operations, complaints, approvals, pickup, nps, budget, shift, financial, flash, financeReports, nightAuditAccess, canLoadApprovals]);
 
   const offline = snapshot.isError && isOffline(snapshot.error);
 
@@ -274,7 +287,9 @@ export default function GMOverview() {
 
   // Revenue trend: chart ONLY the real `historical` series (never the backend's
   // simulated `forecast`). `historical` is oldest→newest, so slice the tail.
-  const historical = pickup.data?.historical ?? [];
+  // The legacy pickup endpoint sums reservation values by arrival date; it
+  // is not a posted-revenue trend and supplies no verified currency/basis.
+  const historical = pickup.data?.revenue_basis === 'posted_ledger_gross' && pickup.data.currency ? pickup.data.historical : [];
   const trendPoints = useMemo(
     () => (trendRange === 7 ? historical.slice(-7) : historical),
     [historical, trendRange],
@@ -296,7 +311,8 @@ export default function GMOverview() {
     const m = new Date().getMonth() + 1;
     return budget.data?.months.find((mo) => mo.month === m) ?? null;
   }, [budget.data]);
-  const showTarget = !!currentMonthBudget && currentMonthBudget.rev_target > 0;
+  const showTarget = !!currentMonthBudget && currentMonthBudget.rev_target > 0
+    && budget.data?.actual_basis === 'posted_revenue_by_currency' && !!budget.data.currency;
   const targetRatio = showTarget ? currentMonthBudget!.rev_actual / currentMonthBudget!.rev_target : 0;
 
   // Guest satisfaction (NPS) — only when there is at least one real response.
@@ -327,6 +343,14 @@ export default function GMOverview() {
         </Muted>
 
         <RoleSwitcher />
+        <Card>
+          <Muted>Operasyon tarihi · {operations.data?.date || 'Doğrulanamadı'} · doluluk, güncel fiziksel oda durumudur.</Muted>
+          <Muted>Finansal iş günü · {financial.data?.business_date || roomKpis.date || 'Doğrulanamadı'}</Muted>
+          <Muted>Gelir: iş gününde işlenen tahakkuklar, tahsilat değil. ADR/RevPAR: aynı iş gününün işlenmiş oda geliri; para birimleri ayrı gösterilir.</Muted>
+          {roomKpis.postingPending && <Muted>Oda tahakkukları henüz tam işlenmemiş; bu oranlar yalnız işlenmiş tutarları içerir.</Muted>}
+          {!historical.length && <Muted>İşlenmiş gelir trendi için doğrulanmış seri alınamadı.</Muted>}
+          <Button title="Dövizli finans raporlarını aç" variant="secondary" onPress={() => router.push(ROUTES.reportDetail)} disabled={!financeReports} />
+        </Card>
 
         {urgentApprovals.length > 0 ? (
           <View style={{ gap: spacing.sm }}>
@@ -420,14 +444,14 @@ export default function GMOverview() {
                 testID="kpi-occupancy"
                 icon="bed-outline"
                 label={tr.manager.occupancy}
-                value={`%${(today?.occupancy ?? 0).toFixed(1)}`}
+                value={occupancy ? `%${occupancy.percentage.toFixed(1)}` : '—'}
                 tone="info"
               />
               <KpiCard
                 testID="kpi-revenue"
                 icon="cash-outline"
                 label={tr.manager.revenue}
-                value={formatCurrency(today?.revenue ?? 0)}
+                value={financial.isError ? '—' : reportTotalsLabel(financial.data?.revenue.total_with_tax_by_currency)}
                 tone="success"
               />
             </KpiRow>
@@ -436,14 +460,14 @@ export default function GMOverview() {
                 testID="kpi-adr"
                 icon="pricetag-outline"
                 label={tr.manager.adr}
-                value={formatCurrency(today?.adr ?? 0)}
+                value={roomKpis.adr}
                 tone="info"
               />
               <KpiCard
                 testID="kpi-revpar"
                 icon="stats-chart-outline"
                 label={tr.manager.revpar}
-                value={formatCurrency(today?.revpar ?? 0)}
+                value={roomKpis.revpar}
                 tone="info"
               />
             </KpiRow>
@@ -453,7 +477,7 @@ export default function GMOverview() {
                   testID="kpi-kasa"
                   icon="wallet-outline"
                   label={tr.manager.kasa}
-                  value={formatCurrency(expectedCash(openShift), openShift?.currency || 'TRY')}
+                  value={reportAmountLabel(expectedCash(openShift), openShift?.currency)}
                   tone="success"
                 />
                 <View style={{ flex: 1 }} />
@@ -522,13 +546,13 @@ export default function GMOverview() {
                 testID="kpi-arrivals"
                 icon="enter-outline"
                 label={tr.manager.arrivals}
-                value={String(today?.check_ins ?? 0)}
+                value={operations.isError ? '—' : reportCountLabel(operations.data?.check_ins)}
               />
               <KpiCard
                 testID="kpi-departures"
                 icon="exit-outline"
                 label={tr.manager.departures}
-                value={String(today?.check_outs ?? 0)}
+                value={operations.isError ? '—' : reportCountLabel(operations.data?.check_outs)}
               />
             </KpiRow>
             <KpiRow>
@@ -536,7 +560,7 @@ export default function GMOverview() {
                 testID="kpi-pending-tasks"
                 icon="list-outline"
                 label={tr.manager.pendingTasks}
-                value={String(today?.pending_tasks ?? 0)}
+                value={reportCountLabel(today?.pending_tasks)}
                 tone={(today?.pending_tasks ?? 0) > 0 ? 'warning' : 'default'}
               />
               <KpiCard
@@ -552,7 +576,7 @@ export default function GMOverview() {
                 testID="kpi-complaints"
                 icon="chatbox-ellipses-outline"
                 label={tr.manager.complaints}
-                value={String(today?.complaints ?? 0)}
+                value={reportCountLabel(today?.complaints)}
                 tone={(today?.complaints ?? 0) > 0 ? 'danger' : 'default'}
               />
               <View style={{ flex: 1 }} />
@@ -564,6 +588,7 @@ export default function GMOverview() {
         <H2 style={{ marginTop: spacing.sm }}>{tr.manager.widgetsTitle}</H2>
 
         {/* Satış Hedefi — current month, only when a real target is configured. */}
+        {!!currentMonthBudget?.rev_target && !showTarget && <Card><Muted>Satış hedefi tanımlı; gerçekleşen tutarın karşılaştırma kaynağı doğrulanamadı. Hedefe ulaşma yüzdesi gösterilmez.</Muted></Card>}
         {showTarget ? (
           <Card testID="gm-sales-target" style={{ gap: spacing.sm }}>
             <View

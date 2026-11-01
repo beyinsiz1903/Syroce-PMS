@@ -11,22 +11,7 @@ import { ApiError, clearAllAuthStorage, getToken, setRefreshToken, setToken } fr
 import { clearOfflineCache } from '../cache/persister';
 import { queryClient } from '../cache/queryClient';
 import { tr } from '../i18n/tr';
-import type { AppRole } from './roleAccess';
-import {
-  canViewFinanceReports,
-  hasApprovalsAccess,
-  hasDepartmentAccess,
-  hasHrAccess,
-  hasMaintenanceAccess,
-  hasMiceAccess,
-  hasPosAccess,
-  hasProcurementAccess,
-  hasRevenueAccess,
-  hasSpaAccess,
-  isAllAccessRole,
-  normalizeRole,
-  hasServerAccess,
-} from './roleAccess';
+import { deriveMobileAccess } from './roleAccess';
 
 // The pure role/entitlement helpers live in `roleAccess.ts` (no React/RN/
 // zustand imports) so the plain-Node unit test runner can exercise them. They
@@ -49,10 +34,9 @@ export {
 
 const USER_KEY = 'syroce.auth.user';
 
-export type AuthState = {
+export type AuthState = ReturnType<typeof deriveMobileAccess> & {
   user: AuthUser | null;
   pendingTwoFactorToken: string | null;
-  role: AppRole;
   allAccess: boolean;
   financeReports: boolean;
   spaAccess: boolean;
@@ -91,6 +75,7 @@ async function readPersistedUser(): Promise<AuthUser | null> {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
+  ...deriveMobileAccess(null),
   user: null,
   pendingTwoFactorToken: null,
   role: 'other',
@@ -115,6 +100,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       queryClient.clear();
       await clearOfflineCache();
       set({
+        ...deriveMobileAccess(null),
         user: null,
         role: 'other',
         allAccess: false,
@@ -153,27 +139,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Network/5xx failures keep the cached user so an already-authenticated
       // operator can continue using the offline-capable surfaces.
     }
-    const server = (page: string, permission: string, fallback: boolean) => hasServerAccess(user || undefined, page, permission) ?? fallback;
     set({
       user,
-      role: normalizeRole(user?.role),
-      allAccess: isAllAccessRole(user?.role),
-      financeReports: server('finance', 'view_finance_reports', canViewFinanceReports(user?.role)),
-      spaAccess: hasSpaAccess(user?.role),
-      miceAccess: hasMiceAccess(user?.role),
-      maintenanceAccess: server('maintenance', 'view_maintenance', hasMaintenanceAccess(user?.role)),
-      procurementAccess: hasProcurementAccess(user?.role),
-      hrAccess: hasHrAccess(user?.role),
-      revenueAccess: hasRevenueAccess(user?.role),
-      posAccess: hasPosAccess(user?.role),
-      deptAccess: server('departments', 'view_departments', hasDepartmentAccess(user?.role)),
-      approvalsAccess: hasApprovalsAccess(user?.role),
+      ...deriveMobileAccess(user),
       loading: false,
     });
   },
 
   async login(email, password) {
     set({
+      ...deriveMobileAccess(null),
       loading: true,
       error: null,
       user: null,
@@ -209,22 +184,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error('Geçersiz yanıt');
       }
       await persistUser(res.user);
-      const server = (page: string, permission: string, fallback: boolean) => hasServerAccess(res.user, page, permission) ?? fallback;
       set({
         user: res.user,
         pendingTwoFactorToken: null,
-        role: normalizeRole(res.user?.role),
-        allAccess: isAllAccessRole(res.user?.role),
-        financeReports: server('finance', 'view_finance_reports', canViewFinanceReports(res.user?.role)),
-        spaAccess: hasSpaAccess(res.user?.role),
-        miceAccess: hasMiceAccess(res.user?.role),
-        maintenanceAccess: server('maintenance', 'view_maintenance', hasMaintenanceAccess(res.user?.role)),
-        procurementAccess: hasProcurementAccess(res.user?.role),
-        hrAccess: hasHrAccess(res.user?.role),
-        revenueAccess: hasRevenueAccess(res.user?.role),
-        posAccess: hasPosAccess(res.user?.role),
-        deptAccess: server('departments', 'view_departments', hasDepartmentAccess(res.user?.role)),
-        approvalsAccess: hasApprovalsAccess(res.user?.role),
+        ...deriveMobileAccess(res.user),
         loading: false,
         error: null,
       });
@@ -258,18 +221,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         user: res.user,
         pendingTwoFactorToken: null,
-        role: normalizeRole(res.user.role),
-        allAccess: isAllAccessRole(res.user.role),
-        financeReports: canViewFinanceReports(res.user.role),
-        spaAccess: hasSpaAccess(res.user.role),
-        miceAccess: hasMiceAccess(res.user.role),
-        maintenanceAccess: hasMaintenanceAccess(res.user.role),
-        procurementAccess: hasProcurementAccess(res.user.role),
-        hrAccess: hasHrAccess(res.user.role),
-        revenueAccess: hasRevenueAccess(res.user.role),
-        posAccess: hasPosAccess(res.user.role),
-        deptAccess: hasDepartmentAccess(res.user.role),
-        approvalsAccess: hasApprovalsAccess(res.user.role),
+        ...deriveMobileAccess(res.user),
         loading: false,
         error: null,
       });
@@ -297,6 +249,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     queryClient.clear();
     await clearOfflineCache();
     set({
+      ...deriveMobileAccess(null),
       user: null,
       pendingTwoFactorToken: null,
       role: 'other',

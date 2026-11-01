@@ -1,5 +1,5 @@
 import type { Href } from 'expo-router';
-import type { AppRole } from '../state/authStore';
+import type { AppRole } from '../state/roleAccess';
 
 // ── Navigation conventions (Task #454) ──────────────────────────────────────
 // Every route in the app is declared here in `ROUTES` and consumed via
@@ -102,15 +102,20 @@ export const ROUTES = {
   guestQrBadge: '/(guest)/qrBadge',
 } as const satisfies Record<string, Href>;
 
-// Mobile is an operational companion, not a compressed desktop PMS. Staff land
-// in the front-desk shell, which contains the small set of actions needed on a
-// shift. Guests retain their dedicated experience.
+// Legacy-role fallback for push links. Password/2FA/cold launches use
+// mobileHome(user), which also checks the server's current workspace context.
 export function rootForRole(role: AppRole): Href {
   switch (role) {
     case 'guest_app':
       return ROUTES.guest;
-    default:
+    case 'housekeeping':
+      return ROUTES.housekeeping;
+    case 'gm':
+      return ROUTES.gm;
+    case 'front_desk':
       return ROUTES.frontdesk;
+    default:
+      return ROUTES.home;
   }
 }
 

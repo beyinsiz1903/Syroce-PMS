@@ -20,8 +20,9 @@ import {
   getFinanceSnapshot,
   getMarketSegment,
 } from '../../src/api/reports';
-import { formatCurrency } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
+import { ROUTES } from '../../src/navigation/routes';
+import { financeShareText, reportAmountLabel, reportArLabel, reportCountLabel, reportPercentLabel, reportTotalsLabel } from '../../src/utils/reportPresentation';
 
 type RangePreset = 'this_month' | 'last_month' | 'last_30' | 'custom';
 
@@ -83,10 +84,11 @@ function SegmentList({ data }: { data: Record<string, SegmentStat> }) {
               ? tr.manager.unspecified
               : name.replaceAll('_', ' ')}
           </H2>
-          <StatRow label={tr.manager.revenue} value={formatCurrency(numberOrZero(stat.revenue))} tone="success" strong />
-          <StatRow label={tr.manager.bookings} value={String(numberOrZero(stat.bookings))} />
-          <StatRow label={tr.manager.nights} value={String(numberOrZero(stat.nights))} />
-          <StatRow label={tr.manager.adr} value={formatCurrency(numberOrZero(stat.adr))} />
+          <StatRow label="Rezervasyon tutarı" value={reportTotalsLabel(stat.revenue_by_currency)} tone="success" strong />
+          <StatRow label={tr.manager.bookings} value={reportCountLabel(stat.bookings)} />
+          <StatRow label={tr.manager.nights} value={reportCountLabel(stat.nights)} />
+          <StatRow label="Ücretli gece ortalaması" value={reportTotalsLabel(stat.adr_by_currency)} />
+          {!!stat.invalid_amounts && <Muted>{stat.invalid_amounts} kaydın tutarı doğrulanamadı.</Muted>}
         </Card>
       ))}
     </>
@@ -139,10 +141,11 @@ export default function ReportsScreen() {
 
   const refreshing = finance.isFetching && !finance.isLoading;
   const onRefresh = useCallback(() => {
+    if (!financeReports) return;
     finance.refetch();
-    segment.refetch();
+    if (!customHalfApplied) segment.refetch();
     aging.refetch();
-  }, [finance, segment, aging]);
+  }, [finance, segment, aging, financeReports, customHalfApplied]);
 
   const offline = finance.isError && isOffline(finance.error);
 
@@ -161,22 +164,12 @@ export default function ReportsScreen() {
 
   const fin = finance.data;
   const companies = aging.data?.companies ?? [];
-  const pendingArByCurrency = fin?.pending_ar.by_currency ?? (fin ? { TRY: {
-    total: fin.pending_ar.total,
-    '0-30_days': fin.pending_ar.overdue_breakdown['0-30_days'],
-    '30-60_days': fin.pending_ar.overdue_breakdown['30-60_days'],
-    '60_plus_days': fin.pending_ar.overdue_breakdown['60_plus_days'],
-    overdue_invoices_count: fin.pending_ar.overdue_invoices_count,
-  } } : {});
-  const pendingInvoicesByCurrency = fin?.accounting_invoices.by_currency ?? (fin ? {
-    TRY: fin.accounting_invoices.pending_total,
-  } : {});
+  const pendingArByCurrency = fin?.pending_ar.by_currency ?? {};
   const shareReport = async () => {
-    const total = fin?.pending_ar?.total ?? 0;
-    const collected = fin?.mtd_collections?.amount ?? 0;
+    if (!fin || finance.isError || !financeReports) return;
     await Share.share({
       title: 'Syroce operasyon özeti',
-      message: `Syroce operasyon özeti (${formatRangeLabel(range.start, range.end)})\nBekleyen alacak: ${formatCurrency(total)}\nAy içi tahsilat: ${formatCurrency(collected)}\nNot: Bu paylaşım finansal veri içerir; yalnızca yetkili kişilerle paylaşın.`,
+      message: financeShareText(fin),
     });
   };
 
@@ -190,8 +183,8 @@ export default function ReportsScreen() {
       >
         <OfflineBanner visible={offline} />
         <H1>{tr.manager.reportsTitle}</H1>
-        <Button title="Rapor özetini paylaş" variant="secondary" onPress={shareReport} disabled={!fin} fullWidth />
-        <Button title="Finansal rapor detayını aç" variant="outline" onPress={() => router.push('/(gm)/report-detail')} fullWidth />
+        <Button title="Rapor özetini paylaş" variant="secondary" onPress={shareReport} disabled={!fin || finance.isError || finance.isFetching} fullWidth />
+        <Button title="Finansal rapor detayını aç" variant="outline" onPress={() => router.push(ROUTES.reportDetail)} fullWidth />
 
         {/* ── Finance snapshot ── */}
         <SectionTitle title={tr.manager.financeSnapshot} />
@@ -201,16 +194,16 @@ export default function ReportsScreen() {
           <Card testID="report-finance-snapshot">
             <StatRow
               label={tr.manager.pendingAr}
-              value={Object.entries(pendingArByCurrency)
-                .map(([currency, bucket]) => formatCurrency(bucket.total, currency)).join(' · ')}
+              value={reportArLabel(fin.pending_ar.by_currency)}
               tone="warning"
               strong
             />
+            {fin.pending_ar.complete === false ? <Muted>Alacak kaynakları eksik; tutarlar kısmi.</Muted> : null}
             {Object.entries(pendingArByCurrency).map(([currency, bucket]) => (
               <React.Fragment key={`ar-${currency}`}>
-                <StatRow label={`${tr.manager.overdue030} · ${currency}`} value={formatCurrency(bucket['0-30_days'], currency)} />
-                <StatRow label={`${tr.manager.overdue3060} · ${currency}`} value={formatCurrency(bucket['30-60_days'], currency)} />
-                <StatRow label={`${tr.manager.overdue60plus} · ${currency}`} value={formatCurrency(bucket['60_plus_days'], currency)} tone="danger" />
+                <StatRow label={`${tr.manager.overdue030} · ${currency}`} value={reportAmountLabel(bucket['0-30_days'], currency)} />
+                <StatRow label={`${tr.manager.overdue3060} · ${currency}`} value={reportAmountLabel(bucket['30-60_days'], currency)} />
+                <StatRow label={`${tr.manager.overdue60plus} · ${currency}`} value={reportAmountLabel(bucket['60_plus_days'], currency)} tone="danger" />
               </React.Fragment>
             ))}
             <StatRow label={tr.manager.overdueInvoices} value={String(fin.pending_ar.overdue_invoices_count)} />
@@ -218,27 +211,29 @@ export default function ReportsScreen() {
             <StatRow label={tr.manager.businessDateLabel} value={fin.business_date || fin.report_date} />
             <StatRow
               label={tr.manager.todaysCollections}
-              value={`${formatCurrency(fin.todays_collections.amount, fin.todays_collections.currency || 'TRY')} (${fin.todays_collections.payment_count} ${tr.manager.paymentCount})`}
+              value={`${reportAmountLabel(fin.todays_collections.amount, fin.todays_collections.currency)} (${reportCountLabel(fin.todays_collections.payment_count)} ${tr.manager.paymentCount})`}
               tone="success"
             />
             {fin.todays_collections.conversion_issue_count ? (
               <Muted>{fin.todays_collections.conversion_issue_count} {tr.manager.conversionIssues}</Muted>
             ) : null}
-            <StatRow label={tr.manager.mtdCollections} value={formatCurrency(fin.mtd_collections.amount, fin.mtd_collections.currency || 'TRY')} tone="success" />
+            <StatRow label={tr.manager.mtdCollections} value={reportAmountLabel(fin.mtd_collections.amount, fin.mtd_collections.currency)} tone="success" />
             <StatRow
               label={tr.manager.collectionRate}
-              value={`%${fin.mtd_collections.collection_rate_percentage.toFixed(1)}`}
+              value={reportPercentLabel(fin.mtd_collections.collection_rate_percentage)}
             />
+            {fin.mtd_collections.collection_rate_complete === false || !!fin.mtd_collections.conversion_issue_count
+              ? <Muted>Kur veya gelir kaynağı eksik; ay içi özet kısmi ve tahsilat oranı doğrulanamadı.</Muted> : null}
             <StatRow
               label={tr.manager.pendingInvoices}
-              value={`${Object.entries(pendingInvoicesByCurrency)
-                .map(([currency, amount]) => formatCurrency(amount, currency)).join(' · ')} (${fin.accounting_invoices.pending_count})`}
+              value={`${reportTotalsLabel(fin.accounting_invoices.by_currency)} (${reportCountLabel(fin.accounting_invoices.pending_count)})`}
             />
           </Card>
         ) : null}
 
         {/* ── Market segment ── */}
         <SectionTitle title={tr.manager.marketSegment} />
+        <Muted>Seçili giriş tarihindeki rezervasyon tutarlarıdır; işlenmiş gelir veya tahsilat değildir. Tarih filtresi yalnız bu bölüme uygulanır.</Muted>
         <FilterChips
           options={RANGE_OPTIONS}
           value={preset}
@@ -281,25 +276,27 @@ export default function ReportsScreen() {
           <>
             {aging.data ? (
               <Body style={{ color: c.textMuted }}>
-                {tr.manager.totalAr}: {formatCurrency(aging.data.total_ar)}
+                {tr.manager.totalAr}: {reportTotalsLabel(aging.data.total_ar_by_currency)}
               </Body>
             ) : null}
+            {aging.data?.complete === false ? <Muted>Cari kaynakları eksik; bakiye kısmi.</Muted> : null}
             {companies.length === 0 ? (
               <Card>
                 <Muted>{tr.manager.noCompanyAr}</Muted>
               </Card>
             ) : (
               companies.map((co) => (
-                <Card key={`${co.company_name}-${co.corporate_code}`} style={{ marginBottom: spacing.sm }}>
+                <Card key={`${co.company_id}-${co.account_id}-${co.corporate_code}-${co.currency}`} style={{ marginBottom: spacing.sm }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm }}>
                     <H2 style={{ flex: 1 }} numberOfLines={1}>{co.company_name}</H2>
                     <KpiPill label={`${co.folio_count} ${tr.manager.folios}`} />
                   </View>
-                  <StatRow label={tr.manager.totalAr} value={formatCurrency(co.total_balance)} tone="warning" strong />
-                  <StatRow label={tr.manager.aging07} value={formatCurrency(co.aging['0-7 days'])} />
-                  <StatRow label={tr.manager.aging814} value={formatCurrency(co.aging['8-14 days'])} />
-                  <StatRow label={tr.manager.aging1530} value={formatCurrency(co.aging['15-30 days'])} />
-                  <StatRow label={tr.manager.aging30plus} value={formatCurrency(co.aging['30+ days'])} tone="danger" />
+                  <StatRow label={tr.manager.totalAr} value={reportAmountLabel(co.total_balance, co.currency)} tone="warning" strong />
+                  <StatRow label={tr.manager.aging07} value={reportAmountLabel(co.aging['0-7 days'], co.currency)} />
+                  <StatRow label={tr.manager.aging814} value={reportAmountLabel(co.aging['8-14 days'], co.currency)} />
+                  <StatRow label={tr.manager.aging1530} value={reportAmountLabel(co.aging['15-30 days'], co.currency)} />
+                  <StatRow label={tr.manager.aging30plus} value={reportAmountLabel(co.aging['30+ days'], co.currency)} tone="danger" />
+                  {!!co.unaged_balance && <StatRow label="Vadesi belirlenemeyen" value={reportAmountLabel(co.unaged_balance, co.currency)} tone="warning" />}
                 </Card>
               ))
             )}

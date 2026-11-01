@@ -11,6 +11,7 @@ import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
+import { useNavigationAccess } from '../../src/navigation/useNavigationAccess';
 import { isOffline } from '../../src/utils/errors';
 import { FeedItem, getFeed, getToday } from '../../src/api/hub';
 
@@ -134,6 +135,7 @@ export default function HubScreen() {
   // enforces every action inside; this list never grants access). The guest
   // app surface is offered to all-access roles only.
   const shortcuts: Shortcut[] = [
+    { key: 'reports', label: 'Finansal raporlar', route: ROUTES.reportDetail, visible: financeReports, icon: 'bar-chart-outline' },
     {
       key: 'frontdesk',
       label: tr.hub.moduleFrontdesk,
@@ -226,7 +228,8 @@ export default function HubScreen() {
       icon: 'phone-portrait-outline',
     },
   ];
-  const visibleShortcuts = shortcuts.filter((s) => s.visible);
+  const canNavigate = useNavigationAccess();
+  const visibleShortcuts = shortcuts.filter((s) => canNavigate(s.route));
 
   const feedItems: FeedItem[] = feed.data?.items ?? [];
   const feedPreview = feedItems.slice(0, 4);

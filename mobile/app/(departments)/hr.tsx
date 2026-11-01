@@ -32,7 +32,6 @@ import { spacing, radius, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
-import { screenRedirectsToHub } from '../../src/utils/departmentScreens';
 import { haptic } from '../../src/hooks/useHaptic';
 import { errorMessage } from '../../src/utils/errors';
 import {
@@ -195,7 +194,7 @@ function priorityTone(value?: string):
 export default function HrScreen() {
   const c = useTheme();
   const rawRole = useAuthStore((s) => s.user?.role);
-  const hrAccess = !screenRedirectsToHub('hr', rawRole);
+  const hrAccess = useAuthStore((s) => s.hrAccess);
   const manageHr = canManageHr(rawRole);
   const [tab, setTab] = useState<Tab>('staff');
 
@@ -225,7 +224,7 @@ export default function HrScreen() {
     enabled: hrAccess && manageHr && tab === 'performance',
   });
 
-  if (screenRedirectsToHub('hr', rawRole)) {
+  if (!hrAccess) {
     return <Redirect href={ROUTES.departments} />;
   }
 

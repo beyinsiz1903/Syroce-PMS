@@ -13,6 +13,7 @@ import { tr } from '../../src/i18n/tr';
 import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
+import { useNavigationAccess } from '../../src/navigation/useNavigationAccess';
 import { useSettingsStore } from '../../src/state/settingsStore';
 import { getApiUrl } from '../../src/api/client';
 import { authenticateBiometric, getBiometricCapability } from '../../src/biometrics/lock';
@@ -180,7 +181,8 @@ export default function GMMoreScreen() {
       icon: 'construct-outline',
     },
   ];
-  const visibleShortcuts = shortcuts.filter((s) => s.visible);
+  const canNavigate = useNavigationAccess();
+  const visibleShortcuts = shortcuts.filter((s) => canNavigate(s.route) && (!['spa', 'mice'].includes(s.key) || s.visible));
 
   const pushLabel =
     pushStatus === 'registered'

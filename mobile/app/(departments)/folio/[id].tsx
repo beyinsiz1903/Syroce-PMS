@@ -112,7 +112,7 @@ const Chip: React.FC<{ active: boolean; label: string; onPress: () => void }> = 
 export default function FolioDetailScreen() {
   const c = useTheme();
   const qc = useQueryClient();
-  const financeReports = useAuthStore((s) => s.financeReports);
+  const financeReports = useAuthStore((s) => s.cashierAccess);
   const params = useLocalSearchParams<{
     id: string;
     guest?: string;

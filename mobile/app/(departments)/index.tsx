@@ -101,6 +101,7 @@ export default function DepartmentsHub() {
   const maintenanceAccess = useAuthStore((s) => s.maintenanceAccess);
   const online = useOnline();
   const tiles = visibleHubTiles(user?.role, {
+    user: user || undefined,
     financeReports,
     maintenanceAccess,
     pageAccess: user?.page_access,
