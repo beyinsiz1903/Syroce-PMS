@@ -25,7 +25,7 @@ from core.helpers import create_audit_log
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from core.utils import calculate_folio_balance
-from models.enums import ChargeCategory, FolioOperationType
+from models.enums import ChargeCategory, FolioOperationType, PaymentType
 from models.schemas import (
     ChargeCreate,
     Folio,
@@ -39,11 +39,13 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.payment_cashier_snapshot import cashier_values
 from modules.pms_core.receivable_reporting import folio_snapshots, receivable_rows, report_day, row_totals
 from modules.pms_core.report_money import add_amount, amounts_text, rounded_totals, single_amount
-from modules.pms_core.reporting_financials import deduplicate_report_payments, is_valid_payment
+from modules.pms_core.reporting_financials import deduplicate_report_payments, is_valid_payment, stamp_reporting_values
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import (
+    build_request_hash,
     claim_idempotency,
     claim_short_window_dedup,
     complete_idempotency,
@@ -646,7 +648,10 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
             tenant_id=current_user.tenant_id,
             scope=f"folio_charge:{folio_id}",
             idempotency_key=idem_key,
+            request_hash=build_request_hash(charge_data.model_dump(mode="json")),
         )
+        if claim["status"] == "mismatch":
+            raise HTTPException(409, "Aynı işlem anahtarı farklı bir ücret için kullanılamaz")
         if claim["status"] == "replay":
             return claim["response"]
         if claim["status"] == "in_flight":
@@ -785,6 +790,8 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
     from modules.pms_core.role_permission_service import RolePermissionService
 
     RolePermissionService().enforce_user_permission(current_user, "post_payment")
+    if payment_data.payment_type == PaymentType.REFUND:
+        raise HTTPException(422, "İade, tahsilat olarak kaydedilemez; ödemenin iade akışını kullanın")
 
     # Optional Idempotency-Key replay protection (cashier double-click / retry).
     idem_key = get_idempotency_key(request)
@@ -795,7 +802,10 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
             tenant_id=current_user.tenant_id,
             scope=f"folio_payment:{folio_id}",
             idempotency_key=idem_key,
+            request_hash=build_request_hash(payment_data.model_dump(mode="json")),
         )
+        if claim["status"] == "mismatch":
+            raise HTTPException(409, "Aynı işlem anahtarı farklı bir ödeme için kullanılamaz")
         if claim["status"] == "replay":
             return claim["response"]
         if claim["status"] == "in_flight":
@@ -832,6 +842,8 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
 
         if not folio:
             raise HTTPException(status_code=404, detail="Folio not found")
+        if folio.get("status") != "open":
+            raise HTTPException(409, "Kapalı folyoya yeni ödeme eklenemez")
 
         # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu (5y kasa standardı)
         from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
@@ -840,7 +852,8 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         await ensure_active_shift(current_user.tenant_id, method_str)
 
         payment_payload = payment_data.model_dump(exclude_none=True)
-        if not payment_payload.get("currency"):
+        folio_currency = folio.get("currency")
+        if not folio_currency:
             booking = None
             bookings_collection = getattr(db, "bookings", None)
             if bookings_collection is not None:
@@ -848,9 +861,13 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
                     {"id": folio["booking_id"], "tenant_id": current_user.tenant_id},
                     {"_id": 0, "currency": 1},
                 )
-            payment_payload["currency"] = str(
-                (booking or {}).get("currency") or folio.get("currency") or "TRY"
-            ).upper()
+            folio_currency = (booking or {}).get("currency") or "TRY"
+        folio_currency = _normalize_currency(folio_currency)
+        if payment_payload.get("currency") and _normalize_currency(payment_payload["currency"]) != folio_currency:
+            raise HTTPException(422, "Ödeme tutarı seçili folyonun para biriminde olmalı; alınan dövizi ayrı belirtin")
+        payment_payload["currency"] = folio_currency
+        if payment_payload.get("received_currency"):
+            payment_payload["received_currency"] = _normalize_currency(payment_payload["received_currency"])
 
         payment = Payment(
             tenant_id=current_user.tenant_id,
@@ -864,6 +881,10 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         payment_dict["processed_at"] = payment_dict["processed_at"].isoformat()
         payment_dict["processed_by_name"] = current_user.name  # Add user name
         await stamp_open_business_date(db, current_user.tenant_id, payment_dict)
+        stamp_reporting_values(payment_dict)
+        # Validate FX before inserting anything. Ledger currency and the TRY
+        # drawer value are distinct; never silently book foreign money as TRY.
+        cash_snapshot = cashier_values(payment_dict)
         await db.payments.insert_one(payment_dict)
 
         # Update folio balance
@@ -892,7 +913,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         try:
             await record_cash_transaction(
                 tenant_id=current_user.tenant_id,
-                amount=payment.amount,
+                **cash_snapshot,
                 method=method_str,
                 direction="in",
                 description=f"Folio ödemesi - {folio.get('folio_number') or folio_id[:8]}",

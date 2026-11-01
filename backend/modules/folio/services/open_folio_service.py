@@ -98,7 +98,11 @@ class OpenFolioService:
                 tenant_id=tenant_context.tenant_id,
                 correlation_id=correlation_id,
             ).timestamp
-            currency = tenant_doc.get("currency") or tenant_doc.get("default_currency") or booking.get("currency") or "TRY"
+            # Reporting currency is not the reservation/folio denomination.
+            # Do not silently turn a EUR stay into a TRY account at creation.
+            from modules.pms_core.enterprise_billing import currency as validate_currency
+
+            currency = validate_currency(booking.get("currency") or tenant_doc.get("currency") or tenant_doc.get("default_currency") or "TRY")
 
             folio = Folio(
                 tenant_id=tenant_context.tenant_id,
@@ -170,6 +174,7 @@ class OpenFolioService:
                     "booking_id",
                     "folio_number",
                     "folio_type",
+                    "currency",
                     "status",
                     "guest_id",
                     "company_id",

@@ -3,8 +3,10 @@
 //   1) selectedFolio null + folios boş  → loading spinner
 //   2) selectedFolio null + folios>1    → folio picker (kullanıcı seçer)
 //   3) selectedFolio dolu               → tam folyo UI
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import axios from 'axios';
+import { toast } from 'sonner';
 import FolioViewDialog from '@/components/pms/FolioViewDialog';
 
 // react-i18next: useTranslation sadece (key, fallback) döner
@@ -184,5 +186,105 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
       )
     ).not.toThrow();
     expect(screen.getByTestId('folio-empty')).toBeInTheDocument();
+  });
+});
+
+describe('FolioViewDialog — receipt write safety', () => {
+  const folio = { id: 'receipt-1', booking_id: 'booking-1', folio_number: 'F-300', status: 'open', currency: 'TRY', balance: 100 };
+  const mountPayment = (selectedFolio = folio) => {
+    const view = render(<FolioViewDialog {...baseProps} selectedFolio={selectedFolio} folios={[selectedFolio]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ödeme Ekle' }));
+    return view;
+  };
+  const submit = () => fireEvent.submit(screen.getByRole('button', { name: 'Kaydet' }).closest('form'));
+  beforeEach(() => {
+    axios.post.mockReset().mockResolvedValue({ data: {} });
+    vi.mocked(toast.error).mockClear();
+  });
+
+  it('sends a strict Turkish decimal in the selected folio currency with an intent key', async () => {
+    mountPayment();
+    fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value: '10,25' } });
+    submit();
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0]).toEqual(['/folio/receipt-1/payment', expect.objectContaining({ amount: 10.25, currency: 'TRY' }),
+      { headers: { 'Idempotency-Key': expect.any(String) } }]);
+  });
+
+  it('requires a verified TRY reporting rate for foreign receipts, with no 1:1 default', async () => {
+    mountPayment({ ...folio, currency: 'EUR' });
+    fireEvent.change(screen.getByLabelText('Tutar (EUR)'), { target: { value: '10,25' } });
+    submit();
+    expect(axios.post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('TL kasa kuru (1 EUR = kaç TRY?)'), { target: { value: '50,25' } });
+    submit();
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ currency: 'EUR', amount: 10.25, received_to_try_rate: 50.25 });
+  });
+
+  it('does not submit zero, partial or exponent money input', () => {
+    mountPayment();
+    for (const value of ['0', '10abc', '1e2', '10,']) {
+      fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value } });
+      submit();
+    }
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('blocks a double submit while the first receipt is pending', async () => {
+    let finish;
+    axios.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    mountPayment();
+    fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value: '10' } });
+    const form = screen.getByRole('button', { name: 'Kaydet' }).closest('form');
+    fireEvent.submit(form); fireEvent.submit(form);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'İşleniyor…' })).toBeDisabled();
+    await act(async () => finish({ data: {} }));
+  });
+
+  it('reuses a receipt intent after an uncertain response and refuses changed money', async () => {
+    axios.post.mockRejectedValue(new Error('Bağlantı kesildi'));
+    const view = mountPayment();
+    fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value: '10' } });
+    submit();
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    const originalKey = axios.post.mock.calls[0][2].headers['Idempotency-Key'];
+    view.rerender(<FolioViewDialog {...baseProps} selectedFolio={{ ...folio, balance: 0 }} />);
+    submit();
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Kaydet' })).toBeEnabled());
+    expect(axios.post.mock.calls[1][2].headers['Idempotency-Key']).toBe(originalKey);
+    expect(axios.post.mock.calls[1][1].payment_type).toBe(axios.post.mock.calls[0][1].payment_type);
+    fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value: '20' } });
+    submit();
+    await waitFor(() => expect(toast.error).toHaveBeenLastCalledWith(expect.stringContaining('sonucu belirsiz')));
+    expect(axios.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not offer new charges or receipts on a closed folio', () => {
+    render(<FolioViewDialog {...baseProps} selectedFolio={{ ...folio, status: 'closed' }} />);
+    expect(screen.getByRole('button', { name: 'Ödeme Ekle' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'İşlem Ekle' })).toBeDisabled();
+  });
+
+  it('does not leave a paid-looking failure draft when the refresh callback fails', async () => {
+    render(<FolioViewDialog {...baseProps} selectedFolio={folio} onPaymentPosted={vi.fn().mockRejectedValue(new Error('read unavailable'))} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ödeme Ekle' }));
+    fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value: '10' } });
+    submit();
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('İşlem kaydedildi')));
+    expect(screen.queryByLabelText('Tutar (TRY)')).not.toBeInTheDocument();
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('closes the old draft when the selected folio window changes', () => {
+    const view = mountPayment();
+    fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value: '10' } });
+    view.rerender(<FolioViewDialog {...baseProps} selectedFolio={{ ...folio, id: 'receipt-2', currency: 'EUR' }} />);
+    expect(screen.queryByLabelText('Tutar (TRY)')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ödeme Ekle' }));
+    expect(screen.getByLabelText('Tutar (EUR)')).toHaveValue('0');
   });
 });

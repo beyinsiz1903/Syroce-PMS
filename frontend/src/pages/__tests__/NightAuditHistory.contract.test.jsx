@@ -36,6 +36,20 @@ it('renders the real runs contract, separating business day and actual Istanbul 
   expect(screen.queryByText(/888888|must-not-render/)).not.toBeInTheDocument();
 });
 
+it.each([
+  [{ id: 'operator-id', email: 'operator@example.invalid' }, 'operator@example.invalid'],
+  [{ id: 'operator-id', name: 'Vardiya sorumlusu' }, 'Vardiya sorumlusu'],
+  [{ unexpected: true }, '—'],
+])('renders legacy structured actor %j without crashing the whole history', async (actor, label) => {
+  get.mockResolvedValue(payload([{ ...run, started_by: actor }]));
+  mount();
+  const row = (await screen.findByText('2026-10-25')).closest('tr');
+  expect(within(row).getByText(label)).toBeInTheDocument();
+  expect(within(row).getByText('27.10.2026 11:52:01')).toBeInTheDocument();
+  fireEvent.click(within(row).getByRole('button', { name: 'Detay' }));
+  expect(screen.getByText('local-run-1')).toBeInTheDocument();
+});
+
 it('distinguishes simulations and superseded runs, with page-scoped operational counts', async () => {
   get.mockResolvedValue(payload([run, { ...run, id: 'dry-run', status: 'dry_run_completed', dry_run: true },
     { ...run, id: 'superseded', status: 'rerun_superseded', dry_run: true }]));

@@ -1,0 +1,96 @@
+ÖN BÜRO — FOLYO YAZMA VE GÜN SONU GEÇMİŞİ KABULÜ
+1 Kasım 2026
+
+Kapsam ve doğru tamamlanma sınırı
+Önceki 19 sayfalık matris yeniden incelendi. Önceden geçen hizmet/folyo
+verileri yeniden üretilmedi, eski kayıtlar silinmedi. Bu çalışma tüm PMS'nin
+bütün olası düğme, rol, para birimi ve dış sağlayıcı varyasyonlarının eksiksiz
+sertifikası değildir. Somut açık kanıtlar: canlı gün sonu geçmişi, para birimi
+koruyan folyo yazımı, güvenli tekrar ve rapor dışa aktarımıdır.
+
+Canlı salt okunur kabul
+Sağlıklı sürüm: 04236723f1c4364b6349ff95b0567c08f850929a.
+Yalnız Demo Hotel 100001; iş günü 2026-10-26 korundu. Exely TEST501694
+sandbox/ARI kapalı/rezervasyon çekimi kapalı; HotelRunner bağlantısız,
+V2 connector kayıtları paused. Sağlayıcı teslimi, gün sonu, rezervasyon,
+ücret, tahsilat, vardiya veya banka/kart işlemi yapılmadı.
+
+197 canonical night-audit koşusu 10 sayfada okundu; toplam, benzersiz ID ve
+sayfalama doğrulandı. 25 Ekim–1 Kasım filtresinde iki kayıt var; ikisinin de
+started_by alanı {id,email} nesnesi. Completed/dry-run/failed filtreleri API
+kohortuyla eşleşiyor. Canlı tarayıcıda nesneyi doğrudan React child olarak
+göstermek tüm geçmiş sayfasını çökertti. Ekran kanıtı ve console kaydı alındı.
+Bu nedenle mevcut canlı geçmiş UI'si PASS değildir; bu PR'nin deploy sonrası
+aynı iki kayıtla yeniden açılması zorunludur. Kayıtları metne çevirerek DB'de
+değiştirmek yerine geriye uyumlu güvenli gösterim düzeltildi.
+
+Altı Excel dışa aktarımı HTTP200 ve okunabilir workbook verdi:
+pazar segmenti, şirket yaşlandırma, gelir detayı, forecast detayı,
+günlük operasyon özeti, kanal dağılımı. Hücrelerin formül olarak
+yorumlanmadığı kontrol edildi. 25/26/30 Ekim gelir-kategori çıktılarında
+TOPLAM satırları JSON totals_by_currency değerleriyle birebir eşleşti;
+eski/yanlış snapshot ile indirme 409 döndü. Bu üç toplam kontrolü altı
+dosya açma kontrolünden farklıdır; tüm rapor varyasyonları anlamına gelmez.
+Oda/rezervasyon listeleri ve önceki mobil kabul rezervasyonu full-detail
+öncesi/sonrası aynı kaldı. Şifre/token kanıta yazılmadı.
+
+Bulunan ve düzeltilen ürün kusurları
+1. Ortak /folio/{id}/payment yolu kapalı folyoya yeni tahsilat yazabiliyordu.
+   Yeni tahsilat 409; önceden tamamlanmış aynı anahtarın tekrarı orijinal
+   makbuzu döndürür, yeniden kayıt oluşturmaz.
+2. Ücret ve ödeme Idempotency-Key değeri request hash ile bağlı değildi.
+   Aynı anahtar/farklı payload 409; tamamlanmış aynı payload tek kayıt.
+   Önceden hash'siz yazılmış cache kayıtlarının legacy okuması korunur.
+3. Refund tipi normal incoming receipt olarak kabul ediliyordu. İade için
+   ayrı mevcut iade akışı gerekir; tahsilat endpoint'i 422 döndürür.
+4. Seçili folyo yerine rezervasyon para birimi öncelenebiliyor, açık currency
+   gövdesi folyo döviziyle uyuşmayabiliyordu. Folyo ilk kaynak, rezervasyon
+   yalnız legacy fallback; yanlış açık denomination 422. Alınan döviz ayrı
+   received_* alanlarında korunur.
+5. Döviz tutarı TRY kasa hareketi gibi yazılabiliyordu. Mevcut ortak
+   cashier_values doğrulaması insert öncesinde çalışır; ledger tutarı,
+   alınan para ve işlem anındaki TRY raporlama değeri ayrı saklanır. Kur
+   yoksa 1:1 uydurulmaz, 422 döner. Nakit/vardiya rollback'i korunur.
+6. Yeni folyo oluşturma tenant/reporting dövizini rezervasyonun önüne
+   koyuyor, response currency alanını da düşürüyordu. Yeni folyo
+   rezervasyon dövizinde açılır; event, ledger, response ve replay aynı
+   currency'yi taşır. Tarihsel finansal kayıtlar değiştirilmedi.
+7. FolioViewDialog'da ödeme/ücret double-submit kilidi, component ömründe
+   saklanan intent key, belirsiz sonuçta aynı payload/key ile retry, değişen
+   tutarı engelleme, katı Türkçe ondalık giriş ve döviz için TRY kasa kuru
+   eklendi. Pencere değişince eski ödeme taslağı kapanır. Başarılı yazımdan
+   sonraki liste yenileme hatası, tekrar gönderilebilir başarısız ödeme
+   taslağına dönüşmez. Bu bir kalıcı offline kuyruk/PSP entegrasyonu değildir.
+8. Gün sonu actor string/{id,email}/{id,name}/tanınmayan nesne biçimleri
+   güvenle gösterilir; ham auth nesnesi veya token basılmaz. İş günü ile
+   gerçek Europe/Istanbul işlem zamanı ayrımı korunur.
+
+Doğrulama
+Değişiklik öncesi 7 folyo regresyonu, 3 yeni-folyo döviz testi ve 3 legacy
+actor UI testi başarısız; ilk başarısız XML'ler kanıt klasöründe korundu.
+Son yerel backend paketi: 73 passed. Yedi yeni HTTP kabul senaryosu gerçek
+handler/RBAC/ledger/cashier ile UUID adlı loopback replica DB'de çalışır;
+kimlik doğrulama enjekte edilmiştir, production login testi diye sunulmaz.
+Paket mevcut checkout/ek ücret/quick-folio, rollback, rapor ödeme-statü,
+FX ve idempotency regresyonlarını da içerir.
+Tam frontend: 2445 passed, 438 dosya; altküme sayıları buna eklenmez.
+Paylaşımlı eski node_modules ile ilk tam koşu follow-redirects 1.16.1
+nedeniyle 3 testte kaldı. Kaynak/lock pinleri değiştirilmedi; aynı yarn.lock
+SHA256'sına sahip ayrı QA bağımlılıkları 1.16.2 ile tam paket geçti.
+Ortak node_modules bağlantısı değiştirilmedi. Son değişen dosyaların
+ESLint/Ruff ve diff kontrolleri de çalıştırılır. CI exact-head ve deploy
+canlı kabulü yerel koşuların yerine geçmez.
+
+Deploy sonrası zorunlu kapanış
+- PR exact-head zorunlu CI kontrolleri; normal merge/deploy/health eşleşmesi.
+- Aynı canlı gün sonu geçmişinde iki structured actor kaydı açılır,
+  filtre/sayfa/detay ve Türkiye saati ekranı doğrulanır; hata boundary'si yok.
+- Korunan mevcut konaklamaları kullanmadan yeni ve işaretli bir yapay kayıtla
+  folyo/ödeme akışı, aynı intent replay, kapalı folyo ret, kasa/reporting TRY
+  eşleşmesi ve rapor yenilemesi kontrol edilir. Mevcut test verisi silinmez.
+- KBS/resmî bildirim, gerçek PSP/ödeme, donanım ve dış sağlayıcı sertifikası
+  bu PR'nin yerel PMS testleriyle geçmiş sayılmaz. Eski 19-aile matrisindeki
+  bağımsız ürün/dış sağlayıcı sınırları ayrıca izlenir.
+
+Kanıt: çalışma alanı/frontdesk-final-gaps-20261101.QKPWyR/
+Canlı API sürücüsü yalnız GET yapar; normal Demo oturumunu kullanır.
