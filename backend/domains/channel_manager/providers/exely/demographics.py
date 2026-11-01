@@ -72,6 +72,58 @@ def _date(value: Any) -> str:
         raise ReadReservationError("EXELY_READ_STAY_INVALID") from None
 
 
+def _room_extra_amounts(items: Any, *, currency: str, source_index: str | None = None) -> list[Decimal] | None:
+    """Compare quoted amounts, not unrelated SOAP/Connect service ID namespaces.
+
+    Only explicitly non-inclusive, individually room-owned service totals can
+    explain a gross/net room difference. Unknown flags/scopes cannot authorize
+    a demographic match. Totals already include quantity and duration.
+    """
+    if not isinstance(items, list) or len(items) > 1000:
+        return None
+    amounts = []
+    for item in items:
+        if not isinstance(item, dict) or type(item.get("inclusive")) is not bool:
+            return None
+        if source_index is not None and (
+            item.get("currency") != currency or item.get("scope") != "room"
+            or item.get("room_stay_indexes") != [source_index]
+        ):
+            return None
+        if item["inclusive"]:
+            continue
+        raw = item.get("amount") if source_index is not None else (item.get("total") or {}).get("priceAfterTax")
+        amounts.append(_money(raw))
+    return sorted(amounts)
+
+
+def _room_amount_match(room: dict, remote: dict, amount: Decimal, currency: str) -> dict | None:
+    gross = _money((remote.get("total") or {}).get("priceAfterTax"))
+    if gross == amount:
+        return {"basis": "direct_room_total"}
+    if gross < amount:
+        return None
+    # Observed TEST1827: SOAP accommodation100 + separate service300;
+    # Connect RoomStay total400 includes that non-inclusive service. Require
+    # independent, equal service-total multisets before comparing net amounts.
+    # Never allocate booking-wide services or early/late charges to a room.
+    source_index = str(room.get("index_number") if room.get("index_number") is not None else "")
+    if not source_index:
+        return None
+    extra_stay = remote.get("extraStayCharges")
+    if extra_stay is not None and (not isinstance(extra_stay, dict) or any(extra_stay.values())):
+        return None
+    source_extras = _room_extra_amounts(room.get("services"), currency=currency, source_index=source_index)
+    remote_extras = _room_extra_amounts(remote.get("services"), currency=currency)
+    if not source_extras or source_extras != remote_extras:
+        return None
+    extras = sum(source_extras, Decimal(0))
+    if extras <= 0 or gross - extras != amount:
+        return None
+    return {"basis": "gross_less_room_extra_services", "rest_room_total": str(gross),
+            "non_inclusive_services_total": str(extras), "accommodation_amount": str(amount)}
+
+
 async def inspect_reconciliation(tenant_id: str, connection: dict[str, Any], number: str, client) -> dict[str, Any]:
     """Read-only, allowlisted comparison; never return guest/contact payloads.
 
@@ -193,18 +245,22 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
         # may contain paid extra services and must not replace an explicit zero.
         raw_amount = room.get("amount")
         amount = _money(raw_amount if raw_amount is not None else (reservation.get("total") if len(rooms) == 1 else 0))
-        candidates = [item for item in remaining if (
-            isinstance(item, dict)
-            and str((item.get("roomType") or {}).get("id")) == str(mapping.get("exely_room_code"))
-            and _date((item.get("stayDates") or {}).get("arrivalDateTime")) == check_in
-            and _date((item.get("stayDates") or {}).get("departureDateTime")) == check_out
-            and _money((item.get("total") or {}).get("priceAfterTax")) == amount
-        )]
+        candidates = []
+        for item in remaining:
+            if (
+                isinstance(item, dict)
+                and str((item.get("roomType") or {}).get("id")) == str(mapping.get("exely_room_code"))
+                and _date((item.get("stayDates") or {}).get("arrivalDateTime")) == check_in
+                and _date((item.get("stayDates") or {}).get("departureDateTime")) == check_out
+            ):
+                evidence = _room_amount_match(room, item, amount, reservation["currency"])
+                if evidence:
+                    candidates.append((item, evidence))
         # Do not guess the relation between SOAP's one-based RoomStay indexes
         # and Connect's indexes, or distribute ages across identical rooms.
         _require(bool(candidates), "EXELY_READ_ROOM_JOIN_NOT_FOUND")
         _require(len(candidates) == 1, "EXELY_READ_ROOM_JOIN_AMBIGUOUS")
-        remote_room = candidates[0]
+        remote_room, amount_evidence = candidates[0]
         remaining.remove(remote_room)
         count = remote_room.get("guestCount") or {}
         adults, ages = count.get("adultCount"), count.get("childAges")
@@ -241,6 +297,8 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
             "adults": adults, "children_ages": ages,
             **{key: booking[key] for key in ("check_in", "check_out", "room_type", "currency", "total_amount")},
         }
+        if amount_evidence["basis"] != "direct_room_total":
+            proof["room_amount_comparison"] = amount_evidence
         evidence_hash = hashlib.sha256(json.dumps(proof, sort_keys=True).encode()).hexdigest()
         proof.update(evidence_hash=evidence_hash, verified_at=datetime.now(UTC).isoformat())
         plans.append({"booking": booking, "proof": proof})

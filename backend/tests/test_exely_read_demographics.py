@@ -349,6 +349,177 @@ async def test_no_matching_room_is_distinct_from_multiple_matching_rooms(scenari
         await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
 
 
+def _observed_service_booking(scenario):
+    """Sanitized live TEST1827 shape: SOAP100+300, REST RoomStay400.
+
+    The service identifiers really differ between the two official APIs;
+    neither service ID nor room index may be used to guess a room match.
+    """
+    database, reservation, _, remote = scenario
+    reservation["total"] = remote["total"]["priceAfterTax"] = 400
+    room = reservation["rooms"][0]
+    room.update(amount=100, adults=2, children=0, services=[{
+        "provider_id": "5001517", "inclusive": False, "amount": 300, "currency": "USD",
+        "scope": "room", "room_stay_indexes": ["1"], "quantity": 2, "duration": 1,
+    }])
+    database.exely_reservations.documents[0] = deepcopy(reservation)
+    database.bookings.documents[0].update(total_amount=100, provider_booking_total=400,
+        provider_services=deepcopy(room["services"]), adults=2, children=0, guests_count=2, paid_amount=0)
+    rest_room = remote["roomStays"][0]
+    rest_room.update(total={"priceAfterTax": 400}, guestCount={"adultCount": 2, "childAges": []},
+        services=[{"id": "5002994", "inclusive": False, "total": {"priceAfterTax": 300}}])
+    return database, reservation, remote
+
+
+async def test_observed_service_gross_total_matches_without_repricing_reimport_or_source_changes(scenario):
+    database, reservation, remote = _observed_service_booking(scenario)
+    before_source = deepcopy((database.exely_reservations.documents, database.exely_reservation_versions.documents))
+    before = deepcopy(database.bookings.documents[0])
+    client = SimpleNamespace(booking=AsyncMock(return_value=remote))
+    result = await demo.reconcile_one("tenant-a", CONNECTION, NUMBER, client)
+    assert result["status"] == "verified" and result["provider_write_count"] == 0
+    assert client.booking.await_count == 2
+    actual = database.bookings.documents[0]
+    assert demo.verified_booking(actual) and (actual["adults"], actual["children"]) == (2, 0)
+    proof = actual["exely_demographics"]["room_amount_comparison"]
+    assert proof == {"basis": "gross_less_room_extra_services", "rest_room_total": "400",
+        "non_inclusive_services_total": "300", "accommodation_amount": "100"}
+    # The300 service quote is already a total: quantity2 must NOT make it600.
+    assert actual["total_amount"] == 100 and actual["provider_booking_total"] == 400
+    assert actual["provider_services"] == before["provider_services"] and actual["paid_amount"] == 0
+    allowed = {"exely_demographics", "children_ages_complete", "updated_at", "_version"}
+    assert {k: v for k, v in actual.items() if k not in allowed} == {k: v for k, v in before.items() if k not in allowed}
+    assert before_source == (database.exely_reservations.documents, database.exely_reservation_versions.documents)
+    assert len(database.exely_demographic_checks.documents) == 1
+    original_evidence = deepcopy(database.exely_demographic_checks.documents)
+    await demo.reconcile_one("tenant-a", CONNECTION, NUMBER, client)
+    assert database.exely_demographic_checks.documents == original_evidence
+    assert database.bookings.documents[0]["total_amount"] == 100
+
+
+async def test_service_inclusive_inspection_is_ready_but_still_never_writes(scenario):
+    database, _, remote = _observed_service_booking(scenario)
+    before = {k: deepcopy(v.documents) for k, v in vars(database).items()}
+    result = await demo.inspect_reconciliation("tenant-a", CONNECTION, NUMBER, SimpleNamespace(booking=AsyncMock(return_value=remote)))
+    assert result["status"] == "ready" and result["applied"] is False and result["provider_write_count"] == 0
+    assert result["source_rooms"][0]["amount"] == "100" and result["rest_rooms"][0]["amount"] == "400"
+    assert before == {k: v.documents for k, v in vars(database).items()}
+
+
+@pytest.mark.parametrize("drift", [
+    "missing_soap_services", "missing_rest_services", "soap_inclusive", "rest_inclusive", "missing_flag",
+    "string_flag", "rest_service_amount", "source_service_amount", "gross_amount", "currency",
+    "shared_service", "wrong_owner", "extra_stay", "duplicate_rest_service", "same_sum_different_parts",
+    "room_type", "stay_dates", "missing_service_total", "invalid_service_total",
+])
+async def test_service_normalization_never_infers_missing_or_conflicting_breakdowns(scenario, drift):
+    database, reservation, remote = _observed_service_booking(scenario)
+    source = reservation["rooms"][0]
+    rest_room = remote["roomStays"][0]
+    if drift == "missing_soap_services":
+        source.pop("services")
+    elif drift == "missing_rest_services":
+        rest_room.pop("services")
+    elif drift == "soap_inclusive":
+        source["services"][0]["inclusive"] = True
+    elif drift == "rest_inclusive":
+        rest_room["services"][0]["inclusive"] = True
+    elif drift == "missing_flag":
+        rest_room["services"][0].pop("inclusive")
+    elif drift == "string_flag":
+        rest_room["services"][0]["inclusive"] = "false"
+    elif drift == "rest_service_amount":
+        rest_room["services"][0]["total"]["priceAfterTax"] = 299
+    elif drift == "source_service_amount":
+        source["services"][0]["amount"] = 299
+    elif drift == "gross_amount":
+        rest_room["total"]["priceAfterTax"] = 401
+    elif drift == "currency":
+        source["services"][0]["currency"] = "EUR"
+    elif drift == "shared_service":
+        source["services"][0]["scope"] = "reservation"
+    elif drift == "wrong_owner":
+        source["services"][0]["room_stay_indexes"] = ["2"]
+    elif drift == "extra_stay":
+        rest_room["extraStayCharges"] = {"earlyArrival": {"total": {"priceAfterTax": 20}}}
+    elif drift == "duplicate_rest_service":
+        rest_room["services"].append(deepcopy(rest_room["services"][0]))
+    elif drift == "same_sum_different_parts":
+        rest_room["services"] = [{"inclusive": False, "total": {"priceAfterTax": 150}}] * 2
+    elif drift == "room_type":
+        rest_room["roomType"]["id"] = "999"
+    elif drift == "stay_dates":
+        rest_room["stayDates"]["departureDateTime"] = "2026-11-12T12:00"
+    elif drift == "missing_service_total":
+        rest_room["services"][0].pop("total")
+    else:
+        rest_room["services"][0]["total"]["priceAfterTax"] = "NaN"
+    before = deepcopy(database.bookings.documents)
+    with pytest.raises(read.ReadReservationError):
+        await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert database.bookings.documents == before and database.exely_demographic_checks.documents == []
+
+
+async def test_identical_service_adjusted_rooms_still_fail_ambiguous_instead_of_guessing_by_index(scenario):
+    database, reservation, remote = _observed_service_booking(scenario)
+    reservation["rooms"].append(deepcopy(reservation["rooms"][0]))
+    remote["roomStays"].append(deepcopy(remote["roomStays"][0]))
+    before = deepcopy(database.bookings.documents)
+    with pytest.raises(read.ReadReservationError, match="ROOM_JOIN_AMBIGUOUS"):
+        await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert database.bookings.documents == before
+
+
+async def test_explicit_free_accommodation_with_paid_services_remains_zero(scenario):
+    database, reservation, remote = _observed_service_booking(scenario)
+    reservation["rooms"][0]["amount"] = database.bookings.documents[0]["total_amount"] = 0
+    reservation["total"] = remote["total"]["priceAfterTax"] = remote["roomStays"][0]["total"]["priceAfterTax"] = 300
+    plans = await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert plans[0]["proof"]["total_amount"] == 0
+    assert plans[0]["proof"]["room_amount_comparison"]["accommodation_amount"] == "0"
+
+
+@pytest.mark.parametrize("rest_extra_stay", [None, {"earlyArrival": None, "lateDeparture": None}])
+async def test_inclusive_services_without_prices_are_not_subtracted_from_room_total(scenario, rest_extra_stay):
+    _, reservation, remote = _observed_service_booking(scenario)
+    included = {**reservation["rooms"][0]["services"][0], "provider_id": "other", "inclusive": True}
+    included.pop("amount")
+    reservation["rooms"][0]["services"].append(included)
+    remote["roomStays"][0]["services"].append({"id": "different", "inclusive": True})
+    remote["roomStays"][0]["extraStayCharges"] = rest_extra_stay
+    plans = await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert plans[0]["proof"]["room_amount_comparison"]["non_inclusive_services_total"] == "300"
+
+
+async def test_different_net_room_amounts_match_independent_of_rest_order_and_indexes(scenario):
+    database, reservation, remote = _observed_service_booking(scenario)
+    second_room = deepcopy(reservation["rooms"][0])
+    second_room.update(index_number="2", amount=120, adults=3)
+    second_room["services"][0].update(amount=400, room_stay_indexes=["2"])
+    reservation["rooms"].append(second_room)
+    reservation["pms_booking_ids"].append("booking-b")
+    reservation["room_stay_lineage"].append({"active": True, "index_number": "2", "pms_booking_id": "booking-b"})
+    database.bookings.documents.append({**deepcopy(database.bookings.documents[0]),
+        "id": "booking-b", "total_amount": 120, "adults": 3, "guests_count": 3})
+    second_rest = deepcopy(remote["roomStays"][0])
+    second_rest.update(index=91, total={"priceAfterTax": 520}, guestCount={"adultCount": 2, "childAges": [6]})
+    second_rest["services"][0]["total"]["priceAfterTax"] = 400
+    remote["roomStays"].insert(0, second_rest)
+    reservation["total"] = remote["total"]["priceAfterTax"] = 920
+    plans = await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert [(p["booking"]["id"], p["proof"]["children_ages"]) for p in plans] == [("booking-a", []), ("booking-b", [6])]
+
+
+async def test_direct_and_service_adjusted_candidates_do_not_prefer_one_or_guess_by_index(scenario):
+    _, reservation, remote = _observed_service_booking(scenario)
+    reservation["rooms"].append(deepcopy(reservation["rooms"][0]))
+    second = deepcopy(remote["roomStays"][0])
+    second["total"]["priceAfterTax"] = 100
+    remote["roomStays"].append(second)
+    with pytest.raises(read.ReadReservationError, match="ROOM_JOIN_AMBIGUOUS"):
+        await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+
+
 async def test_inspection_route_never_returns_credentials(monkeypatch, scenario):
     _, _, _, remote = scenario
     @asynccontextmanager
@@ -527,8 +698,12 @@ async def test_test_booking_verification_reads_current_provenance_not_raw_bed_co
 
 @pytest.mark.live_mongo
 @pytest.mark.parametrize("soap_version", [VERSION, "2026-10-22T08:38:48.677"])
-async def test_real_mongo_demographics_cas_immutable_source_and_tenant_isolation(scenario, local_mongo, monkeypatch, soap_version):
+@pytest.mark.parametrize("with_services", [False, True])
+async def test_real_mongo_demographics_cas_immutable_source_and_tenant_isolation(scenario, local_mongo, monkeypatch, soap_version, with_services):
     database, reservation, booking, remote = scenario
+    if with_services:
+        database, reservation, remote = _observed_service_booking(scenario)
+        booking = deepcopy(database.bookings.documents[0])
     reservation["provider_version_key"] = soap_version
     booking["provider_version_key"] = soap_version
     database.exely_reservations.documents[0]["provider_version_key"] = soap_version
@@ -543,8 +718,9 @@ async def test_real_mongo_demographics_cas_immutable_source_and_tenant_isolation
     assert result["status"] == "verified"
     actual = await local_mongo.bookings.find_one({"tenant_id": "tenant-a", "id": "booking-a"})
     other = await local_mongo.bookings.find_one({"tenant_id": "tenant-b", "id": "booking-a"})
-    assert actual["adults"] == 2 and actual["children_ages"] == [6] and actual["_version"] == 1
-    assert other["adults"] == 3 and other["children"] == 0
+    assert actual["adults"] == 2 and actual["children_ages"] == ([] if with_services else [6]) and actual["_version"] == 1
+    assert other["adults"] == booking["adults"] and other["children"] == 0
+    assert actual["total_amount"] == booking["total_amount"] and actual["paid_amount"] == booking["paid_amount"]
     assert await local_mongo.exely_reservations.find_one({"tenant_id": "tenant-a"}) == before_source
     assert await local_mongo.exely_demographic_checks.count_documents({"tenant_id": "tenant-a"}) == 1
     stale = await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
