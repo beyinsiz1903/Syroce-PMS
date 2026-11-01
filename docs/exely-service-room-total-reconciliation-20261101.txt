@@ -1,0 +1,50 @@
+Exely service-inclusive room totals / demographic reconciliation
+
+Observed AFTER PR1481 deployment, live commit6ea2afaf:
+- TEST501694/1827: SOAP source and booking total400USD; SOAP room100USD
+  and separately room-owned non-inclusive service300USD.
+- Two identical official Connect reads: same category5003299 and10-11Nov,
+  booking400USD, RoomStay gross400USD, non-inclusive service300USD.
+- SOAP serviceID5001517 and Connect serviceID5002994 differ. These IDs are
+  not an established cross-API join key; do not change mappings to force one.
+- Inspection status ROOM_JOIN_NOT_FOUND (previously conflated with AMBIGUOUS).
+  Import/ACK had already succeeded. This is NOT a missing PMS service code.
+
+Change
+- Keep direct exact room-total matching unchanged.
+- When totals differ, require explicit non-inclusive room-owned SOAP services,
+  matching currency/owner, and exactly equal service-total multisets in REST.
+  Compare gross REST minus that total against unchanged SOAP accommodation.
+- Do not multiply by quantity/duration, allocate per-booking/shared services,
+  subtract inclusive services, infer missing prices/flags, or accept extra-stay
+  charges. Incomplete/inconsistent shapes remain held, not silently verified.
+- Category/dates/booking totals, unique room match, independent double REST
+  read, source/version/CAS fences and manual edit protections remain required.
+- Preserve the normalization basis in demographic provenance. Financial/source
+  values, service IDs, imports, ACKs, connector flags and ARI are not rewritten.
+
+Verification
+-124 demographic tests passed, including4 real isolated local Mongo cases
+  with ordinary and service bookings, independent clocks, CAS and tenant isolation.
+-96 related lifecycle/services/mapping/pull-noise regressions passed.
+-Ruff and git diff --check passed. No provider mutation or email sent.
+
+Post-deploy acceptance still REQUIRED (not claimed by these offline tests)
+1. Verify deployed SHA and Demo100001/TEST501694; keep ARI/autopull OFF.
+2. Compare all11 protected provider source hashes and 1827 booking financial
+   state; inspect1827 twice through the existing safe normal endpoint.
+3. Only if status=ready, run existing normal read-reservation/reconcile for1827.
+4. Verify2adults/no children with current provider/version provenance, one PMS
+   booking and unchanged accommodation100/services300/booking400/paid0.
+5. Source payloads/ACK/version, folios/payments and other records must be
+   unchanged. No manual verified flag, raw XML replay/import/ACK or re-delivery.
+
+Independent live R3 on1829 was already operationally passed and is not repeated.
+Negative Requestdenied XML export remains a separate certification evidence
+limit; prepayment/Liberty still require provider-assisted certification.
+
+Official schema consulted (2026-11-01):
+https://exely.com/dev-portal/openapi/spec.json
+ReservationApi_RoomStay, RoomStayService and ServiceTotal define independent
+room/service totals and inclusive flag. The specific gross400/net100 shape
+above is live observed evidence, not a guessed universal price convention.
