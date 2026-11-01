@@ -36,7 +36,10 @@ geçti. Backend kapsamında12 yeni query/ASGI HTTP/auth/tarih/sayfalama testi
 vardır; kalan18 preview-clock ve finansal özet regresyonudur. Canlı mutasyon
 veya gerçek veritabanı entegrasyon testi sayısı gibi sunulmaz.
 ESLint, Ruff, theme guard, diff kontrolü ve Vite üretim build başarılı.
-Tam UI paketi kilit dosyasına uygun izole ortamda ayrıca tamamlanır.
+Tam UI paketi kilit dosyasına uygun izole ortamda2433/2433 başarılı,
+0başarısız/0atlama ile tamamlandı. Seçili20 bu2433'ün alt kümesidir;
+iki kez sayılmaz. Temiz ortamda6 redirect güvenliği dahil26 seçili test de
+ayrıca geçti; bu26 da tam UI paketinin alt kümesidir.
 İlk yerel tam koşu localhost izniyle durdu; ikinci koşuda paylaşılan eski
 node_modules bağlantısındaki follow-redirects1.16.1 ortaya çıktı. Kilit
 dosyası1.16.2'dir. Aynı SHA256 kilidi ve1.16.2 kurulu izole ortam kullanıldı;
@@ -74,6 +77,7 @@ deploy1477-1478-acceptance-20261101.QpOLZm/
   canonical-runs-before.json, night-history-empty-before.png/.txt,
   history-contract-before.json, history-ui-final-selected.json,
   history-backend-after-v1.xml, history-fixed-local-ui.png/.txt,
+  history-ui-full-clean-v3.json, history-selected-clean.json,
   history-filter-invalidated-local.txt, history-filtered-local.txt,
   history-midnight-local.txt, history-details-local.txt,
   eas-builds.json,eas-android-builds.json,eas-updates.json,eas-channels.json.
