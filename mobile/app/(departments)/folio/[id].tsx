@@ -22,6 +22,7 @@ import { DepartmentListState } from '../../../src/components/department';
 import { radius, spacing, useTheme } from '../../../src/theme';
 import { tr } from '../../../src/i18n/tr';
 import { useAuthStore } from '../../../src/state/authStore';
+import { mobileOperationAllowed } from '../../../src/state/roleAccess';
 import { ROUTES } from '../../../src/navigation/routes';
 import {
   getFolioById,
@@ -32,7 +33,10 @@ import {
   type FolioPayment,
   type FolioPaymentMethod,
 } from '../../../src/api/folio';
-import { formatCurrency, formatDate, formatTime } from '../../../src/utils/format';
+import { formatDate, formatTime } from '../../../src/utils/format';
+import { folioEntrySummary, folioWriteAttempt, type WriteAttempt } from '../../../src/utils/folioEntry';
+import { parsePaymentAmount, paymentAmountError, paymentAttemptForInput, type PaymentAttempt } from '../../../src/utils/paymentEntry';
+import { reservationAmountLabel, reservationCurrency, paymentMethodLabel, paymentStatusLabel } from '../../../src/utils/reservationPresentation';
 import { errorMessage, errorStatus } from '../../../src/utils/errors';
 import { haptic } from '../../../src/hooks/useHaptic';
 
@@ -113,6 +117,9 @@ export default function FolioDetailScreen() {
   const c = useTheme();
   const qc = useQueryClient();
   const financeReports = useAuthStore((s) => s.cashierAccess);
+  const user = useAuthStore((s) => s.user);
+  const mayCharge = mobileOperationAllowed(user, 'post_charge');
+  const mayCollect = mobileOperationAllowed(user, 'post_payment');
   const params = useLocalSearchParams<{
     id: string;
     guest?: string;
@@ -134,80 +141,108 @@ export default function FolioDetailScreen() {
   const [chargeQty, setChargeQty] = useState('1');
   const [chargeCat, setChargeCat] = useState<FolioChargeCategory>('other');
   const [chargeError, setChargeError] = useState('');
-  const chargeKeyRef = useRef<string | null>(null);
+  const chargeKeyRef = useRef<WriteAttempt | null>(null);
 
   // Payment form state.
   const [paymentStep, setPaymentStep] = useState<'form' | 'confirm'>('form');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<FolioPaymentMethod>('cash');
   const [paymentError, setPaymentError] = useState('');
-  const paymentKeyRef = useRef<string | null>(null);
+  const paymentKeyRef = useRef<PaymentAttempt | null>(null);
 
   const folioQ = useQuery({
     queryKey: ['folio-detail', folioId],
     queryFn: () => getFolioById(folioId),
-    enabled: !!folioId,
+    enabled: !!folioId && financeReports,
   });
 
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['folio-detail', folioId] });
-    qc.invalidateQueries({ queryKey: ['folios', 'open'] });
-    qc.invalidateQueries({ queryKey: ['folio-dashboard-stats'] });
+  const money = folioEntrySummary(folioQ.data);
+  const canWrite = financeReports && money.writable && !folioQ.isFetching && !folioQ.isError && folioQ.fetchStatus !== 'paused';
+  const canCharge = canWrite && mayCharge;
+  const canCollect = canWrite && mayCollect && (money.balance ?? 0) > 0;
+  const amountLabel = (value: unknown, currency = money.currency) => reservationAmountLabel(value, currency);
+
+  // A financial write changes reservation, folio and department reports. Mark
+  // shared reads stale; only mounted queries refetch immediately.
+  const refresh = () => qc.invalidateQueries();
+
+  const freshWritableFolio = async (permission: string) => {
+    if (!canWrite || !mobileOperationAllowed(user, permission)) throw new Error('Bu işlem için yetkiniz veya güncel folyo bilgisi yok.');
+    const latest = await getFolioById(folioId, true);
+    if (latest?.id === folioId) qc.setQueryData(['folio-detail', folioId], latest);
+    const current = folioEntrySummary(latest);
+    if (!latest || latest.id !== folioId || !current.writable || current.currency !== money.currency) {
+      throw new Error('Folyo durumu, bakiyesi veya para birimi değişti. Bilgileri kontrol edip yeniden deneyin.');
+    }
+    return current;
+  };
+
+  const chargeInput = () => {
+    const amount = parsePaymentAmount(chargeAmount);
+    const quantity = Number(chargeQty.trim());
+    if (!chargeDesc.trim() || amount === null || !/^\d+$/.test(chargeQty.trim()) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1e6 || amount * quantity > 1e9) {
+      throw new Error('Açıklama, pozitif tutar ve geçerli tam sayı adet girin.');
+    }
+    return { charge_category: chargeCat, description: chargeDesc.trim(), amount, quantity };
   };
 
   const chargeMut = useMutation({
-    mutationFn: () => {
-      if (!chargeKeyRef.current) {
-        chargeKeyRef.current = `mob-charge-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      }
+    mutationFn: async () => {
+      const current = await freshWritableFolio('post_charge');
+      const input = chargeInput();
+      chargeKeyRef.current = folioWriteAttempt(chargeKeyRef.current, { folioId, ...input, currency: current.currency },
+        () => `mob-charge-${Date.now()}-${Math.round(Math.random() * 1e9)}`);
       return postFolioCharge(
         folioId,
-        {
-          charge_category: chargeCat,
-          description: chargeDesc.trim(),
-          amount: Number(chargeAmount.replace(',', '.')),
-          quantity: Math.max(1, Number(chargeQty) || 1),
-        },
-        chargeKeyRef.current,
+        input,
+        chargeKeyRef.current.key,
       );
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       chargeKeyRef.current = null;
       haptic.success();
       setChargeOpen(false);
-      refresh();
+      await refresh();
     },
     onError: (e: unknown) => {
       haptic.error();
       const status = errorStatus(e);
       setChargeError(status === 404 ? d.closedError : errorMessage(e, tr.errors.generic));
+      void folioQ.refetch();
     },
   });
 
   const paymentMut = useMutation({
-    mutationFn: () => {
-      if (!paymentKeyRef.current) {
-        paymentKeyRef.current = `mob-payment-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      }
+    mutationFn: async () => {
+      const current = await freshWritableFolio('post_payment');
+      const amount = parsePaymentAmount(paymentAmount);
+      const issue = paymentAmountError(amount, current.balance);
+      if (issue) throw new Error(issue === 'overpayment' ? 'Ödeme kalan bakiyeyi aşıyor.' : 'Geçerli tutar ve pozitif bakiye gerekli.');
+      const input = { bookingId: folioId, amount: amount as number, method: paymentMethod, currency: current.currency!, balance: current.balance! };
+      paymentKeyRef.current = paymentAttemptForInput(paymentKeyRef.current, input,
+        () => `mob-payment-${Date.now()}-${Math.round(Math.random() * 1e9)}`);
       return postFolioPayment(
         folioId,
         {
-          amount: Number(paymentAmount.replace(',', '.')),
+          amount: input.amount,
           method: paymentMethod,
+          currency: input.currency,
+          payment_type: paymentKeyRef.current.paymentType,
         },
-        paymentKeyRef.current,
+        paymentKeyRef.current.key,
       );
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       paymentKeyRef.current = null;
       haptic.success();
       setPaymentOpen(false);
-      refresh();
+      await refresh();
     },
     onError: (e: unknown) => {
       haptic.error();
       const status = errorStatus(e);
       setPaymentError(status === 404 ? d.closedError : errorMessage(e, tr.errors.generic));
+      void folioQ.refetch();
     },
   });
 
@@ -218,16 +253,15 @@ export default function FolioDetailScreen() {
   useEffect(() => {
     if (autoPayRef.current || !wantsPay) return;
     const f = folioQ.data;
-    if (!f || (f.status || '').toLowerCase() !== 'open') return;
+    if (!f || !canCollect) return;
     autoPayRef.current = true;
     setPaymentStep('form');
     setPaymentAmount(f.balance && f.balance > 0 ? String(f.balance) : '');
     setPaymentMethod('cash');
     setPaymentError('');
-    paymentKeyRef.current = null;
     haptic.tap();
     setPaymentOpen(true);
-  }, [folioQ.data, wantsPay]);
+  }, [folioQ.data, wantsPay, canCollect]);
 
   // Hard guard: a user without the finance entitlement is bounced to the hub.
   // Cosmetic only — the backend still enforces every read/write.
@@ -237,39 +271,34 @@ export default function FolioDetailScreen() {
   const isOpen = (folio?.status || '').toLowerCase() === 'open';
 
   const openChargeSheet = () => {
+    if (!canCharge) return;
     setChargeStep('form');
     setChargeDesc('');
     setChargeAmount('');
     setChargeQty('1');
     setChargeCat('other');
     setChargeError('');
-    chargeKeyRef.current = null;
     haptic.tap();
     setChargeOpen(true);
   };
 
   const openPaymentSheet = () => {
+    if (!canCollect) return;
     setPaymentStep('form');
     setPaymentAmount(folio?.balance && folio.balance > 0 ? String(folio.balance) : '');
     setPaymentMethod('cash');
     setPaymentError('');
-    paymentKeyRef.current = null;
     haptic.tap();
     setPaymentOpen(true);
   };
 
-  const chargeAmountNum = Number(chargeAmount.replace(',', '.'));
-  const paymentAmountNum = Number(paymentAmount.replace(',', '.'));
+  const chargeAmountNum = parsePaymentAmount(chargeAmount);
+  const paymentAmountNum = parsePaymentAmount(paymentAmount);
 
   const onChargeContinue = () => {
     setChargeError('');
-    if (!chargeDesc.trim()) {
-      setChargeError(d.descriptionRequired);
-      haptic.warning();
-      return;
-    }
-    if (!(chargeAmountNum > 0)) {
-      setChargeError(d.amountRequired);
+    try { chargeInput(); } catch (error) {
+      setChargeError(errorMessage(error, d.amountRequired));
       haptic.warning();
       return;
     }
@@ -278,8 +307,9 @@ export default function FolioDetailScreen() {
 
   const onPaymentContinue = () => {
     setPaymentError('');
-    if (!(paymentAmountNum > 0)) {
-      setPaymentError(d.amountRequired);
+    const issue = paymentAmountError(paymentAmountNum, money.balance);
+    if (!canCollect || issue) {
+      setPaymentError(issue === 'overpayment' ? 'Ödeme kalan bakiyeyi aşıyor.' : d.amountRequired);
       haptic.warning();
       return;
     }
@@ -302,20 +332,19 @@ export default function FolioDetailScreen() {
         }}
       >
         <View style={{ flex: 1 }}>
-          <Body style={{ fontWeight: '600' }}>{ch.description || '-'}</Body>
+          <Body style={{ fontWeight: '600' }}>{ch.description || '-'}{ch.voided ? ' · İptal edildi' : ''}</Body>
           {ch.posted_at ? (
             <Muted style={{ marginTop: 2 }}>
               {formatDate(ch.posted_at)} · {formatTime(ch.posted_at)}
             </Muted>
           ) : null}
         </View>
-        <Body style={{ fontWeight: '700' }}>{formatCurrency(amount)}</Body>
+        <Body style={{ fontWeight: '700' }}>{amountLabel(amount, reservationCurrency(ch.currency) || money.currency)}</Body>
       </View>
     );
   };
 
   const renderPayment = (pm: FolioPayment, idx: number, last: boolean) => {
-    const map = tr.departments.cashier.methods as Record<string, string>;
     return (
       <View
         key={pm.id || `payment-${idx}`}
@@ -331,7 +360,7 @@ export default function FolioDetailScreen() {
       >
         <View style={{ flex: 1 }}>
           <Body style={{ fontWeight: '600' }}>
-            {(pm.method && map[pm.method]) || pm.method || map.other}
+            {paymentMethodLabel(pm.method)} · {paymentStatusLabel(pm)}
           </Body>
           {pm.processed_at ? (
             <Muted style={{ marginTop: 2 }}>
@@ -340,7 +369,7 @@ export default function FolioDetailScreen() {
           ) : null}
         </View>
         <Body style={{ fontWeight: '700', color: c.success }}>
-          {formatCurrency(pm.amount)}
+          {amountLabel(pm.amount, reservationCurrency(pm.currency) || money.currency)}
         </Body>
       </View>
     );
@@ -369,14 +398,9 @@ export default function FolioDetailScreen() {
 
   const charges = folio?.charges ?? [];
   const payments = folio?.payments ?? [];
-  const balance = folio?.balance ?? 0;
-  const owes = balance > 0;
-  const balanceAccent = owes ? c.danger : c.success;
-  const chargesTotal = charges.reduce(
-    (s, ch) => s + (typeof ch.total === 'number' ? ch.total : ch.amount ?? 0),
-    0,
-  );
-  const paymentsTotal = payments.reduce((s, pm) => s + (pm.amount ?? 0), 0);
+  const balance = money.balance;
+  const owes = balance !== undefined && balance > 0;
+  const balanceAccent = balance === undefined ? c.warning : owes ? c.danger : c.success;
 
   return (
     <ScrollView
@@ -411,10 +435,10 @@ export default function FolioDetailScreen() {
           numberOfLines={1}
           adjustsFontSizeToFit
         >
-          {formatCurrency(balance)}
+          {amountLabel(balance)}
         </Text>
         <Muted style={{ fontSize: 12, marginTop: 2 }}>
-          {owes ? d.balanceDue : d.balanceSettled}
+          {balance === undefined ? 'Bakiye doğrulanamadı. İşlem yapmadan önce bilgileri yenileyin.' : owes ? d.balanceDue : balance < 0 ? 'Folyo alacak bakiyesinde' : d.balanceSettled}
         </Muted>
         <View
           style={{
@@ -428,13 +452,13 @@ export default function FolioDetailScreen() {
           <View style={{ flex: 1 }}>
             <Muted style={{ fontSize: 11 }}>{d.charges}</Muted>
             <Body style={{ fontWeight: '700', marginTop: 1 }}>
-              {formatCurrency(chargesTotal)}
+              {amountLabel(money.chargesTotal)}
             </Body>
           </View>
           <View style={{ flex: 1 }}>
             <Muted style={{ fontSize: 11 }}>{d.payments}</Muted>
             <Body style={{ fontWeight: '700', color: c.success, marginTop: 1 }}>
-              {formatCurrency(paymentsTotal)}
+              {amountLabel(money.paymentsTotal)}
             </Body>
           </View>
         </View>
@@ -461,37 +485,37 @@ export default function FolioDetailScreen() {
       </Card>
 
       {/* Actions — closed folios are read-only with a clear notice. */}
-      {isOpen ? (
+      {isOpen && (canCharge || canCollect) ? (
         <View style={{ marginTop: spacing.lg }}>
           <SegmentedActions testID="smoke-folio-actions">
-            <ActionButton
+            {canCharge ? <ActionButton
               label={d.addCharge}
               icon="add-circle-outline"
               onPress={openChargeSheet}
               bg={c.surfaceAlt}
               fg={c.text}
               testID="smoke-folio-add-charge"
-            />
-            <ActionButton
+            /> : null}
+            {canCollect ? <ActionButton
               label={d.takePayment}
               icon="cash-outline"
               onPress={openPaymentSheet}
               bg={c.primary}
               fg={c.primaryText}
               testID="smoke-folio-take-payment"
-            />
+            /> : null}
           </SegmentedActions>
         </View>
       ) : (
         <Card style={{ marginTop: spacing.lg }} accent={c.warning}>
-          <Body style={{ color: c.textMuted }}>{d.closedNotice}</Body>
+          <Body style={{ color: c.textMuted }}>{!isOpen ? d.closedNotice : !mayCharge && !mayCollect ? 'Bu folyoyu yalnızca görüntüleme yetkiniz var.' : 'İşlem için güncel ve tek para biriminde doğrulanmış folyo bilgisi gerekiyor.'}</Body>
         </Card>
       )}
 
       {/* ── Charge action sheet (two-step confirm) ─────────────────────────── */}
       <ActionSheet
         visible={chargeOpen}
-        onClose={() => setChargeOpen(false)}
+        onClose={() => { if (!chargeMut.isPending) setChargeOpen(false); }}
         title={d.chargeSheetTitle}
         testID="smoke-folio-charge-sheet"
       >
@@ -550,7 +574,7 @@ export default function FolioDetailScreen() {
               <DetailRow label={d.quantity} value={String(Math.max(1, Number(chargeQty) || 1))} />
               <DetailRow
                 label={d.amount}
-                value={formatCurrency(chargeAmountNum * Math.max(1, Number(chargeQty) || 1))}
+                value={amountLabel(chargeAmountNum === null ? undefined : chargeAmountNum * Number(chargeQty))}
               />
             </Card>
             {chargeError ? <Body style={{ color: c.danger }}>{chargeError}</Body> : null}
@@ -575,7 +599,7 @@ export default function FolioDetailScreen() {
       {/* ── Payment action sheet (two-step confirm) ────────────────────────── */}
       <ActionSheet
         visible={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
+        onClose={() => { if (!paymentMut.isPending) setPaymentOpen(false); }}
         title={d.paymentSheetTitle}
         testID="smoke-folio-payment-sheet"
       >
@@ -617,7 +641,7 @@ export default function FolioDetailScreen() {
                   paymentMethod
                 }
               />
-              <DetailRow label={d.amount} value={formatCurrency(paymentAmountNum)} />
+              <DetailRow label={d.amount} value={amountLabel(paymentAmountNum)} />
             </Card>
             {paymentError ? <Body style={{ color: c.danger }}>{paymentError}</Body> : null}
             <FormActions>

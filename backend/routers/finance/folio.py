@@ -463,6 +463,7 @@ async def get_folio_details(
     request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get folio with charges and payments"""
     semantic_response = await folio_balance_read_service.get_folio_details(
