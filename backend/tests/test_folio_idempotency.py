@@ -483,3 +483,81 @@ async def test_cashier_rollback_refreshes_the_reservation_after_the_payment_is_g
             current_user=fake_user,
         )
     assert seen and seen[-1] == 0  # last refresh saw the payment removed
+
+
+async def test_closed_folio_rejects_new_payment_without_ledger_mutation(_patch, fake_user):
+    _patch.folios.docs[0]['status'] = 'closed'
+    with pytest.raises(HTTPException) as exc:
+        await folio_router.post_payment_to_folio('F1', _payment_payload(), _FakeRequest('closed-new'), fake_user)
+    assert exc.value.status_code == 409
+    assert _patch.payments.insert_calls == 0
+
+
+async def test_completed_payment_can_replay_after_folio_closes(_patch, fake_user):
+    original = await folio_router.post_payment_to_folio('F1', _payment_payload(), _FakeRequest('closed-replay'), fake_user)
+    _patch.folios.docs[0]['status'] = 'closed'
+    replay = await folio_router.post_payment_to_folio('F1', _payment_payload(), _FakeRequest('closed-replay'), fake_user)
+    assert replay['id'] == original.id
+    assert _patch.payments.insert_calls == 1
+
+
+@pytest.mark.parametrize('operation', ['charge', 'payment'])
+async def test_same_key_different_folio_write_payload_is_conflict(_patch, fake_user, operation):
+    handler = getattr(folio_router, f'post_{operation}_to_folio')
+    payload = _charge_payload if operation == 'charge' else _payment_payload
+    await handler('F1', payload(100), _FakeRequest('payload-bound-' + operation), fake_user)
+    with pytest.raises(HTTPException) as exc:
+        await handler('F1', payload(200), _FakeRequest('payload-bound-' + operation), fake_user)
+    assert exc.value.status_code == 409
+    assert getattr(_patch, 'folio_charges' if operation == 'charge' else 'payments').insert_calls == 1
+
+
+async def test_refund_is_not_accepted_as_an_incoming_payment(_patch, fake_user):
+    from models.enums import PaymentType
+
+    payload = _payment_payload().model_copy(update={'payment_type': PaymentType.REFUND})
+    with pytest.raises(HTTPException) as exc:
+        await folio_router.post_payment_to_folio('F1', payload, _FakeRequest('refund-not-receipt'), fake_user)
+    assert exc.value.status_code == 422
+    assert _patch.payments.insert_calls == 0
+
+
+async def test_payment_currency_must_match_folio_denomination(_patch, fake_user):
+    _patch.folios.docs[0]['currency'] = 'TRY'
+    payload = _payment_payload().model_copy(update={'currency': 'EUR'})
+    with pytest.raises(HTTPException) as exc:
+        await folio_router.post_payment_to_folio('F1', payload, _FakeRequest('wrong-ledger-currency'), fake_user)
+    assert exc.value.status_code == 422
+    assert _patch.payments.insert_calls == 0
+
+
+async def test_foreign_receipt_preserves_ledger_and_try_cashier_values(monkeypatch, _patch, fake_user):
+    from domains.pms import cashier_service as cs
+    from models.schemas import PaymentCreate
+
+    _patch.folios.docs[0]['currency'] = 'EUR'
+    _patch.bookings = _Coll()
+    _patch.bookings.docs.append({'id': 'B1', 'tenant_id': 'tenant-A', 'currency': 'USD'})
+    calls = []
+
+    async def record(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(cs, 'record_cash_transaction', record)
+    # The selected folio, not another window/booking, owns the ledger currency.
+    payload = PaymentCreate(amount=10, method='card', payment_type='interim',
+                            received_currency='TRY', received_amount=500, exchange_rate=50)
+    result = await folio_router.post_payment_to_folio('F1', payload, _FakeRequest('eur-receipt'), fake_user)
+    assert result.currency == 'EUR' and result.amount == 10
+    assert calls[0]['amount'] == 500 and calls[0]['original_amount'] == 500
+    assert calls[0]['currency'] == 'TRY'
+    stored = _patch.payments.docs[0]
+    assert stored['reporting_currency'] == 'TRY' and stored['reporting_amount'] == 500
+
+
+async def test_foreign_payment_needs_transaction_time_try_rate(_patch, fake_user):
+    _patch.folios.docs[0]['currency'] = 'EUR'
+    with pytest.raises(HTTPException) as exc:
+        await folio_router.post_payment_to_folio('F1', _payment_payload().model_copy(update={'currency': 'EUR'}), _FakeRequest('no-try-rate'), fake_user)
+    assert exc.value.status_code == 422
+    assert _patch.payments.insert_calls == 0

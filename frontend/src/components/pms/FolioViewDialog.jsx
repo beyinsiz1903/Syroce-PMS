@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,7 @@ import {
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
-import { calculateFinancialLine, parseMoney, parseQuantity, parseTaxRate } from '@/lib/financialInput';
+import { calculateFinancialLine, parseExchangeRate, parseMoney, parseQuantity, parseTaxRate } from '@/lib/financialInput';
 import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
 const VAT_OPTIONS = [{
   value: '0',
@@ -45,7 +45,7 @@ const FolioViewDialog = ({
   folioCharges,
   folioPayments,
   guests,
-  bookings,
+  bookings = [],
   onChargePosted,
   onPaymentPosted,
   onPickFolio,
@@ -54,7 +54,11 @@ const FolioViewDialog = ({
   const {
     t
   } = useTranslation();
-  const folioCurrency = selectedFolio?.currency || cachedTenantCurrency();
+  const folioCurrency = (selectedFolio?.currency || bookings.find(b => b.id === selectedFolio?.booking_id)?.currency || cachedTenantCurrency()).toUpperCase();
+  const writeLock = useRef(false);
+  const writeIntents = useRef({});
+  const [writing, setWriting] = useState(false);
+  const [receivedToTryRate, setReceivedToTryRate] = useState('');
   const money = (value) => formatCurrency(value, folioCurrency, { decimals: 2 });
   const [subDialog, setSubDialog] = useState(null);
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
@@ -93,6 +97,33 @@ const FolioViewDialog = ({
     reference: '',
     notes: ''
   });
+  useEffect(() => {
+    setSubDialog(null);
+    setReceivedToTryRate('');
+    setNewFolioPayment({ amount: 0, method: 'card', reference: '', notes: '' });
+  }, [selectedFolio?.id]);
+  const getWriteIntent = (kind, payload) => {
+    const scope = `${kind}:${selectedFolio.id}`;
+    // Payment classification is derived from a balance that can refresh after
+    // a lost response. Retry the original payload, not a new classification.
+    const signature = JSON.stringify(kind === 'payment' ? { ...payload, payment_type: undefined } : payload);
+    const existing = writeIntents.current[scope];
+    if (existing && existing.signature !== signature) {
+      throw new Error('Önceki işlemin sonucu belirsiz. Tutarı değiştirmeden aynı işlemi tekrar deneyin veya folyo hareketlerini kontrol edin.');
+    }
+    const intent = existing || { signature, key: window.crypto.randomUUID(), payload };
+    writeIntents.current[scope] = intent;
+    return { scope, ...intent };
+  };
+  const refreshAfterWrite = async callback => {
+    try {
+      await callback?.(selectedFolio.id);
+    } catch {
+      // A read/refresh failure must not turn a committed receipt into a
+      // failed-looking draft that the operator could submit a second time.
+      toast.warning('İşlem kaydedildi, ancak folyo yenilenemedi. Yenile ile hareketleri kontrol edin.');
+    }
+  };
   const chargePreview = useMemo(() => {
     const line = calculateFinancialLine({
       unitAmount: newFolioCharge.amount,
@@ -111,7 +142,7 @@ const FolioViewDialog = ({
   }, [newFolioCharge.amount, newFolioCharge.quantity, newFolioCharge.discount_amount, newFolioCharge.vat_rate]);
   const handlePostCharge = async e => {
     e.preventDefault();
-    if (!selectedFolio) return;
+    if (!selectedFolio || writeLock.current) return;
     if (chargePreview.disc > 0 && !newFolioCharge.discount_reason.trim()) {
       toast.error('İndirim için neden zorunlu');
       return;
@@ -124,8 +155,11 @@ const FolioViewDialog = ({
       toast.error('Birim fiyat, adet, indirim ve KDV değerlerini doğru girin.');
       return;
     }
+    let intent;
+    writeLock.current = true;
+    setWriting(true);
     try {
-      await axios.post(`/folio/${selectedFolio.id}/charge`, {
+      intent = getWriteIntent('charge', {
         charge_category: newFolioCharge.charge_category,
         description: newFolioCharge.description,
         amount,
@@ -135,8 +169,9 @@ const FolioViewDialog = ({
         discount_amount: discountAmount,
         discount_reason: newFolioCharge.discount_reason.trim() || null
       });
+      await axios.post(`/folio/${selectedFolio.id}/charge`, intent.payload, { headers: { 'Idempotency-Key': intent.key } });
+      delete writeIntents.current[intent.scope];
       toast.success('İşlem eklendi');
-      onChargePosted(selectedFolio.id);
       setNewFolioCharge({
         charge_category: 'room',
         description: '',
@@ -148,20 +183,42 @@ const FolioViewDialog = ({
         discount_reason: ''
       });
       setSubDialog(null);
+      await refreshAfterWrite(onChargePosted);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'İşlem eklenemedi');
+      if (intent && error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 409) delete writeIntents.current[intent.scope];
+      toast.error(error.response?.data?.detail || error.message || 'İşlem eklenemedi');
+    } finally {
+      writeLock.current = false;
+      setWriting(false);
     }
   };
   const handlePostPayment = async e => {
     e.preventDefault();
-    if (!selectedFolio) return;
+    if (!selectedFolio || writeLock.current) return;
+    const amount = parseMoney(newFolioPayment.amount);
+    const rate = parseExchangeRate(receivedToTryRate);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Sıfırdan büyük tutarı virgül veya nokta ile girin.');
+      return;
+    }
+    if (folioCurrency !== 'TRY' && (!Number.isFinite(rate) || rate <= 0)) {
+      toast.error('Dövizli tahsilat için işlem anındaki TL kasa kurunu girin.');
+      return;
+    }
+    let intent;
+    writeLock.current = true;
+    setWriting(true);
     try {
-      await axios.post(`/folio/${selectedFolio.id}/payment`, {
+      intent = getWriteIntent('payment', {
         ...newFolioPayment,
-        payment_type: classifyGuestPayment(newFolioPayment.amount, selectedFolio.balance),
+        amount,
+        currency: folioCurrency,
+        ...(folioCurrency !== 'TRY' ? { received_to_try_rate: rate } : {}),
+        payment_type: classifyGuestPayment(amount, selectedFolio.balance),
       });
+      await axios.post(`/folio/${selectedFolio.id}/payment`, intent.payload, { headers: { 'Idempotency-Key': intent.key } });
+      delete writeIntents.current[intent.scope];
       toast.success('Ödeme alındı');
-      onPaymentPosted(selectedFolio.id);
       setNewFolioPayment({
         amount: 0,
         method: 'card',
@@ -169,8 +226,13 @@ const FolioViewDialog = ({
         notes: ''
       });
       setSubDialog(null);
+      await refreshAfterWrite(onPaymentPosted);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Ödeme eklenemedi');
+      if (intent && error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 409) delete writeIntents.current[intent.scope];
+      toast.error(error.response?.data?.detail || error.message || 'Ödeme eklenemedi');
+    } finally {
+      writeLock.current = false;
+      setWriting(false);
     }
   };
   const requirePin = (label, onVerified) => {
@@ -425,10 +487,10 @@ th{background:#f5f5f5}
 
               <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
                 <div className="flex gap-2">
-                  <Button onClick={() => setSubDialog('post-charge')} variant="default" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+                  <Button disabled={writing || selectedFolio.status === 'closed'} onClick={() => setSubDialog('post-charge')} variant="default" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
                     <Plus className="w-4 h-4 mr-1.5" /> İşlem Ekle
                   </Button>
-                  <Button onClick={() => setSubDialog('post-payment')} variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+                  <Button disabled={writing || selectedFolio.status === 'closed'} onClick={() => setSubDialog('post-payment')} variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
                     <Plus className="w-4 h-4 mr-1.5" /> Ödeme Ekle
                   </Button>
                 </div>
@@ -641,7 +703,7 @@ th{background:#f5f5f5}
               <div className="text-[11px] text-gray-500">Şehir vergisi (varsa) sunucuda otomatik eklenir.</div>
             </div>
 
-            <Button type="submit" className="w-full">Kaydet</Button>
+            <Button type="submit" disabled={writing} className="w-full">{writing ? 'İşleniyor…' : 'Kaydet'}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -653,12 +715,17 @@ th{background:#f5f5f5}
           </DialogHeader>
           <form onSubmit={handlePostPayment} className="space-y-4">
             <div>
-              <Label>Tutar ({folioCurrency})</Label>
-              <Input type="number" step="0.01" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
+              <Label htmlFor="folio-payment-amount">Tutar ({folioCurrency})</Label>
+              <Input id="folio-payment-amount" type="text" inputMode="decimal" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
               ...newFolioPayment,
-              amount: parseFloat(e.target.value)
+              amount: e.target.value
             })} required />
             </div>
+            {folioCurrency !== 'TRY' && <div>
+              <Label htmlFor="folio-payment-try-rate">TL kasa kuru (1 {folioCurrency} = kaç TRY?)</Label>
+              <Input id="folio-payment-try-rate" type="text" inputMode="decimal" value={receivedToTryRate} onChange={e => setReceivedToTryRate(e.target.value)} required />
+              <p className="text-xs text-slate-500">Tahsilat {folioCurrency} olarak kaydedilir. TL raporlama değeri işlem anındaki bu kurla saklanır; 1:1 varsayılmaz.</p>
+            </div>}
             <div>
               <Label>Ödeme Yöntemi</Label>
               <Select value={newFolioPayment.method} onValueChange={v => setNewFolioPayment({
@@ -687,7 +754,7 @@ th{background:#f5f5f5}
               reference: e.target.value
             })} />
             </div>
-            <Button type="submit" className="w-full">Kaydet</Button>
+            <Button type="submit" disabled={writing} className="w-full">{writing ? 'İşleniyor…' : 'Kaydet'}</Button>
           </form>
         </DialogContent>
       </Dialog>

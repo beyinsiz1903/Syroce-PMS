@@ -16,6 +16,12 @@ const statuses = {
   aborted: 'Durduruldu',
 };
 const count = value => Number.isInteger(value) && value >= 0 ? value : '—';
+const scalarText = value => typeof value === 'string' && value.trim() ? value
+  : typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
+// Older real runs store the actor as {id, email}, newer runs as a string.
+// Render only display-safe fields, never the whole actor/auth object.
+const actorText = run => scalarText(run.started_by_name) || scalarText(run.started_by?.name)
+  || scalarText(run.started_by?.email) || scalarText(run.started_by?.id) || scalarText(run.started_by) || '—';
 const getDateOffset = offsetDays => {
   const day = new Date(`${hotelEventDay()}T12:00:00Z`);
   day.setUTCDate(day.getUTCDate() + offsetDays);
@@ -124,7 +130,7 @@ export default function NightAuditLogs() {
                       <td className="py-2 pr-3 whitespace-nowrap">{run.business_date}</td>
                       <td className="py-2 pr-3 whitespace-nowrap" title={HOTEL_EVENT_TIME_ZONE_LABEL}>{formatHotelEventTimestamp(run.started_at || run.created_at)}</td>
                       <td className="py-2 pr-3 whitespace-nowrap" title={HOTEL_EVENT_TIME_ZONE_LABEL}>{formatHotelEventTimestamp(run.completed_at)}</td>
-                      <td className="py-2 pr-3">{run.started_by_name || run.started_by || '—'}</td>
+                      <td className="py-2 pr-3">{actorText(run)}</td>
                       <td className="py-2 pr-3 whitespace-nowrap">{run.dry_run === true ? 'Simülasyon' : run.dry_run === false ? 'Gerçek gün sonu' : 'Belirtilmemiş'}</td>
                       <td className="py-2 pr-3"><Badge variant="outline">{statuses[run.status] || run.status || 'Belirtilmemiş'}</Badge></td>
                       <td className="py-2 pr-3 text-right">{count(run.processed_count)}</td>
@@ -134,7 +140,7 @@ export default function NightAuditLogs() {
                       <dl className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                         {[['Koşu kimliği', run.id], ['Aşama', run.stage], ['Başlatma kaynağı', run.trigger_source], ['Gerekçe', run.reason],
                           ['Aday kayıt', count(run.candidate_count)], ['Atlanan kayıt', count(run.skipped_count)], ['Başarısız kayıt', count(run.failed_count)]].map(([label, value]) => (
-                          <div key={label}><dt className="text-gray-500">{label}</dt><dd className="break-words">{value ?? '—'}</dd></div>
+                          <div key={label}><dt className="text-gray-500">{label}</dt><dd className="break-words">{scalarText(value) ?? '—'}</dd></div>
                         ))}
                       </dl>
                     </td></tr>}

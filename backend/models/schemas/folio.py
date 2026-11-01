@@ -106,6 +106,7 @@ class PaymentCreate(BaseModel):
     received_currency: str | None = Field(None, min_length=3, max_length=3)
     received_amount: float | None = Field(None, gt=0, le=1e9)
     exchange_rate: float | None = Field(None, gt=0, le=1e9)
+    received_to_try_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class Payment(BaseModel):
@@ -119,6 +120,7 @@ class Payment(BaseModel):
     received_currency: str | None = None
     received_amount: float | None = None
     exchange_rate: float | None = None
+    received_to_try_rate: float | None = None
     method: PaymentMethod
     payment_type: PaymentType
     status: PaymentStatus = PaymentStatus.PAID
