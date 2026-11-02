@@ -51,6 +51,38 @@ const BookingDialog = ({
   const guestSearchController = useRef(null);
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
+  const [availability, setAvailability] = useState({ key: '', status: 'idle', rooms: [] });
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
+  const availabilityKey = `${newBooking.check_in || ''}|${newBooking.check_out || ''}`;
+  useEffect(() => {
+    const arrival = newBooking.check_in;
+    const departure = newBooking.check_out;
+    if (!open || !arrival || !departure || departure <= arrival) {
+      setAvailability({ key: availabilityKey, status: 'idle', rooms: [] });
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setAvailability({ key: availabilityKey, status: 'loading', rooms: [] });
+    Promise.resolve().then(() => active && axios.get('/pms/rooms/availability', { params: { check_in: arrival, check_out: departure }, signal: controller.signal }))
+      .then(({ data }) => {
+        if (!active) return;
+        if (!Array.isArray(data) || data.some(room => !room || typeof room.id !== 'string' || !room.id
+          || typeof room.available !== 'boolean') || new Set(data.map(room => room.id)).size !== data.length) {
+          throw new Error('Incomplete room availability');
+        }
+        setAvailability({ key: availabilityKey, status: 'ready', rooms: data.filter(room => room.available === true
+          && room.is_active !== false && room.deleted_at == null && !room.is_virtual) });
+      })
+      .catch(() => { if (active) setAvailability({ key: availabilityKey, status: 'error', rooms: [] }); });
+    return () => { active = false; controller.abort(); };
+  }, [open, newBooking.check_in, newBooking.check_out, availabilityKey, availabilityRetry]);
+  const availabilityReady = open && availability.key === availabilityKey && availability.status === 'ready';
+  const bookableRooms = availabilityReady ? availability.rooms : [];
+  const bookableIds = new Set(bookableRooms.map(room => room.id));
+  const selectedRoomIds = multiRoomBooking.map(room => room.room_id);
+  const validRoomSelection = selectedRoomIds.length > 0 && selectedRoomIds.every(id => bookableIds.has(id))
+    && new Set(selectedRoomIds).size === selectedRoomIds.length;
   useEffect(() => () => { clearTimeout(guestSearchTimerRef.current); guestSearchController.current?.abort(); }, []);
 
   // Reset guest search state when dialog opens/closes
@@ -133,7 +165,7 @@ const BookingDialog = ({
       <DialogTitle>{t('cm.components_pms_BookingDialog.yeni_rezervasyon_olustur')}</DialogTitle>
       <DialogDescription>{t('cm.components_pms_BookingDialog.rezervasyon_bilgilerini_asagiya_girin')}</DialogDescription>
     </DialogHeader>
-    <form onSubmit={async (e) => { e.preventDefault(); if (submitLock.current) return; submitLock.current = true; setSubmitting(true); try { await handleCreateBooking(e, selectedGuest ? null : guestSearchQuery); } finally { submitLock.current = false; setSubmitting(false); } }} className="space-y-6">
+    <form onSubmit={async (e) => { e.preventDefault(); if (submitLock.current || !availabilityReady || !validRoomSelection) return; submitLock.current = true; setSubmitting(true); try { await handleCreateBooking(e, selectedGuest ? null : guestSearchQuery); } finally { submitLock.current = false; setSubmitting(false); } }} className="space-y-6">
       {/* Check-in and Check-out */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
@@ -232,6 +264,13 @@ const BookingDialog = ({
 
       {/* Multi-room rooms list */}
       <div className="mt-4 border rounded-lg p-4 space-y-4 bg-slate-50">
+        {!availabilityReady && availability.status !== 'error' && <p role="status">{t('experience.booking.availabilityPending', 'Oda seçimi için giriş ve çıkış tarihlerini girin; tarih aralığı müsaitliği doğrulanıyor.')}</p>}
+        {availability.key === availabilityKey && availability.status === 'error' && <div role="alert">
+          <p>{t('experience.booking.availabilityFailed', 'Tarih aralığı müsaitliği okunamadı. Oda seçimi ve kayıt doğrulanana kadar kapalıdır.')}</p>
+          <Button type="button" variant="outline" onClick={() => setAvailabilityRetry(value => value + 1)}>{t('experience.booking.availabilityRetry', 'Müsaitliği yeniden kontrol et')}</Button>
+        </div>}
+        {availabilityReady && bookableRooms.length === 0 && <p role="status">{t('experience.booking.noAvailableRooms', 'Seçili tarih aralığında müsait fiziksel oda yok.')}</p>}
+        {availabilityReady && selectedRoomIds.some(id => id && !bookableIds.has(id)) && <p role="alert">{t('experience.booking.roomUnavailable', 'Seçili oda bu tarihlerde müsait değil; yeniden oda seçin.')}</p>}
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-sm">{t('experience.booking.rooms', "Bu rezervasyondaki odalar")}</h3>
@@ -257,10 +296,10 @@ const BookingDialog = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label className="text-xs">{t("experience.booking.room", "Oda")} *</Label>
-                  <Select value={room.room_id} onValueChange={v => updateMultiRoomField(index, 'room_id', v)}>
-                    <SelectTrigger><SelectValue placeholder={t('experience.booking.selectRoom', "Oda seçin")} /></SelectTrigger>
+                  <Select value={room.room_id} onValueChange={v => updateMultiRoomField(index, 'room_id', v)} disabled={!availabilityReady || submitting}>
+                    <SelectTrigger aria-label={`${t('experience.booking.room', 'Oda')} ${index + 1}`}><SelectValue placeholder={t('experience.booking.selectRoom', "Oda seçin")} /></SelectTrigger>
                     <SelectContent>
-                      {rooms.filter(r => r.status === 'available').map(r => <SelectItem key={r.id} value={r.id}>
+                      {bookableRooms.map(r => <SelectItem key={r.id} value={r.id} disabled={selectedRoomIds.some((id, other) => other !== index && id === r.id)}>
                           {t('experience.booking.room', 'Oda')} {r.room_number} - {r.room_type}
                         </SelectItem>)}
                     </SelectContent>
@@ -334,7 +373,7 @@ const BookingDialog = ({
                 </div>
               </div>
               <RevenueBookingQuote roomId={room.room_id} arrival={newBooking.check_in} departure={newBooking.check_out}
-                currency={newBooking.currency || cachedTenantCurrency()} disabled={submitting || room.apply_occupancy_pricing}
+                currency={newBooking.currency || cachedTenantCurrency()} disabled={submitting || room.apply_occupancy_pricing || !availabilityReady || !bookableIds.has(room.room_id)}
                 applied={room.apply_revenue_pricing || room.revenue_quote_stale} onApply={quote => updateMultiRoomField(index, 'revenue_quote', quote)} />
               {room.revenue_quote_stale && <p role="alert" className="text-xs text-red-700">Oda, tarih veya para birimi değişti. Gelir planını yeniden hesaplayın ya da manuel fiyata dönün.</p>}
               {room.apply_occupancy_pricing && occupancyRule && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
@@ -535,7 +574,7 @@ const BookingDialog = ({
           })} placeholder={t('experience.booking.overrideHelp', "Fiyat değişikliğinin nedenini açıklayın.")} className="mt-2" required />
         </div>}
 
-      <div className="sticky bottom-0 -mx-4 border-t bg-background px-4 py-3 sm:-mx-6 sm:px-6"><p className="mb-2 text-sm text-muted-foreground">{t("experience.booking.review", "Kaydetmeden önce tarihleri, oda seçimini ve toplam tutarı kontrol edin.")}</p><Button type="submit" disabled={submitting} aria-busy={submitting} className="w-full">{t('experience.booking.create', "Rezervasyonu oluştur")}</Button></div>
+      <div className="sticky bottom-0 -mx-4 border-t bg-background px-4 py-3 sm:-mx-6 sm:px-6"><p className="mb-2 text-sm text-muted-foreground">{t("experience.booking.review", "Kaydetmeden önce tarihleri, oda seçimini ve toplam tutarı kontrol edin.")}</p><Button type="submit" disabled={submitting || !availabilityReady || !validRoomSelection} aria-busy={submitting} className="w-full">{t('experience.booking.create', "Rezervasyonu oluştur")}</Button></div>
     </form>
   </DialogContent>
 </Dialog>;

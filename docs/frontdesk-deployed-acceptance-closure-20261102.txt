@@ -1,0 +1,99 @@
+ÖN BÜRO — YAYIN SONRASI KABUL VE GELECEK TARİHLİ ODA SEÇİMİ
+2 Kasım 2026
+
+Yayın kapısı
+Önceki ayrı ön büro PR1486 merge4f7c31ad ile ana dala alınmış. İncelenen
+canlı healthy SHA f30731772f72ad80f7fc63b628ef7cc09aca4662 bu değişikliği
+içeriyor. Bu belgedeki yeni düzeltmelerin canlı olduğu iddia edilmez.
+
+Bu turda bulunan gerçek eksikler
+1 Normal Yeni Rezervasyon penceresi oda seçeneklerini yalnız bugünkü
+  room.status=available değerinden alıyordu. Canlı otelde gelecekte uygun
+  olan Junior Suite odaları API'de available=true iken, bugünkü occupied
+  durumları nedeniyle listede hiç görünmedi. Yeni form seçili giriş/çıkış
+  aralığı için normal /pms/rooms/availability sonucunu kullanır.
+  Bugün occupied olup gelecekte uygun olan fiziksel oda seçilebilir;
+  bugün available olup seçili tarihte dolu olan oda seçilemez.
+  Tarih değişirken/eski yanıt gelirken, pencere kapandıktan sonra veya
+  kaynak başarısız/eksik/tekrarlı kimlikli iken kayıt kapalıdır. Hata
+  görünürdür ve açık yeniden kontrol yolu vardır. Başka satırda seçilen
+  fiziksel oda tekrar seçilemez. Sunucunun kilit/RBAC/çakışma denetimi
+  aynen korunur; bu bir fazla satış veya kat hizmetleri durum değişimi
+  değildir. Fiyat planı hesaplama da doğrulanmış oda seçimi ister.
+2 Gelir fiyat teklifi, silinmiş bir fiziksel oda için hesap yapabiliyordu.
+  Artık rezervasyon/müsaitlikteki tenant+active+deleted_at+virtual sınırı
+  aynen uygulanır. Silinmiş oda için 404 ve hiçbir rezervasyon/folyo yazısı.
+3 Gelir ayarları/Walk idari kayıtlarının fiziksel tip listesi ve ekranın
+  planlanan kapasitesi silinmiş odaları sayabiliyordu. Silinmiş kaynak
+  oda/tip seçeneği veya kapasite değildir. Var olan eski gelir ayarları
+  topluca silinmez; eşleşmeyen eski ayar koruması devam eder.
+
+Neden önceki testlerde çıkmadı
+API fiziksel oda filtresi ve para birimi testleri, gerçek BookingDialog'un
+oda seçicisiyle tarih bazlı API sonucu arasındaki bağlantıyı sınamıyordu.
+Eski form testlerinin oda listesi boştu veya bugünkü available durumuna
+göre hazırlanmıştı. Yeni gerçek bileşen testleri bugünkü durum ile seçili
+tarih müsaitliğini bilerek farklı tutuyor; eksik okuma/yarış/tekrar/kapalı
+pencere ve geçersiz seçimin yazıcıya ulaşmamasını da doğruluyor.
+
+Yerel kanıt
+Silinmiş kaynak için gerçek loopback Mongo/HTTP'de önce 4 kırmızı test;
+RevenueControls silinmiş oda UI testi de önce kırmızı. İlk JWT fixture
+kurulum hatası ürün kusuru veya başarı sayılmadı. Son geniş backend:
+466 passed, 0 failed/skipped; 168 mevcut utcnow deprecation uyarısı.
+Gerçek BookingDialog/Revenue/Laundry ve eski manuel işlem testleri:
+40 passed. Tam temiz/pinli frontend koşusunun son sonucu PR açıklamasında
+ayrıca kaydedilir; ortak eski node_modules ile yapılan ilk tam koşunun
+3 follow-redirects1.16.1 güvenlik hatası saklanır, başarılı sayılmaz.
+Temiz ortamda lock SHA'ları aynı; follow-redirects1.16.2. Güvenlik testi,
+paket pini, CI kapısı veya ignore değiştirilmedi. Ruff/ESLint, 10 yerel
+dil kalite kontrolü, diff ve üretim Vite build geçti.
+
+PR1486'nın canlı dar kabulü — normal API, yalnız Demo Hotel100001
+Fiziksel envanter 31; listede pasif/silinmiş/sanal oda yok. Junior Suite
+127/128 için seçili gelecekte uygun iki oda doğrulandı. Bu kategori Exely
+eşleştirmesinde yoktur; Exely/HotelRunner ayarı değiştirilmedi.
+Eksik hotel_settings.currency, mevcut etkin TRY varsayılanını değiştirmeden
+açık TRY/₺ olarak normal ayar API'sinde kaydedildi. Eski döviz tutarları
+dönüştürülmedi. Yalnız Junior Suite için BAR100/alt sınır90 ve çarşamba80,
+minimum2gece planı eklendi; kaynak sürüm kontrolü kullanıldı, fazla satış
+kapalı kaldı. Bunlar sentetik kabul fiyatlarıdır, piyasa iddiası değildir.
+
+İki yapay gelecek rezervasyonu kalıcı tutuldu:
+Deniz Aksoy:12–13Ocak2027,20USD; çoklu-oda normal uçtan açılan folyoUSD.
+Selin Kaya:13–15Ocak2027,190TRY; açık onaylı plan90+100,95+95ortalama değil.
+Tam aynı anahtar tekrarı aynı kimlikleri verdi, ikinci kayıt oluşmadı.
+Eski fiyat hash'i409; yanlış para birimi409; minimum1gece409.
+Gerçek kişi kimliği/iletişim izni, banka/PSP/kart tahsilatı, yeni vardiya,
+giriş/çıkış/günsonu veya geçmiş borç temizliği yapılmadı. Örnek e-postalar
+example.invalid; veri silinmedi. Yeni kayıtların tutarı gerçekleşmiş gelir
+diye rapora eklenmedi; cari ücret/ödeme defteri değiştirilmedi.
+
+14 kaynak grubu önce/sonra karşılaştırıldı. Eski rezervasyonların tamamı,
+oda/stok/vardiya/finans/concierge/çamaşırhane/görev/kontenjan/UDF/KVKK/anket
+kaynakları korundu. Yalnız iki yeni rezervasyon, iki açık folyo ve yukarıdaki
+açık ayar/plan alanları eklendi. Açık iş günü26Ekim olarak kaldı.
+25Ekim,26Ekim,2Kasım için altı gerçekleşen gelir okuyucusu ve tahsilat
+toplamı para birimi bazında eşleşti; degradefalse. Olay oluşturmaUTC
+anları istek/yanıt aralığıyla tutarlı, iş günü takvim saati değildir.
+
+Eski sayaç önizlemesi
+İki önceki yapay kayıtta salt okunur preview yeni uca ulaştı. Kaynak
+aktif/gelecek iş akışı olduğundan mutabakat eligibilityfalse döndü;
+0sayacı/120USDkanonik tahsilatı olan eski kayıt tahminle yeniden yazılmadı.
+Terminal/kapalı/tekpara ledger mutabakatı, atomik audit/yarış/rollback,
+gerçek yerel replica ile regresyonda geçti. Aktif kaydı uygun göstermek
+için konaklama kapatılmadı veya güvenlik denetimi kaldırılmadı.
+
+Kanıt: işletici alanı frontdesk-postdeploy1486-20261102/ ve ayrı
+/private/tmp/frontdesk1486-*.xml dosyaları. Ham misafir/finansal veriler,
+şifre/token/iletişim izinleri Git'e alınmaz. Başarısız kanıtlar korunur.
+
+Kapanış sınırı
+Yeni PR zorunlu CI→merge→gerçekdeploy→healthySHA ardından yalnız gelecek
+tarihli oda seçimi ve silinmiş kaynak reddi yeniden kabul edilmelidir.
+Eski hizmet/tahsilat/vardiya senaryoları yeniden üretilmez. Bu, bilinen
+iç yazılım bulgularının kapanışıdır; sınırsız her rol/filtre/veri kombinasyonu
+için hatasızlık belgesi, gerçek PSP iadesi/önödeme, resmîKBS/dışyorum teslimi
+veya fiziksel cihaz/yazıcı sertifikasyonu değildir. Exely'nin24ay/1462
+tekistek sınırı bu ayrı ön büro PR'ına dahil edilmemiştir.

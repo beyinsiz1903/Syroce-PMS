@@ -47,6 +47,19 @@ async def calculate(a, start, **extra):
     return await quote(a.db, 'qa', 'synthetic-room', start.isoformat(), (start + timedelta(days=2)).isoformat(), extra.get('currency', 'USD'))
 
 
+@pytest.mark.parametrize('deleted_at', ['2026-10-20T09:00:00+00:00', ''])
+async def test_deleted_room_quote_is_rejected_before_any_booking_write(pricing, deleted_at):
+    a, api, start = pricing
+    await a.db.rooms.update_one({'id': 'synthetic-room'}, {'$set': {'deleted_at': deleted_at}})
+    before = {name: await a.db[name].count_documents({}) for name in ('bookings', 'folios', 'guests', 'room_night_locks')}
+    result = await api.post('/api/revenue/booking-quote', json={
+        'room_id': 'synthetic-room', 'check_in': start.isoformat(),
+        'check_out': (start + timedelta(days=2)).isoformat(), 'currency': 'USD', 'confirm_currency': True})
+    assert result.status_code == 404, result.text
+    for name, count in before.items():
+        assert await a.db[name].count_documents({}) == count
+
+
 async def test_explicit_bar_day_floor_and_arrival_minimum_produce_a_complete_plan(pricing):
     a, api, start = pricing
     result = await calculate(a, start)

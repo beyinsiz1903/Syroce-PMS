@@ -1,5 +1,6 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import axios from 'axios';
 import BookingDialog from '@/components/pms/BookingDialog';
 import tr from '@/locales/tr.json';
 
@@ -7,11 +8,12 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key, fallback) =>
 vi.mock('axios', () => ({ default: { get: vi.fn() } }));
 
 const props = {
-  open: true, onClose: vi.fn(), guests: [], rooms: [], companies: [], ratePlans: [], packages: [],
+  open: true, onClose: vi.fn(), guests: [], rooms: [{ id: 'r1', room_number: '101', status: 'occupied' }], companies: [], ratePlans: [], packages: [],
   newBooking: { check_in: '2026-10-09', check_out: '2026-10-11', currency: 'TRY', children: 0 },
-  setNewBooking: vi.fn(), multiRoomBooking: [{ id: 'line', adults: 2, children: 0, room_id: '', base_rate: 100, total_amount: 200 }],
+  setNewBooking: vi.fn(), multiRoomBooking: [{ id: 'line', adults: 2, children: 0, room_id: 'r1', base_rate: 100, total_amount: 200 }],
   isLite: true, handleCreateBooking: vi.fn(), addRoomToMultiBooking: vi.fn(), setOpenDialog: vi.fn(),
 };
+beforeEach(() => { axios.get.mockReset(); axios.get.mockResolvedValue({ data: [{ id: 'r1', room_number: '101', status: 'occupied', available: true }] }); });
 
 describe('booking experience', () => {
   it('puts dates before guest selection and localizes room labels', () => {
@@ -28,6 +30,7 @@ describe('booking experience', () => {
     const submit = vi.fn(() => new Promise(resolve => { finish = resolve; }));
     render(<BookingDialog {...props} handleCreateBooking={submit} />);
     const button = screen.getByRole('button', { name: 'Rezervasyonu oluştur' });
+    await waitFor(() => expect(button).toBeEnabled());
     fireEvent.submit(button.closest('form'));
     fireEvent.submit(button.closest('form'));
     expect(submit).toHaveBeenCalledTimes(1);

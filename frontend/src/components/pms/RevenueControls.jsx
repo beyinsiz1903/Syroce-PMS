@@ -30,7 +30,7 @@ const RevenueControls = ({ rooms = [] }) => {
   const { t } = useTranslation();
   const tr = useCallback((k) => t(`pmsComponents.revenue.${k}`), [t]);
   const cur = cachedTenantCurrency();
-  const physicalRooms = useMemo(() => rooms.filter(room => room.is_active !== false && !room.is_virtual), [rooms]);
+  const physicalRooms = useMemo(() => rooms.filter(room => room.is_active !== false && room.deleted_at == null && !room.is_virtual), [rooms]);
   const roomTypeLabels = useMemo(() => {
     const labels = {};
     physicalRooms.forEach(room => {

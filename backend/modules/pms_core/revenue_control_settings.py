@@ -43,7 +43,8 @@ def snapshot(doc):
 
 def physical_types(rooms):
     return {str(room.get("room_type_id") or room.get("type_id") or room.get("room_type") or room.get("type") or "").strip()
-            for room in rooms if room.get("is_active") is not False and not room.get("is_virtual")} - {""}
+            for room in rooms if room.get("is_active") is not False and room.get("deleted_at") is None
+            and not room.get("is_virtual")} - {""}
 
 
 def validate_patch(body, room_types):

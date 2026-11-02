@@ -14,6 +14,18 @@ afterEach(cleanup);
 const saveButton = (tab = 'hurdleTab') => within(screen.getByRole('tabpanel', { name: key(tab) })).getByRole('button', { name: key('save'), exact: true });
 const ready = async () => { await waitFor(() => expect(saveButton()).toBeEnabled()); };
 
+it('excludes soft-deleted rooms from pricing choices and planned capacity', async () => {
+  render(<RevenueControls rooms={[...rooms,
+    { id: 'deleted', room_type: 'Retired Room', deleted_at: '2026-10-20T09:00:00Z' },
+    { id: 'deleted-empty', room_type: 'Invalid Tombstone', deleted_at: '' },
+  ]} />);
+  await ready();
+  expect(screen.queryByText('Retired Room')).not.toBeInTheDocument();
+  expect(screen.queryByText('Invalid Tombstone')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: key('overbookingTab') }));
+  expect(screen.getByText(/Planned capacity/)).toHaveTextContent('1 + 0 = 1');
+});
+
 it('saves only one versioned section, preserves zero/decimal money and uses physical types', async () => {
   render(<RevenueControls rooms={rooms} />); await ready();
   expect(screen.getByRole('note')).toHaveTextContent('Planning only');
