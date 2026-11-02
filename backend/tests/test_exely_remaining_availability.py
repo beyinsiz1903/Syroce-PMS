@@ -6,12 +6,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from lxml import etree
 from pydantic import ValidationError
 
 from domains.channel_manager import remaining_availability
 from domains.channel_manager import unified_rate_manager_router as router
 from domains.channel_manager.calendar_inventory import exely_publishable_availability
 from domains.channel_manager.providers.exely import ari_delivery
+from domains.channel_manager.providers.exely.soap_builder import build_availability_batch_rq
 
 TENANT = "synthetic-hotel"
 ROOM = "panel-standard"
@@ -109,6 +111,10 @@ async def test_net_input_matches_wire_and_readback_with_varying_daily_sales(edit
     assert args[2]["value"] == [{"room_type_code": "soap-standard", "rate_plan_code": "soap-base",
                                   "start_date": DAYS[0], "end_date": DAYS[-1], "availability": 3}]
     assert args[2]["property_id"] == "synthetic-property"
+    envelope = etree.fromstring(build_availability_batch_rq("synthetic-user", "synthetic-password", "synthetic-property", args[2]["value"]).encode())
+    controls = envelope.findall(".//{http://www.opentravel.org/OTA/2003/05}StatusApplicationControl")
+    assert [dict(c.attrib) for c in controls] == [{"Start": DAYS[0], "End": DAYS[-1], "InvTypeCode": "soap-standard", "RatePlanCode": "soap-base"}]
+    assert envelope.find(".//{http://www.opentravel.org/OTA/2003/05}AvailStatusMessage").get("BookingLimit") == "3"
 
 
 async def test_zero_is_preserved_and_same_input_does_not_compound_sold_rooms(editor):
