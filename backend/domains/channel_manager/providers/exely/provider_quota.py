@@ -4,6 +4,13 @@ The PMSConnect 1.17.1 contract limits each HotelCode to 650 requests/hour,
 30 OTA_ReadRQ requests/hour, and several ARI change windows.  One Redis Lua
 decision covers every applicable window so reservation reads and ARI writes
 share the same property budget across all workers.
+
+Change limits are by room category (specification pp.9-10). The provider
+reserves the largest per-category cost in an envelope. Accumulating these
+maxima in the existing property-wide counter is conservative: it is never
+smaller than any single category's cumulative usage, even across workers
+or a rollout from the older sum-of-categories accounting. Request and
+reservation-read counts remain property-wide and unchanged.
 """
 
 from __future__ import annotations

@@ -490,11 +490,20 @@ class ExelyProvider:
             )
 
         try:
-            change_count = (
-                sum(_ari_change_count(str(item["start_date"]), str(item["end_date"])) for item in batch_messages)
-                if operation in {"availability_batch", "rate_batch", "restriction_batch"}
-                else _ari_change_count(start_date, end_date)
-            )
+            # PMSConnect 1.17.1 pp.9-10 counts changes by room category,
+            # not the sum of every category in one SOAP envelope. Keep the
+            # existing shared property counter as a conservative upper bound
+            # on *each* category's usage across workers and operation types.
+            # Sum all periods/rate plans/restrictions of the same category
+            # before taking the maximum; splitting XML elements must not
+            # discount a category's real room-night cost.
+            room_changes: dict[str, int] = {}
+            for item in batch_messages:
+                room = str(item["room_type_code"]).strip().casefold()
+                room_changes[room] = room_changes.get(room, 0) + _ari_change_count(
+                    str(item["start_date"]), str(item["end_date"]),
+                )
+            change_count = max(room_changes.values()) if room_changes else _ari_change_count(start_date, end_date)
             await self._reserve_quota(
                 "ari_mutation",
                 change_count=change_count,

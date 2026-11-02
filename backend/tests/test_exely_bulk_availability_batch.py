@@ -102,7 +102,7 @@ async def test_native_batch_reaches_one_soap_container_and_one_transport_call(bu
     assert [m.get("BookingLimit") for m in xml.findall(".//ota:AvailStatusMessage", ns)] == ["4", "8", "0"]
 
 
-async def test_provider_still_enforces_full_room_night_quota_before_one_write(monkeypatch):
+async def test_full_period_batch_still_respects_quota_denial_before_one_write(monkeypatch):
     monkeypatch.setattr("domains.channel_manager.providers.exely.provider.ari_write_block_reason", lambda: "")
     quota = SimpleNamespace(reserve=AsyncMock(return_value=QuotaDecision(False, "PROVIDER_QUOTA_EXCEEDED", 2)))
     provider = ExelyProvider(username="synthetic", password="synthetic", hotel_code="synthetic-property", connection_id="offline-quota", quota_guard=quota)
@@ -110,7 +110,7 @@ async def test_provider_still_enforces_full_room_night_quota_before_one_write(mo
     rows = exely_router._availability_batch_messages([update(room, "2026-11-02", "2028-11-01", 8) for room in ("STD", "DLX")])
     result = await provider.push_ari_operation(operation="availability_batch", room_type_code="", rate_plan_code="", start_date="", end_date="", value=rows)
     assert not result.success and result.metadata["provider_write_count"] == 0
-    quota.reserve.assert_awaited_once_with(operation="ari_mutation", change_count=1462)
+    quota.reserve.assert_awaited_once_with(operation="ari_mutation", change_count=731)
     provider._transport.send_soap.assert_not_awaited()
 
 

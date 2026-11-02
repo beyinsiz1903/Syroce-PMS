@@ -1,0 +1,64 @@
+Exely single-envelope category budget correction - 2026-11-02
+
+Scope
+Only the ARI batch quota cost is corrected. No new button, endpoint,
+stock edit, reservation, provider call, quota increase or quota reset.
+The separate front-desk acceptance PR is not included.
+
+Root cause and source
+Two categories covering 2026-11-02 through 2028-11-01 have 731 inclusive
+dates each (2028 is a leap year): 1462 room-date values in one envelope.
+The old provider summed all categories and compared 1462 with 1460.
+The supplied Exely PMSConnect 1.17.1 specification, Protocol policy,
+pp.9-10, describes the change limits by room category and counts each
+category's transferred changes. It does not define 1460 as an XML
+envelope-element limit. The earlier local sum-of-categories interpretation
+was incorrect; an unchanged retry could never pass that local guard.
+Source file SHA256:
+23f48e939dc00dfdf26e0c0b121b019fac1a27e5a1fb614fdd1f3783bad1d067
+
+Correction and safety
+Sum every interval, rate plan and restriction of each wire room category;
+reserve the maximum of those category costs for the single envelope.
+The existing shared property Redis keys, Lua atomic decision, four change
+windows, request/read limits and provider cooldown remain unchanged.
+The sum of per-request category maxima is an upper bound on the cumulative
+usage of every individual category. This shared counter is deliberately
+conservative, including across workers and a rollout from older workers
+that reserve the still-larger sum of categories. It is not a per-request
+reset or an independent per-worker allowance.
+
+Evidence
+- 82 targeted quota/batch/editor tests passed, zero skips/failures.
+- Broad Exely provider, mapping, reservation, quota and replica regression
+  run: 973 passed, zero failures/errors/skips, 75 live/pilot/external tests
+  deliberately deselected. One pre-existing utcnow deprecation warning.
+- Complete editor -> capacity preflight -> 1462 calendar cells -> durable
+  delivery -> real provider/quota -> one SOAP transport call -> explicit
+  success test. Both rooms retain the exact first and last dates; the
+  displayed mapping IDs are translated into their wire IDs.
+- One XML test expands every date: all 1462 room-date values retained,
+  including zero stock and the lower December stock periods.
+- Same-category multiple plans/operations still sum to 1462 and are
+  rejected before I/O; parallel 731-cost batches cannot both pass in one
+  second. Every old quota window and the 650-request limit still block.
+- The unchanged Lua script was additionally executed locally with the Lua
+  engine in fakeredis: one full batch passes, a concurrent batch blocks,
+  729 additional units reach exactly 1460, and the next unit is rejected.
+  That optional local dependency is not added to application dependencies.
+- New batch budget and existing native bulk tests are added to both
+  existing strict Exely CI gates; no skip or quota assertion is relaxed.
+- Ruff, workflow YAML parse and git diff --check pass.
+
+Acceptance boundary
+No live PMS/Exely data or settings were changed. These are offline code
+and Lua tests, not a new Exely certification pass. After merge/deployment,
+the normal price/availability screen must be used for the narrow approved
+live send and its provider response checked. An ambiguous response is
+not retried blindly; a provider limit response still applies cooldown.
+
+Test setup history is retained outside the repository. The first broad
+run intentionally had no usable MongoDB and failed local replica setup;
+the rerun uses a new isolated local replica set. A first new editor test
+asserted the wrong response key (delivery_state rather than the existing
+provider_delivery_state); only that test assertion was corrected.
