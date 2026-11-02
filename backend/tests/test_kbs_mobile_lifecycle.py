@@ -297,3 +297,22 @@ async def test_startup_cleanup_keeps_uncertain_and_duplicate_identity_locks(read
             "delivery_uncertain": reason == "delivery_unknown_check_authority"})
     await db.kbs_reports.update_many({**closed_lock_cleanup_query(), "tenant_id": tid}, {"$unset": {"_open_lock": ""}})
     assert await db.kbs_reports.count_documents({"tenant_id": tid, "_open_lock": {"$exists": True}}) == 2
+
+
+async def test_two_manual_requeues_cannot_create_two_open_deliveries(ready, monkeypatch):
+    from core.security import get_current_user
+    from routers import kbs
+    db, tid, _ = ready
+    bid, gid = await seed(db, tid)
+    for jid in ("rejected-a", "rejected-b"):
+        await db.kbs_reports.insert_one({"tenant_id": tid, "_kind": "queue_job", "id": jid,
+            "booking_id": bid, "guest_id": gid, "action": "checkin", "status": "dead"})
+    monkeypatch.setattr(kbs, "db", db)
+    monkeypatch.setattr(kbs.kbs_queue_pubsub, "publish", AsyncMock())
+    app = FastAPI()
+    app.include_router(kbs.router)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id="staff", tenant_id=tid, name="Staff", role="admin")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://offline") as client:
+        results = await asyncio.gather(*(client.post(f"/api/kbs/queue/{jid}/requeue") for jid in ("rejected-a", "rejected-b")))
+        assert sorted(r.status_code for r in results) == [200, 409]
+    assert await db.kbs_reports.count_documents({"tenant_id": tid, "status": "pending"}) == 1

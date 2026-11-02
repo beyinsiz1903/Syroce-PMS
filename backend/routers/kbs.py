@@ -1813,24 +1813,28 @@ async def kbs_queue_requeue(
             raise HTTPException(409, "Aynı kişi için başka açık veya teslim edilmiş bildirim var; önce durumunu kontrol edin.")
 
         now = _now()
-        updated_result = await db.kbs_reports.update_one(
-            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id, "status": job["status"], "delivery_uncertain": {"$ne": True}},
-            {
-                "$set": {
-                    "status": "pending",
-                    "worker_id": None,
-                    "claimed_at": None,
-                    "completed_at": None,
-                    "failed_at": None,
-                    "kbs_reference": None,
-                    "last_error": None,
-                    "next_retry_at": None,
-                    "updated_at": _iso(now),
-                    "_open_lock": f"{tenant_id}:{job['booking_id']}:{job.get('guest_id') or 'primary'}:{job.get('action')}",
-                    "notes": (job.get("notes") or "") + f"\n[{_iso(now)}] Tekrar kuyruğa alındı ({reason}) — {current_user.name}",
+        from pymongo.errors import DuplicateKeyError
+        try:
+            updated_result = await db.kbs_reports.update_one(
+                {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id, "status": job["status"], "delivery_uncertain": {"$ne": True}},
+                {
+                    "$set": {
+                        "status": "pending",
+                        "worker_id": None,
+                        "claimed_at": None,
+                        "completed_at": None,
+                        "failed_at": None,
+                        "kbs_reference": None,
+                        "last_error": None,
+                        "next_retry_at": None,
+                        "updated_at": _iso(now),
+                        "_open_lock": f"{tenant_id}:{job['booking_id']}:{job.get('guest_id') or 'primary'}:{job.get('action')}",
+                        "notes": (job.get("notes") or "") + f"\n[{_iso(now)}] Tekrar kuyruğa alındı ({reason}) — {current_user.name}",
+                    },
                 },
-            },
-        )
+            )
+        except DuplicateKeyError:
+            raise HTTPException(409, 'Aynı kişi için başka bildirim zaten hazırlanıyor; listeyi yenileyin.') from None
         if not updated_result.matched_count:
             raise HTTPException(409, 'Bildirim durumu değişti; tekrar kontrol edin.')
 
