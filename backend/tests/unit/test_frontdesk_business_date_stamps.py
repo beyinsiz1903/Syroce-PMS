@@ -26,6 +26,7 @@ def service(monkeypatch):
     instance = module.FrontdeskService.__new__(module.FrontdeskService)
     instance._db = SimpleNamespace(bookings=collection({"id": "b", "tenant_id": "hotel", "status": "confirmed",
         "room_id": "r", "total_amount": 0, "check_in": "2026-10-01", "check_out": "2026-10-03"}),
+        kbs_cloud_configs=collection(),
         rooms=collection({"id": "r", "status": "available", "room_number": "101"}), folios=collection(),
         folio_charges=collection(), payments=collection(), extra_charges=collection(), housekeeping_tasks=collection())
     return instance

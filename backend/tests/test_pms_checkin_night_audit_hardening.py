@@ -37,6 +37,7 @@ def _service_with_db(booking: dict, room: dict | None = None):
             insert_one=AsyncMock(),
         ),
         guests=SimpleNamespace(find_one=AsyncMock(return_value=None), update_one=AsyncMock()),
+        kbs_cloud_configs=SimpleNamespace(find_one=AsyncMock(return_value=None)),
         tenant_settings=SimpleNamespace(
             find_one=AsyncMock(return_value={"business_date": "2026-08-17"}),
         ),
@@ -208,6 +209,9 @@ async def test_successful_checkin_scopes_room_folio_booking_and_guest_to_tenant(
     )
 
     assert result.ok is True
+    service._db.kbs_cloud_configs.find_one.assert_awaited_once_with(
+        {"tenant_id": "tenant-a", "id": "kbs_cloud_jandarma"}, {"_id": 1}
+    )
     assert service._db.rooms.find_one.await_args.args[0] == {
         "id": "room-a",
         "tenant_id": "tenant-a",
@@ -420,6 +424,7 @@ async def test_atomic_checkin_path_blocks_future_business_date_before_room_or_mu
     import core.atomic_checkin_checkout as atomic
 
     fake_db = SimpleNamespace(
+        kbs_cloud_configs=SimpleNamespace(find_one=AsyncMock(return_value=None)),
         bookings=SimpleNamespace(
             find_one=AsyncMock(
                 return_value={
