@@ -18,6 +18,16 @@ from modules.pms_core.role_permission_service import (
 router = APIRouter(prefix="/api", tags=["PMS / Operations"])
 
 
+@router.post('/revenue/booking-quote')
+async def get_revenue_booking_quote(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op('create_booking'))):
+    from modules.pms_core.revenue_booking_quote import quote
+
+    if set(body) != {'room_id', 'check_in', 'check_out', 'currency', 'confirm_currency'} or body['confirm_currency'] is not True:
+        raise HTTPException(422, 'Plan para birimini açıkça onaylayın')
+    return await quote(db, current_user.tenant_id, body['room_id'], body['check_in'], body['check_out'], body['currency'])
+
+
 def _safe_int(val, default=0):
     try:
         return int(val or default)

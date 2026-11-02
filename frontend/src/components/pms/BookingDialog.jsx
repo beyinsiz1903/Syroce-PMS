@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import axios from 'axios';
 import WhatsAppConsent from './WhatsAppConsent';
+import RevenueBookingQuote from './RevenueBookingQuote';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -329,9 +330,13 @@ const BookingDialog = ({
                 </div>
                 <div>
                   <Label className="text-xs">{room.apply_occupancy_pricing ? 'Hesaplanan toplam' : t('experience.booking.total', 'Toplam tutar *')}</Label>
-                  <Input type="number" step="0.01" value={room.total_amount === 0 ? '' : room.total_amount} disabled={room.apply_occupancy_pricing} onChange={e => updateMultiRoomField(index, 'total_amount', e.target.value)} />
+                  <Input type="number" step="0.01" value={room.total_amount === 0 ? '' : room.total_amount} disabled={room.apply_occupancy_pricing || room.apply_revenue_pricing} onChange={e => updateMultiRoomField(index, 'total_amount', e.target.value)} />
                 </div>
               </div>
+              <RevenueBookingQuote roomId={room.room_id} arrival={newBooking.check_in} departure={newBooking.check_out}
+                currency={newBooking.currency || cachedTenantCurrency()} disabled={submitting || room.apply_occupancy_pricing}
+                applied={room.apply_revenue_pricing || room.revenue_quote_stale} onApply={quote => updateMultiRoomField(index, 'revenue_quote', quote)} />
+              {room.revenue_quote_stale && <p role="alert" className="text-xs text-red-700">Oda, tarih veya para birimi değişti. Gelir planını yeniden hesaplayın ya da manuel fiyata dönün.</p>}
               {room.apply_occupancy_pricing && occupancyRule && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
                 {occupancyRule.base_occupancy} yetişkin fiyata dahil · Ek yetişkin {formatCurrency(occupancyRule.extra_adult_rate, newBooking.currency || room.currency || cachedTenantCurrency())}/gece.
                 {occupancyRule.child_age_bands?.length > 0 && ` Çocuk yaş kademeleri: ${occupancyRule.child_age_bands.map(band => `${band.min_age}–${band.max_age} ${band.pricing_mode === 'free' ? 'ücretsiz' : band.pricing_mode === 'adult_rate' ? 'yetişkin sayılır' : band.pricing_mode === 'adult_percentage' ? `%${band.value}` : formatCurrency(band.value, newBooking.currency || room.currency || cachedTenantCurrency())}`).join(', ')}.`}

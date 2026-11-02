@@ -13,7 +13,7 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from core.provider_nightly_rates import exely_daily_rate_plan
+from core.provider_nightly_rates import booking_daily_rate_plan
 
 MONEY = Decimal("0.01")
 
@@ -131,7 +131,7 @@ def calculate_room_charge(
     elif explicit_daily_rate is not None:
         gross = _decimal(explicit_daily_rate).quantize(MONEY, rounding=ROUND_HALF_UP)
     else:
-        source_rates = exely_daily_rate_plan(booking)
+        source_rates = booking_daily_rate_plan(booking)
         if source_rates is not None and posting_day in source_rates:
             gross = Decimal(source_rates[posting_day]) / 100
         else:

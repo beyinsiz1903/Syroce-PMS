@@ -70,6 +70,33 @@ router = APIRouter()
 security = HTTPBearer()
 
 
+@router.get('/folio/booking/{booking_id}/paid-counter-preview')
+async def preview_paid_counter(booking_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op('manage_city_ledger'))):
+    from modules.pms_core.payment_counter_reconciliation import preview
+
+    return await preview(db, current_user.tenant_id, booking_id)
+
+
+@router.post('/folio/booking/{booking_id}/reconcile-paid-counter')
+async def reconcile_paid_counter(booking_id: str, body: dict = Body(...),
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op('manage_city_ledger'))):
+    from pymongo.errors import OperationFailure
+
+    from modules.pms_core.payment_counter_reconciliation import reconcile
+
+    if set(body) != {'source_revision', 'reason'} or not isinstance(body['source_revision'], str) or len(body['source_revision']) != 64:
+        raise HTTPException(422, 'Güncel kaynak önizlemesi gereklidir')
+    if not isinstance(body['reason'], str) or not 5 <= len(body['reason'].strip()) <= 500:
+        raise HTTPException(422, '5–500 karakterlik mutabakat nedeni gereklidir')
+    try:
+        return await reconcile(db, current_user.tenant_id, booking_id, body['source_revision'], body['reason'].strip(), current_user.id)
+    except OperationFailure as exc:
+        if exc.has_error_label('TransientTransactionError'):
+            raise HTTPException(409, 'Kaynak eşzamanlı değişti; önizlemeyi yenileyin') from None
+        raise
+
+
 def _ts_sort_key(value) -> str:
     """Type-safe sort key for timestamp fields that may arrive as a mix of
     `datetime`/`date` (newer writers) and `str`/`None` (legacy/transfer ops).

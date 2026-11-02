@@ -39,6 +39,8 @@ class BookingCreate(BaseModel):
     currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     base_rate: float | None = None  # For override tracking
     apply_occupancy_pricing: bool = False
+    apply_revenue_pricing: StrictBool = False
+    revenue_quote_hash: str | None = Field(None, min_length=64, max_length=64)
     pricing_rule_version: str | None = None
     channel: ChannelType = ChannelType.DIRECT
     special_requests: str | None = None
@@ -76,6 +78,8 @@ class BookingCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_complimentary_details(self):
+        if self.apply_revenue_pricing and (self.apply_occupancy_pricing or self.is_complimentary or not self.revenue_quote_hash):
+            raise ValueError('Gelir planı ayrı, güncel bir fiyat onayı gerektirir; kişi bazlı fiyat/ikram ile birleştirilemez')
         if not self.is_complimentary:
             self.complimentary_scope = None
             self.complimentary_reason = None

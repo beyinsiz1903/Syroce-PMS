@@ -117,7 +117,8 @@ async def _legacy_check_room_availability(
     check_out: str,
     room_type: str | None = None,
 ):
-    query = {"tenant_id": tenant_id}
+    query = {"tenant_id": tenant_id, "is_active": {"$ne": False},
+        "deleted_at": None, "is_virtual": {"$ne": True}}
 
     if room_type:
         query["room_type"] = room_type
