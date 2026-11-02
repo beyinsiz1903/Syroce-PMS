@@ -1,0 +1,69 @@
+Frontdesk closure: explicitly reviewed sealed confirmed folios
+2026-11-02
+
+Problem
+An old synthetic confirmed reservation has two closed folios, zero balances,
+120 USD posted charges and 120 USD effective payments, but paid_amount is 0.
+The existing historical repair correctly rejects an active reservation. Do
+not cancel/check out the future stay merely to get past that protection.
+
+Narrow implementation
+- Default historical preview and repair retain terminal-reservation rules.
+- Finance RBAC remains manage_city_ledger for preview and application.
+- Opt in to preview with review_closed_folios=true. Application requires the
+  literal JSON boolean true plus this mode's NEW source_revision and reason.
+- Only confirmed reservations with ALL closed, stored-zero and ledger-zero
+  folios qualify. Checked-in/open/unbalanced/foreign/ambiguous/import-credit
+  sources still fail closed. Pending or unknown PSP intents block review.
+- Payments must bind to these folios; duplicate provider transactions and
+  missing/duplicate folio, payment or charge identities block review.
+- Snapshot hashes include folios, charges, extras and provider intents in
+  addition to payment and booking counter sources. Stale sources return 409.
+- Recompute inside a Mongo transaction; CAS paid_amount and append required
+  chained audit in the same transaction. Audit failure rolls back. Parallel
+  application has one winner; replay cannot create money or a second audit.
+- Only the derived booking paid_amount changes. No payment, charge, stay,
+  shift, stock, business date or external payment is created or rewritten.
+
+Verification on an isolated loopback Mongo replica, not production
+349 passed, zero skipped/failed, in the final related regression run.
+42 cases cover the counter repair itself (historical plus reviewed path).
+Remaining related tests cover frontdesk settlement/checkout, currency,
+payment idempotency/RBAC, provider adapters and uncertain durable collection,
+KBS fail-closed/config/queue/payload, and TCP loopback print/codepage faults.
+Ruff on changed Python files and git diff --check pass.
+
+Live checks and changes in Demo Hotel 100001 (healthy base release a09219f5)
+- Renamed physical room QT2ED0 to 131 through the normal PMS room API.
+  Both linked bookings now display 131; IDs, lifecycle and finances unchanged.
+- The attempted lowercase-to-canonical Standard type merge increased the
+  mapped physical capacity from 8 to 9. Restored the ORIGINAL category through
+  the normal API; retained room number 131. No channel export was performed.
+  This is NOT a completed category consolidation or an approval to increase
+  channel capacity. A later intentional consolidation needs stock alignment.
+- Final room count 31; all other room records unchanged. All 6,579 channel
+  cells and connector settings match the fresh before-state after restoration.
+- Old 120 USD discrepancy was only read. Counter remains 0 pending deployment
+  of this code and a new reviewed live preview/application/readback.
+- No shift/payment/day-end or new reservation was needed for this correction.
+
+External acceptance remains explicitly NOT certified
+- KBS live status: configured=false, enabled=false, verified=false, Jandarma.
+  Requires valid facility setup/authority credentials and official acceptance;
+  do not manufacture identity data or submit synthetic people to authorities.
+- All 16 registered printers use simulator drivers. Real printer/paper and
+  offline acceptance requires the actual device; loopback tests are not that.
+- Fiscal readiness reports simulator, certified=false. Real fiscal receipt/Z
+  acceptance requires a certified physical ÖKC integration. Do not call a PMS
+  shift report or a simulated fiscal job an official fiscal certification.
+- PSP adapter/collection/refund paths were tested with isolated fakes. No
+  real PSP charge/refund was performed; merchant sandbox/live acceptance is
+  not established by a manually posted synthetic card payment.
+
+Release handoff
+After merge and healthy deployment, obtain a fresh reviewed preview for the
+one old synthetic booking. Apply exactly once only if its status, closed
+balanced folios, currency and known payment sources still match. Use normal
+API, source revision and a recorded reason; no direct database edit. Verify
+paid_amount=120 and byte-equivalent payment/charge sources, unchanged stay,
+shift and inventory. If any source differs, stop and re-review, never force.
