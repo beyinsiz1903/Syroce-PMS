@@ -124,6 +124,8 @@ async def deliver_exely_ari(
     owner_token = str(uuid.uuid4())
     prepared, existing = await _prepare_delivery(identity, owner_token, operation, normalized)
     if not prepared:
+        if existing and existing.get("payload_fingerprint") and existing["payload_fingerprint"] != _payload_fingerprint(operation, normalized):
+            return _result(False, STATE_BLOCKED, "EXELY_ARI_IDENTITY_PAYLOAD_MISMATCH", "NOT_SENT", 0, identity)
         if existing and existing.get("state") in {STATE_CONFIRMED, STATE_WARNING_SUCCESS}:
             state = str(existing["state"])
             return _result(
@@ -366,7 +368,7 @@ async def _prepare_delivery(identity: str, owner: str, operation: str, update: d
                         {"active_fingerprint": document["active_fingerprint"]},
                     ]
                 },
-                {"_id": 0, "state": 1, "warning_codes": 1},
+                {"_id": 0, "state": 1, "warning_codes": 1, "payload_fingerprint": 1},
             )
             return False, existing
         except Exception:

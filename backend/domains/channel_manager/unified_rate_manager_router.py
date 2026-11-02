@@ -159,6 +159,15 @@ class UnifiedBulkUpdateRequest(BaseModel):
     channel_codes: list[str] | None = Field(default=None, max_length=100)
 
 
+class RemainingRoomTypeValuesItem(RoomTypeValuesItem):
+    availability: int | None = Field(default=None, ge=0, le=999, strict=True)
+
+
+class RemainingBulkUpdateRequest(UnifiedBulkUpdateRequest):
+    availability: int | None = Field(default=None, ge=0, le=999, strict=True)
+    per_room_values: list[RemainingRoomTypeValuesItem] | None = None
+
+
 class AgencyRateOverride(BaseModel):
     agency_id: str
     room_type_code: str
@@ -987,6 +996,20 @@ async def unified_bulk_grid_update(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),
 ):
+    return await _apply_unified_bulk_update(request, current_user)
+
+
+@router.post("/bulk-remaining-update")
+async def unified_remaining_grid_update(
+    request: RemainingBulkUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),
+):
+    """Explicit Exely net-room contract; old servers fail 404, not silently base."""
+    return await _apply_unified_bulk_update(request, current_user, remaining_availability=True)
+
+
+async def _apply_unified_bulk_update(request, current_user, *, remaining_availability=False):
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
 
@@ -1000,6 +1023,17 @@ async def unified_bulk_grid_update(
     # configuration is authoritative; with one legacy connection we can still
     # auto-detect it, while two active unconfigured providers fail closed.
     detection = await _detect_active_provider(tenant_id)
+    if remaining_availability and (request.agencies_only or detection["provider"] != "exely" or "availability" not in request.update_fields):
+        raise HTTPException(409, detail={
+            "error_code": "EXELY_REMAINING_MODE_REQUIRED",
+            "message": "Net müsaitlik gönderimi yalnız aktif Exely bağlantısında kullanılabilir.",
+            "delivery_state": "BLOCKED", "provider_write_count": 0,
+        })
+    if remaining_availability and not str(detection["connection"].get("hotel_code") or "").strip():
+        raise HTTPException(409, detail={
+            "error_code": "EXELY_PROPERTY_MAPPING_REQUIRED", "message": "Exely tesis kodu doğrulanamadı; hiçbir kayıt değiştirilmedi.",
+            "delivery_state": "BLOCKED", "provider_write_count": 0,
+        })
     if request.agencies_only:
         # Agency extranet distribution is independent of any third-party
         # channel manager (Exely, HotelRunner): nothing is sent there.
@@ -1102,6 +1136,8 @@ async def unified_bulk_grid_update(
         raise HTTPException(status_code=422, detail="Geçersiz tarih biçimi") from exc
     if parsed_end < parsed_start:
         raise HTTPException(status_code=422, detail="Bitiş tarihi başlangıç tarihinden önce olamaz")
+    if remaining_availability and (parsed_start.isoformat() != request.start_date or parsed_end.isoformat() != request.end_date):
+        raise HTTPException(422, detail="Geçerli YYYY-MM-DD tarihleri seçin.")
     update_fields = set(request.update_fields)
     _validate_los_updates(request, provider_type)
     _validate_agency_restrictions(request.agency_ids, update_fields)
@@ -1146,6 +1182,18 @@ async def unified_bulk_grid_update(
         if unsafe:
             raise HTTPException(status_code=409, detail="Exely'ye taban fiyat gönderimi çocuk yaş kademelerini kurmaz. Önce kişi/çocuk kurallarını Exely paneliyle karşılaştırıp onaylayın: " + ", ".join(unsafe))
 
+    remaining_base_values = None
+    if remaining_availability:
+        from domains.channel_manager.remaining_availability import prepare_exely_remaining_values
+
+        if len(per_room_map) != len(request.per_room_values or []):
+            raise HTTPException(422, detail="Aynı oda tipi birden fazla gönderilemez.")
+        remaining_base_values = await prepare_exely_remaining_values(
+            db, tenant_id, pairs,
+            {rt: per_room_map[rt].availability if rt in per_room_map else request.availability for rt, _ in pairs},
+            request.start_date, request.end_date, selected_days_set,
+        )
+
     # Determine which calendar collection to use
     cal_collection = "hr_rate_calendar" if provider_type == "hotelrunner" else "rate_calendar"
 
@@ -1188,7 +1236,7 @@ async def unified_bulk_grid_update(
             if "rate" in update_fields and v_rate is not None:
                 set_fields["rate"] = v_rate
             if "availability" in update_fields and v_avail is not None:
-                set_fields["availability"] = v_avail
+                set_fields["availability"] = remaining_base_values[(rt_code, ds)] if remaining_base_values is not None else v_avail
             if "min_stay" in update_fields and v_min is not None:
                 set_fields["min_stay"] = v_min
             if "min_los_arrival" in update_fields and v_min_arrival is not None:
@@ -1305,6 +1353,7 @@ async def unified_bulk_grid_update(
 
     return {
         "saved": saved,
+        "availability_input_mode": "remaining" if remaining_availability else "base",
         "provider": provider_type,
         "channel_push_count": channel_push_count,
         "provider_delivery": provider_delivery_results,

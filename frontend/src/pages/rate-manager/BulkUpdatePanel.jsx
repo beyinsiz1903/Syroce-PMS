@@ -42,6 +42,7 @@ export const BulkUpdatePanel = ({
   // filters and give the editor the remaining page width instead of creating
   // a narrow, internally scrolling table.
   const wideFieldLayout = usesExpandedAriLayout(enabledFields.size);
+  const remainingAvailability = channelProvider === 'exely' && !agenciesOnly;
 
   return (
   <div>
@@ -107,10 +108,13 @@ export const BulkUpdatePanel = ({
                   onCheckedChange={() => toggleField(f.key)}
                 />
                 <span className={enabledFields.has(f.key) ? 'text-gray-900 font-medium' : 'text-gray-600'}>
-                  {f.label}
+                  {f.key === 'availability' && remainingAvailability ? 'Müsait oda (net)' : f.label}
                 </span>
               </label>
             ))}
+            {remainingAvailability && enabledFields.has('availability') && <p className="rounded border border-sky-200 bg-sky-50 p-2 text-xs text-sky-900" data-testid="remaining-availability-help">
+              Exely’ye gönderilecek net kalan oda sayısını girin. Mevcut rezervasyonlar bu sayıdan tekrar düşülmez. Her gecenin rezervasyon ve blokaj kapasitesi gönderimden önce kontrol edilir.
+            </p>}
           </CardContent>
         </Card>
 
@@ -191,6 +195,7 @@ export const BulkUpdatePanel = ({
                 currencySymbol={currencySymbol} currency={currency}
                 channelProvider={channelProvider}
                 canRemoveLos={channelProvider === 'exely' && !agenciesOnly}
+                remainingAvailability={remainingAvailability}
                 totalSelectedRoomTypes={Object.keys(selections).length}
                 wideFieldLayout={wideFieldLayout}
               />
@@ -350,7 +355,7 @@ const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
-  totalSelectedRoomTypes, channelProvider, wideFieldLayout, canRemoveLos,
+  totalSelectedRoomTypes, channelProvider, wideFieldLayout, canRemoveLos, remainingAvailability,
 }) => {
   const { t } = useTranslation();
   const [editingRule, setEditingRule] = useState(null);
@@ -362,7 +367,7 @@ const RoomTypeList = ({
       <div className="grid items-center gap-3" style={{ gridTemplateColumns: gridColTemplate(enabledFields) }}>
         <span>{t('cm.pages_ratemanager_BulkUpdatePanel.oda_adi_8e806')}</span>
         {enabledFields.has('rate') && <span className="flex items-center gap-1">{currencySymbol} Fiyat</span>}
-        {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Musaitlik</span>}
+        {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> {remainingAvailability ? 'Net kalan oda' : 'Müsaitlik'}</span>}
         {enabledFields.has('min_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Min. konaklama</span>}
         {enabledFields.has('min_los_arrival') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Varış bazlı min.</span>}
         {enabledFields.has('max_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Max. konaklama</span>}
@@ -423,7 +428,7 @@ const RoomTypeList = ({
               {enabledFields.has('availability') && (
                 <div className="flex items-center gap-1">
                   <Home className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <Input type="number" min="0" placeholder="Musaitlik" value={rv.availability} onChange={e => updateRoomValue(rt.code, 'availability', e.target.value)} className="h-8 text-sm" data-testid={`avail-input-${rt.code}`} />
+                  <Input type="number" min="0" step="1" max={remainingAvailability ? '999' : undefined} placeholder={remainingAvailability ? 'Net oda' : 'Müsaitlik'} aria-label={remainingAvailability ? `Net müsait oda — ${rt.name}` : `Müsaitlik — ${rt.name}`} value={rv.availability} onChange={e => updateRoomValue(rt.code, 'availability', e.target.value)} className="h-8 text-sm" data-testid={`avail-input-${rt.code}`} />
                   <ApplyAllButton field="availability" value={rv.availability} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
@@ -501,7 +506,7 @@ const RoomTypeList = ({
                   </div>
                 </label>
                 {enabledFields.has('rate') && <div className="text-xs text-gray-400 italic">{rv.rate ? `Ana Fiyat: ${rv.rate} ${currency}` : '\u2014'}</div>}
-                {enabledFields.has('availability') && <div className="text-xs text-gray-400 italic">{rv.availability ? rv.availability : '\u2014'}</div>}
+                {enabledFields.has('availability') && <div className="text-xs text-gray-400 italic">{rv.availability !== '' && rv.availability != null ? rv.availability : '\u2014'}</div>}
                 {enabledFields.has('min_stay') && <div className="text-xs text-gray-400 italic">{rv.min_stay ? rv.min_stay : '\u2014'}</div>}
                 {enabledFields.has('min_los_arrival') && <div className="text-xs text-gray-400 italic">{rv.min_los_arrival ? rv.min_los_arrival : '\u2014'}</div>}
                 {enabledFields.has('max_stay') && <div className="text-xs text-gray-400 italic">{rv.max_stay ? rv.max_stay : '\u2014'}</div>}

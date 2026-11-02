@@ -8,14 +8,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from core.database import db
 from core.secrets import get_secrets_manager
 from core.security import get_current_user
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
-from domains.channel_manager.providers.exely.ari_delivery import preview_exely_ari
+from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari, preview_exely_ari
 from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 from domains.channel_manager.providers.exely.errors import ExelyError
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
@@ -642,8 +642,9 @@ async def bulk_push_ari(
     updates: Annotated[list[ExelyARIUpdate], Field(min_length=1, max_length=200)],
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", min_length=8, max_length=128)] = None,
 ):
-    """Durably queue multiple ARI updates without direct provider writes."""
+    """Deliver availability together; preserve legacy mixed-operation queuing."""
     runtime_block = ari_write_block_reason()
     if runtime_block:
         raise HTTPException(status_code=503, detail=runtime_block)
@@ -654,6 +655,27 @@ async def bulk_push_ari(
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
+    if all(u.availability is not None and all(getattr(u, field) is None for field in (
+        "rate_amount", "stop_sell", "min_stay", "min_los_arrival", "max_stay", "cta", "ctd",
+    )) for u in updates):
+        # Initial inventory uploads must not enqueue one change set per room
+        # or period: that produces one SOAP request per interval. Use the same
+        # durable single-write batch contract as the normal unified editor.
+        messages = _availability_batch_messages(updates)
+        result = await deliver_exely_ari(current_user.tenant_id, "availability_batch", {
+            "property_id": str(conn.get("hotel_code") or ""), "value": messages,
+            "operation_identity": f"exely-bulk-availability:{idempotency_key or uuid.uuid4()}",
+        })
+        verified = result.success and result.provider_status_class == "SUCCESS" and not result.warning_codes
+        await log_sync(PROVIDER, current_user.tenant_id, "ari_bulk_delivery",
+                       "success" if verified else result.state, records=len(messages), user_name=current_user.name)
+        return {
+            "total": len(updates), "queued": 0, "blocked": 0 if result.success else len(updates),
+            "confirmed": len(updates) if verified else 0, "message_count": len(messages),
+            "provider_verified": verified, "result": result.safe_metadata(),
+            "provider_write_count": result.provider_write_count,
+            "results": [result.safe_metadata()],
+        }
     results = []
     for u in updates:
         r = await enqueue_exely_ari_update(
@@ -694,6 +716,25 @@ async def bulk_push_ari(
         "provider_write_count": 0,
         "results": results,
     }
+
+
+def _availability_batch_messages(updates):
+    """One element per distinct stock period; merge adjacent equal nights."""
+    messages = []
+    for update in sorted(updates, key=lambda u: (u.room_type_code, u.rate_plan_code, u.start_date)):
+        item = {key: getattr(update, key) for key in (
+            "room_type_code", "rate_plan_code", "start_date", "end_date", "availability",
+        )}
+        previous = messages[-1] if messages else None
+        same_pair = previous and all(previous[key] == item[key] for key in ("room_type_code", "rate_plan_code"))
+        if same_pair and item["start_date"] <= previous["end_date"]:
+            raise HTTPException(422, detail="Overlapping availability periods are ambiguous; nothing was sent")
+        adjacent = same_pair and datetime.strptime(previous["end_date"], "%Y-%m-%d").date() + timedelta(days=1) == datetime.strptime(item["start_date"], "%Y-%m-%d").date()
+        if adjacent and previous["availability"] == item["availability"]:
+            previous["end_date"] = item["end_date"]
+        else:
+            messages.append(item)
+    return messages
 
 
 # ── Reservation Sync ─────────────────────────────────────────────────

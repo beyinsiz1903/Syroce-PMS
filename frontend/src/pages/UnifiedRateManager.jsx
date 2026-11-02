@@ -19,6 +19,9 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
+export const unifiedBulkUpdatePath = ({ provider, agenciesOnly, enabledFields }) =>
+  `${UNIFIED_PREFIX}/${provider === 'exely' && !agenciesOnly && enabledFields.has('availability') ? 'bulk-remaining-update' : 'bulk-grid-update'}`;
+
 export const verifiedProviderChannels = providerStatus => {
   if (providerStatus?.connected !== true || providerStatus?.channels_stale === true) return [];
   return Array.isArray(providerStatus?.channels) ? providerStatus.channels : [];
@@ -37,6 +40,7 @@ export const RateDeliveryReceipt = ({ receipt }) => {
     <p>{feedback.message}</p>
     <p>{receipt.dateFrom} – {receipt.dateTo} · {receipt.roomCount} oda tipi · {receipt.fields.join(', ')}</p>
     <p>Teslim durumu: {receipt.data.provider_delivery_state || 'NOT_SENT'}</p>
+    {receipt.data.availability_input_mode === 'remaining' && <p>Gönderilen müsaitlik: net kalan oda sayısı. Mevcut rezervasyonlar tekrar düşülmez.</p>}
   </div>;
 };
 
@@ -609,6 +613,14 @@ const UnifiedRateManager = ({
     }
     const selectedRoomCodes = Object.keys(selections);
     const hasValue = value => value !== null && value !== undefined && value !== '';
+    const netAvailability = provider === 'exely' && !agenciesOnly && enabledFields.has('availability');
+    if (netAvailability && selectedRoomCodes.some(code => {
+      const value = roomValues[code]?.availability;
+      return !hasValue(value) || !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > 999;
+    })) {
+      toast.error('Her oda için net müsaitliği 0–999 arasında tam sayı girin.');
+      return;
+    }
     const hasAnyValue = selectedRoomCodes.some(rtCode => {
       const rv = roomValues[rtCode];
       if (!rv) return false;
@@ -650,7 +662,7 @@ const UnifiedRateManager = ({
       }
       const {
         data
-      } = await axios.post(`${UNIFIED_PREFIX}/bulk-grid-update`, {
+      } = await axios.post(unifiedBulkUpdatePath({ provider, agenciesOnly, enabledFields }), {
         per_room_values: perRoomValues,
         start_date: dateFrom,
         end_date: dateTo,
@@ -675,11 +687,16 @@ const UnifiedRateManager = ({
     } catch (e) {
       const detail = e.response?.data?.detail;
       const safeCode = typeof detail === 'object' && typeof detail?.error_code === 'string' ? detail.error_code : null;
+      const netMessage = netAvailability && typeof detail?.message === 'string' ? detail.message : null;
+      const capacityContext = safeCode === 'EXELY_REMAINING_EXCEEDS_CAPACITY'
+        ? ` (${detail.date}: en fazla ${detail.maximum} oda)` : '';
       const detailStr = typeof detail === 'string' ? detail : null;
       // A missing module comes with a sentence saying which one and why.
       const entitlementText = safeCode === 'ENTITLEMENT_DENIED' && typeof detail?.detail === 'string' ? detail.detail : null;
       setDeliveryReceipt({ data: { provider_delivery_state: !e.response || e.response.status >= 500 ? 'UNKNOWN' : 'NOT_SENT', provider_error_codes: [safeCode || detailStr || 'İstek tamamlanamadı'] }, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
-      toast.error(entitlementText || (safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası'), { duration: 8000 });
+      toast.error(entitlementText || (netMessage ? `${netMessage}${capacityContext}` : netAvailability && e.response?.status === 404
+        ? 'Net müsaitlik servisi bu sunucuda henüz hazır değil. Gönderim yapılmadı; güncel deployu kontrol edin.'
+        : safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası'), { duration: 8000 });
     }
     setSaving(false);
   };

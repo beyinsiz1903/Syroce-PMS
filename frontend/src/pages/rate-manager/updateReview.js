@@ -80,6 +80,10 @@ export const buildRateUpdateReview = ({
     warnings.push('Yalnız seçili anlaşmalı acentelere gönderilir; kanal yöneticisine ve otel takvimine gönderilmez.');
   } else if (channelProvider === 'exely') {
     warnings.push('Gönderim hedefi Exely kanal yöneticisidir; OTA bazlı kanal seçimi yapılmaz. Exely teslim sonucu ayrıca doğrulanmalıdır.');
+    if (enabledFields.has('availability')) {
+      warnings.push('Müsaitlik net kalan oda sayısıdır; mevcut rezervasyonlar tekrar düşülmez. Kapasite her gece için sunucuda doğrulanır.');
+      if (dateCount > 731) errors.push('Net müsaitlik için tek gönderimde en fazla 731 gece seçin.');
+    }
   } else if ((selectedChannelCodes?.size ?? 0) === 0) {
     warnings.push('OTA kanalı seçilmedi; değişiklik yalnızca PMS ve seçili acente kapsamına uygulanır.');
   }

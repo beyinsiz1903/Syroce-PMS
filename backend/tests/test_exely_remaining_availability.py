@@ -1,0 +1,233 @@
+"""Offline editor -> calendar -> mapped SOAP -> readback regressions."""
+
+from copy import deepcopy
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from fastapi import HTTPException
+from lxml import etree
+from pydantic import ValidationError
+
+from domains.channel_manager import remaining_availability
+from domains.channel_manager import unified_rate_manager_router as router
+from domains.channel_manager.calendar_inventory import exely_publishable_availability
+from domains.channel_manager.providers.exely import ari_delivery
+from domains.channel_manager.providers.exely.soap_builder import build_availability_batch_rq
+
+TENANT = "synthetic-hotel"
+ROOM = "panel-standard"
+RATE = "panel-base"
+DAYS = ["2026-11-10", "2026-11-11", "2026-11-12"]
+
+
+def cursor(rows):
+    return SimpleNamespace(to_list=AsyncMock(side_effect=lambda limit: deepcopy(rows[:limit])))
+
+
+@pytest.fixture
+def editor(monkeypatch):
+    mappings = [{
+        "tenant_id": TENANT, "pms_room_type": "Standard", "exely_room_code": ROOM,
+        "exely_rate_plan_code": RATE, "pms_api_room_code": "soap-standard",
+        "pms_api_rate_plan_code": "soap-base", "sync_availability": True,
+        "sync_price": True, "sync_restrictions": True,
+    }]
+    rooms = [{"id": f"room-{i}", "room_type": "Standard", "status": "available"} for i in range(8)]
+    bookings = [
+        {"room_id": "room-0", "room_type": "Standard", "check_in": "2026-11-10", "check_out": "2026-11-13"},
+        {"room_id": "room-1", "room_type": "Standard", "check_in": "2026-11-11", "check_out": "2026-11-12"},
+    ]
+    locks = []
+    calendar = [{"tenant_id": TENANT, "room_type_code": ROOM, "rate_plan_code": RATE, "date": day,
+                 "availability": 8, "rate": 100, "min_stay": 2, "stop_sell": False} for day in DAYS]
+
+    def scoped_find(rows):
+        def find(query, projection):
+            assert query["tenant_id"] == TENANT
+            return cursor(rows)
+        return MagicMock(side_effect=find)
+
+    async def save(operations, **kwargs):
+        for op in operations:
+            assert op._filter["tenant_id"] == TENANT
+            row = next((r for r in calendar if all(r.get(k) == v for k, v in op._filter.items())), None)
+            if row is None:
+                row = dict(op._filter)
+                calendar.append(row)
+            row.update(op._doc["$set"])
+
+    cal = SimpleNamespace(find=scoped_find(calendar), bulk_write=AsyncMock(side_effect=save))
+    database = MagicMock()
+    database.rooms = SimpleNamespace(find=scoped_find(rooms))
+    database.bookings = SimpleNamespace(find=scoped_find(bookings))
+    database.room_night_locks = SimpleNamespace(find=scoped_find(locks))
+    database.exely_room_mappings = SimpleNamespace(find=scoped_find(mappings))
+    database.room_mappings = SimpleNamespace(find=scoped_find([]))
+    database.hotelrunner_connections = SimpleNamespace(find_one=AsyncMock(return_value=None))
+    database.pricing_settings = SimpleNamespace(find=scoped_find([]))
+    database.rate_calendar = cal
+    database.__getitem__.side_effect = lambda key: cal if key == "rate_calendar" else (_ for _ in ()).throw(AssertionError(key))
+    connection = {"hotel_code": "synthetic-property", "ari_write_enabled": True, "currency": "USD"}
+    monkeypatch.setattr(router, "db", database)
+    monkeypatch.setattr(router, "_detect_active_provider", AsyncMock(return_value={"provider": "exely", "connection": connection}))
+    monkeypatch.setattr(router, "require_tenant_module", AsyncMock())
+    monkeypatch.setattr(router, "_ari_write_block_for_targets", lambda *_: "")
+    monkeypatch.setattr(router, "get_tenant_currency", AsyncMock(return_value=("USD", {})))
+    provider = AsyncMock(return_value=ari_delivery.ExelyARIDeliveryResult(True, "confirmed", "", "SUCCESS", 1, "synthetic-write"))
+    monkeypatch.setattr(ari_delivery, "deliver_exely_ari", provider)
+    return SimpleNamespace(db=database, calendar=calendar, save=cal.bulk_write, mappings=mappings,
+                           bookings=bookings, locks=locks, provider=provider, connection=connection)
+
+
+def request(net=3, **overrides):
+    return router.RemainingBulkUpdateRequest(**{
+        "per_room_values": [{"room_type_code": ROOM, "rate_plan_codes": [RATE], "availability": net}],
+        "start_date": DAYS[0], "end_date": DAYS[-1], "update_fields": ["availability"], **overrides,
+    })
+
+
+async def apply(payload):
+    return await router.unified_remaining_grid_update(payload, SimpleNamespace(tenant_id=TENANT, id="synthetic-operator"), None)
+
+
+async def readback(editor):
+    grid = await router._build_exely_grid(TENANT, editor.connection, DAYS[0], DAYS[-1])
+    return grid["grid"][0]["dates"]
+
+
+async def test_net_input_matches_wire_and_readback_with_varying_daily_sales(editor):
+    result = await apply(request())
+    assert result["availability_input_mode"] == "remaining"
+    assert result["provider_verified"] is True
+    assert result["saved"] == 3
+    cells = await readback(editor)
+    assert [v["sold"] for v in cells] == [1, 2, 1]
+    assert [v["base_availability"] for v in cells] == [4, 5, 4]
+    assert [v["availability"] for v in cells] == [3, 3, 3]
+    assert all(v["rate"] == 100 and v["min_stay"] == 2 and v["stop_sell"] is False for v in cells)
+    args, kwargs = editor.provider.await_args
+    assert args[:2] == (TENANT, "availability_batch")
+    assert args[2]["value"] == [{"room_type_code": "soap-standard", "rate_plan_code": "soap-base",
+                                  "start_date": DAYS[0], "end_date": DAYS[-1], "availability": 3}]
+    assert args[2]["property_id"] == "synthetic-property"
+    envelope = etree.fromstring(build_availability_batch_rq("synthetic-user", "synthetic-password", "synthetic-property", args[2]["value"]).encode())
+    controls = envelope.findall(".//{http://www.opentravel.org/OTA/2003/05}StatusApplicationControl")
+    assert [dict(c.attrib) for c in controls] == [{"Start": DAYS[0], "End": DAYS[-1], "InvTypeCode": "soap-standard", "RatePlanCode": "soap-base"}]
+    assert envelope.find(".//{http://www.opentravel.org/OTA/2003/05}AvailStatusMessage").get("BookingLimit") == "3"
+
+
+async def test_zero_is_preserved_and_same_input_does_not_compound_sold_rooms(editor):
+    await apply(request(0))
+    await apply(request(0))
+    cells = await readback(editor)
+    assert [v["base_availability"] for v in cells] == [1, 2, 1]
+    assert [v["availability"] for v in cells] == [0, 0, 0]
+    assert all(call.args[2]["value"][0]["availability"] == 0 for call in editor.provider.await_args_list)
+
+
+async def test_later_booking_and_cancellation_adjust_remaining_once(editor):
+    await apply(request(3))
+    editor.bookings.append({"room_id": "room-2", "room_type": "Standard", "check_in": DAYS[0], "check_out": "2026-11-13"})
+    assert [v["availability"] for v in await readback(editor)] == [2, 2, 2]
+    auto_values = await exely_publishable_availability(editor.db, TENANT, "Standard", editor.mappings[0],
+                                                      dict(zip(DAYS, [6, 5, 6])))
+    assert list(auto_values.values()) == [2, 2, 2]
+    editor.bookings.pop()
+    assert [v["availability"] for v in await readback(editor)] == [3, 3, 3]
+    assert list((await exely_publishable_availability(editor.db, TENANT, "Standard", editor.mappings[0],
+                                                      dict(zip(DAYS, [7, 6, 7])))).values()) == [3, 3, 3]
+
+
+async def test_weekday_filter_never_changes_or_sends_unselected_dates(editor):
+    await apply(request(3, selected_days=[3]))  # Wednesday, November 11
+    cells = await readback(editor)
+    assert [v["base_availability"] for v in cells] == [8, 5, 8]
+    assert editor.provider.await_args.args[2]["value"][0]["start_date"] == DAYS[1]
+    assert editor.provider.await_args.args[2]["value"][0]["end_date"] == DAYS[1]
+
+
+@pytest.mark.parametrize("defect", ["capacity", "hold", "unassigned-and-hold", "duplicate-mapping", "partial-api-pair", "sync-off", "duplicate-lock", "unknown-lock", "invalid-booking-date"])
+async def test_preflight_failure_leaves_all_dates_and_provider_untouched(editor, defect):
+    net = 7 if defect == "capacity" else 3
+    if defect == "hold":
+        editor.locks.extend({"room_id": f"room-{i}", "night_date": DAYS[1], "lock_type": "hold"} for i in range(6))
+    elif defect == "unassigned-and-hold":
+        editor.bookings.append({"room_id": None, "room_type": "Standard", "check_in": DAYS[0], "check_out": "2026-11-13"})
+        editor.locks.extend({"room_id": f"room-{i}", "night_date": DAYS[1], "lock_type": "hold"} for i in range(5))
+    elif defect == "duplicate-mapping":
+        editor.mappings.append(deepcopy(editor.mappings[0]))
+    elif defect == "partial-api-pair":
+        editor.mappings[0].pop("pms_api_rate_plan_code")
+    elif defect == "sync-off":
+        editor.mappings[0]["sync_availability"] = False
+    elif defect == "invalid-booking-date":
+        editor.bookings[0]["check_out"] = "2026-11-xx"
+    elif defect in {"duplicate-lock", "unknown-lock"}:
+        editor.locks.append({"room_id": "room-1", "night_date": DAYS[1], "lock_type": "hold" if defect == "duplicate-lock" else "unknown"})
+        if defect == "duplicate-lock":
+            editor.locks.append(deepcopy(editor.locks[0]))
+    original = deepcopy(editor.calendar)
+    with pytest.raises(HTTPException) as exc:
+        await apply(request(net))
+    assert exc.value.status_code == 409
+    assert exc.value.detail["provider_write_count"] == 0
+    assert editor.calendar == original
+    editor.save.assert_not_awaited()
+    editor.provider.assert_not_awaited()
+
+
+@pytest.mark.parametrize("net", [-1, 1000, True, 3.5, "3"])
+def test_new_contract_rejects_non_integer_or_out_of_range_input(net):
+    with pytest.raises(ValidationError):
+        request(net)
+
+
+async def test_legacy_base_endpoint_retains_its_contract(editor):
+    payload = router.UnifiedBulkUpdateRequest(**request(5).model_dump())
+    result = await router.unified_bulk_grid_update(payload, SimpleNamespace(tenant_id=TENANT, id="operator"), None)
+    assert result["availability_input_mode"] == "base"
+    assert [v["base_availability"] for v in await readback(editor)] == [5, 5, 5]
+
+
+@pytest.mark.parametrize("collection", ["bookings", "room_night_locks"])
+async def test_read_outage_is_fail_closed_before_any_mutation(editor, collection):
+    getattr(editor.db, collection).find.side_effect = ConnectionError("synthetic storage outage")
+    with pytest.raises(HTTPException) as exc:
+        await apply(request())
+    assert exc.value.status_code == 503
+    assert exc.value.detail["error_code"] == "EXELY_REMAINING_INVENTORY_UNAVAILABLE"
+    assert "synthetic storage" not in str(exc.value.detail)
+    editor.save.assert_not_awaited()
+    editor.provider.assert_not_awaited()
+
+
+async def test_missing_property_mapping_is_rejected_before_any_mutation(editor):
+    editor.connection.pop("hotel_code")
+    with pytest.raises(HTTPException) as exc:
+        await apply(request())
+    assert exc.value.detail["error_code"] == "EXELY_PROPERTY_MAPPING_REQUIRED"
+    editor.save.assert_not_awaited()
+    editor.provider.assert_not_awaited()
+
+
+@pytest.mark.parametrize("provider,agency_only", [("hotelrunner", False), ("agency", False), ("exely", True)])
+async def test_new_endpoint_cannot_change_another_provider_mode(editor, monkeypatch, provider, agency_only):
+    monkeypatch.setattr(router, "_detect_active_provider", AsyncMock(return_value={"provider": provider, "connection": editor.connection}))
+    with pytest.raises(HTTPException) as exc:
+        await apply(request(3, agencies_only=agency_only, agency_ids=["synthetic-agency"] if agency_only else None))
+    assert exc.value.detail["error_code"] == "EXELY_REMAINING_MODE_REQUIRED"
+    editor.save.assert_not_awaited()
+    editor.provider.assert_not_awaited()
+
+
+async def test_full_24_month_range_is_allowed_without_provider_or_calendar_access(monkeypatch):
+    database = SimpleNamespace(exely_room_mappings=SimpleNamespace(find=MagicMock(return_value=cursor([
+        {"exely_room_code": ROOM, "exely_rate_plan_code": RATE, "pms_room_type": "Standard"},
+    ]))), room_night_locks=SimpleNamespace(find=MagicMock(return_value=cursor([]))))
+    monkeypatch.setattr(remaining_availability, "get_room_counts", AsyncMock(return_value=({"Standard": {"total": 8}}, {"Standard": [f"r{i}" for i in range(8)]})))
+    monkeypatch.setattr(remaining_availability, "get_active_bookings", AsyncMock(return_value=[]))
+    values = await remaining_availability.prepare_exely_remaining_values(database, TENANT, [(ROOM, RATE)], {ROOM: 8}, "2026-11-02", "2028-11-01", None)
+    assert len(values) == 731 and set(values.values()) == {8}
+    with pytest.raises(HTTPException):
+        await remaining_availability.prepare_exely_remaining_values(database, TENANT, [(ROOM, RATE)], {ROOM: 8}, "2026-11-02", "2028-11-02", None)
