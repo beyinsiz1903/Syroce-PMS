@@ -23,6 +23,7 @@ async def pricing(acceptance, monkeypatch):
     start = datetime.now(UTC).date() + timedelta(days=20)
     await a.db.rooms.update_one({'id': 'synthetic-room'}, {'$set': {'room_type': 'Standard', 'is_active': True, 'status': 'available'}})
     await a.db.guests.insert_one({'tenant_id': 'qa', 'id': 'synthetic-guest', 'name': 'Yapay Misafir'})
+    await a.db.hotel_settings.insert_one({'tenant_id': 'qa', 'currency': 'USD'})
     await a.db.revenue_settings.insert_one({'tenant_id': 'qa',
         'hurdle_rates': {'Standard': {'min_rate': 90, 'bar': 100, 'active': True}},
         'day_pricing': {'Standard': {('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')[start.weekday()]: {'rate': 80, 'min_stay': 2}}}})
@@ -76,6 +77,17 @@ async def test_stale_plan_different_total_currency_and_under_minimum_cannot_be_a
     await a.db.revenue_settings.update_one({'tenant_id': 'qa'}, {'$set': {'hurdle_rates.Standard.bar': 120}})
     with pytest.raises(HTTPException) as error:
         await accept_quote(a.db, 'qa', 'synthetic-room', start.isoformat(), (start + timedelta(days=2)).isoformat(), 'USD', 190, result['quote_hash'])
+    assert error.value.status_code == 409
+
+
+@pytest.mark.parametrize('code', [None, 'EUR'])
+async def test_missing_or_changed_hotel_currency_never_relabels_plan_money(pricing, code):
+    from fastapi import HTTPException
+
+    a, api, start = pricing
+    await a.db.hotel_settings.update_one({'tenant_id': 'qa'}, {'$set': {'currency': code}})
+    with pytest.raises(HTTPException) as error:
+        await calculate(a, start)
     assert error.value.status_code == 409
 
 

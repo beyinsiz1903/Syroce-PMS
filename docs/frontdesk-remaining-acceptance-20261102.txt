@@ -30,9 +30,10 @@ Düzeltmeler
   tekrarı aynı kimlikleri verir. Bu, bozuk bir grubu tahminle onarmak değildir.
 5 Gelir Kontrolleri BAR/gün fiyatı ve aktif alt fiyat sınırı yeni
   rezervasyonda açık operatör onayıyla kullanılabilir. Önce oda/tarih/
-  para birimiyle hesapla, sonra toplamı onayla. Planın ayrı bir para
-  birimi alanı olmadığından operatör seçili para birimini açıkça onaylar;
-  kur çevrimi veya varsayılan kur yoktur. Giriş günü minimum gece koşulu
+  para birimiyle hesapla, sonra toplamı onayla. Plan tutarları otelin
+  kayıtlı hotel_settings.currency kaynağına bağlıdır; başka rezervasyon
+  para birimi veya eksik kaynak409'dur. Sayılar başka para birimi diye
+  yeniden etiketlenmez; kur çevrimi/varsayılan kur yoktur. Giriş günü minimum gece koşulu
   ve pozitif kuruş hassasiyetli fiyatlar doğrulanır. Fiyat/plan kaynak
   hash'i kayıtta yeniden hesaplanır; değişmiş kaynak veya tutar 409'dur.
   Birlikte kişi bazlı fiyat/ikram seçimi reddedilir. Plan snapshot'ı
@@ -59,9 +60,9 @@ Düzeltmeler
 
 Yerel kanıt — gerçek loopback replica, gerçek HTTP handler ve kalıcı satırlar
 backend-broad-final.xml: 372 geçti; mevcut 162 utcnow deprecation uyarısı.
-new-backend-final-v3.xml: 88 geçti; 6 mevcut utcnow deprecation uyarısı.
-İki son koşu test kimlikleri örtüşmez: 460 ayrı backend kontrolü.
-frontend-full-final.xml: 2451 geçti, 0 hata/atlama. Yeni değişiklikler dahil.
+new-backend-final-v4.xml: 90 geçti; 6 mevcut utcnow deprecation uyarısı.
+İki son koşu test kimlikleri örtüşmez: 462 ayrı backend kontrolü.
+frontend-full-committed.xml: 2451 geçti, 0 hata/atlama. Yeni değişiklikler dahil.
 UI ilk koşusunun yanlış cwd kaynak okuma hataları ve yeni testin cleanup
 dönüş hatası başarı sayılmadı; doğru frontend cwd ile tam koşu tekrarlandı.
 Yeni testin beforeEach mock döndürmesi temizlendi; ürün hatası diye sunulmaz.
@@ -88,7 +89,7 @@ Diğer yeni hizmet hesabına20TRYspa+10TRYyemek ücreti eklendi. Her hesaba
 30TRY yalnız manuel kart-ledger kaydı yapıldı; aynı anahtar tekrarları
 yeni ödeme oluşturmadı. Kart numarası, PSP/banka veya gerçek para yok.
 Folyo/rezervasyon toplam tahsilat60TRY, eski sayaç0→60, iki hizmet
-folyosu0borç; günlük ve MTD tahsilat/gelir kaynakları60TRY arttı.
+folyosu0borç; günlük ve MTD tahsilat60TRY, MTD gelir kaynağı60TRY arttı.
 Sadece bu vardiya kapatıldı: nakit0/sayım0/fark0, kart60/2işlem, aktif
 vardiya yok. UTC07:07–07:11, UI Türkiye10:07–10:11 eşleşti. İş günü
 26Ekim takvim2Kasım saatine dönüştürülmedi. Kasa/Z ekranı ayrıca görüldü.
@@ -119,7 +120,7 @@ jurnali var. Plan değişen başarısız girişler korunur; kör tekrar yok.
 Ön Büro, Kat Hizmetleri, Odalar, Misafirler, Rezervasyonlar, Kasa, Upsell,
 Raporlar, Flash, Görevler, Geri Bildirim, Kontenjan, POS, Çamaşırhane,
 Concierge, Gelir Kontrolleri, Müdür, KBS ve KVKK envanteri korundu.
-372 geniş regresyon; yeni88; daha önceki hizmet→folyo→rapor ve günsonu
+372 geniş regresyon; yeni90; daha önceki hizmet→folyo→rapor ve günsonu
 kabul belgeleri birlikte okunur. Bu tur19sayfanın her düğmesi, her rol,
 her çıktı ve tüm kombinasyonları canlıda tekrar edilmedi. İlgili tarihçe:
   docs/department-folio-live-acceptance-20261030.txt

@@ -38,7 +38,7 @@ export default function RevenueBookingQuote({ roomId, arrival, departure, curren
     }
   };
   return <div className="space-y-2 rounded border p-3 text-xs">
-    <p>Gelir Kontrolleri’ndeki BAR/gün planını seçili para biriminde hesaplayın, toplamı kontrol ederek uygulayın. Mevcut rezervasyonlar ve kanallar değişmez; fazla satış izni verilmez.</p>
+    <p>Gelir Kontrolleri’ndeki BAR/gün planını otelin kayıtlı para biriminde hesaplayın, toplamı kontrol ederek uygulayın. Farklı para birimi için kur çevrilmez. Mevcut rezervasyonlar ve kanallar değişmez; fazla satış izni verilmez.</p>
     <Button type="button" variant="outline" size="sm" disabled={disabled || busy || !roomId || !arrival || !departure} onClick={calculate}>Planı {currency} olarak hesapla</Button>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {quote && <div>

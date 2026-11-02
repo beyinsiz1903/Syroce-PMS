@@ -30,11 +30,18 @@ async def quote(database, tenant_id, room_id, arrival, departure, currency):
         raise HTTPException(422, 'Konaklama 1–365 gece olmalıdır')
     if not isinstance(currency, str) or len(currency) != 3 or not currency.isalpha():
         raise HTTPException(422, 'Para birimi gereklidir')
-    # The caller explicitly asserts the denomination of the selected plan.
-    # No tenant default, FX conversion or channel-price overwrite is invented.
     currency = currency.upper()
+    # Revenue Controls displays prices in the hotel's configured currency.
+    # A booking selector must not reinterpret TRY plan numbers as USD/EUR.
+    # Read the explicit source, not a cached/silent TRY fallback on failure.
+    hotel = await database.hotel_settings.find_one({'tenant_id': tenant_id}, {'_id': 0, 'currency': 1}) or {}
+    plan_currency = hotel.get('currency')
+    if not isinstance(plan_currency, str) or len(plan_currency) != 3 or not plan_currency.isascii() or not plan_currency.isalpha():
+        raise HTTPException(409, 'Gelir planı için otelin kayıtlı para birimini doğrulayın; kur tahmini yapılmaz')
+    if currency != plan_currency.upper():
+        raise HTTPException(409, f'Gelir planı {plan_currency.upper()} cinsindedir; seçili {currency} için manuel fiyat girin. Otomatik kur çevrimi yapılmaz.')
     settings = await database.revenue_settings.find_one({'tenant_id': tenant_id}, {'_id': 0}) or {}
-    kind = str(room.get('room_type_id') or room.get('type_id') or room.get('room_type') or room.get('type') or '')
+    kind = str(room.get('room_type_id') or room.get('type_id') or room.get('room_type') or room.get('type') or '').strip()
     hurdle = (settings.get('hurdle_rates') or {}).get(kind) or {}
     by_day = (settings.get('day_pricing') or {}).get(kind) or {}
     rows = []
