@@ -110,6 +110,13 @@ class FrontdeskServiceV2:
                 "INVALID_STATUS",
             )
 
+        from core.kbs_readiness import booking_readiness
+
+        if await self._db.kbs_cloud_configs.find_one({'tenant_id': ctx.tenant_id, 'id': 'kbs_cloud_jandarma'}, {'_id': 1}):
+            readiness = await booking_readiness(self._db, ctx.tenant_id, booking_id)
+            if not readiness['ready']:
+                return ServiceResult.fail('KBS kimlik bilgilerini ve tüm konaklayanları girişten önce tamamlayın.', 'KBS_DATA_REQUIRED', readiness=readiness)
+
         # Room readiness validation
         room = await self._db.rooms.find_one({"id": booking.get("room_id"), "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not room:
@@ -197,8 +204,12 @@ class FrontdeskServiceV2:
         )
         await self._db.guests.update_one({"id": booking["guest_id"]}, {"$inc": {"total_stays": 1}})
 
+        from domains.pms.frontdesk_service import _enqueue_kbs_after_frontdesk_transition
+
+        kbs_jobs = await _enqueue_kbs_after_frontdesk_transition(ctx, booking_id, 'checkin')
         return ServiceResult.success(
             {
+                'kbs_queued': bool(kbs_jobs),
                 "message": "Check-in completed successfully",
                 "booking_id": booking_id,
                 "checked_in_at": checked_in_at.isoformat(),
@@ -535,8 +546,12 @@ class FrontdeskServiceV2:
                     read_preference=ReadPreference.PRIMARY,
                 )
 
+        from domains.pms.frontdesk_service import _enqueue_kbs_after_frontdesk_transition
+
+        kbs_jobs = await _enqueue_kbs_after_frontdesk_transition(ctx, booking_id, 'checkout')
         return ServiceResult.success(
             {
+                'kbs_queued': bool(kbs_jobs),
                 "message": "Check-out completed",
                 "booking_id": booking_id,
                 "checked_out_at": checked_out_at.isoformat(),
@@ -861,12 +876,23 @@ class FrontdeskServiceV2:
         guest_email: str | None = None,
         guest_phone: str | None = None,
         id_number: str | None = None,
+        identity: dict | None = None,
     ) -> ServiceResult:
         room = await self._db.rooms.find_one({"id": room_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not room:
             return ServiceResult.fail("Room not found", "NOT_FOUND")
         if room["status"] not in ("available", "inspected", "clean"):
             return ServiceResult.fail(f"Room not available. Status: {room['status']}", "ROOM_NOT_AVAILABLE")
+
+        from core.kbs_readiness import identity_issues
+
+        identity = identity or {}
+        managed = await self._db.kbs_cloud_configs.find_one({'tenant_id': ctx.tenant_id, 'id': 'kbs_cloud_jandarma'}, {'_id': 1})
+        if identity or managed:
+            missing = identity_issues({'guest_name': guest_name, 'id_number': id_number,
+                **identity, 'birth_date': identity.get('birth_date')})
+            if missing:
+                return ServiceResult.fail('KBS için misafir kimlik bilgilerini tamamlayın.', 'KBS_DATA_REQUIRED', missing_fields=missing)
 
         now = datetime.now(UTC)
         guest_id = str(uuid.uuid4())
@@ -881,6 +907,7 @@ class FrontdeskServiceV2:
             "email": guest_email,
             "phone": guest_phone,
             "id_number": id_number,
+            **identity,
             "total_stays": 1,
             "source": "walk_in",
             "created_at": now.isoformat(),
@@ -937,8 +964,12 @@ class FrontdeskServiceV2:
             {"$set": {"status": "occupied", "current_booking_id": booking_id}},
         )
 
+        from domains.pms.frontdesk_service import _enqueue_kbs_after_frontdesk_transition
+
+        kbs_jobs = await _enqueue_kbs_after_frontdesk_transition(ctx, booking_id, 'checkin')
         return ServiceResult.success(
             {
+                'kbs_queued': bool(kbs_jobs),
                 "message": "Walk-in check-in completed",
                 "booking_id": booking_id,
                 "guest_id": guest_id,

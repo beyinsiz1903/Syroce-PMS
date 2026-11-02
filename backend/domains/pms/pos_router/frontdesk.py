@@ -437,6 +437,12 @@ async def mobile_checkin(
         raise HTTPException(status_code=400, detail=f"Room {room.get('room_number')} is not available")
 
     # Create check-in record
+    from core.kbs_readiness import booking_readiness
+    if await db.kbs_cloud_configs.find_one({'tenant_id': current_user.tenant_id, 'id': 'kbs_cloud_jandarma'}, {'_id': 1}):
+        readiness = await booking_readiness(db, current_user.tenant_id, booking_id)
+        if not readiness['ready']:
+            raise HTTPException(422, {'error': 'KBS_DATA_REQUIRED', 'readiness': readiness,
+                'message': 'Girişten önce tüm konaklayanların KBS bilgilerini tamamlayın.'})
     checkin_id = str(uuid.uuid4())
     checkin_record = {
         "id": checkin_id,
@@ -463,17 +469,20 @@ async def mobile_checkin(
     # Update booking status
     await db.bookings.update_one(
         {"id": booking_id, "tenant_id": current_user.tenant_id},
-        {"$set": {"status": "checked_in", "room_id": room_id, "room_number": room.get("room_number"), "actual_check_in": datetime.now(UTC), "updated_at": datetime.now(UTC)}},
+        {"$set": {"status": "checked_in", "room_id": room_id, "room_number": room.get("room_number"), "checked_in_at": datetime.now(UTC).isoformat(), "actual_check_in": datetime.now(UTC), "updated_at": datetime.now(UTC)}},
     )
 
     # Update room status
     await db.rooms.update_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "occupied", "updated_at": datetime.now(UTC)}})
 
     # Get guest info
+    from core.kbs_auto_enqueue import auto_enqueue_kbs
+    kbs_jobs = await auto_enqueue_kbs(current_user.tenant_id, booking_id, "checkin", actor=f"user:mobile:{current_user.id}")
     guest = await db.guests.find_one({"id": booking.get("guest_id"), "tenant_id": current_user.tenant_id})
 
     return {
         "message": "Check-in completed successfully",
+        "kbs_queued": bool(kbs_jobs),
         "checkin_id": checkin_id,
         "booking_id": booking_id,
         "room_number": room.get("room_number"),

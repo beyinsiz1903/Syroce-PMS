@@ -213,7 +213,7 @@ async def test_dispatch_missing_data_dead_and_alert(tenant, monkeypatch):
 
 
 async def test_auto_enqueue_blocks_checkout_without_confirmed_checkin(tenant, monkeypatch):
-    """Onaylanmamış girişten sonra otomatik çıkış işi açılmaz."""
+    """Çıkış kaybolmaz; yalnız kendi girişinin kurum kabulünü bekler."""
     from core import kbs_auto_enqueue
     from core.tenant_db import get_system_db, tenant_context
 
@@ -252,14 +252,10 @@ async def test_auto_enqueue_blocks_checkout_without_confirmed_checkin(tenant, mo
     finally:
         kbs_auto_enqueue.db = saved_db
 
-    assert result is None
+    assert result and result[0]['awaiting_checkin'] is True
     assert await sys_db.kbs_reports.count_documents(
         {"_kind": QUEUE_KIND, "tenant_id": tenant, "booking_id": booking_id, "action": "checkout"}
-    ) == 0
-    alert = await sys_db.kbs_alerts.find_one(
-        {"tenant_id": tenant, "booking_id": booking_id, "kind": "checkin_not_confirmed"}
-    )
-    assert alert is not None
+    ) == 1
 
 
 async def test_dispatch_idempotent_no_double_send(tenant, monkeypatch):

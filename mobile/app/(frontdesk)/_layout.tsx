@@ -137,6 +137,7 @@ function FrontDeskLayoutContent() {
           tabBarIcon: tabIcon('bar-chart', 'bar-chart-outline'),
         }}
       />
+      <Tabs.Screen name="kbs" options={{ href: null, title: 'KBS bildirimleri', ...backOptions }} />
       <Tabs.Screen
         name="more"
         options={{

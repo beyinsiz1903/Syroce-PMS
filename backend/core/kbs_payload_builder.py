@@ -37,6 +37,8 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str, 
             "room_number": 1,
             "check_in": 1,
             "check_out": 1,
+            "checked_in_at": 1,
+            "checked_out_at": 1,
             "adults": 1,
             "children": 1,
             "status": 1,
@@ -51,12 +53,15 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str, 
     guest: dict = {}
 
     actual_guest_id = target_guest_id or booking.get("guest_id")
-    guest_check_out = booking.get("check_out", "")
+    guest_check_out = booking.get('checked_out_at') or booking.get("check_out", "")
+    guest_check_in = booking.get('checked_in_at') or booking.get('check_in', '')
 
     if target_guest_id and target_guest_id != booking.get("guest_id"):
-        bg_link = await database.booking_guests.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": target_guest_id}, {"_id": 0, "checkout_date": 1})
+        bg_link = await database.booking_guests.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": target_guest_id}, {"_id": 0, "checkout_date": 1, 'checkin_date': 1})
         if bg_link and bg_link.get("checkout_date"):
             guest_check_out = bg_link["checkout_date"]
+        if bg_link and bg_link.get('checkin_date'):
+            guest_check_in = bg_link['checkin_date']
 
     if actual_guest_id:
         from security.encrypted_lookup import decrypt_guest_doc
@@ -108,12 +113,12 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str, 
         "guest_name": guest_name,
         "phone": phone,
         "room_number": room_number,
-        "check_in": booking.get("check_in", ""),
+        "check_in": guest_check_in,
         "check_out": guest_check_out,
         "nationality": guest.get("nationality") or (booking.get("guest_nationality") if (not target_guest_id or target_guest_id == booking.get("guest_id")) else "TC") or "TC",
         "id_type": guest.get("id_type", ""),
         "id_number": guest.get("id_number", ""),
-        "passport_number": guest.get("passport_number", ""),
+        "passport_number": guest.get("passport_number") or (guest.get("id_number", "") if guest.get("id_type") == "passport" else ""),
         "birth_date": guest.get("birth_date") or guest.get("date_of_birth", ""),
         "gender": guest.get("gender", ""),
         "father_name": guest.get("father_name", ""),

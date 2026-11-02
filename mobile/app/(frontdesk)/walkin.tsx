@@ -8,6 +8,8 @@ import { haptic } from '../../src/hooks/useHaptic';
 import { listRooms, Room } from '../../src/api/rooms';
 import { walkInQuick } from '../../src/api/bookings';
 import { errorMessage } from '../../src/utils/errors';
+import { KbsIdentityFields } from '../../src/components/KbsIdentityFields';
+import { emptyKbsIdentity, kbsIdentityMissing, kbsMissingText } from '../../src/utils/kbs';
 
 const AVAILABLE_STATUSES = ['available', 'clean', 'inspected'];
 
@@ -15,6 +17,7 @@ export default function WalkInScreen() {
   const c = useTheme();
   const router = useRouter();
   const [name, setName] = useState('');
+  const [identity, setIdentity] = useState(emptyKbsIdentity);
   const [phone, setPhone] = useState('');
   const [roomType, setRoomType] = useState<string>('');
   const [rate, setRate] = useState<string>('0');
@@ -41,6 +44,8 @@ export default function WalkInScreen() {
   };
 
   const onConfirm = async () => {
+    const missing = kbsIdentityMissing({ ...identity, name });
+    if (missing.length) { setError(`KBS için tamamlayın: ${kbsMissingText(missing)}`); return; }
     if (!name || !suggested) {
       setError(tr.walkin.needNameRoom);
       haptic.warning();
@@ -56,10 +61,13 @@ export default function WalkInScreen() {
         nights: 1,
         rate_amount: parseFloat(rate || '0') || 0,
         payment_method: 'cash',
+        nationality: identity.nationality, id_type: identity.id_type, id_number: identity.id_number || undefined,
+        passport_number: identity.passport_number || undefined, birth_date: identity.date_of_birth || undefined, gender: identity.gender || undefined,
       });
       haptic.success();
       // Inline success state (NOT Alert.alert — a no-op on Expo Web).
       setDone(true);
+      setIdentity(emptyKbsIdentity());
     } catch (e: unknown) {
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();
@@ -105,7 +113,7 @@ export default function WalkInScreen() {
       ) : null}
 
       <Card>
-        <Field label={tr.walkin.name} value={name} onChangeText={setName} autoCapitalize="words" />
+        <KbsIdentityFields value={{ ...identity, name }} onChange={v => { setIdentity(v); setName(v.name); }} />
         <View style={{ height: spacing.sm }} />
         <Field label={tr.walkin.phone} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
       </Card>

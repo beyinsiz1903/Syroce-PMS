@@ -20,6 +20,7 @@ async def test_claim_rehydrates_the_target_occupant_not_the_primary_guest(monkey
     reports = SimpleNamespace(
         find_one=AsyncMock(
             side_effect=[
+                None,  # No expired, potentially delivered browser lease.
                 {
                     "booking_id": "booking-206",
                     "guest_id": "guest-secondary",

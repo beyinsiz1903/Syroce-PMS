@@ -81,6 +81,7 @@ export const ROUTES = {
   availability: '/(frontdesk)/availability',
   frontdeskRooms: '/(frontdesk)/rooms',
   frontdeskReports: '/(frontdesk)/reports',
+  frontdeskKbs: '/(frontdesk)/kbs',
   frontdeskGuests: '/(frontdesk)/guests',
   frontdeskMore: '/(frontdesk)/more',
   frontdeskMessages: '/(frontdesk)/messages',

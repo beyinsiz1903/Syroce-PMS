@@ -988,7 +988,7 @@ async def dayuse_auto_checkout(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     today = now.strftime("%Y-%m-%d")
     due_bookings = await db.bookings.find(
         {"tenant_id": current_user.tenant_id, "booking_type": "day_use", "status": "checked_in", "check_out": {"$lte": now.isoformat()}},
@@ -1003,6 +1003,8 @@ async def dayuse_auto_checkout(
         if result.modified_count != 1:
             continue
         checked_out_count += 1
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+        await auto_enqueue_kbs(current_user.tenant_id, booking["id"], "checkout", actor="system:dayuse-auto-checkout")
         if booking.get("room_id"):
             await db.rooms.update_one(
                 {"tenant_id": current_user.tenant_id, "id": booking["room_id"]},

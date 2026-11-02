@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ROUTES } from '../../src/navigation/routes';
+import { mobileTargetAllowed } from '../../src/navigation/routeAccess';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ActionButton,
@@ -83,6 +85,8 @@ function Row({ label, value }: { label: string; value?: string | number | null }
 
 export default function ReservationDetailScreen() {
   const c = useTheme();
+  const router = useRouter();
+  const kbsUser = useAuthStore(s => s.user);
   const p = useLocalSearchParams<{
     id: string;
     guest_name?: string;
@@ -474,6 +478,7 @@ export default function ReservationDetailScreen() {
     >
       <OfflineBanner visible={offline} />
 
+      {mobileTargetAllowed(kbsUser, ROUTES.frontdeskKbs) && <Button title="KBS kimlik kontrolü ve bildirimler" icon="shield-checkmark-outline" variant="secondary" testID="reservation-kbs" onPress={() => router.push({ pathname: ROUTES.frontdeskKbs, params: { booking_id: id } })} />}
       <DetailHeader
         title={guestName || tr.reservations.guest}
         subtitle={booking?.booking_number || p.booking_number ? `#${booking?.booking_number || p.booking_number}` : tr.reservations.detailTitle}

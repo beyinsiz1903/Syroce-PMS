@@ -31,7 +31,11 @@ class KBSCredentialsMissing(Exception):
 
 
 class KBSSendError(Exception):
-    """KBS uç noktası gönderimi reddetti veya geçerli referans dönmedi (retry'lanır)."""
+    """A rejection is retryable; an ambiguous delivery must never be resent."""
+
+    def __init__(self, message: str, *, uncertain: bool = False):
+        self.uncertain = uncertain
+        super().__init__(message)
 
 
 def kbs_test_mode() -> bool:
@@ -134,12 +138,11 @@ async def send_kbs_notification(payload: dict, action: str = "checkin") -> str:
     except EgressDenied as exc:
         # Yapılandırma hatası (private-IP / çözümlenemeyen host); retry boşuna.
         raise KBSSendError(f"KBS_API_URL egress reddedildi: {exc}") from exc
-    except Exception as exc:  # noqa: BLE001 — ağ/timeout → retry edilebilir
-        raise KBSSendError(f"KBS gönderim ağ hatası: {exc}") from exc
+    except Exception:  # A timeout may occur AFTER the remote commit.
+        raise KBSSendError('delivery_unknown_check_authority', uncertain=True) from None
 
     if resp.status_code >= 400:
-        snippet = (resp.text or "")[:300]
-        raise KBSSendError(f"KBS uç noktası HTTP {resp.status_code}: {snippet}")
+        raise KBSSendError(f'KBS uç noktası HTTP {resp.status_code}', uncertain=resp.status_code >= 500 or resp.status_code == 409)
 
     try:
         data = resp.json()
@@ -148,5 +151,5 @@ async def send_kbs_notification(payload: dict, action: str = "checkin") -> str:
 
     reference = _extract_reference(data)
     if not reference:
-        raise KBSSendError(f"KBS yanıtında referans yok (HTTP {resp.status_code})")
+        raise KBSSendError('delivery_unknown_check_authority', uncertain=True)
     return reference

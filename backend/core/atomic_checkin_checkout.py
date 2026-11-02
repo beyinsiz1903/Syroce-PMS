@@ -71,6 +71,13 @@ async def check_in_booking_atomic(
     now = datetime.now(UTC)
     now_iso = now.isoformat()
 
+    from core.kbs_readiness import booking_readiness
+
+    if await db.kbs_cloud_configs.find_one({'tenant_id': tenant_id, 'id': 'kbs_cloud_jandarma'}, {'_id': 1}):
+        readiness = await booking_readiness(db, tenant_id, booking_id)
+        if not readiness['ready']:
+            raise CheckInError('KBS kimlik bilgilerini ve tüm konaklayanları girişten önce tamamlayın.')
+
     import os
 
     async def _txn(session):
@@ -247,17 +254,18 @@ async def check_in_booking_atomic(
         actor_id,
     )
 
+    kbs_queued = False
     # KBS auto-enqueue (transaction sonrası, non-blocking).
     # Hata olursa log'lar; check-in başarısız olmaz.
     try:
         from core.kbs_auto_enqueue import auto_enqueue_kbs
 
-        await auto_enqueue_kbs(
+        kbs_queued = bool(await auto_enqueue_kbs(
             tenant_id,
             booking_id,
             action="checkin",
             actor=f"system:checkin:{actor_id}",
-        )
+        ))
     except Exception as e:
         logger.warning("KBS auto-enqueue (checkin) failed: %s", e)
 
@@ -267,6 +275,7 @@ async def check_in_booking_atomic(
         "room_id": room_id,
         "room_number": room_number,
         "checked_in_at": now_iso,
+        "kbs_queued": kbs_queued,
     }
 
 
@@ -533,16 +542,17 @@ async def check_out_booking_atomic(
     except Exception:
         pass
 
+    kbs_queued = False
     # KBS auto-enqueue (transaction sonrası, non-blocking).
     try:
         from core.kbs_auto_enqueue import auto_enqueue_kbs
 
-        await auto_enqueue_kbs(
+        kbs_queued = bool(await auto_enqueue_kbs(
             tenant_id,
             booking_id,
             action="checkout",
             actor=f"system:checkout:{actor_id}",
-        )
+        ))
     except Exception as e:
         logger.warning("KBS auto-enqueue (checkout) failed: %s", e)
 
@@ -558,6 +568,7 @@ async def check_out_booking_atomic(
         "booking_id": booking_id,
         "room_id": room_id,
         "checked_out_at": now_iso,
+        "kbs_queued": kbs_queued,
     }
 
 

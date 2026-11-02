@@ -220,7 +220,7 @@ async def _claim_one(db, now: datetime, *, tenant_id: str | None = None, recover
     return job
 
 
-async def _complete(db, job: dict, reference: str, *, receipt_metadata: dict | None = None) -> None:
+async def _complete(db, job: dict, reference: str, *, receipt_metadata: dict | None = None) -> bool:
     """in_progress → done (CAS), booking bayrağı + legacy report (router pariteli)."""
     tenant_id = job["tenant_id"]
     job_id = job["id"]
@@ -242,6 +242,7 @@ async def _complete(db, job: dict, reference: str, *, receipt_metadata: dict | N
                 "completed_at": now_iso,
                 "updated_at": now_iso,
                 "kbs_test": is_test_ref,
+                'awaiting_checkin': False,
                 **(receipt_metadata or {}),
             },
             "$unset": {"_open_lock": ""},
@@ -249,7 +250,7 @@ async def _complete(db, job: dict, reference: str, *, receipt_metadata: dict | N
     )
     if cas.modified_count == 0:
         logger.warning("KBS dispatch complete CAS no-op (lease drift?): job=%s", job_id)
-        return
+        return False
 
     if job.get("action") == "checkout":
         booking_update = {
@@ -270,8 +271,14 @@ async def _complete(db, job: dict, reference: str, *, receipt_metadata: dict | N
     # retain their original primary-booking behavior during migration.
     if job.get("guest_id"):
         booking_query["guest_id"] = job["guest_id"]
-    await db.bookings.update_one(booking_query, {"$set": booking_update})
-    await db.kbs_reports.insert_one(
+    try:
+        await db.bookings.update_one(booking_query, {"$set": booking_update})
+        if job.get('action') == 'checkin' and not is_test_ref:
+            await db.kbs_reports.update_many({'tenant_id': tenant_id, '_kind': QUEUE_KIND,
+                'booking_id': job['booking_id'], 'guest_id': job.get('guest_id'), 'action': 'checkout',
+                'status': 'pending', 'awaiting_checkin': True},
+                {'$set': {'next_retry_at': now_iso, 'awaiting_checkin': False, 'last_error': None}})
+        await db.kbs_reports.insert_one(
         {
             "_kind": REPORT_KIND,
             "id": str(uuid.uuid4()),
@@ -288,7 +295,13 @@ async def _complete(db, job: dict, reference: str, *, receipt_metadata: dict | N
             "kbs_test": is_test_ref,
             "created_at": now_iso,
         }
-    )
+        )
+    except Exception:
+        # Acceptance is already durable in the queue CAS above. A secondary
+        # projection/report fault must not resend an accepted guest or stop
+        # the next job. Its durable receipt remains the source of truth.
+        await _raise_alert(db, tenant_id, kind='receipt_projection_failed', job=job, error='receipt_projection_failed')
+    return True
 
 
 async def _fail(db, job: dict, error: str) -> bool:
@@ -403,7 +416,7 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
     Returns: özet sözlük.
     """
     now_iso = _iso(_now())
-    from core.kbs_cloud import dispatch_cloud_jobs
+    from core.kbs_cloud import _hold_delivery, dispatch_cloud_jobs
 
     cloud = await dispatch_cloud_jobs(db, limit=limit)
 
@@ -420,11 +433,17 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
 
     sent = failed = dead = missing = 0
     processed = 0
+    from core.kbs_readiness import defer_checkout
+    async for stale in db.kbs_reports.find({'_kind': QUEUE_KIND, 'status': 'in_progress',
+        'worker_id': WORKER_ID, 'leased_until': {'$lt': now_iso}}):
+        await _hold_delivery(db, stale, 'delivery_unknown_check_authority', uncertain=True, transport='generic_server')
     for _ in range(max(1, limit)):
-        job = await _claim_one(db, _now())
+        job = await _claim_one(db, _now(), recover_expired=False)
         if job is None:
             break
         processed += 1
+        if not kbs_test_mode() and await defer_checkout(db, job):
+            continue
 
         # max_attempts aşıldıysa hemen dead (router claim pariteli)
         if job.get("attempts", 0) > job.get("max_attempts", DEFAULT_MAX_ATTEMPTS):
@@ -452,12 +471,23 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
 
         # Rehydrate at send time so room moves and identity corrections made
         # after enqueue are reflected in the legal notification.
-        _booking, _guest, current_payload = await build_kbs_payload_snapshot(
-            db,
-            job["tenant_id"],
-            job["booking_id"],
-        )
-        payload = current_payload or job.get("payload") or {}
+        try:
+            _booking, _guest, current_payload = await build_kbs_payload_snapshot(
+                db, job['tenant_id'], job['booking_id'], job.get('guest_id'))
+            if not _booking or not _guest:
+                await _handle_missing_data(db, job, ['guest_record'])
+                missing += 1
+                continue
+            if job.get('guest_id') and job['guest_id'] != _booking.get('guest_id') and not await db.booking_guests.find_one({
+                'tenant_id': job['tenant_id'], 'booking_id': job['booking_id'], 'guest_id': job['guest_id']}, {'_id': 1}):
+                await _handle_missing_data(db, job, ['guest_record'])
+                missing += 1
+                continue
+            payload = current_payload
+        except Exception:
+            await _handle_missing_data(db, job, ['source_unavailable'])
+            missing += 1
+            continue
         await db.kbs_reports.update_one(
             {"_kind": QUEUE_KIND, "tenant_id": job["tenant_id"], "id": job["id"]},
             {"$set": {"payload": payload, "updated_at": _iso(_now())}},
@@ -488,20 +518,26 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
             logger.warning("KBS dispatch: kimlik bilgisi kayboldu, iş geri bırakıldı: %s", exc)
             break
         except KBSSendError as exc:
+            if exc.uncertain:
+                await _hold_delivery(db, job, 'delivery_unknown_check_authority', uncertain=True, transport='generic_server')
+                dead += 1
+                continue
             if await _fail(db, job, str(exc)):
                 failed += 1
             else:
                 dead += 1
             continue
-        except Exception as exc:  # noqa: BLE001 — beklenmedik → retry'lanır
-            if await _fail(db, job, f"unexpected: {exc}"):
-                failed += 1
-            else:
-                dead += 1
+        except Exception:
+            await _hold_delivery(db, job, 'delivery_unknown_check_authority', uncertain=True, transport='generic_server')
+            dead += 1
             continue
 
-        await _complete(db, job, reference)
-        sent += 1
+        try:
+            if await _complete(db, job, reference):
+                sent += 1
+        except Exception:
+            await _hold_delivery(db, job, 'delivery_unknown_check_authority', uncertain=True, transport='generic_server')
+            dead += 1
 
     return {
         "processed": processed,

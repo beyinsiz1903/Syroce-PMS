@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -8,18 +8,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import KBSGuestFields from './KBSGuestFields';
+import { emptyKbsIdentity } from '@/lib/kbsIdentity';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { COUNTRIES } from '@/lib/countries';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  Shield, Send, CheckCircle, AlertTriangle, Clock,
-  Download, Search, UserCog, Loader2, RefreshCw, Skull, ListPlus, Trash2
+  Shield, Send, CheckCircle,
+  Search, UserCog, Loader2, RefreshCw, Download
 } from 'lucide-react';
 
-const escapeXml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-const EMPTY_LIST = Object.freeze([]);
+
 
 const getApiErrorMessage = (error, fallback) => {
   const detail = error?.response?.data?.detail;
@@ -93,32 +91,9 @@ const isTurkishGuest = (guest) => {
   return ['', 'TC', 'TR', 'TUR', 'TURKIYE'].includes(nationality);
 };
 
-const isForeignIdentityCard = (guest) => (
-  ['foreign_identity_card', 'foreign_id', 'yabanci_kimlik', 'yabanci_kimlik_karti', 'ykn']
-    .includes(String(guest?.id_type || '').trim().toLowerCase())
-);
-
-const hasMissingKbsData = (guest) => (
-  !guest?.id_number || (!isTurkishGuest(guest) && !guest?.birth_date)
-);
-
-const toKbsGuest = (booking, linkedGuest, unknownLabel) => ({
-  id: booking.id,
-  booking_id: booking.booking_id || booking.id,
-  guest_id: booking.guest_id || booking.guestId || linkedGuest?.id || booking.id,
-  guest_name: booking.guest_name || booking.guestName || linkedGuest?.name || linkedGuest?.full_name || unknownLabel,
-  room_number: booking.room_number || booking.roomNumber || '-',
-  check_in: booking.check_in || booking.checkIn,
-  check_out: booking.check_out || booking.checkOut,
-  nationality: booking.guest_nationality || booking.nationality || linkedGuest?.nationality || 'TR',
-  id_type: booking.id_type || linkedGuest?.id_type || 'tc_kimlik',
-  id_number: booking.id_number || linkedGuest?.id_number || linkedGuest?.passport_number || '',
-  birth_date: booking.birth_date || booking.date_of_birth || linkedGuest?.birth_date || linkedGuest?.date_of_birth || '',
-  kbs_status: booking.kbs_status || 'pending',
-  kbs_sent_at: booking.kbs_sent_at || null,
-  kbs_reference: booking.kbs_reference || null,
-  kbs_action: booking.kbs_action || booking.action || 'checkin',
-});
+const hasMissingKbsData = (guest) => Array.isArray(guest?.missing_fields)
+  ? guest.missing_fields.length > 0
+  : !guest?.id_number || (!isTurkishGuest(guest) && !guest?.birth_date);
 
 const kbsDeliveryKey = (row) => {
   const bookingId = String(row?.booking_id || row?.id || '');
@@ -127,6 +102,17 @@ const kbsDeliveryKey = (row) => {
   return bookingId ? `${bookingId}:${guestId}:${action}` : '';
 };
 
+const reasonText = (row) => ({
+  missing_data: 'Eksik veya geçersiz misafir bilgisi — tamamlanmalı.',
+  already_registered: 'Kurum aynı kimlik için tesiste açık kayıt bildirdi. Yeni gönderimden önce kurum kaydı uzlaştırılmalı.',
+  delivery_uncertain: 'Teslim sonucu belirsiz — mükerrer kayıt oluşturmamak için kurumdan kontrol edilmeli.',
+  awaiting_checkin: 'Bu misafirin giriş kabulü alınmadan çıkış gönderilemez.',
+  authority_rejected: 'Kurum veya gönderici bildirimi reddetti — kayıt ve bağlantı bilgileri kontrol edilmeli.',
+  processing: 'Gönderim sürüyor; kurum kabulü henüz alınmadı.',
+  test_only: 'Test sonucu resmî bildirim değildir.',
+  awaiting_delivery: 'Kurum kabulü henüz alınmadı. Gönderim bağlantısı ve otomatik gönderici kontrol edilmeli.',
+}[row.status_reason] || 'Gönderim sonucu doğrulanamadı.');
+
 const readTenantKbsSetting = (name, tenantId) => {
   const scoped = localStorage.getItem(`${name}:${tenantId || 'default'}`);
   // Eski surumlerde ayar otel baglamindan bagimsiz tutuluyordu. Ilk okumada
@@ -134,7 +120,7 @@ const readTenantKbsSetting = (name, tenantId) => {
   return scoped ?? localStorage.getItem(name);
 };
 
-const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId = '' }) => {
+const KBSNotification = ({ tenantId = '' }) => {
   const { t } = useTranslation();
   const tk = (k) => t(`pmsComponents.kbs.${k}`);
 
@@ -145,15 +131,17 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const [activeTab, setActiveTab] = useState('pending');
   const [sending, setSending] = useState(false);
   const [editDialog, setEditDialog] = useState(null);
-  const [editForm, setEditForm] = useState({ id_type: 'tc_kimlik', id_number: '', birth_date: '', nationality: '' });
+  const [editForm, setEditForm] = useState(emptyKbsIdentity);
   const [savingGuestInfo, setSavingGuestInfo] = useState(false);
 
   // Faz 1 kuyruk altyapısı entegrasyonu
-  const [queueJobs, setQueueJobs] = useState([]);
   const [queueLoading, setQueueLoading] = useState(false);
-  const [clearingQueue, setClearingQueue] = useState(false);
-  const [enqueuingId, setEnqueuingId] = useState(null);
+  const [listError, setListError] = useState(false);
+  const [page, setPage] = useState(0);
+  const [listMeta, setListMeta] = useState({ counts: { sent: 0, not_sent: 0 }, has_more: false, hidden_unresolved_count: 0 });
   const [cloudStatus, setCloudStatus] = useState(null);
+  const listRequestRef = useRef(0);
+  const listTenantRef = useRef(tenantId);
 
   // KBS tarayici eklentisi (otel IP'sinden gonderim) entegrasyonu
   const [extInfo, setExtInfo] = useState({ present: false, state: 'absent', states: {}, version: '', installId: '' });
@@ -172,7 +160,10 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const drainingRef = useRef(false);
 
   useEffect(() => {
+    listTenantRef.current = tenantId;
+    listRequestRef.current += 1;
     setCloudStatus(null);
+    setPendingGuests([]); setSentHistory([]); setEditDialog(null); setEditForm(emptyKbsIdentity()); setPage(0);
     try {
       setAuthority(readTenantKbsSetting('kbs_ext_authority', tenantId) === 'jandarma' ? 'jandarma' : 'polis');
       setAutoSend(readTenantKbsSetting('kbs_ext_autosend', tenantId) === '1');
@@ -183,40 +174,26 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   }, [tenantId]);
 
   const fetchQueue = useCallback(async () => {
+    const requestId = ++listRequestRef.current;
     setQueueLoading(true);
     try {
-      const res = await axios.get('/kbs/queue', {
-        params: { status: 'pending,in_progress,failed,dead', limit: 200 },
+      const res = await axios.get('/kbs/notifications', {
+        params: { group: activeTab === 'sent' ? 'sent' : 'not_sent', skip: page * 50, limit: 50 },
       });
-      // Savunmaci ilk filtre: eski bir backend tum statuleri dondurse bile
-      // done isleri kuyruk adaylarina alma. Kalici KBS durumu asagida ayrica
-      // rezervasyon kimligi uzerinden tum eski denemeleri eler.
-      setQueueJobs((res.data?.jobs || []).filter(job => job.status !== 'done'));
+      if (requestId !== listRequestRef.current || tenantId !== listTenantRef.current) return;
+      if (!Array.isArray(res.data?.items)) throw new Error('invalid_notification_list');
+      const rows = res.data.items.map(item => ({
+        ...item, kbs_action: item.action, kbs_status: item.delivery_group === 'sent' ? 'sent' : 'pending',
+        kbs_sent_at: item.completed_at,
+      }));
+      setPendingGuests(rows.filter(row => row.delivery_group === 'not_sent'));
+      setSentHistory(rows.filter(row => row.delivery_group === 'sent'));
+      setListMeta(res.data);
+      setListError(false);
     } catch {
-      // Sessiz: ilk yüklemede backend kuyruk dolmamış olabilir
-    } finally {
-      setQueueLoading(false);
-    }
-  }, []);
-
-  const clearQueue = async () => {
-    if (!window.confirm(
-      `${queueJobs.length} KBS kuyruk kaydı silinecek. Resmi gönderim geçmişi korunacak. Devam edilsin mi?`,
-    )) return;
-    setClearingQueue(true);
-    try {
-      const res = await axios.delete('/kbs/queue', {
-        params: { confirm: 'KBS_KUYRUGUNU_TEMIZLE' },
-      });
-      setQueueJobs([]);
-      toast.success(`${res.data?.deleted_count || 0} eski kuyruk kaydı temizlendi`);
-      await fetchQueue();
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'KBS kuyruğu temizlenemedi'));
-    } finally {
-      setClearingQueue(false);
-    }
-  };
+      if (requestId === listRequestRef.current) setListError(true); // Never show failure as empty/successful.
+    } finally { if (requestId === listRequestRef.current) setQueueLoading(false); }
+  }, [activeTab, page, tenantId]);
 
   useEffect(() => {
     fetchQueue();
@@ -247,60 +224,6 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     };
   }, [fetchQueue]);
 
-  const enqueueBooking = async (bookingId, action = 'checkin', guestId = null) => {
-    if (!bookingId) return;
-    const deliveryKey = `${bookingId}:${action}`;
-    setEnqueuingId(deliveryKey);
-    try {
-      const res = await axios.post('/kbs/queue', {
-        booking_id: bookingId, action, guest_id: guestId || undefined,
-      });
-      toast.success(res.data?.created ? tk('addedToQueue') : tk('alreadyQueued'));
-      fetchQueue();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, tk('addToQueueError')));
-    } finally {
-      setEnqueuingId(null);
-    }
-  };
-
-  const retryDeadJob = async (job) => {
-    // dead ya da legacy başarısız iş için: aynı booking + action ile force=true
-    try {
-      await axios.post('/kbs/queue', {
-        booking_id: job.booking_id,
-        action: job.action || 'checkin',
-        force: true,
-      });
-      toast.success(tk('retryQueued'));
-      fetchQueue();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, tk('retryError')));
-    }
-  };
-
-  const requeueJob = async (job) => {
-    // done ama KBS'de kayıt yok (resmi olmayan referans): pending'e geri al
-    try {
-      await axios.post(`/kbs/queue/${job.id}/requeue`, null, {
-        params: { reason: 'manual_resend' },
-      });
-      toast.success('Bildirim tekrar kuyruğa alındı — gönderim sonucunu kuyruktan takip edin');
-      fetchQueue();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Tekrar kuyruğa alma başarısız');
-    }
-  };
-
-  // Eski sahte endpoint'in ürettiği 8 haneli yerel referanslar ve TEST
-  // sonuçları gerçek teslimat kanıtı değildir. JANDARMA-* ise kurumun SOAP
-  // Basarili=true / HataKodu=100 cevabından sonra üretilen yerel makbuzdur.
-  const isUnverifiedRef = (ref) => {
-    if (!ref) return true;
-    return ref.startsWith('TEST-') || /^[0-9A-F]{8}$/.test(ref);
-  };
-
-  // --- KBS tarayici eklentisi: kuyrugu otel IP'sinden gonderme ---
   const refreshExt = useCallback(async () => {
     try {
       const info = await pingExtension();
@@ -359,7 +282,6 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     };
 
     setPendingGuests(prev => prev.filter(row => kbsDeliveryKey(row) !== deliveryKey));
-    setQueueJobs(prev => prev.filter(jobRow => kbsDeliveryKey(jobRow) !== deliveryKey));
     setSentHistory(prev => {
       const existing = prev.find(row => kbsDeliveryKey(row) === deliveryKey);
       return [
@@ -400,7 +322,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
       const extensionError = error?.message || 'extension_send_failed';
       try {
         await axios.post(`/kbs/queue/${job.id}/fail`,
-          { worker_id: workerId, error: extensionError, retry: true },
+          { worker_id: workerId, error: 'delivery_unknown_check_authority', retry: false, delivery_uncertain: true },
           { headers: { 'Idempotency-Key': idem } });
       } catch {
         // Sunucu fail kaydi da ulasilamazsa lease bitiminde is yeniden alinabilir.
@@ -438,6 +360,11 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
         markBookingSent(claimed, sent.reference);
         return { status: 'ok', reference: sent.reference, error: '' };
       } catch (error) {
+        try {
+          await axios.post(`/kbs/queue/${job.id}/fail`,
+            { worker_id: workerId, error: 'delivery_unknown_check_authority', retry: false, delivery_uncertain: true },
+            { headers: { 'Idempotency-Key': newIdemKey() } });
+        } catch { /* Already completed or offline: never resend this uncertain lease. */ }
         return {
           status: 'fail',
           reference: '',
@@ -483,20 +410,6 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
       setLastDrain({ ok, fail, at: new Date().toISOString() });
       fetchQueue();
     }
-  }, [extReady, extInfo.installId, processJobViaExtension, fetchQueue]);
-
-  const sendJobViaExtension = useCallback(async (job) => {
-    if (!extReady || !extInfo.installId) {
-      toast.error('KBS eklentisi kurulu/yapilandirilmis degil');
-      return;
-    }
-    const workerId = `ext:${extInfo.installId}`;
-    const r = await processJobViaExtension(job, workerId);
-    if (r?.status === 'ok') toast.success(`KBS kabulü doğrulandı. Yerel teslim kaydı: ${r.reference}`);
-    else if (r?.status === 'test') toast.error('Test modu sonucu gönderilmiş sayılmadı. Eklentiyi canlı moda alın.');
-    else if (r?.status === 'fail') toast.error(cleanKbsError(r.error, 'KBS gönderimi başarısız; başarılı olarak kaydedilmedi.'));
-    else toast.error('İş şu anda alınamadı (başka worker veya bekleme süresi).');
-    fetchQueue();
   }, [extReady, extInfo.installId, processJobViaExtension, fetchQueue]);
 
   const toggleAutoSend = () => {
@@ -549,46 +462,6 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     return () => clearInterval(id);
   }, [autoSend, refreshExt, drainViaExtension]);
 
-  useEffect(() => {
-    let mounted = true;
-    const guestMap = new Map(guests.map(guest => [String(guest.id || guest._id), guest]));
-    const fallbackRows = bookings
-      .filter(booking => booking.status === 'checked_in')
-      .map(booking => {
-        const guestId = booking.guest_id || booking.guestId || booking.id;
-        return toKbsGuest(booking, guestMap.get(String(guestId)), tk('unknown'));
-      });
-    const applyRows = (rows) => {
-      if (!mounted) return;
-      setPendingGuests(rows.filter(row => row.kbs_status === 'pending'));
-      setSentHistory(rows.filter(row => row.kbs_status !== 'pending'));
-    };
-
-    // Render the already loaded PMS data immediately. The canonical KBS API
-    // then refreshes identity fields without blanking the page on a transient
-    // request failure or while the hotel's business day trails UTC.
-    applyRows(fallbackRows);
-
-    const fetchKbsGuests = async () => {
-      try {
-        const res = await axios.get('/kbs/guests', { params: { limit: 200 } });
-        if (!mounted) return;
-        if (!Array.isArray(res.data?.guests)) return;
-        const rowsByDelivery = new Map(fallbackRows.map(row => [kbsDeliveryKey(row), row]));
-        res.data.guests.forEach(booking => {
-          const guestId = booking.guest_id || booking.guestId || booking.id;
-          const apiRow = toKbsGuest(booking, guestMap.get(String(guestId)), tk('unknown'));
-          rowsByDelivery.set(kbsDeliveryKey(apiRow), apiRow);
-        });
-        applyRows([...rowsByDelivery.values()]);
-      } catch (err) {
-        console.error('KBS misafir listesi cekilemedi', err);
-      }
-    };
-    fetchKbsGuests();
-    return () => { mounted = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- t identity may change each render
-  }, [bookings, guests]);
   const sendToKBS = async (guest) => {
     setSending(true);
     try {
@@ -624,88 +497,9 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     }
   };
 
-  const sendAllToKBS = async () => {
-    const toSend = pendingGuests.filter(p => p.id_number);
-    if (toSend.length === 0) {
-      toast.error(tk('noValidRecords'));
-      return;
-    }
-    setSending(true);
-    try {
-      const jobs = [];
-      for (const guest of toSend) {
-        const res = await axios.post('/kbs/queue', {
-          booking_id: guest.booking_id || guest.id,
-          action: guest.kbs_action || 'checkin',
-          guest_id: guest.guest_id || undefined,
-        });
-        if (res.data?.job) jobs.push(res.data.job);
-      }
-
-      if (cloudStatus?.managed) {
-        toast.info(`${jobs.length} bildirim sunucu kuyruğunda; kurum kabulü henüz doğrulanmadı.`);
-        return;
-      }
-      if (!extReady || !extInfo.installId) {
-        toast.info(`${jobs.length} bildirim kuyruğa eklendi; henüz kuruma gönderilmedi.`);
-        return;
-      }
-
-      const workerId = `ext:${extInfo.installId}`;
-      let accepted = 0;
-      let failed = 0;
-      let firstError = '';
-      for (const job of jobs) {
-        const result = await processJobViaExtension(job, workerId);
-        if (result?.status === 'ok') accepted += 1;
-        else {
-          failed += 1;
-          if (!firstError && result?.error) firstError = result.error;
-        }
-      }
-      if (accepted > 0) toast.success(`${accepted} bildirimin kurum kabulü doğrulandı.`);
-      if (failed > 0) {
-        const detail = firstError ? ` İlk hata: ${cleanKbsError(firstError)}` : '';
-        toast.error(`${failed} bildirim doğrulanamadı ve başarılı sayılmadı.${detail}`);
-      }
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, tk('batchError')));
-    } finally {
-      fetchQueue();
-      setSending(false);
-    }
-  };
-
-  const downloadXML = () => {
-    const xmlLines = ['<?xml version="1.0" encoding="UTF-8"?>', '<KBSBildirimler>'];
-    pendingGuests.filter(g => g.id_number).forEach(g => {
-      xmlLines.push('  <Misafir>');
-      xmlLines.push(`    <AdSoyad>${escapeXml(g.guest_name)}</AdSoyad>`);
-      xmlLines.push(`    <KimlikNo>${escapeXml(g.id_number)}</KimlikNo>`);
-      xmlLines.push(`    <Uyruk>${escapeXml(g.nationality)}</Uyruk>`);
-      xmlLines.push(`    <OdaNo>${escapeXml(g.room_number)}</OdaNo>`);
-      xmlLines.push(`    <GirisTarihi>${escapeXml(g.check_in)}</GirisTarihi>`);
-      xmlLines.push(`    <CikisTarihi>${escapeXml(g.check_out)}</CikisTarihi>`);
-      xmlLines.push('  </Misafir>');
-    });
-    xmlLines.push('</KBSBildirimler>');
-    const blob = new Blob([xmlLines.join('\n')], { type: 'application/xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `kbs_notification_${new Date().toISOString().split('T')[0]}.xml`;
-    a.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast.success(tk('xmlDownloaded'));
-  };
-
   const openEditDialog = (guest) => {
-    setEditForm({
-      id_type: guest.id_type || (isTurkishGuest(guest) ? 'tc_kimlik' : 'passport'),
-      id_number: guest.id_number || '',
-      birth_date: guest.birth_date || '',
-      nationality: guest.nationality || '',
-    });
+    setEditForm({ ...emptyKbsIdentity(), nationality: guest.nationality || 'TR',
+      id_type: guest.id_type || (isTurkishGuest(guest) ? 'tc_kimlik' : 'passport') });
     setEditDialog(guest);
   };
 
@@ -713,28 +507,17 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     if (!editDialog) return;
     setSavingGuestInfo(true);
     try {
-      const normalizedForm = {
-        id_type: editForm.id_type,
-        id_number: editForm.id_number.trim(),
-        birth_date: editForm.birth_date,
-        nationality: String(editForm.nationality || '').trim().toUpperCase(),
-      };
-      await axios.patch(`/pms/guests/${editDialog.guest_id}/preferences`, {
-        id_type: normalizedForm.id_type,
-        id_number: normalizedForm.id_number,
-        birth_date: normalizedForm.birth_date,
-        nationality: normalizedForm.nationality,
-      });
-      setPendingGuests(prev => prev.map(p =>
-        p.id === editDialog.id ? { ...p, ...normalizedForm } : p
-      ));
-      toast.success(tk('updateSuccess'));
+      const { birth_date, ...fields } = editForm;
+      const body = Object.fromEntries(Object.entries({ ...fields, date_of_birth: birth_date })
+        .map(([key, value]) => [key, String(value || '').trim()]).filter(([, value]) => value));
+      await axios.put(`/kbs/booking/${encodeURIComponent(editDialog.booking_id)}/guests/${encodeURIComponent(editDialog.guest_id)}/identity`, body);
       setEditDialog(null);
-    } catch {
-      toast.error(tk('updateError'));
-    } finally {
-      setSavingGuestInfo(false);
-    }
+      setEditForm(emptyKbsIdentity());
+      toast.success(tk('updateSuccess'));
+      await fetchQueue();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, tk('updateError')));
+    } finally { setSavingGuestInfo(false); }
   };
 
   const filteredPending = pendingGuests.filter(g =>
@@ -743,126 +526,20 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const filteredSent = sentHistory.filter(g =>
     !searchTerm || g.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) || String(g.room_number).includes(searchTerm)
   );
-  const missingData = pendingGuests.filter(hasMissingKbsData);
-  const visibleQueueJobs = useMemo(() => {
-    const sentDeliveries = new Set(sentHistory.map(kbsDeliveryKey).filter(Boolean));
-    const sentLegacyDeliveries = new Set(sentHistory.map(row => {
-      const bookingId = String(row?.booking_id || row?.id || '');
-      const action = String(row?.kbs_action || row?.action || 'checkin');
-      return bookingId ? `${bookingId}:${action}` : '';
-    }).filter(Boolean));
-    return queueJobs.filter(job => (
-      job.status !== 'done'
-      && !sentDeliveries.has(kbsDeliveryKey(job))
-      && !(!job.guest_id && sentLegacyDeliveries.has(`${job.booking_id}:${job.action || 'checkin'}`))
-    ));
-  }, [queueJobs, sentHistory]);
-  const visibleQueueStats = useMemo(() => {
-    const stats = { pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0 };
-    visibleQueueJobs.forEach((job) => {
-      if (Object.hasOwn(stats, job.status)) stats[job.status] += 1;
-    });
-    return stats;
-  }, [visibleQueueJobs]);
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-semibold flex items-center gap-2">
-          <Shield className="h-5 w-5" /> {tk('title')}
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={downloadXML} disabled={pendingGuests.filter(p => p.id_number).length === 0}>
-            <Download className="h-4 w-4 mr-1" /> {tk('downloadXml')}
-          </Button>
-          <Button onClick={sendAllToKBS} disabled={pendingGuests.length === 0 || sending}>
-            <Send className="h-4 w-4 mr-1" /> {tk('sendAll')} ({pendingGuests.filter(p => p.id_number).length})
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xl font-semibold flex items-center gap-2"><Shield className="h-5 w-5" /> {tk('title')}</h2>
+        <Button type="button" variant="outline" onClick={fetchQueue} disabled={queueLoading} aria-label="KBS bildirimlerini yenile">
+          <RefreshCw className={queueLoading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /> Yenile
+        </Button>
       </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="bg-yellow-50 border-yellow-200">
-          <CardContent className="p-3 text-center">
-            <Clock className="w-5 h-5 mx-auto mb-1 text-yellow-600" />
-            <p className="text-2xl font-bold text-yellow-700">{pendingGuests.length}</p>
-            <p className="text-xs text-yellow-600">{tk('pendingNotif')}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-green-50 border-green-200">
-          <CardContent className="p-3 text-center">
-            <CheckCircle className="w-5 h-5 mx-auto mb-1 text-green-600" />
-            <p className="text-2xl font-bold text-green-700">{sentHistory.length}</p>
-            <p className="text-xs text-green-600">{tk('sentNotif')}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-red-50 border-red-200">
-          <CardContent className="p-3 text-center">
-            <AlertTriangle className="w-5 h-5 mx-auto mb-1 text-red-600" />
-            <p className="text-2xl font-bold text-red-700">{missingData.length}</p>
-            <p className="text-xs text-red-600">{tk('missingInfo')}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="p-3 text-center">
-            <Shield className="w-5 h-5 mx-auto mb-1 text-blue-600" />
-            <p className="text-2xl font-bold text-blue-700">{pendingGuests.filter(g => g.nationality !== 'TC').length}</p>
-            <p className="text-xs text-blue-600">{tk('foreignNational')}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Faz 3: Agent Kuyruğu Durum Çubuğu */}
-      <div className="rounded-lg border bg-gray-50 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-semibold text-gray-700 flex items-center gap-2">
-            <ListPlus className="w-4 h-4 text-gray-500" />
-            {tk('queueStatusBar')}
-          </div>
-          <div className="flex items-center gap-1">
-            {queueJobs.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearQueue} disabled={clearingQueue}
-                className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
-                <Trash2 className="w-3 h-3 mr-1" />
-                {clearingQueue ? 'Temizleniyor…' : 'Kuyruğu sıfırla'}
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={fetchQueue} disabled={queueLoading}
-              className="h-7 px-2 text-xs" aria-label="KBS kuyruğunu yenile">
-              <RefreshCw className={`w-3 h-3 ${queueLoading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <div className="text-center bg-white rounded border-yellow-200 border p-2">
-            <Clock className="w-4 h-4 mx-auto text-yellow-600" />
-            <p className="text-lg font-bold text-yellow-700">{visibleQueueStats.pending}</p>
-            <p className="text-[10px] text-yellow-700">{tk('qPending')}</p>
-          </div>
-          <div className="text-center bg-white rounded border-blue-200 border p-2">
-            <Loader2 className="w-4 h-4 mx-auto text-blue-600" />
-            <p className="text-lg font-bold text-blue-700">{visibleQueueStats.in_progress}</p>
-            <p className="text-[10px] text-blue-700">{tk('qInProgress')}</p>
-          </div>
-          <div className="text-center bg-white rounded border-green-200 border p-2">
-            <CheckCircle className="w-4 h-4 mx-auto text-green-600" />
-            <p className="text-lg font-bold text-green-700">{visibleQueueStats.done}</p>
-            <p className="text-[10px] text-green-700">{tk('qDone')}</p>
-          </div>
-          <div className="text-center bg-white rounded border-amber-200 border p-2">
-            <AlertTriangle className="w-4 h-4 mx-auto text-amber-600" />
-            <p className="text-lg font-bold text-amber-700">{visibleQueueStats.failed}</p>
-            <p className="text-[10px] text-amber-700">{tk('qFailed')}</p>
-          </div>
-          <div className="text-center bg-white rounded border-red-200 border p-2">
-            <Skull className="w-4 h-4 mx-auto text-red-600" />
-            <p className="text-lg font-bold text-red-700">{visibleQueueStats.dead}</p>
-            <p className="text-[10px] text-red-700">{tk('qDead')}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* KBS tarayici eklentisi: otelin IP adresinden gonderim */}
+      <p className="text-sm text-gray-600">Giriş ve çıkış bildirimleri otomatik hazırlanır. Yalnız kurum kabulü alınanlar gönderilmiş sayılır. Misafirler gerçek çıkışlarından 24 saat sonra bu listeden kalkar; teslim ve denetim kayıtları silinmez.</p>
+      {!!listMeta.hidden_unresolved_count && <p role="status" className="text-sm text-amber-700">
+        Görünürlük süresi dolmuş {listMeta.hidden_unresolved_count} bildirim hâlâ sonuçlanmamış. Kişi bilgileri ana listede gösterilmez; yönetici denetim kayıtlarından takip etmelidir.
+      </p>}
+      <details className="rounded border p-3">
+        <summary className="cursor-pointer text-sm font-medium">Bağlantı ve gönderim ayarları</summary>
       <KBSCloudSettings key={tenantId} tenantId={tenantId} onStatusChange={setCloudStatus} />
       {!cloudStatus?.managed && <div className="rounded-lg border bg-gray-50 p-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -933,293 +610,72 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
         </p>
       </div>}
 
+
+      </details>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input className="pl-9" placeholder={tk('searchPlaceholder')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+        <Input aria-label="Misafir veya oda ara" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Misafir veya oda ara" className="pl-9" />
       </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex w-full justify-start overflow-x-auto">
-          <TabsTrigger className="shrink-0" value="pending">{tk('pendingTab')} ({pendingGuests.length})</TabsTrigger>
-          <TabsTrigger className="shrink-0" value="sent">{tk('sentTab')} ({sentHistory.length})</TabsTrigger>
-          <TabsTrigger className="shrink-0" value="missing">{tk('missingTab')} ({missingData.length})</TabsTrigger>
-          <TabsTrigger className="shrink-0" value="queue">{tk('queueTab')} ({visibleQueueJobs.length})</TabsTrigger>
+      {listError && <div role="alert" className="rounded border border-red-300 p-3 text-red-700">Bildirim listesi yenilenemedi. Görünen bilgiler eski olabilir; gönderilmiş varsaymayın.</div>}
+      <Tabs value={activeTab} onValueChange={tab => { setActiveTab(tab); setPage(0); }}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="sent">Gönderilen ({listMeta.counts?.sent || 0})</TabsTrigger>
+          <TabsTrigger value="pending">Gönderilmeyen ({listMeta.counts?.not_sent || 0})</TabsTrigger>
         </TabsList>
-
         <TabsContent value="pending" className="space-y-2">
-          {filteredPending.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">
-              <Shield className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-              <p>{tk('noPending')}</p>
-            </div>
-          ) : filteredPending.map(guest => {
-            const bookingId = guest.booking_id || guest.id;
-            const action = guest.kbs_action || 'checkin';
-            const deliveryKey = kbsDeliveryKey(guest);
-            return (
-            <Card key={deliveryKey}>
-              <CardContent className="p-3 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium">{guest.guest_name}</span>
-                    <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
-                    <Badge variant="secondary">{guest.nationality}</Badge>
-                    {!guest.id_number && (
-                      <button
-                        type="button"
-                        onClick={() => openEditDialog(guest)}
-                        className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-                        aria-label={`${tk('idMissing')}: ${guest.guest_name}`}
-                      >
-                        <Badge variant="destructive" className="cursor-pointer hover:bg-red-700">
-                          {tk('idMissing')}
-                        </Badge>
-                      </button>
-                    )}
+          {!listError && !queueLoading && !filteredPending.length && <p className="py-6 text-center text-gray-500">Bu görünümde gönderilmeyen bildirim yok.</p>}
+          {filteredPending.map(guest => {
+            const reason = reasonText(guest);
+            const blocked = ['already_registered', 'delivery_uncertain', 'awaiting_checkin', 'test_only'].includes(guest.status_reason);
+            return <Card key={kbsDeliveryKey(guest)}>
+              <CardContent className="flex flex-wrap items-start justify-between gap-3 p-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{guest.guest_name}</span>
+                    <Badge variant="outline">Oda {guest.room_number || '—'}</Badge>
+                    <Badge variant="outline">{guest.kbs_action === 'checkout' ? 'Çıkış bildirimi' : 'Giriş bildirimi'}</Badge>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {tk('checkinDate')} {guest.check_in ? new Date(guest.check_in).toLocaleDateString() : '-'} |
-                    {tk('checkoutDate')} {guest.check_out ? new Date(guest.check_out).toLocaleDateString() : '-'}
-                  </div>
+                  <p className="text-sm text-amber-800">{reason}</p>
                 </div>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="outline"
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      enqueueBooking(bookingId, action, guest.guest_id);
-                    }}
-                    disabled={enqueuingId === deliveryKey}>
-                    <ListPlus className="h-3 w-3 mr-1" /> {tk('addToQueue')}
-                  </Button>
-                  {hasMissingKbsData(guest) ? (
-                    <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
-                      <UserCog className="h-3 w-3 mr-1" /> {tk('updateInfo')}
-                    </Button>
-                  ) : (
-                    <Button type="button" size="sm" onClick={() => sendToKBS(guest)} disabled={sending}>
-                      <Send className="h-3 w-3 mr-1" /> {tk('send')}
-                    </Button>
-                  )}
+                <div className="flex flex-wrap gap-2">
+                  {guest.guest_id && listMeta.can_edit && hasMissingKbsData(guest) && <Button type="button" variant="outline" size="sm" onClick={() => openEditDialog(guest)} aria-label={`${tk('idMissing')}: ${guest.guest_name}`}>
+                    <UserCog className="mr-1 h-3 w-3" /> {tk('updateInfo')}
+                  </Button>}
+                  {!guest.guest_id && <a className="text-sm underline" href={`/app/pms#reservations`}>Konaklayan bilgilerini tamamla</a>}
+                  {!hasMissingKbsData(guest) && !blocked && guest.guest_id && <Button type="button" size="sm" onClick={() => sendToKBS(guest)} disabled={sending || guest.status === 'in_progress'}>
+                    <Send className="mr-1 h-3 w-3" /> {tk('send')}
+                  </Button>}
                 </div>
               </CardContent>
-            </Card>
-            );
+            </Card>;
           })}
         </TabsContent>
-
         <TabsContent value="sent" className="space-y-2">
-          {filteredSent.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">
-              <CheckCircle className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-              <p>{tk('noSent')}</p>
-            </div>
-          ) : filteredSent.map(guest => (
-            <Card key={kbsDeliveryKey(guest)}>
-              <CardContent className="p-3 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="font-medium">{guest.guest_name}</span>
-                    <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
-                    <Badge variant="outline">
-                      {guest.kbs_action === 'checkout' ? 'Çıkış bildirimi' : 'Giriş bildirimi'}
-                    </Badge>
-                    {guest.kbs_reference && <Badge variant="secondary">{tk('ref')} {guest.kbs_reference}</Badge>}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {tk('sentAt')} {guest.kbs_sent_at ? new Date(guest.kbs_sent_at).toLocaleString() : '-'}
-                  </div>
-                </div>
-                <Badge className="bg-green-100 text-green-800">{tk('sent')}</Badge>
-              </CardContent>
-            </Card>
-          ))}
-        </TabsContent>
-
-        <TabsContent value="missing" className="space-y-2">
-          {missingData.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">
-              <CheckCircle className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-              <p>{tk('allComplete')}</p>
-            </div>
-          ) : missingData.map(guest => (
-            <Card key={kbsDeliveryKey(guest)} className="border-red-200">
-              <CardContent className="p-3 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <AlertTriangle className="h-4 w-4 text-red-500" />
-                    <span className="font-medium">{guest.guest_name}</span>
-                    <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
-                  </div>
-                  <div className="text-xs text-red-600 mt-1">
-                    {tk('missing')} {!guest.id_number ? (isTurkishGuest(guest) ? tk('idNumber') + ' ' : isForeignIdentityCard(guest) ? 'YKN ' : 'Pasaport No ') : ''}{!isTurkishGuest(guest) && !guest.birth_date ? tk('birthDate') : ''}
-                  </div>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
-                  <UserCog className="w-3.5 h-3.5 mr-1" /> {tk('updateInfo')}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </TabsContent>
-
-        {/* Faz 3: Kuyruk sekmesi — agent app'in çalıştığı işler */}
-        <TabsContent value="queue" className="space-y-2">
-          {visibleQueueJobs.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">
-              <ListPlus className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-              <p>{tk('noQueueJobs')}</p>
-            </div>
-          ) : visibleQueueJobs.map(job => {
-            const statusColors = {
-              pending: 'bg-yellow-100 text-yellow-800',
-              in_progress: 'bg-blue-100 text-blue-800',
-              done: 'bg-green-100 text-green-800',
-              failed: 'bg-amber-100 text-amber-800',
-              dead: 'bg-red-100 text-red-800',
-            };
-            const statusLabel = {
-              pending: tk('qPending'), in_progress: tk('qInProgress'),
-              done: tk('qDone'), failed: tk('qFailed'), dead: tk('qDead'),
-            }[job.status] || job.status;
-            const guestName = job.payload?.guest_name || tk('unknown');
-            const room = job.payload?.room_number || '-';
-            const isDuplicateAtAuthority = isRemoteAlreadyRegisteredKbsError(job.last_error);
-            const isPayloadRefreshRequired = isPayloadRefreshKbsError(job.last_error);
-            const isRetryable = (job.status === 'dead' || job.status === 'failed') && !isDuplicateAtAuthority && !job.delivery_uncertain;
-            return (
-              <Card key={job.id}>
-                <CardContent className="p-3 flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium">{guestName}</span>
-                      <Badge variant="outline">{tk('room')} {room}</Badge>
-                      <Badge className={statusColors[job.status] || ''}>
-                        {statusLabel}
-                      </Badge>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {tk('qAttempts')}: {job.attempts || 0}/{job.max_attempts || 5}
-                      </Badge>
-                      {job.action && (
-                        <Badge variant="outline" className="text-[10px]">
-                          {job.action}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                      {job.kbs_reference && (
-                        <div className="text-green-600">
-                          {tk('qKbsRef')}: <span className="font-mono">{job.kbs_reference}</span>
-                        </div>
-                      )}
-                      {job.worker_id && (
-                        <div>{tk('qWorker')}: <span className="font-mono">{job.worker_id}</span></div>
-                      )}
-                      {job.last_error && (
-                        <div className="text-red-600 truncate" title={job.last_error}>
-                          {tk('qLastError')}: {cleanKbsError(job.last_error)}
-                        </div>
-                      )}
-                      {job.next_retry_at && job.status === 'pending' && (
-                        <div>{tk('qNextRetry')}: {new Date(job.next_retry_at).toLocaleString()}</div>
-                      )}
-                      <div className="text-gray-400">
-                        {tk('qCreatedAt')}: {job.created_at ? new Date(job.created_at).toLocaleString() : '-'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {extReady && job.status === 'pending' && (
-                          <Button size="sm" variant="outline" onClick={() => sendJobViaExtension(job)}>
-                            <Send className="h-3 w-3 mr-1" /> Eklenti ile gonder
-                          </Button>
-                        )}
-                        {isRetryable && (
-                          <Button size="sm" variant="outline" onClick={() => retryDeadJob(job)}>
-                            <RefreshCw className="h-3 w-3 mr-1" /> {isPayloadRefreshRequired ? 'Bilgiyi yenile ve tekrar dene' : tk('retry')}
-                          </Button>
-                        )}
-                        {job.status === 'done' && isUnverifiedRef(job.kbs_reference) && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-amber-400 text-amber-700 hover:bg-amber-50"
-                            onClick={() => requeueJob(job)}
-                            title="Bu bildirim KBS'ye resmi olarak ulaşmamış olabilir. Tekrar göndermek için tıklayın."
-                          >
-                            <RefreshCw className="h-3 w-3 mr-1" /> Tekrar Gönder
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {!listError && !queueLoading && !filteredSent.length && <p className="py-6 text-center text-gray-500">Bu görünümde gönderilen bildirim yok.</p>}
+          {filteredSent.map(guest => <Card key={kbsDeliveryKey(guest)}>
+            <CardContent className="space-y-1 p-3">
+              <div className="flex flex-wrap items-center gap-2"><CheckCircle className="h-4 w-4 text-green-600" /><span className="font-medium">{guest.guest_name}</span>
+                <Badge variant="outline">Oda {guest.room_number || '—'}</Badge><Badge variant="outline">{guest.kbs_action === 'checkout' ? 'Çıkış bildirimi' : 'Giriş bildirimi'}</Badge></div>
+              <p className="text-sm text-green-700">Kurum kabulü alındı · {guest.kbs_sent_at ? new Date(guest.kbs_sent_at).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }) : 'Teslim kaydı mevcut'}</p>
+            </CardContent>
+          </Card>)}
         </TabsContent>
       </Tabs>
-
-      <Dialog open={!!editDialog} onOpenChange={o => { if (!o) setEditDialog(null); }}>
+      <div className="flex justify-between gap-2">
+        <Button type="button" variant="outline" disabled={!page || queueLoading} onClick={() => setPage(p => Math.max(0, p - 1))}>Önceki</Button>
+        <Button type="button" variant="outline" disabled={!listMeta.has_more || queueLoading} onClick={() => setPage(p => p + 1)}>Sonraki</Button>
+      </div>
+      <Dialog open={!!editDialog} onOpenChange={open => { if (!open) { setEditDialog(null); setEditForm(emptyKbsIdentity()); } }}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{tk('updateTitle')}</DialogTitle>
-          </DialogHeader>
-          {editDialog && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">{editDialog.guest_name} - {tk('room')} {editDialog.room_number}</p>
-              <div>
-                <Label htmlFor="kbs-guest-nationality">{tk('nationality', 'Uyruk')}</Label>
-                <Select value={editForm.nationality} onValueChange={val => setEditForm({ ...editForm, nationality: val })}>
-                  <SelectTrigger id="kbs-guest-nationality"><SelectValue placeholder="TR" /></SelectTrigger>
-                  <SelectContent>
-                    {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="kbs-guest-id-type">Belge türü</Label>
-                <Select value={editForm.id_type} onValueChange={val => setEditForm({ ...editForm, id_type: val })}>
-                  <SelectTrigger id="kbs-guest-id-type"><SelectValue placeholder="Belge türünü seçin" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="tc_kimlik">T.C. Kimlik Kartı</SelectItem>
-                    <SelectItem value="foreign_identity_card">Yabancı Kimlik Kartı (YKN)</SelectItem>
-                    <SelectItem value="passport">Pasaport</SelectItem>
-                    <SelectItem value="driver_license">Ehliyet</SelectItem>
-                    <SelectItem value="other">Diğer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="kbs-guest-id-number">
-                  {editForm.id_type === 'foreign_identity_card' ? 'Yabancı Kimlik No (YKN)'
-                    : editForm.id_type === 'passport' ? 'Pasaport No' : tk('idLabel')}
-                </Label>
-                <Input
-                  id="kbs-guest-id-number"
-                  value={editForm.id_number}
-                  onChange={e => setEditForm({ ...editForm, id_number: e.target.value })}
-                  placeholder={tk('idPlaceholder')}
-                  autoComplete="off"
-                />
-              </div>
-              <div>
-                <Label htmlFor="kbs-guest-birth-date">{tk('birthDateLabel')}</Label>
-                <Input
-                  id="kbs-guest-birth-date"
-                  type="date"
-                  value={editForm.birth_date}
-                  onChange={e => setEditForm({ ...editForm, birth_date: e.target.value })}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setEditDialog(null)} disabled={savingGuestInfo}>{tk('cancel')}</Button>
-                <Button onClick={saveGuestInfo} disabled={savingGuestInfo}>
-                  {savingGuestInfo && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  {tk('save')}
-                </Button>
-              </div>
+          <DialogHeader><DialogTitle>{tk('updateTitle')}</DialogTitle></DialogHeader>
+          {editDialog && <div className="space-y-3">
+            <p>{editDialog.guest_name} · Oda {editDialog.room_number || '—'}</p>
+            <p className="text-sm text-gray-600">Yalnız tamamlayacağınız alanları girin. Mevcut kimlik numaraları bu ekranda gösterilmez.</p>
+            <KBSGuestFields value={editForm} onChange={setEditForm} />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => { setEditDialog(null); setEditForm(emptyKbsIdentity()); }} disabled={savingGuestInfo}>{tk('cancel')}</Button>
+              <Button type="button" onClick={saveGuestInfo} disabled={savingGuestInfo}>{savingGuestInfo && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}{tk('save')}</Button>
             </div>
-          )}
+          </div>}
         </DialogContent>
       </Dialog>
     </div>

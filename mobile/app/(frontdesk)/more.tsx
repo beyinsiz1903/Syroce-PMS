@@ -9,6 +9,7 @@ import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
+import { mobileTargetAllowed } from '../../src/navigation/routeAccess';
 import { useSettingsStore } from '../../src/state/settingsStore';
 import { getApiUrl } from '../../src/api/client';
 import {
@@ -110,6 +111,7 @@ export default function MoreScreen() {
       <Card style={{ gap: spacing.sm }}>
         <H2>Operasyon kısayolları</H2>
         <Muted>Günlük sekmelerin dışında kalan araçlar.</Muted>
+        {mobileTargetAllowed(user, ROUTES.frontdeskKbs) && <Button title="KBS bildirimleri" icon="shield-checkmark-outline" variant="secondary" onPress={() => router.push(ROUTES.frontdeskKbs)} testID="more-kbs" fullWidth />}
         <Button
           title={tr.tabs.bookings}
           icon="reader-outline"

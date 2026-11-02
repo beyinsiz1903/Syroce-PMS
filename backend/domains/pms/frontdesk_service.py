@@ -162,6 +162,17 @@ class FrontdeskService:
         if not room:
             return ServiceResult.fail("Assigned room was not found for this hotel", "ROOM_ASSIGNMENT_REQUIRED")
 
+        # Only a tenant that has explicitly adopted the cloud KBS workflow
+        # gets the strict identity gate. Unconfigured/international hotels are
+        # not silently opted into a new governmental integration.
+        from core.kbs_readiness import booking_readiness
+
+        if await self._db.kbs_cloud_configs.find_one({'tenant_id': ctx.tenant_id, 'id': 'kbs_cloud_jandarma'}, {'_id': 1}):
+            readiness = await booking_readiness(self._db, ctx.tenant_id, booking_id)
+            if not readiness['ready']:
+                return ServiceResult.fail('KBS kimlik bilgilerini ve tüm konaklayanları girişten önce tamamlayın.',
+                    'KBS_DATA_REQUIRED', readiness=readiness)
+
         # If room is dirty/cleaning and force_clean requested, clean it first
         room_status = room.get("status")
         if room_status in ("dirty", "cleaning") and force_clean:
@@ -459,6 +470,12 @@ class FrontdeskService:
             return ServiceResult.fail("Kanal kaydı henüz PMS'e kabul edilmedi; önce eşleştirmeyi inceleyin", "CHANNEL_MAPPING_REQUIRED")
         if booking.get("status") not in {"confirmed", "guaranteed"}:
             return ServiceResult.fail("Rezervasyon check-in için uygun durumda değil", "INVALID_BOOKING_STATUS")
+        from core.kbs_readiness import booking_readiness
+        if await self._db.kbs_cloud_configs.find_one({'tenant_id': ctx.tenant_id, 'id': 'kbs_cloud_jandarma'}, {'_id': 1}):
+            readiness = await booking_readiness(self._db, ctx.tenant_id, booking["id"])
+            if not readiness['ready']:
+                return ServiceResult.fail('Girişten önce tüm konaklayanların KBS bilgilerini tamamlayın.',
+                    'KBS_DATA_REQUIRED', readiness=readiness)
         try:
             await enforce_business_date_transition(
                 self._db,

@@ -47,10 +47,12 @@ export function mobileRouteAllowed(user: ServerAccessContext, segments: readonly
     reservations: 'bookings', reservation: 'bookings', availability: 'bookings',
     checkin: 'bookings', checkout: 'bookings', walkin: 'bookings', 'new-reservation': 'bookings',
     guests: 'guests', reports: 'frontdesk', notifications: 'frontdesk',
-    messages: 'frontdesk', tasks: 'frontdesk', fault: 'frontdesk',
+    messages: 'frontdesk', tasks: 'frontdesk', fault: 'frontdesk', kbs: 'frontdesk',
   };
   const page = pages[screen];
   if (!page) return false;
-  const operations: Record<string, string> = { checkin: 'checkin', checkout: 'checkout', walkin: 'create_booking', 'new-reservation': 'create_booking' };
+  const operations: Record<string, string> = { checkin: 'checkin', checkout: 'checkout', walkin: 'create_booking', 'new-reservation': 'create_booking', kbs: 'view_reports' };
+  if (screen === 'kbs' && hasServerAccess(user, page, operations[screen]) === undefined)
+    return a.frontdeskAccess && ['admin', 'super_admin', 'supervisor', 'front_desk'].includes(user.role || '');
   return hasServerAccess(user, page, operations[screen]) ?? a.frontdeskAccess;
 }

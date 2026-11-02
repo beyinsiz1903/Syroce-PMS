@@ -133,14 +133,17 @@ async def kiosk_checkin(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    result = await frontdesk_service.checkin(OperationContext.from_user(current_user), booking_id)
+    if not result.ok:
+        raise HTTPException(422 if result.code == 'KBS_DATA_REQUIRED' else 409, {'message': result.error, **result.meta})
     room_key = f"DK-{booking.get('room_number', 'X')}-{str(uuid.uuid4())[:6].upper()}"
-    await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "checked_in", "checked_in_at": datetime.now(UTC).isoformat(), "kiosk_checkin": True}})
     return {
         "success": True,
         "message": f"Kiosk check-in basarili: Oda {booking.get('room_number')}",
         "room_key": room_key,
         "room_number": booking.get("room_number"),
         "note": "Kiosk entegrasyonu aktif. Dijital anahtar olusturuldu.",
+        'kbs_queued': result.data.get('kbs_queued', False),
     }
 
 
@@ -170,6 +173,8 @@ async def check_in_guest(
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.checkin(ctx, booking_id, create_folio, force_clean)
     if not result.ok:
+        if result.code == 'KBS_DATA_REQUIRED':
+            raise HTTPException(422, {'error': result.code, 'message': result.error, **result.meta})
         code_map = {
             "NOT_FOUND": 404,
             "ALREADY_CHECKED_IN": 400,
@@ -1030,6 +1035,20 @@ async def create_walk_in_booking(
             await guard.release()
             raise
 
+        from core.kbs_readiness import identity_issues
+        managed_kbs = bool(await db.kbs_cloud_configs.find_one(
+            {'tenant_id': current_user.tenant_id, 'id': 'kbs_cloud_jandarma'}, {'_id': 1}))
+        if managed_kbs and req.adults + req.children > 1:
+            await guard.release()
+            raise HTTPException(422, 'Her konaklayan için kimlik kaydı gerekli; önce rezervasyonu ve tüm konaklayanları ekleyin.')
+        if managed_kbs:
+            missing_identity = identity_issues({'guest_name': req.guest_name, 'nationality': req.nationality,
+                'id_type': req.id_type, 'id_number': req.guest_id_number,
+                'passport_number': req.passport_number, 'birth_date': req.birth_date, 'gender': req.gender})
+            if missing_identity:
+                await guard.release()
+                raise HTTPException(422, {'error': 'kbs_payload_incomplete', 'missing_fields': missing_identity})
+
         # 2. Create or find guest
         guest_email = req.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
 
@@ -1046,6 +1065,15 @@ async def create_walk_in_booking(
 
         if existing_guest:
             guest_id = existing_guest["id"]
+            if managed_kbs:
+                from security.encrypted_lookup import decrypt_guest_doc
+                canonical = decrypt_guest_doc(existing_guest)
+                missing_identity = identity_issues({**canonical, 'guest_name': canonical.get('name'),
+                    'birth_date': canonical.get('birth_date') or canonical.get('date_of_birth')})
+                if missing_identity:
+                    await guard.release()
+                    raise HTTPException(422, {'error': 'kbs_payload_incomplete', 'missing_fields': missing_identity,
+                        'message': 'Eşleşen mevcut misafirin kimlik bilgilerini önce tamamlayın.'})
         else:
             # Create new guest
             new_guest = Guest(
@@ -1053,8 +1081,12 @@ async def create_walk_in_booking(
                 name=req.guest_name,
                 email=guest_email,
                 phone=req.guest_phone,
-                id_number=req.guest_id_number or f"WALKIN-{uuid.uuid4().hex[:8]}",
+                id_number=req.guest_id_number or "",
                 nationality=req.nationality,
+                passport_number=req.passport_number,
+                id_type=req.id_type,
+                birth_date=req.birth_date,
+                gender=req.gender,
             )
 
             guest_dict = new_guest.model_dump()
@@ -1111,49 +1143,10 @@ async def create_walk_in_booking(
         except CheckInError as e:
             raise HTTPException(status_code=400, detail=f"Walk-in booking created but check-in failed: {e}")
 
-        # 6. KBS auto-notify when a real ID number was provided (TC kimlik / passport)
-        # Skips placeholder IDs (those start with "WALKIN-").
+        # The atomic check-in already enqueues KBS. A random local reference
+        # is NOT an authority receipt and must never mark this stay as sent.
         kbs_notified = False
         kbs_reference = None
-        try:
-            real_id = (req.guest_id_number or "").strip()
-            if real_id and not real_id.upper().startswith("WALKIN-"):
-                kbs_reference = str(uuid.uuid4())[:8].upper()
-                kbs_doc = {
-                    "_id": str(uuid.uuid4()),
-                    "tenant_id": current_user.tenant_id,
-                    "booking_id": new_booking.id,
-                    "kbs_reference": kbs_reference,
-                    "status": "sent",
-                    "sent_at": datetime.now(UTC).isoformat(),
-                    "sent_by": current_user.email,
-                    "source": "walk_in_auto",
-                    "guest_data": {
-                        "name": req.guest_name,
-                        "id_number": real_id,
-                        "nationality": req.nationality,
-                        "phone": req.guest_phone,
-                    },
-                }
-                await db.kbs_notifications.insert_one(kbs_doc)
-                await db.bookings.update_one(
-                    {"id": new_booking.id, "tenant_id": current_user.tenant_id},
-                    {
-                        "$set": {
-                            "kbs_status": "sent",
-                            "kbs_sent_at": datetime.now(UTC).isoformat(),
-                            "kbs_reference": kbs_reference,
-                        }
-                    },
-                )
-                kbs_notified = True
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).exception(
-                "KBS auto-notify failed for walk-in booking %s; booking remains valid",
-                new_booking.id,
-            )
 
         result = {
             "success": True,
@@ -1167,6 +1160,7 @@ async def create_walk_in_booking(
             "checked_in_at": checkin_result.get("checked_in_at"),
             "kbs_notified": kbs_notified,
             "kbs_reference": kbs_reference,
+            'kbs_queued': checkin_result.get('kbs_queued', False),
         }
         await guard.complete(result)
         return result
@@ -1319,51 +1313,19 @@ async def capture_digital_signature(
 async def auto_police_notification(
     booking_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),
 ):
-    """
-    Automatic police notification
-    - Required by law in many countries
-    - Guest ID information
-    - Automated submission
-    """
-    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
-
+    """Compatibility route: enqueue; never invent a police acceptance."""
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    from security.encrypted_lookup import decrypt_guest_doc
-
-    guest = decrypt_guest_doc(await db.guests.find_one({"id": booking.get("guest_id"), "tenant_id": current_user.tenant_id}))
-
-    if not guest:
-        raise HTTPException(status_code=404, detail="Guest not found")
-
-    notification_data = {
-        "id": str(uuid.uuid4()),
-        "booking_id": booking_id,
-        "guest_name": guest.get("name"),
-        "guest_id_number": guest.get("id_number"),
-        "nationality": guest.get("nationality"),
-        "check_in": booking.get("check_in"),
-        "check_out": booking.get("check_out"),
-        "room_number": None,  # Get from room
-        "submitted_at": datetime.now(UTC).isoformat(),
-        "status": "submitted",
-        "reference_number": f"POL-{uuid.uuid4().hex[:8].upper()}",
-    }
-
-    await db.police_notifications.insert_one(notification_data)
-
-    return {
-        "success": True,
-        "notification_id": notification_data["id"],
-        "reference_number": notification_data["reference_number"],
-        "status": "submitted",
-        "message": "Police notification submitted successfully",
-        "note": "In production: Integrate with local police system (GIYBIS, Alloggiati Web, etc.)",
-    }
-
+        raise HTTPException(404, "Booking not found")
+    if booking.get("status") not in {"checked_in", "checked_out"}:
+        raise HTTPException(409, "KBS bildirimi için gerçek giriş işlemi gerekli")
+    from core.kbs_auto_enqueue import auto_enqueue_kbs
+    jobs = await auto_enqueue_kbs(current_user.tenant_id, booking_id, "checkin", actor=f"user:{current_user.id}")
+    return {"success": bool(jobs), "status": "queued" if jobs else "not_sent",
+        "kbs_queued": bool(jobs), "reference_number": None,
+        "message": "Kurum kabulü henüz doğrulanmadı; KBS bildirim durumundan takip edin."}
 
 # ============= NIGHT AUDIT SYSTEM =============
 
