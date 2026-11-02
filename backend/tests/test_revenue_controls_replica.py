@@ -14,6 +14,22 @@ from tests.test_revenue_control_settings import DAY, HURDLE, USER, WALK, patch
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('deleted_at', ['2026-10-20T09:00:00+00:00', ''])
+async def test_deleted_only_category_cannot_save_rates_or_walk_record(db, monkeypatch, deleted_at):
+    monkeypatch.setattr(ops, 'db', db)
+    await db.rooms.insert_one({'tenant_id': USER.tenant_id, 'room_type': 'Junior Suite', 'deleted_at': deleted_at})
+    for action in (
+        lambda: ops.save_revenue_settings(patch(), current_user=USER),
+        lambda: ops.process_walk_out(WALK, current_user=USER),
+    ):
+        with pytest.raises(HTTPException) as error:
+            await action()
+        assert error.value.status_code == 400
+    for collection in ('revenue_settings', 'walk_out_records', 'bookings', 'payments', 'folio_charges'):
+        assert await db[collection].count_documents({}) == 0
+
+
+@pytest.mark.asyncio
 async def test_sections_reload_conflict_and_tenant_isolation(db, monkeypatch):
     monkeypatch.setattr(ops, "db", db)
     await db.rooms.insert_many([{"id": "r1", "tenant_id": USER.tenant_id, "room_type": "Junior Suite"},

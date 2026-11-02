@@ -21,8 +21,9 @@ def calendar_day(value):
 async def quote(database, tenant_id, room_id, arrival, departure, currency):
     if not isinstance(room_id, str) or not room_id.strip() or not isinstance(arrival, str) or not isinstance(departure, str):
         raise HTTPException(422, 'Oda ve tarih alanları metin olmalıdır')
-    room = await database.rooms.find_one({'tenant_id': tenant_id, 'id': room_id}, {'_id': 0})
-    if not room or room.get('is_active') is False or room.get('is_virtual'):
+    room = await database.rooms.find_one({'tenant_id': tenant_id, 'id': room_id,
+        'is_active': {'$ne': False}, 'deleted_at': None, 'is_virtual': {'$ne': True}}, {'_id': 0})
+    if not room:
         raise HTTPException(404, 'Aktif fiziksel oda bulunamadı')
     start, end = calendar_day(arrival), calendar_day(departure)
     nights = (end - start).days
