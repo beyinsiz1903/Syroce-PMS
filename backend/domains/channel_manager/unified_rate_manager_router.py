@@ -338,6 +338,8 @@ def _ari_write_block_for_targets(targets: list[dict]) -> str:
             reason = hotelrunner_ari_write_block_reason()
         elif provider == "exely":
             reason = exely_ari_write_block_reason()
+            if not reason and (target.get("connection") or {}).get("ari_write_enabled") is not True:
+                reason = "EXELY_ARI_WRITE_DISABLED"
         else:
             reason = "UNSUPPORTED_CHANNEL_PROVIDER"
         if reason:
@@ -2014,7 +2016,6 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
     )
 
     hr_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "hotelrunner"}, {"_id": 0})
-    ex_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "exely"}, {"_id": 0})
 
     def _derive_mode(flags, conn_doc):
         if flags:
@@ -2036,9 +2037,14 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
             providers.append({"slug": "hotelrunner", "name": "HotelRunner", "mode": hr_mode})
 
     if exely_conn and configured in (None, "exely"):
-        ex_mode = _derive_mode(ex_flags, exely_conn)
-        if ex_mode != "inactive":
-            providers.append({"slug": "exely", "name": "Exely", "mode": ex_mode})
+        # The unified editor writes through the native Exely delivery service,
+        # not the legacy v2 connector/flags. Report the gate it actually uses.
+        reason = _ari_write_block_for_targets([{"provider": "exely", "connection": exely_conn}])
+        providers.append({
+            "slug": "exely", "name": "Exely", "mode": "read_only" if reason else "live",
+            "write_enabled": not bool(reason), "block_reason": reason,
+            "settings_path": "/exely",
+        })
 
     # Syroce B2B provider — aktif acente varsa ekle
     active_agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})

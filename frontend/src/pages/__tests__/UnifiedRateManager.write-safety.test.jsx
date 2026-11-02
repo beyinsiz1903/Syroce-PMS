@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
 
 const { confirmDialog } = vi.hoisted(() => ({ confirmDialog: vi.fn() }));
 
@@ -8,10 +9,32 @@ import {
   confirmUnifiedRateMutation,
   getUnifiedRateDeliveryFeedback,
   verifiedProviderChannels,
+  providerWriteNotice,
+  RateDeliveryReceipt,
 } from '@/pages/UnifiedRateManager';
 
 describe('UnifiedRateManager write safety', () => {
   beforeEach(() => confirmDialog.mockReset());
+
+  it('names the blocked provider instead of always blaming HotelRunner', () => {
+    const message = providerWriteNotice([{ name: 'Exely', mode: 'read_only', block_reason: 'EXELY_ARI_WRITE_DISABLED' }]);
+    expect(message).toContain('Exely');
+    expect(message).toContain('EXELY_ARI_WRITE_DISABLED');
+    expect(message).not.toContain('HotelRunner');
+  });
+
+  it('keeps the delivery result visible after the toast disappears', () => {
+    render(<RateDeliveryReceipt receipt={{ data: { saved: 16, provider_verified: true, provider_delivery_state: 'CONFIRMED' }, dateFrom: '2026-11-02', dateTo: '2026-11-09', roomCount: 2, fields: ['availability'] }} />);
+    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('CONFIRMED');
+    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('2026-11-02 – 2026-11-09');
+  });
+
+  it('does not turn a lost response into a safe retry claim', () => {
+    const feedback = getUnifiedRateDeliveryFeedback({ provider_delivery_state: 'UNKNOWN' });
+    expect(feedback.level).toBe('warning');
+    expect(feedback.message).toContain('uzlaştırın');
+    expect(feedback.message).not.toContain('0 kayıt');
+  });
 
   it('requires explicit confirmation before a channel mutation', async () => {
     confirmDialog.mockResolvedValue(false);
