@@ -8,6 +8,31 @@ from core.database import _raw_db
 logger = logging.getLogger(__name__)
 
 
+async def _start_exely_pull_supervisor(app):
+    """Keep an idle supervisor ready for tenants that opt in after startup.
+
+    The worker selects only active, explicitly enabled connections on every
+    tick and acquires their distributed interval leases. A startup snapshot of
+    opted-in tenants must not decide whether later tenant controls can work.
+    The global safety gate still prevents starting the worker at all.
+    """
+    from domains.channel_manager.providers.exely.production_safety import reservation_sync_block_reason
+
+    block = reservation_sync_block_reason()
+    if block:
+        logger.warning("Exely Pull Scheduler blocked reason=%s", block)
+        return False
+
+    from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
+
+    interval = int(os.getenv("SYROCE_EXELY_PULL_INTERVAL", "180"))
+    started = await exely_pull_scheduler.start(interval_seconds=interval)
+    if started:
+        app.state.exely_pull_scheduler = exely_pull_scheduler
+        logger.info("Exely Pull Scheduler supervisor started (%ss tick; enabled tenants only)", interval)
+    return started
+
+
 async def phase_g_channels_and_audit(app):
     # Historical HotelRunner imports may contain rooms[].price (before tax)
     # while reservation reads are deliberately disabled in production. Repair
@@ -94,29 +119,9 @@ async def phase_g_channels_and_audit(app):
 
     # Exely Pull Scheduler (auto-start)
     try:
-        from domains.channel_manager.providers.exely.production_safety import reservation_sync_block_reason
-
-        exely_runtime_block = reservation_sync_block_reason()
-        active_exely = None
-        if not exely_runtime_block:
-            active_exely = await _raw_db.exely_connections.find_one(
-                {"is_active": True, "auto_sync_reservations": True},
-                {"_id": 1},
-            )
-        if exely_runtime_block:
-            logger.warning("Exely Pull Scheduler blocked reason=%s", exely_runtime_block)
-        elif active_exely:
-            from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
-
-            _exely_int = int(os.getenv("SYROCE_EXELY_PULL_INTERVAL", "180"))
-            started = await exely_pull_scheduler.start(interval_seconds=_exely_int)
-            if started:
-                app.state.exely_pull_scheduler = exely_pull_scheduler
-                logger.info(f"✅ Exely Pull Scheduler started ({_exely_int}s interval, auto-import enabled)")
-        else:
-            logger.info("ℹ️ No active Exely connections; pull scheduler not started")
+        await _start_exely_pull_supervisor(app)
     except Exception as e:
-        logger.warning(f"Exely Pull Scheduler init warning: {e}")
+        logger.warning("Exely Pull Scheduler init warning exception_class=%s", type(e).__name__)
 
     # HotelRunner Pull Scheduler (auto-start)
     try:
