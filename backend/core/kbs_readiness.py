@@ -10,6 +10,13 @@ from core.kbs_payload_builder import build_kbs_payload_snapshot
 from core.kbs_payload_validation import validate_kbs_payload
 
 
+def closed_lock_cleanup_query() -> dict:
+    """Startup must never unlock a possibly delivered or duplicate identity."""
+    return {"_kind": "queue_job", "_open_lock": {"$exists": True}, "status": {"$in": ["done", "dead"]},
+        "delivery_uncertain": {"$ne": True},
+        "last_error": {"$not": {"$regex": "already_registered|[Zz]aten [Kk]ayıtlı|[Zz]aten [Kk]ayitli"}}}
+
+
 def identity_issues(payload: dict, action: str = "checkin") -> list[str]:
     # Reuse the actual transport contract rather than guessing TC/passport
     # requirements in every reservation client. No credentials/network used.

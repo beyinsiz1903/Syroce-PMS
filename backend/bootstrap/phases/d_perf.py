@@ -384,8 +384,9 @@ async def _create_perf_indexes_inner():
             )
         # KBS v2 atomik tekillik
         try:
+            from core.kbs_readiness import closed_lock_cleanup_query
             r1 = await _raw_db.kbs_reports.update_many(
-                {"_kind": "queue_job", "_open_lock": {"$exists": True}, "status": {"$in": ["done", "dead"]}},
+                closed_lock_cleanup_query(),
                 {"$unset": {"_open_lock": ""}},
             )
             agg = _raw_db.kbs_reports.aggregate(

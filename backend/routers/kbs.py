@@ -1803,6 +1803,14 @@ async def kbs_queue_requeue(
                 409,
                 "Yalnız reddedilmiş işler tekrar denenebilir; kabul edilmiş bildirim yeniden gönderilemez.",
             )
+        concurrent = await db.kbs_reports.find_one({
+            "_kind": QUEUE_KIND, "tenant_id": tenant_id, "booking_id": job["booking_id"],
+            "guest_id": job.get("guest_id"), "action": job.get("action"), "id": {"$ne": job_id},
+            "$or": [{"status": {"$in": ["pending", "in_progress"]}}, {"status": "done", "kbs_test": {"$ne": True}},
+                    {"delivery_uncertain": True}, {"last_error": "already_registered"}],
+        }, {"_id": 1})
+        if concurrent:
+            raise HTTPException(409, "Aynı kişi için başka açık veya teslim edilmiş bildirim var; önce durumunu kontrol edin.")
 
         now = _now()
         updated_result = await db.kbs_reports.update_one(
@@ -1818,9 +1826,9 @@ async def kbs_queue_requeue(
                     "last_error": None,
                     "next_retry_at": None,
                     "updated_at": _iso(now),
+                    "_open_lock": f"{tenant_id}:{job['booking_id']}:{job.get('guest_id') or 'primary'}:{job.get('action')}",
                     "notes": (job.get("notes") or "") + f"\n[{_iso(now)}] Tekrar kuyruğa alındı ({reason}) — {current_user.name}",
                 },
-                "$unset": {"_open_lock": ""},
             },
         )
         if not updated_result.matched_count:

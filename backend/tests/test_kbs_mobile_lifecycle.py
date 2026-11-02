@@ -25,7 +25,7 @@ async def ready(config_db, monkeypatch):  # noqa: F811 - imported pytest fixture
     db, tid = config_db
     monkeypatch.setattr(enqueue, "db", db)
     monkeypatch.setenv("KBS_AUTO_ENQUEUE", "1")
-    await db.kbs_reports.create_index("_open_lock", unique=True, partialFilterExpression={"_open_lock": {"$type": "string"}})
+    await db.kbs_reports.create_index("_open_lock", unique=True, partialFilterExpression={"_open_lock": {"$exists": True}}, name="uniq_kbs_open_lock")
     await cloud.save_config(db, tid, CREDS, "admin")
     call = AsyncMock(return_value={"code": "Basarili", "method": "synthetic-reply"})
     monkeypatch.setattr(cloud, "call_jandarma", call)
@@ -286,3 +286,14 @@ async def test_nightly_actual_event_uses_hotel_day_across_utc_midnight(ready):
     await db.tenant_settings.update_one({"tenant_id": tid}, {"$set": {"timezone": "Europe/Istanbul"}}, upsert=True)
     await sweep_tenant_kbs(db, tid, "2026-11-02")
     assert await db.kbs_reports.count_documents({"tenant_id": tid, "_kind": "queue_job", "booking_id": bid}) == 1
+
+
+async def test_startup_cleanup_keeps_uncertain_and_duplicate_identity_locks(ready):
+    from core.kbs_readiness import closed_lock_cleanup_query
+    db, tid, _ = ready
+    for reason in ("delivery_unknown_check_authority", "already_registered", "source_guest_missing"):
+        await db.kbs_reports.insert_one({"tenant_id": tid, "_kind": "queue_job", "id": reason,
+            "status": "dead", "_open_lock": f"{tid}:{reason}", "last_error": reason,
+            "delivery_uncertain": reason == "delivery_unknown_check_authority"})
+    await db.kbs_reports.update_many({**closed_lock_cleanup_query(), "tenant_id": tid}, {"$unset": {"_open_lock": ""}})
+    assert await db.kbs_reports.count_documents({"tenant_id": tid, "_open_lock": {"$exists": True}}) == 2
