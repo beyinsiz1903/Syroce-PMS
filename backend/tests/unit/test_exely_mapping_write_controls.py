@@ -87,9 +87,13 @@ async def test_exely_rate_grid_uses_verified_ari_ids_not_discovered_api_aliases(
         }]),
         rate_calendar=_Collection(rows=[]),
         pricing_settings=_Collection(rows=[]),
+        rooms=_Collection(rows=[
+            {"id": f"std-{i}", "tenant_id": "tenant-1", "room_type": "Standard", "status": "available"}
+            for i in range(8)
+        ]),
+        bookings=_Collection(rows=[]),
+        room_night_locks=_Collection(rows=[]),
     ))
-    monkeypatch.setattr(unified, "_get_room_counts", AsyncMock(return_value=({"Standard": {"total": 8, "available": 8}}, {"Standard": []})))
-    monkeypatch.setattr(unified, "_get_active_bookings", AsyncMock(return_value=[]))
     connection = {
         "currency": "USD",
         "room_types": [{"code": "5001574", "name": "Standart"}],
@@ -99,6 +103,7 @@ async def test_exely_rate_grid_uses_verified_ari_ids_not_discovered_api_aliases(
     assert [row["room_type_code"] for row in result["grid"]] == ["5003299"]
     assert [row["rate_plan_code"] for row in result["grid"]] == ["10009740"]
     assert result["grid"][0]["rate_plan_name"] == "Base rate USD"
+    assert [day["availability"] for day in result["grid"][0]["dates"]] == [8, 8]
 
 
 def test_exely_connection_environment_selects_a_safe_default_endpoint():

@@ -57,6 +57,7 @@ def database(calendar, bookings=(), mappings=None):
         exely_connections=SimpleNamespace(find_one=AsyncMock(return_value={'hotel_code': 'test-property'})),
         exely_room_mappings=collection(mappings if mappings is not None else [owner]),
         rate_calendar=collection(calendar), bookings=collection(bookings),
+        room_night_locks=collection([]),
         rooms=collection([
             *[{'id': f'std-{i}', 'tenant_id': 'test', 'room_type': 'Standard'} for i in range(8)],
             {'id': 'deluxe-1', 'tenant_id': 'test', 'room_type': 'Deluxe'},
@@ -222,6 +223,8 @@ async def test_shared_projection_matches_normal_grid_but_cannot_exceed_locks(mon
     rendered = await grid._build_exely_grid('test', {'currency': 'USD'}, '2026-11-10', '2026-11-10')
     day = rendered['grid'][0]['dates'][0]
     assert (day['base_availability'], day['sold'], day['availability']) == (5, 1, 4)
+    fake.room_night_locks.find.assert_called_once()
+    assert fake.room_night_locks.find.call_args.args[0]['tenant_id'] == 'test'
     owner = (await fake.exely_room_mappings.find({'tenant_id': 'test'}, {'_id': 0}).to_list(10))[0]
     assert await exely_publishable_availability(fake, 'test', 'Standard', owner, {'2026-11-10': 8}) == {'2026-11-10': 4}
     assert await exely_publishable_availability(fake, 'test', 'Standard', owner, {'2026-11-10': 2}) == {'2026-11-10': 2}

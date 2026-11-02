@@ -96,6 +96,84 @@ async def readback(editor):
     return grid["grid"][0]["dates"]
 
 
+async def test_live_december_lock_is_visible_in_grid_and_matches_write_ceiling(editor):
+    """Live regression: calendar says 8/sold 0, a physical lock permits 7."""
+    day = "2026-12-20"
+    editor.bookings.clear()
+    editor.calendar[:] = [{**editor.calendar[0], "date": day}]
+    editor.locks.append({"room_id": "room-3", "night_date": day, "lock_type": "booking"})
+    before = deepcopy(editor.calendar)
+    grid = await router._build_exely_grid(TENANT, editor.connection, day, day)
+    cell = grid["grid"][0]["dates"][0]
+    assert (cell["base_availability"], cell["sold"], cell["availability"]) == (8, 0, 7)
+    with pytest.raises(HTTPException) as exc:
+        await apply(request(8, start_date=day, end_date=day))
+    assert exc.value.detail["maximum"] == cell["availability"]
+    assert exc.value.detail["date"] == day
+    assert editor.calendar == before and len(editor.locks) == 1
+    editor.save.assert_not_awaited()
+    editor.provider.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", ["booking", "hold", "ooo", "oos", "maintenance"])
+async def test_grid_honours_each_lock_type_even_without_active_booking_document(editor, kind):
+    editor.bookings.clear()
+    editor.locks.append({"room_id": "room-0", "night_date": DAYS[1], "lock_type": kind})
+    cells = await readback(editor)
+    assert [v["availability"] for v in cells] == [8, 7, 8]
+    assert [v["sold"] for v in cells] == [0, 0, 0]
+    editor.save.assert_not_awaited()
+    editor.provider.assert_not_awaited()
+
+
+async def test_grid_does_not_double_subtract_assigned_booking_lock_but_counts_unassigned(editor):
+    editor.bookings[:] = [editor.bookings[0], {**editor.bookings[0], "room_id": None}]
+    editor.locks.extend({"room_id": "room-0", "night_date": day, "lock_type": "booking"} for day in DAYS)
+    cells = await readback(editor)
+    assert [v["availability"] for v in cells] == [6, 6, 6]
+    assert [v["sold"] for v in cells] == [2, 2, 2]
+
+
+async def test_grid_keeps_smaller_commercial_allotment_and_zero(editor):
+    editor.calendar[0]["availability"] = 5
+    editor.calendar[1]["availability"] = 0
+    editor.locks.append({"room_id": "room-6", "night_date": DAYS[0], "lock_type": "hold"})
+    cells = await readback(editor)
+    assert [v["availability"] for v in cells] == [4, 0, 7]
+    assert [v["base_availability"] for v in cells] == [5, 0, 8]
+
+
+async def test_grid_full_lock_window_is_one_tenant_scoped_query_for_all_plans(editor):
+    editor.mappings.extend({**editor.mappings[0], "exely_rate_plan_code": plan, "sync_availability": False} for plan in ["NONREF", "DYNAMIC"])
+    grid = await router._build_exely_grid(TENANT, editor.connection, DAYS[0], DAYS[-1])
+    assert len(grid["grid"]) == 3
+    find = editor.db.room_night_locks.find
+    find.assert_called_once()
+    query = find.call_args.args[0]
+    assert query["tenant_id"] == TENANT
+    assert query["night_date"] == {"$gte": DAYS[0], "$lte": DAYS[-1]}
+    assert query["room_id"]["$in"] == [f"room-{i}" for i in range(8)]
+
+
+@pytest.mark.parametrize("fault", ["unavailable", "duplicate", "unknown_kind", "foreign_room", "truncated"])
+async def test_grid_never_reports_false_free_rooms_when_lock_projection_is_incomplete(editor, fault):
+    lock = {"room_id": "room-0", "night_date": DAYS[0], "lock_type": "booking"}
+    if fault == "unavailable":
+        editor.db.room_night_locks.find.side_effect = RuntimeError("synthetic lock store down")
+    elif fault == "duplicate":
+        editor.locks.extend([lock, deepcopy(lock)])
+    elif fault == "truncated":
+        editor.locks.extend([lock] * 100001)
+    else:
+        editor.locks.append({**lock, **({"lock_type": "unknown"} if fault == "unknown_kind" else {"room_id": "foreign"})})
+    with pytest.raises(HTTPException) as exc:
+        await readback(editor)
+    assert exc.value.status_code == 503
+    assert exc.value.detail["error_code"] == "EXELY_GRID_INVENTORY_UNAVAILABLE"
+    editor.save.assert_not_awaited()
+    editor.provider.assert_not_awaited()
+
+
 async def test_net_input_matches_wire_and_readback_with_varying_daily_sales(editor):
     result = await apply(request())
     assert result["availability_input_mode"] == "remaining"
