@@ -13,6 +13,9 @@ from domains.channel_manager import remaining_availability
 from domains.channel_manager import unified_rate_manager_router as router
 from domains.channel_manager.calendar_inventory import exely_publishable_availability
 from domains.channel_manager.providers.exely import ari_delivery
+from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
+from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.provider_quota import ExelyProviderQuota
 from domains.channel_manager.providers.exely.soap_builder import build_availability_batch_rq
 
 TENANT = "synthetic-hotel"
@@ -309,3 +312,54 @@ async def test_full_24_month_range_is_allowed_without_provider_or_calendar_acces
     assert len(values) == 731 and set(values.values()) == {8}
     with pytest.raises(HTTPException):
         await remaining_availability.prepare_exely_remaining_values(database, TENANT, [(ROOM, RATE)], {ROOM: 8}, "2026-11-02", "2028-11-02", None)
+
+
+async def test_existing_editor_full_two_room_period_reaches_one_quota_checked_soap(editor, monkeypatch):
+    """Do not stop the editor test at a mocked delivery success (the old gap)."""
+    editor.mappings.append({**editor.mappings[0], "pms_room_type": "Deluxe",
+                            "exely_room_code": "panel-deluxe", "pms_api_room_code": "soap-deluxe"})
+    rooms = [{"id": f"room-{i}", "room_type": "Standard", "status": "available"} for i in range(8)]
+    rooms.extend({"id": f"deluxe-{i}", "room_type": "Deluxe", "status": "available"} for i in range(8))
+    editor.db.rooms.find.side_effect = lambda query, projection: cursor(rooms)
+    redis = SimpleNamespace(eval=AsyncMock(return_value=[1, 0, 0]))
+    provider = ExelyProvider(
+        username="synthetic", password="synthetic", hotel_code="synthetic-property",
+        connection_id="editor-full-period",
+        quota_guard=ExelyProviderQuota(TENANT, "synthetic-property", redis_client=redis),
+    )
+    provider._transport.send_soap = AsyncMock(return_value=b'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><OTA_HotelAvailNotifRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/></OTA_HotelAvailNotifRS></s:Body></s:Envelope>')
+    monkeypatch.setattr(ari_delivery, "ari_write_block_reason", lambda: "")
+    monkeypatch.setattr("domains.channel_manager.providers.exely.provider.ari_write_block_reason", lambda: "")
+    monkeypatch.setattr(ari_delivery, "_prepare_delivery", AsyncMock(return_value=(True, None)))
+    monkeypatch.setattr(ari_delivery, "_mark_sending", AsyncMock(return_value=True))
+    monkeypatch.setattr(ari_delivery, "_finish", AsyncMock(return_value=True))
+
+    async def deliver(tenant, operation, payload):
+        assert tenant == TENANT and operation == "availability_batch"
+        return await deliver_exely_ari(tenant, operation, payload, provider=provider, write_enabled=True)
+
+    editor.provider.side_effect = deliver
+    result = await apply(request(start_date="2026-11-02", end_date="2028-11-01", per_room_values=[
+        {"room_type_code": ROOM, "rate_plan_codes": [RATE], "availability": 6},
+        {"room_type_code": "panel-deluxe", "rate_plan_codes": [RATE], "availability": 8},
+    ]))
+    assert result["saved"] == 1462
+    assert result["provider_verified"] is True and result["provider_write_count"] == 1
+    assert result["provider_delivery_state"] == "CONFIRMED"
+    assert len(editor.calendar) == 1462
+    editor.provider.assert_awaited_once()
+    provider._transport.send_soap.assert_awaited_once()
+    redis.eval.assert_awaited_once()
+    quota_args = redis.eval.await_args.args
+    key_count = quota_args[1]
+    assert quota_args[2 + key_count:5 + key_count] == (731, 1460, 2)
+    envelope = etree.fromstring(provider._transport.send_soap.await_args.args[0].encode())
+    ns = {"ota": "http://www.opentravel.org/OTA/2003/05"}
+    containers = envelope.findall(".//ota:AvailStatusMessages", ns)
+    assert len(containers) == 1 and containers[0].get("HotelCode") == "synthetic-property"
+    controls = envelope.findall(".//ota:StatusApplicationControl", ns)
+    assert len(controls) == 2
+    assert {c.get("InvTypeCode") for c in controls} == {"soap-standard", "soap-deluxe"}
+    assert all(c.get("Start") == "2026-11-02" and c.get("End") == "2028-11-01"
+               and c.get("RatePlanCode") == "soap-base" for c in controls)
+    assert [row["rate"] for row in editor.calendar if row["date"] in DAYS and row["room_type_code"] == ROOM] == [100] * 3
