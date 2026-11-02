@@ -16,6 +16,8 @@ async def test_writable_exely_rooms_use_tenant_mappings_not_discovery_aliases(mo
         {"exely_room_code": "5003300", "exely_rate_plan_code": "10009740"},
         {"exely_room_code": "5003299", "exely_rate_plan_code": "10009738"},
         {"exely_room_code": "incomplete"},
+        {"exely_room_code": "historic-inbound-alias", "exely_rate_plan_code": "10003870",
+         "sync_availability": False, "sync_price": False, "sync_restrictions": False},
     ]))
     mappings = SimpleNamespace(find=MagicMock(return_value=cursor))
     monkeypatch.setattr(router, "db", SimpleNamespace(exely_room_mappings=mappings))

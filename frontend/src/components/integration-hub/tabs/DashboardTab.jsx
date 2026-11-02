@@ -123,10 +123,10 @@ export default function DashboardTab(props) {
                       </div>}
                     <div className="flex gap-2 flex-wrap">
                       <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200" onClick={() => handleSyncInventory(c.connector_id)} data-testid={`sync-inv-${c.connector_id}`}>
-                        <ArrowUpDown className="w-3 h-3 mr-1" /> Push Inventory
+                        <ArrowUpDown className="w-3 h-3 mr-1" /> {c.provider === 'exely' ? 'Müsaitliği yönet' : 'Push Inventory'}
                       </Button>
                       <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200" onClick={() => handleSyncRates(c.connector_id)}>
-                        <Zap className="w-3 h-3 mr-1" /> Push Rates
+                        <Zap className="w-3 h-3 mr-1" /> {c.provider === 'exely' ? 'Fiyatları yönet' : 'Push Rates'}
                       </Button>
                       <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200" onClick={() => handlePullReservations(c.connector_id)}>
                         <Download className="w-3 h-3 mr-1" /> Pull Reservations

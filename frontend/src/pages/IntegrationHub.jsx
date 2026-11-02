@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -59,6 +59,7 @@ import AuditTab from '@/components/integration-hub/tabs/AuditTab';
 
 const IntegrationHub = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
   const [connectors, setConnectors] = useState([]);
@@ -258,6 +259,10 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   };
 
   const handleSyncInventory = async (connectorId) => {
+    if (connectors.find(c => c.connector_id === connectorId)?.provider === 'exely') {
+      navigate('/unified-rate-manager');
+      return;
+    }
     try {
       const { data } = await axios.post(`${API_BASE}/sync/inventory`, { connector_id: connectorId, reason: 'Manual trigger' });
       toast.success(`Sync başlatıldı (Job: ${data.job_id?.slice(0, 8)})`);
@@ -266,6 +271,10 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   };
 
   const handleSyncRates = async (connectorId) => {
+    if (connectors.find(c => c.connector_id === connectorId)?.provider === 'exely') {
+      navigate('/unified-rate-manager');
+      return;
+    }
     try {
       const { data } = await axios.post(`${API_BASE}/sync/rates`, { connector_id: connectorId, reason: 'Manual rate sync' });
       toast.success(`Rate sync başlatıldı (Job: ${data.job_id?.slice(0, 8)})`);
@@ -423,6 +432,11 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
         </section>
 
         {/* Summary Cards */}
+        <p className="text-sm text-slate-600" data-testid="integration-legacy-status-notice">
+          Aşağıdaki sayaçlar v2 connector kayıtlarına aittir; yerel Exely bağlantısının ARI durumunu göstermez.
+          {' '}<Link to="/exely" className="underline">Exely bağlantı ve gönderim ayarları</Link>
+          {' · '}<Link to="/unified-rate-manager" className="underline">Fiyat ve müsaitlik yönetimi</Link>
+        </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="bg-white shadow-sm border-slate-200">
             <CardContent className="p-4">

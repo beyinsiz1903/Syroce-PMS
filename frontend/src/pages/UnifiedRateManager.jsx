@@ -24,6 +24,22 @@ export const verifiedProviderChannels = providerStatus => {
   return Array.isArray(providerStatus?.channels) ? providerStatus.channels : [];
 };
 
+export const providerWriteNotice = providers => providers
+  .filter(item => item.mode === 'shadow' || item.mode === 'read_only')
+  .map(item => `${item.name || 'Kanal'}: gönderim kapalı${item.block_reason ? ` (${item.block_reason})` : ''}.`)
+  .join(' ');
+
+export const RateDeliveryReceipt = ({ receipt }) => {
+  if (!receipt) return null;
+  const feedback = getUnifiedRateDeliveryFeedback(receipt.data);
+  return <div role="status" data-testid="rate-delivery-receipt" className={`rounded-lg border p-3 text-sm ${feedback.level === 'success' ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+    <p className="font-semibold">Son gönderim sonucu</p>
+    <p>{feedback.message}</p>
+    <p>{receipt.dateFrom} – {receipt.dateTo} · {receipt.roomCount} oda tipi · {receipt.fields.join(', ')}</p>
+    <p>Teslim durumu: {receipt.data.provider_delivery_state || 'NOT_SENT'}</p>
+  </div>;
+};
+
 export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo, agenciesOnly = false, currency }) => confirmDialog({
   title: 'Fiyat ve müsaitlik güncellemesini onayla',
   message: agenciesOnly
@@ -35,6 +51,9 @@ export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo, agenci
 });
 
 export const getUnifiedRateDeliveryFeedback = data => {
+  if (data?.provider_delivery_state === 'UNKNOWN') {
+    return { level: 'warning', message: 'Gönderim sonucu belirsiz. Tekrar göndermeden önce sağlayıcı kayıtlarıyla uzlaştırın.' };
+  }
   if (data?.provider === 'agency' && data?.agency_push_count > 0) {
     return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve ${data.agency_push_count} acenteye anında iletildi.` };
   }
@@ -63,6 +82,7 @@ const UnifiedRateManager = ({
   const [loading, setLoading] = useState(false);
   const [initialGridSettled, setInitialGridSettled] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deliveryReceipt, setDeliveryReceipt] = useState(null);
   const [activeView, setActiveView] = useState('bulk');
   const [mobileBulkStep, setMobileBulkStep] = useState(1);
 
@@ -234,11 +254,14 @@ const UnifiedRateManager = ({
   // Fetch push providers
   useEffect(() => {
     if (!provider || !initialGridSettled) return;
-    axios.get(`${UNIFIED_PREFIX}/push-providers`, {
-      headers
-    }).then(res => setPushProviders(res.data?.providers || [])).catch(e => {
-      console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Bildirim sağlayıcıları yüklenemedi');
-    });
+    let cancelled = false;
+    const refresh = () => axios.get(`${UNIFIED_PREFIX}/push-providers`, { headers })
+      .then(res => { if (!cancelled) setPushProviders(res.data?.providers || []); })
+      .catch(() => { if (!cancelled) setPushProviders([{ slug: provider, name: 'Kanal', mode: 'read_only', block_reason: 'Durum doğrulanamadı' }]); });
+    refresh();
+    window.addEventListener('focus', refresh);
+    const timer = setInterval(refresh, 30000);
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener('focus', refresh); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [initialGridSettled, provider]);
 
@@ -640,6 +663,7 @@ const UnifiedRateManager = ({
         headers
       });
       const feedback = getUnifiedRateDeliveryFeedback(data);
+      setDeliveryReceipt({ data, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
       toast[feedback.level](feedback.message, { duration: 8000 });
       if (data.agency_push_count > 0) {
         toast.success(`${data.agency_push_count} acente için acente fiyatı kaydedildi`, {
@@ -654,6 +678,7 @@ const UnifiedRateManager = ({
       const detailStr = typeof detail === 'string' ? detail : null;
       // A missing module comes with a sentence saying which one and why.
       const entitlementText = safeCode === 'ENTITLEMENT_DENIED' && typeof detail?.detail === 'string' ? detail.detail : null;
+      setDeliveryReceipt({ data: { provider_delivery_state: !e.response || e.response.status >= 500 ? 'UNKNOWN' : 'NOT_SENT', provider_error_codes: [safeCode || detailStr || 'İstek tamamlanamadı'] }, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
       toast.error(entitlementText || (safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası'), { duration: 8000 });
     }
     setSaving(false);
@@ -810,10 +835,13 @@ const UnifiedRateManager = ({
         {pushProviders.some(item => item.mode === 'shadow' || item.mode === 'read_only') && <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="unified-push-disabled-notice">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
-              <span className="font-semibold">HotelRunner'a canlı gönderim kapalı.</span>{' '}
-              Fiyat ve kontenjan güncellemeleri sağlayıcıya iletilmez; güvenlik doğrulaması tamamlandığında canlı gönderim ayrıca açılır.
+              <span className="font-semibold">{providerWriteNotice(pushProviders)}</span>{' '}
+              Gönderim ayarını sağlayıcı bağlantı ekranından kontrol edin; teslimat doğrulanmadan işlem tamamlanmış sayılmaz.
+              {provider === 'exely' && <Link className="ml-2 underline" to="/exely">Exely gönderim ayarları</Link>}
             </div>
           </div>}
+
+        <RateDeliveryReceipt receipt={deliveryReceipt} />
 
         {/* Circuit breaker status pills (CM-Hardening Stop-Sale, May 2026) */}
         {breakers.some(b => b.state !== 'closed') && <div className="flex flex-wrap items-center gap-2" data-testid="circuit-breaker-pills">

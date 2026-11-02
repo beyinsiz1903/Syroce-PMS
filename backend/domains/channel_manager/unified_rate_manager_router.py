@@ -338,6 +338,8 @@ def _ari_write_block_for_targets(targets: list[dict]) -> str:
             reason = hotelrunner_ari_write_block_reason()
         elif provider == "exely":
             reason = exely_ari_write_block_reason()
+            if not reason and (target.get("connection") or {}).get("ari_write_enabled") is not True:
+                reason = "EXELY_ARI_WRITE_DISABLED"
         else:
             reason = "UNSUPPORTED_CHANNEL_PROVIDER"
         if reason:
@@ -647,11 +649,19 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
     }
 
 
+def _exely_mapping_is_writable(mapping: dict) -> bool:
+    # Read-only aliases still resolve historic reservations but must not appear
+    # as a duplicate room/rate in an outbound editor.
+    return any(mapping.get(field, True) for field in ("sync_availability", "sync_price", "sync_restrictions"))
+
+
 async def _build_exely_grid(tenant_id, conn, start_date, end_date):
     """Exely grid olustur."""
     mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
-    # Discovery exposes PMS API aliases, which can differ from the ARI IDs.
-    # Only explicit writable mappings belong in this ARI grid.
+    mappings = [mapping for mapping in mappings if _exely_mapping_is_writable(mapping)]
+    # Keep existing local calendar keys; discovery's SOAP API codes may differ.
+    # The complete mapped API pair is resolved before outbound SOAP delivery.
+    # Only explicit writable mappings belong in this editor.
     discovered_room_names = {str(row.get("code")): row.get("name") for row in conn.get("room_types", [])}
     discovered_rate_names = {str(row.get("code")): row.get("name") for row in conn.get("rate_plans", [])}
     room_types = []
@@ -763,7 +773,7 @@ def _provider_room_codes(detection: dict) -> set[str]:
 
 
 async def _writable_provider_room_codes(tenant_id: str, detection: dict) -> set[str]:
-    """Use the same explicit Exely ARI identifiers as the writable grid.
+    """Use the same explicit Exely local identifiers as the writable grid.
 
     Discovery returns PMS API aliases, not necessarily the panel identifiers
     used by room mappings and grid selections. Discovery alone must neither
@@ -773,12 +783,13 @@ async def _writable_provider_room_codes(tenant_id: str, detection: dict) -> set[
         return _provider_room_codes(detection)
     mappings = await db.exely_room_mappings.find(
         {"tenant_id": tenant_id},
-        {"_id": 0, "exely_room_code": 1, "exely_rate_plan_code": 1},
+        {"_id": 0, "exely_room_code": 1, "exely_rate_plan_code": 1,
+         "sync_availability": 1, "sync_price": 1, "sync_restrictions": 1},
     ).to_list(100)
     return {
         str(row["exely_room_code"])
         for row in mappings
-        if row.get("exely_room_code") and row.get("exely_rate_plan_code")
+        if row.get("exely_room_code") and row.get("exely_rate_plan_code") and _exely_mapping_is_writable(row)
     }
 
 
@@ -2014,7 +2025,6 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
     )
 
     hr_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "hotelrunner"}, {"_id": 0})
-    ex_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "exely"}, {"_id": 0})
 
     def _derive_mode(flags, conn_doc):
         if flags:
@@ -2036,9 +2046,14 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
             providers.append({"slug": "hotelrunner", "name": "HotelRunner", "mode": hr_mode})
 
     if exely_conn and configured in (None, "exely"):
-        ex_mode = _derive_mode(ex_flags, exely_conn)
-        if ex_mode != "inactive":
-            providers.append({"slug": "exely", "name": "Exely", "mode": ex_mode})
+        # The unified editor writes through the native Exely delivery service,
+        # not the legacy v2 connector/flags. Report the gate it actually uses.
+        reason = _ari_write_block_for_targets([{"provider": "exely", "connection": exely_conn}])
+        providers.append({
+            "slug": "exely", "name": "Exely", "mode": "read_only" if reason else "live",
+            "write_enabled": not bool(reason), "block_reason": reason,
+            "settings_path": "/exely",
+        })
 
     # Syroce B2B provider — aktif acente varsa ekle
     active_agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
