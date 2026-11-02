@@ -649,11 +649,19 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
     }
 
 
+def _exely_mapping_is_writable(mapping: dict) -> bool:
+    # Read-only aliases still resolve historic reservations but must not appear
+    # as a duplicate room/rate in an outbound editor.
+    return any(mapping.get(field, True) for field in ("sync_availability", "sync_price", "sync_restrictions"))
+
+
 async def _build_exely_grid(tenant_id, conn, start_date, end_date):
     """Exely grid olustur."""
     mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
-    # Discovery exposes PMS API aliases, which can differ from the ARI IDs.
-    # Only explicit writable mappings belong in this ARI grid.
+    mappings = [mapping for mapping in mappings if _exely_mapping_is_writable(mapping)]
+    # Keep existing local calendar keys; discovery's SOAP API codes may differ.
+    # The complete mapped API pair is resolved before outbound SOAP delivery.
+    # Only explicit writable mappings belong in this editor.
     discovered_room_names = {str(row.get("code")): row.get("name") for row in conn.get("room_types", [])}
     discovered_rate_names = {str(row.get("code")): row.get("name") for row in conn.get("rate_plans", [])}
     room_types = []
@@ -765,7 +773,7 @@ def _provider_room_codes(detection: dict) -> set[str]:
 
 
 async def _writable_provider_room_codes(tenant_id: str, detection: dict) -> set[str]:
-    """Use the same explicit Exely ARI identifiers as the writable grid.
+    """Use the same explicit Exely local identifiers as the writable grid.
 
     Discovery returns PMS API aliases, not necessarily the panel identifiers
     used by room mappings and grid selections. Discovery alone must neither
@@ -775,12 +783,13 @@ async def _writable_provider_room_codes(tenant_id: str, detection: dict) -> set[
         return _provider_room_codes(detection)
     mappings = await db.exely_room_mappings.find(
         {"tenant_id": tenant_id},
-        {"_id": 0, "exely_room_code": 1, "exely_rate_plan_code": 1},
+        {"_id": 0, "exely_room_code": 1, "exely_rate_plan_code": 1,
+         "sync_availability": 1, "sync_price": 1, "sync_restrictions": 1},
     ).to_list(100)
     return {
         str(row["exely_room_code"])
         for row in mappings
-        if row.get("exely_room_code") and row.get("exely_rate_plan_code")
+        if row.get("exely_room_code") and row.get("exely_rate_plan_code") and _exely_mapping_is_writable(row)
     }
 
 

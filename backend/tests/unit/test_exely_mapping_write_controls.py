@@ -81,7 +81,10 @@ async def test_exely_rate_grid_uses_verified_ari_ids_not_discovered_api_aliases(
         "pms_api_room_code": "5001574", "pms_api_rate_plan_code": "10003870",
     }
     monkeypatch.setattr(unified, "db", SimpleNamespace(
-        exely_room_mappings=_Collection(rows=[mapping]),
+        exely_room_mappings=_Collection(rows=[mapping, {
+            "pms_room_type": "Standard", "exely_room_code": "5001574", "exely_rate_plan_code": "10003870",
+            "sync_availability": False, "sync_price": False, "sync_restrictions": False,
+        }]),
         rate_calendar=_Collection(rows=[]),
         pricing_settings=_Collection(rows=[]),
     ))
