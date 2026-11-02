@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -55,6 +55,7 @@ import SyncTab from '@/components/integration-hub/tabs/SyncTab';
 import ReservationsTab from '@/components/integration-hub/tabs/ReservationsTab';
 import ReconciliationTab from '@/components/integration-hub/tabs/ReconciliationTab';
 import AuditTab from '@/components/integration-hub/tabs/AuditTab';
+import NativeExelyStatus from '@/components/integration-hub/NativeExelyStatus';
 
 
 const IntegrationHub = ({ user, tenant, onLogout }) => {
@@ -63,6 +64,8 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
   const [connectors, setConnectors] = useState([]);
+  const [nativeExely, setNativeExely] = useState({ state: 'loading' });
+  const nativeStatusRequest = useRef(0);
   const [mappings, setMappings] = useState([]);
   const [syncJobs, setSyncJobs] = useState([]);
   const [importedReservations, setImportedReservations] = useState([]);
@@ -109,6 +112,30 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
     } catch { /* silent */ }
   }, []);
 
+  const fetchNativeExely = useCallback(async () => {
+    const request = ++nativeStatusRequest.current;
+    setNativeExely(previous => ({ ...previous, state: 'loading' }));
+    try {
+      const [connectionRes, pushRes] = await Promise.all([
+        axios.get('/channel-manager/exely/connection', { timeout: 10000 }),
+        axios.get('/channel-manager/unified-rate-manager/push-providers', { timeout: 10000 }),
+      ]);
+      const connection = connectionRes.data?.connection || {};
+      const push = (pushRes.data?.providers || []).find(item => item.slug === 'exely');
+      if (request !== nativeStatusRequest.current) return;
+      // Keep only display metadata, never credentials, from the existing API.
+      setNativeExely({
+        state: 'ready', connected: connectionRes.data?.connected === true,
+        hotelCode: connection.hotel_code, ariEnabled: connection.ari_write_enabled === true,
+        autoPull: connection.auto_sync_reservations === true,
+        writeAllowed: push?.write_enabled === true,
+        blockReason: push?.block_reason || (!push ? 'Exely bu tesisin gönderim hedefi değil' : ''),
+      });
+    } catch {
+      if (request === nativeStatusRequest.current) setNativeExely(previous => ({ ...previous, state: 'error' }));
+    }
+  }, []);
+
   const fetchConnectors = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API_BASE}/connectors`);
@@ -118,7 +145,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    await fetchDashboard();
+    await Promise.all([fetchDashboard(), fetchNativeExely()]);
     try {
       const [jobsRes, importRes, issuesRes, auditRes, reviewRes, batchRes, resReviewRes] = await Promise.all([
         axios.get(`${API_BASE}/sync/jobs`).catch(() => ({ data: { jobs: [] } })),
@@ -138,9 +165,20 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
       setReservationReviewQueue(resReviewRes.data.queue || []);
     } catch { /* silent */ }
     setLoading(false);
-  }, [fetchDashboard]);
+  }, [fetchDashboard, fetchNativeExely]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const timer = setInterval(fetchNativeExely, 30000);
+    window.addEventListener('focus', fetchNativeExely);
+    return () => {
+      // Invalidate pending network responses; this sequence ref is not a DOM ref.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- invalidate the current sequence on unmount
+      ++nativeStatusRequest.current;
+      clearInterval(timer);
+      window.removeEventListener('focus', fetchNativeExely);
+    };
+  }, [fetchNativeExely]);
 
   const handleCreateConnector = async () => {
     try {
@@ -431,9 +469,14 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
           </div>
         </section>
 
+        {(nativeExely.state !== 'ready' || nativeExely.connected || connectors.some(item => item.provider === 'exely')) &&
+          <NativeExelyStatus status={nativeExely} onRetry={fetchNativeExely} />}
+
+        <details open={!nativeExely.connected} data-testid="legacy-integration-diagnostics" className="space-y-4 rounded-lg border p-4">
+          <summary className="cursor-pointer font-medium">v2 bağlantı geçmişi ve tanı kayıtları</summary>
         {/* Summary Cards */}
         <p className="text-sm text-slate-600" data-testid="integration-legacy-status-notice">
-          Aşağıdaki sayaçlar v2 connector kayıtlarına aittir; yerel Exely bağlantısının ARI durumunu göstermez.
+          Bu bölümün sayaçları ve RED etiketleri ayrı v2 connector kayıtlarına aittir; güncel Exely bağlantısının durumuyla birleştirilmez. Kayıtlar, hatalar ve kuyruklar değiştirilmedi.
           {' '}<Link to="/exely" className="underline">Exely bağlantı ve gönderim ayarları</Link>
           {' · '}<Link to="/unified-rate-manager" className="underline">Fiyat ve müsaitlik yönetimi</Link>
         </p>
@@ -552,6 +595,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
             <AuditTab {...ctx} />
           </TabsContent>
         </Tabs>
+        </details>
 
         {/* New Connector Dialog */}
         <Dialog open={showNewConnector} onOpenChange={setShowNewConnector}>
