@@ -56,6 +56,7 @@ from domains.channel_manager.calendar_inventory import (
 from domains.channel_manager.calendar_inventory import (
     get_room_counts as _calendar_room_counts,
 )
+from domains.channel_manager.calendar_inventory import lock_adjusted_capacities
 from domains.channel_manager.providers.exely.production_safety import (
     ari_write_block_reason as exely_ari_write_block_reason,
 )
@@ -700,6 +701,15 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
     calendar_data, (room_counts, room_ids_by_type), active_bookings, pricing_docs = await asyncio.gather(
         calendar_task, room_counts_task, bookings_task, pricing_task
     )
+    try:
+        capacity_by_day = await lock_adjusted_capacities(
+            db, tenant_id, room_counts, room_ids_by_type, active_bookings, start_date, end_date,
+        )
+    except Exception:
+        raise HTTPException(503, detail={
+            "error_code": "EXELY_GRID_INVENTORY_UNAVAILABLE",
+            "message": "Güncel oda-gece kapasitesi okunamadı; müsaitlik doğrulanamıyor.",
+        }) from None
 
     cal_index = {}
     for entry in calendar_data:
@@ -731,6 +741,7 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
                 room_ids_by_type,
                 active_bookings,
                 sold_counts,
+                capacity_by_day,
             )
             grid.append(
                 {
@@ -879,7 +890,7 @@ def _count_sold(pms_room_type, day_str, room_ids_by_type, active_bookings):
     return sold
 
 
-def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, counts, room_ids_by_type, active_bookings, sold_counts=None):
+def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, counts, room_ids_by_type, active_bookings, sold_counts=None, capacity_by_day=None):
     dates_data = []
     d = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -897,6 +908,8 @@ def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, co
             real_avail = max(base_avail - sold_count, 0)
         else:
             real_avail = max(counts["total"] - sold_count, 0)
+        if capacity_by_day is not None:
+            real_avail = min(real_avail, capacity_by_day.get((pms_type, ds), 0))
         dates_data.append(
             {
                 "date": ds,

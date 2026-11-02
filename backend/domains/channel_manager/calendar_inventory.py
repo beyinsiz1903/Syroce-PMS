@@ -67,6 +67,52 @@ def build_sold_count_index(room_ids_by_type, active_bookings, start_date, end_da
     return sold
 
 
+async def lock_adjusted_capacities(database, tenant_id, counts, ids, bookings, start_date, end_date):
+    """The Exely grid must show the same physical ceiling as its write guard.
+
+    A lock can exist before/without an active booking document. Do not discard
+    it, release it or silently offer that room for sale. Read the whole window
+    in one bounded query, not one query per room/rate/night.
+    """
+    by_id = {rid: category for category, room_ids in ids.items() for rid in room_ids}
+    if len(by_id) != sum(c["total"] for c in counts.values()) or len(by_id) >= 500 or len(bookings) >= 10000:
+        raise ValueError("Incomplete physical inventory")
+    for booking in bookings:
+        if booking_room_type(booking, by_id, ids) is None:
+            continue
+        check_in = datetime.strptime(booking["check_in"][:10], "%Y-%m-%d").date()
+        check_out = datetime.strptime(booking["check_out"][:10], "%Y-%m-%d").date()
+        if check_out <= check_in:
+            raise ValueError("Invalid booking dates")
+    locks = await database.room_night_locks.find(
+        {"tenant_id": tenant_id, "room_id": {"$in": sorted(by_id)}, "night_date": {"$gte": start_date, "$lte": end_date}},
+        {"_id": 0, "room_id": 1, "night_date": 1, "lock_type": 1},
+    ).to_list(100001)
+    if len(locks) >= 100001:
+        raise ValueError("Incomplete room-night locks")
+    seen, locked = set(), {}
+    for lock in locks:
+        key = (lock.get("room_id"), lock.get("night_date"))
+        if (key in seen or key[0] not in by_id or not isinstance(key[1], str) or not start_date <= key[1] <= end_date
+                or lock.get("lock_type") not in {"booking", "hold", "ooo", "oos", "maintenance"}):
+            raise ValueError("Invalid room-night lock")
+        if datetime.strptime(key[1], "%Y-%m-%d").date().isoformat() != key[1]:
+            raise ValueError("Invalid room-night date")
+        seen.add(key)
+        category_day = (by_id[key[0]], key[1])
+        locked[category_day] = locked.get(category_day, 0) + 1
+    sold = build_sold_count_index(ids, bookings, start_date, end_date)
+    unassigned = build_sold_count_index(ids, [b for b in bookings if b.get("room_id") not in by_id], start_date, end_date)
+    capacities = {}
+    day, end = datetime.strptime(start_date, "%Y-%m-%d").date(), datetime.strptime(end_date, "%Y-%m-%d").date()
+    while day <= end:
+        for category, count in counts.items():
+            key = (category, day.isoformat())
+            capacities[key] = max(0, min(count["total"] - sold.get(key, 0), count["total"] - locked.get(key, 0) - unassigned.get(key, 0)))
+        day += timedelta(days=1)
+    return capacities
+
+
 async def exely_publishable_availability(database, tenant_id, room_type, mapping, canonical):
     """Respect the availability owner's calendar allotment AND physical locks.
 
