@@ -11,10 +11,28 @@ import {
   verifiedProviderChannels,
   providerWriteNotice,
   RateDeliveryReceipt,
+  unifiedBulkUpdatePath,
 } from '@/pages/UnifiedRateManager';
 
 describe('UnifiedRateManager write safety', () => {
   beforeEach(() => confirmDialog.mockReset());
+
+  it('uses a distinct net endpoint so an old server cannot silently save a base allotment', () => {
+    expect(unifiedBulkUpdatePath({ provider: 'exely', agenciesOnly: false, enabledFields: new Set(['availability']) }))
+      .toBe('/channel-manager/unified-rate-manager/bulk-remaining-update');
+    for (const input of [
+      { provider: 'hotelrunner', enabledFields: new Set(['availability']) },
+      { provider: 'agency', enabledFields: new Set(['availability']) },
+      { provider: 'exely', agenciesOnly: true, enabledFields: new Set(['availability']) },
+      { provider: 'exely', enabledFields: new Set(['rate', 'min_stay']) },
+    ]) expect(unifiedBulkUpdatePath(input)).toBe('/channel-manager/unified-rate-manager/bulk-grid-update');
+  });
+
+  it('makes the net-room contract explicit in the permanent delivery receipt', () => {
+    render(<RateDeliveryReceipt receipt={{ data: { provider_verified: true, provider_delivery_state: 'CONFIRMED', availability_input_mode: 'remaining' }, dateFrom: '2026-11-10', dateTo: '2026-11-10', roomCount: 1, fields: ['availability'] }} />);
+    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('net kalan oda sayısı');
+    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('Mevcut rezervasyonlar tekrar düşülmez');
+  });
 
   it('names the blocked provider instead of always blaming HotelRunner', () => {
     const message = providerWriteNotice([{ name: 'Exely', mode: 'read_only', block_reason: 'EXELY_ARI_WRITE_DISABLED' }]);
