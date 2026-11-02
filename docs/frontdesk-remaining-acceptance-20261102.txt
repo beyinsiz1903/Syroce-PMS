@@ -1,0 +1,138 @@
+ÖN BÜRO — KALAN İÇ AKIŞLAR, 2 KASIM 2026
+
+Kapsam ve durum
+Bu paket belirlenmiş iç yazılım eksiklerini giderir. Sınırsız bütün rol,
+veri, donanım ve dış sağlayıcı kombinasyonları için hatasızlık belgesi
+değildir. Yeni kodun merge/deploy sonrası kabulü ayrı kapıdır. Eski
+belgelerdeki PENDING satırları tarihçedir; aşağıda hangi altkümenin
+gerçekten doğrulandığı belirtilir, hepsi topluca LIVE_PASS yapılmaz.
+
+Düzeltmeler
+1 Müsaitlik servisi silinmiş/pasif TST814 ve sanal kategori odalarını
+  fiziksel müsait oda olarak döndürüyordu. Normal rezervasyon aynı
+  pasif odayı 404 ile reddetti. Müsaitlik okuması ve shadow eşleniği
+  aktif, silinmemiş, fiziksel oda sınırına alındı. Tenant ve tip filtresi
+  korunur; eski is_active alanı olmayan fiziksel kayıtlar desteklenir.
+  Oda envanteri, kaynak geçmişi veya kapasite verisi değiştirilmez.
+2 Ana ekranın çoklu oda yolunda USD/EUR rezervasyona TRY varsayılanlı
+  folyo oluşabiliyordu. Yeni folyo rezervasyonun açık para birimini alır.
+  Mevcut yanlış para birimli finansal kayıtlar topluca dönüştürülmez.
+3 Çoklu oda kişi/tutar girişleri boolean, kesirli kişi, negatif/NaN/Inf,
+  >2 ondalık ve aynı fiziksel oda tekrarı için yazıdan önce doğrulanır.
+  Başka tenant misafiri, pasif/silinmiş/sanal fiziksel hedef reddedilir;
+  yeni misafir bu kontrollerden sonra oluşturulur. Tekli ve çoklu
+  rezervasyon yollarında create_booking operasyon yetkisi uygulanır.
+4 Kısmen oluşmuş grup aynı anahtarla tekrar okununca 200 dönebiliyordu.
+  İki gerçek yerel replica testi önce 200 ile başarısız oldu. Grup oda
+  sayısı/oda kimlikleri ve her rezervasyonun folyosu tam değilse artık
+  409 ve açık mutabakat mesajı döner; yeni oda/gece kilidi veya rezervasyon
+  oluşturulmaz, mevcut kaynak otomatik silinmez. Tam grubun güvenli
+  tekrarı aynı kimlikleri verir. Bu, bozuk bir grubu tahminle onarmak değildir.
+5 Gelir Kontrolleri BAR/gün fiyatı ve aktif alt fiyat sınırı yeni
+  rezervasyonda açık operatör onayıyla kullanılabilir. Önce oda/tarih/
+  para birimiyle hesapla, sonra toplamı onayla. Planın ayrı bir para
+  birimi alanı olmadığından operatör seçili para birimini açıkça onaylar;
+  kur çevrimi veya varsayılan kur yoktur. Giriş günü minimum gece koşulu
+  ve pozitif kuruş hassasiyetli fiyatlar doğrulanır. Fiyat/plan kaynak
+  hash'i kayıtta yeniden hesaplanır; değişmiş kaynak veya tutar 409'dur.
+  Birlikte kişi bazlı fiyat/ikram seçimi reddedilir. Plan snapshot'ı
+  rezervasyonda saklanır; detay ve gece tahakkuku aynı 90/100 dağılımını
+  kullanır, 95/95 ortalamaya dönmez. Eksik/uyuşmayan plan yetkili kaynak
+  sayılmaz. Oda/tarih/para değişince UI onayı geçersizleşir. Eski
+  rezervasyonlar, otomatik OTA fiyatı ve fazla satış izni değişmez.
+6 Gelir ayarlarında geç gelen eski okuma yeni değerleri ezmez; aynı anda
+  iki kayıt/tazminat gönderimi engellenir, kayıtta alanlar sabitlenir.
+7 Çamaşırhane okuma hatası kayıtları boş liste/sıfır olarak göstermiyordu
+  denemez: bu kusur iki yeni regresyonla üretildi. Artık son bilinen
+  kayıt korunur, güncellik uyarısı ve doğrulanmamış sayaç işareti vardır.
+  Güncellik doğrulanana kadar durum yazısı engellenir; eski yanıtlar
+  yok sayılır. Ürün okuma hatası yeni siparişi engeller ve tekrar yolu verir.
+8 Eski paid_amount türetilmiş sayacı için finans yetkili önizleme ve
+  kaynak sürümlü, gerekçeli, hash-zincir denetimli mutabakat API'si eklendi.
+  Yalnız terminal rezervasyon ve bütün folyolar kapalıysa uygundur.
+  Gerçek ledger, ödeme, kasa ve döviz kaynağı oluşturmaz/değiştirmez.
+  Kaynak değişimi/yarışta 409; audit hatasında transaction geri alınır.
+  İçe aktarılmış başlangıç kredisi, belirsiz kimlik/başka folyo, karışık
+  para birimi, negatif/geçersiz tahsilat veya açıklanamayan eski kredi
+  otomatik değiştirilmez. Aktif konaklama/gelecek confirmed kayıtlar
+  inceleme gerektirir. Canlı tarihçeye toplu backfill yapılmadı.
+
+Yerel kanıt — gerçek loopback replica, gerçek HTTP handler ve kalıcı satırlar
+backend-broad-final.xml: 372 geçti; mevcut 162 utcnow deprecation uyarısı.
+new-backend-final-v3.xml: 88 geçti; 6 mevcut utcnow deprecation uyarısı.
+İki son koşu test kimlikleri örtüşmez: 460 ayrı backend kontrolü.
+frontend-full-final.xml: 2451 geçti, 0 hata/atlama. Yeni değişiklikler dahil.
+UI ilk koşusunun yanlış cwd kaynak okuma hataları ve yeni testin cleanup
+dönüş hatası başarı sayılmadı; doğru frontend cwd ile tam koşu tekrarlandı.
+Yeni testin beforeEach mock döndürmesi temizlendi; ürün hatası diye sunulmaz.
+Değişen kaynak Ruff/ESLint, üretim Vite build ve diff kontrolü geçti.
+Ortak node_modules değiştirilmedi; lock ile uyumlu follow-redirects1.16.2
+izole frontend kopyası kullanıldı. CI gate/ignore/zaman limitleri değişmedi.
+
+Canlı kabul — yayımdaki 7c1554f145635bdd301be416d1e4d9b855079ccf
+Yalnız Demo Hotel100001; iş günü26Ekim açık, Exely ARI/rezervasyon çekimi
+kapalı, HotelRunner bağlantısız, V2paused. Yeni kod henüz bu canlı sürümde
+yoktur. Aşağıdaki kabul mevcut yayımdaki çoklu folyo sözleşmesinin kabulüdür.
+Silinmiş odanın 404'ü korundu. Yeni401oda normal API'de paket oda sınırı
+400 ile engellendi; lisans/limit değiştirilmedi, oda eklenmedi.
+Başarılı yeni-guest kaydı korunur, başarısız rezervasyon tekrar gönderilmedi.
+
+Daha önce notunda açıkça yapay olduğu belgelenmiş123oda konaklaması,
+başlangıçta0borç/0ücret/0ödeme olanTRY kaynak seçildi. Orijinal folyosuna
+dokunulmadan iki yeni hizmet penceresi açıldı. Aktif oda araması çoklu
+folyoda tek hesabı otomatik seçmedi; seçimsiz ve başka konaklamanın kapalı
+USD hesabına çamaşırhane yazısı409 oldu. Gömlek30TRY normal tarifeden tek
+sipariş/aynı anahtar tekrarında aynıID; başlat→hazır→teslim→tekrar teslim
+sonucunda yalnız seçilen hizmet folyosuna tek30TRY ücret yazıldı.
+Diğer yeni hizmet hesabına20TRYspa+10TRYyemek ücreti eklendi. Her hesaba
+30TRY yalnız manuel kart-ledger kaydı yapıldı; aynı anahtar tekrarları
+yeni ödeme oluşturmadı. Kart numarası, PSP/banka veya gerçek para yok.
+Folyo/rezervasyon toplam tahsilat60TRY, eski sayaç0→60, iki hizmet
+folyosu0borç; günlük ve MTD tahsilat/gelir kaynakları60TRY arttı.
+Sadece bu vardiya kapatıldı: nakit0/sayım0/fark0, kart60/2işlem, aktif
+vardiya yok. UTC07:07–07:11, UI Türkiye10:07–10:11 eşleşti. İş günü
+26Ekim takvim2Kasım saatine dönüştürülmedi. Kasa/Z ekranı ayrıca görüldü.
+
+Koruma kabulü
+19 eski kaynak birebir aynı: fiziksel odalar/stok/aktif vardiya/concierge/
+görev/kontenjan/UDF/upsell ayar-teklif/değerlendirme/anket/departman/
+KVKK/talepler/onay/KBSkuyruk/blok/HKgörev/gelir ayarı/çamaşır tarifesi
+grupları (ayrı okuma adları işletici JSON'unda). Bütün diğer rezervasyonlar
+aynı; yalnız seçilen yapay kaydın paid_amount/collected_amount/payment_status
+alanları beklenen60TRY ile değişti. Eski folyosu ve eski çamaşır siparişleri
+aynı, yalnız iki yeni sıfır bakiyeli hizmet penceresi ve tek teslim kaydı
+eklendi. İş günü/kanal/kapasite aynı; test kayıtları silinmedi.
+
+Kanıtların yeri — ham misafir/finansal veri Git'e alınmaz
+İşletici alanı: frontdesk-closure-20261102.lvz9K8/
+  release-gate.json; before-*.json; new-booking-result.json(404);
+  new-room-result.json(400); targets.json; shift-target.json;
+  multi-folio-laundry-accepted.json; final-detail.json; final-z.json;
+  final-finance.json; live-remaining-accepted.json;
+  protected-final-acceptance.json; cashier-live-z60.png;
+  revenue-local-ui.png; ui-before.xml/ui-after.xml;
+  partial-group-before.xml(iki kırmızı regresyon); son test XML'leri.
+Önceki kanıtlar ezilmedi. Her canlı yazının ayrı intent/request/result
+jurnali var. Plan değişen başarısız girişler korunur; kör tekrar yok.
+
+19 ekran ailesi ve sınır
+Ön Büro, Kat Hizmetleri, Odalar, Misafirler, Rezervasyonlar, Kasa, Upsell,
+Raporlar, Flash, Görevler, Geri Bildirim, Kontenjan, POS, Çamaşırhane,
+Concierge, Gelir Kontrolleri, Müdür, KBS ve KVKK envanteri korundu.
+372 geniş regresyon; yeni88; daha önceki hizmet→folyo→rapor ve günsonu
+kabul belgeleri birlikte okunur. Bu tur19sayfanın her düğmesi, her rol,
+her çıktı ve tüm kombinasyonları canlıda tekrar edilmedi. İlgili tarihçe:
+  docs/department-folio-live-acceptance-20261030.txt
+  docs/native-guest-service-acceptance-20261030.txt
+  docs/frontdesk-batch-control-acceptance-20261031.txt
+  docs/pms-event-clock-acceptance-20261101.txt
+
+Sonraki yayın kapısı
+PR zorunlu CI→merge→gerçek serverdeploy→health SHA doğrulanır. Sonra yalnız
+yeni aktif-fiziksel oda filtresi, yeni rezervasyonun folyo para birimi,
+açık fiyat onayı ve hata sonrası UI toparlanması dar canlı kabul edilir.
+Eski hizmet/tahsilat/vardiya tekrarlanmaz. Geçmiş sayaçta önce salt okunur
+önizleme yapılır; aktif/ithal/karışık/belirsiz kaynakta toplu yazı yoktur.
+Gerçek PSP ön ödeme/iade, resmîKBS, fiziksel yazıcı/POS cihazı, dış yorum
+ve sağlayıcı sertifikasyonları bu iç yazılım testleriyle tamamlanmış
+sayılmaz. Makine saat dilimiyle iş günü birbirine karıştırılmaz.

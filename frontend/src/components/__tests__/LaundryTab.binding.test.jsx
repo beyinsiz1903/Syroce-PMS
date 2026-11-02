@@ -108,3 +108,31 @@ it('recalculates existing lines when service type changes, rejects fractional qu
   expect(post.mock.calls[1][2]).toEqual(post.mock.calls[0][2]);
   expect(post.mock.calls[0][1]).toEqual(expect.objectContaining({ room_number: '105', booking_id: 'b105', folio_id: 'f105', items: [expect.objectContaining({ quantity: 2, total: 90 })] }));
 });
+
+it('keeps the last known orders with an explicit warning when a refresh fails', async () => {
+  get.mockImplementation(url => Promise.resolve({ data: url === '/laundry/items' ? { items: [] } : { orders: [
+    { id: 'retained', room_number: '105', guest_name: 'Bilinen Misafir', status: 'ready', total: 30, currency: 'TRY' }
+  ] } }));
+  render(<LaundryTab />);
+  await screen.findByText('Bilinen Misafir');
+  get.mockRejectedValueOnce(new Error('read unavailable'));
+  fireEvent.click(screen.getByRole('button', { name: 'yenile', exact: true }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  expect(screen.getByText('Bilinen Misafir')).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('güncelliği doğrulanamadı');
+  expect(screen.getByRole('button', { name: 'Teslim Et', exact: true })).toBeDisabled();
+});
+
+it('ignores a stale refresh response after a newer list has arrived', async () => {
+  render(<LaundryTab />);
+  await act(async () => {});
+  const older = deferred(); const newer = deferred();
+  get.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'yenile', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'yenile', exact: true }));
+  const orders = name => ({ data: { orders: [{ id: name, room_number: '105', guest_name: name, status: 'ready', total: 30 }] } });
+  await act(async () => newer.resolve(orders('Güncel Misafir')));
+  await act(async () => older.resolve(orders('Eski Yanıt')));
+  expect(screen.getByText('Güncel Misafir')).toBeInTheDocument();
+  expect(screen.queryByText('Eski Yanıt')).not.toBeInTheDocument();
+});

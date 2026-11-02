@@ -1,4 +1,8 @@
 ÖN BÜRO TAM KONTROL KABULÜ — DEVAM EDİYOR, TAMAMLANDI DEĞİL
+2Kasım güncel dar kapanış: docs/frontdesk-remaining-acceptance-20261102.txt.
+460backend/2451UI ve yeni çoklu-folyo→hizmet→tahsilat→Z canlı kabulü ayrı
+kanıtlandı. Yeni düzeltmelerin deploy kapısı ve dış kapsam ayrıdır; aşağıdaki
+PENDING satırları tarihçedir, bütün19aile için sınırsız başarı iddiası yoktur.
 31Ekim son toplu tur:PR1474merge/gerçekdeploy41218184706/health48a27e58
 doğrulandı;Müdür gerçekleşen25/31ve çamaşırhane create/retry/start/ready/
 cancel dar canlı geçti. Kullanıcı kaynak/amaç onayıyla mevcut şifre normal

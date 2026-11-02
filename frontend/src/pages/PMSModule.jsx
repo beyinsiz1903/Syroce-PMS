@@ -379,6 +379,13 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     setMultiRoomBooking(prev => {
       let changed = false;
       const next = prev.map(line => {
+        const source = line.revenue_quote_snapshot;
+        if (source) {
+          const valid = source.room_id === line.room_id && source.check_in === newBooking.check_in
+            && source.check_out === newBooking.check_out && source.currency === newBooking.currency;
+          if (!valid && !line.revenue_quote_stale) { changed = true; return { ...line, apply_revenue_pricing: false, revenue_quote_hash: null, revenue_quote_stale: true }; }
+          if (line.apply_revenue_pricing || line.revenue_quote_stale) return line;
+        }
         const room = rooms.find(item => item.id === line.room_id);
         const rule = findOccupancyRule(occupancyPricingRules, room);
         const quote = rule?.pricing_type === 'per_person'
@@ -407,7 +414,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       });
       return changed ? next : prev;
     });
-  }, [newBooking.check_in, newBooking.check_out, multiRoomBooking, rooms, occupancyPricingRules]);
+  }, [newBooking.check_in, newBooking.check_out, newBooking.currency, multiRoomBooking, rooms, occupancyPricingRules]);
 
   const [bookingConflict, setBookingConflict] = useState(null);
 
@@ -441,6 +448,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const updateMultiRoomField = (index, field, value) => {
     setMultiRoomBooking(prev => prev.map((room, i) => {
       if (i !== index) return room;
+      if (field === 'revenue_quote') return value ? { ...room, total_amount: value.total_amount, base_rate: 0,
+        apply_revenue_pricing: true, revenue_quote_hash: value.quote_hash, revenue_quote_snapshot: value,
+        revenue_quote_stale: false, apply_occupancy_pricing: false } : { ...room, apply_revenue_pricing: false,
+        revenue_quote_hash: null, revenue_quote_snapshot: null, revenue_quote_stale: false };
       if (field === 'adults' || field === 'children' || field === 'base_rate' || field === 'total_amount') {
         const numeric = field === 'base_rate' || field === 'total_amount' ? parseFloat(value) || 0 : parseInt(value) || 0;
         return { ...room, [field]: numeric };
@@ -882,12 +893,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     if (!newBooking.check_in || !newBooking.check_out) { toast.error('Giriş ve çıkış tarihlerini seçin'); return; }
     if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('En az bir oda ekleyin'); return; }
     if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Her satır için oda seçin'); return; }
+    if (multiRoomBooking.some(room => room.revenue_quote_stale)) { toast.error('Değişen gelir planını yeniden hesaplayın veya manuel fiyata dönün'); return; }
     try {
       const roomsPayload = multiRoomBooking.map(room => ({
         room_id: room.room_id, adults: room.adults, children: room.children, children_ages: room.children_ages || [],
         total_amount: room.total_amount, base_rate: room.base_rate,
         apply_occupancy_pricing: room.apply_occupancy_pricing === true,
         pricing_rule_version: room.pricing_rule_version || null,
+        apply_revenue_pricing: room.apply_revenue_pricing === true,
+        revenue_quote_hash: room.revenue_quote_hash || null,
         rate_plan: room.rate_plan || newBooking.rate_type || 'Standard', package_code: room.package_code || null
       }));
       const payload = {

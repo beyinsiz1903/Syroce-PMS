@@ -36,8 +36,21 @@ def exely_daily_rate_plan(booking: dict) -> dict[date, int] | None:
     """
     if str(booking.get("booking_source") or "").lower() != "exely":
         return None
+    return _verified_plan(booking, booking.get('daily_rates'))
+
+
+def booking_daily_rate_plan(booking: dict) -> dict[date, int] | None:
+    """Immutable operator quote or provider plan; explicit PMS rows win outside."""
+    if booking.get('pricing_source') == 'revenue_controls':
+        source = booking.get('revenue_quote_snapshot') or {}
+        if not isinstance(source, dict) or source.get('currency') != booking.get('currency'):
+            return None
+        return _verified_plan(booking, source.get('daily_rates'))
+    return exely_daily_rate_plan(booking)
+
+
+def _verified_plan(booking, plan):
     start, end = _day(booking.get("check_in")), _day(booking.get("check_out"))
-    plan = booking.get("daily_rates")
     if start is None or end is None or not isinstance(plan, list) or not plan:
         return None
     nights = (end - start).days

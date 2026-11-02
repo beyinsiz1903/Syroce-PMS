@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -51,13 +51,19 @@ const RevenueControls = ({ rooms = [] }) => {
   const [saving, setSaving] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const loadVersion = useRef(0);
+  const savingRef = useRef(false);
+  const walkingRef = useRef(false);
+  useEffect(() => () => { loadVersion.current += 1; }, []);
   const [walkData, setWalkData] = useState({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '', request_id: '' });
 
   const loadSettings = useCallback(async () => {
+    const version = ++loadVersion.current;
     setLoadError(false);
     setSettingsLoaded(false);
     try {
       const res = await axios.get('/revenue/settings');
+      if (version !== loadVersion.current) return;
       if (!['hurdle_rates', 'day_pricing', 'overbooking'].every(key => typeof res.data.section_revisions?.[key] === 'string' && res.data.section_revisions[key].length === 64)) throw new Error('Missing section versions');
       setHurdleRates(res.data.hurdle_rates || {});
       setDayPricing(res.data.day_pricing || {});
@@ -66,6 +72,7 @@ const RevenueControls = ({ rooms = [] }) => {
       setConflict(false);
       setSettingsLoaded(true);
     } catch {
+      if (version !== loadVersion.current) return;
       setLoadError(true);
       setSettingsLoaded(false);
       toast.error(tr('loadError'));
@@ -92,6 +99,7 @@ const RevenueControls = ({ rooms = [] }) => {
   };
 
   const saveAll = async (section) => {
+    if (savingRef.current || !settingsLoaded || conflict) return;
     const field = { hurdle: 'hurdle_rates', daypricing: 'day_pricing', overbooking: 'overbooking' }[section];
     let value;
     try {
@@ -104,6 +112,7 @@ const RevenueControls = ({ rooms = [] }) => {
       }]))]));
       else value = { enabled: overbooking.enabled, max_percentage: numeric(overbooking.max_percentage, 0, 20, true), walk_amount: numeric(overbooking.walk_amount), walk_compensation: overbooking.walk_compensation };
     } catch { toast.error(t('pmsComponents.revenue.validationError', { defaultValue: 'Check room types and numeric limits. Blank, negative or fractional limits are not accepted.' })); return; }
+    savingRef.current = true;
     setSaving(true);
     try {
       const res = await axios.put('/revenue/settings', { [field]: value, expected_revisions: { [field]: revisions[field] } });
@@ -113,16 +122,19 @@ const RevenueControls = ({ rooms = [] }) => {
       if (error.response?.status === 409) setConflict(true);
       toast.error(tr('saveError'));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const processWalk = async () => {
+    if (walkingRef.current) return;
     let body;
     try {
       if (!walkData.guest_name.trim() || !roomTypeKeys.includes(walkData.room_type)) throw new Error('Missing identity');
       body = { ...walkData, guest_name: walkData.guest_name.trim(), compensation_amount: numeric(walkData.compensation_amount) };
     } catch { toast.error(t('pmsComponents.revenue.validationError', { defaultValue: 'Check the guest, room type and amount.' })); return; }
+    walkingRef.current = true;
     setWalking(true);
     try {
       await axios.post('/revenue/walk-out', body);
@@ -131,7 +143,7 @@ const RevenueControls = ({ rooms = [] }) => {
       setWalkData({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '', request_id: '' });
     } catch {
       toast.error(tr('walkOutError'));
-    } finally { setWalking(false); }
+    } finally { walkingRef.current = false; setWalking(false); }
   };
   const percentage = Number(overbooking.max_percentage);
   const extraRooms = overbooking.enabled && Number.isInteger(percentage) && percentage >= 0 && percentage <= 20 ? Math.floor(physicalRooms.length * percentage / 100) : 0;
@@ -149,6 +161,7 @@ const RevenueControls = ({ rooms = [] }) => {
       {(unsupported.hurdle || unsupported.daypricing) && <div role="alert">{t('pmsComponents.revenue.unknownTypes', { defaultValue: 'Stored settings reference room types outside the physical inventory. The affected section cannot be saved; existing values are retained.' })}</div>}
       {conflict && <div role="alert" className="rounded border border-red-300 p-3">{t('pmsComponents.revenue.conflict', { defaultValue: 'Settings changed in another session. Reload before saving.' })}<Button onClick={loadSettings}>{tr('retry')}</Button></div>}
 
+      <fieldset disabled={saving} className="min-w-0">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         {loadError && <div className="mb-3 flex flex-col gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between"><span>{tr('loadError')}</span><Button size="sm" variant="outline" onClick={loadSettings}>{tr('retry')}</Button></div>}
         <TabsList className="flex w-full justify-start overflow-x-auto">
@@ -318,6 +331,7 @@ const RevenueControls = ({ rooms = [] }) => {
           </Dialog>
         </TabsContent>
       </Tabs>
+      </fieldset>
     </div>
   );
 };

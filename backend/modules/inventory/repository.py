@@ -9,7 +9,10 @@ from core.database import db
 
 class InventoryRepository:
     async def list_rooms(self, tenant_id: str, room_type: str | None = None) -> list[dict[str, Any]]:
-        query: dict[str, Any] = {"tenant_id": tenant_id}
+        # Match reservation creation and physical capacity reports. Deleted or
+        # virtual placeholders must not be offered as a bookable physical room.
+        query: dict[str, Any] = {"tenant_id": tenant_id, "is_active": {"$ne": False},
+            "deleted_at": None, "is_virtual": {"$ne": True}}
         if room_type:
             query["room_type"] = room_type
         return await db.rooms.find(query, {"_id": 0}).to_list(1000)

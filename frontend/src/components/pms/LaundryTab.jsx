@@ -55,11 +55,16 @@ const LaundryTab = () => {
   const [roomLookupBusy, setRoomLookupBusy] = useState(false);
   const [roomError, setRoomError] = useState('');
   const [folioOptions, setFolioOptions] = useState([]);
+  const [ordersError, setOrdersError] = useState(false);
+  const [ordersStale, setOrdersStale] = useState(true);
+  const [itemsError, setItemsError] = useState(false);
+  const ordersVersion = useRef(0);
+  const itemsVersion = useRef(0);
   const lookupVersion = useRef(0);
   const request = useRef(null);
   const submitting = useRef(false);
   const locked = loading || Boolean(request.current);
-  useEffect(() => () => { lookupVersion.current += 1; }, []);
+  useEffect(() => () => { lookupVersion.current += 1; ordersVersion.current += 1; itemsVersion.current += 1; }, []);
   const changeDialog = open => {
     lookupVersion.current += 1;
     setRoomLookupBusy(false);
@@ -86,23 +91,35 @@ const LaundryTab = () => {
   });
   const activeItems = items.filter(i => i.active !== false);
   const loadOrders = useCallback(async () => {
+    const version = ++ordersVersion.current;
+    setOrdersStale(true);
     try {
       const res = await axios.get('/laundry/orders');
-      setOrders(res.data.orders || []);
+      if (version !== ordersVersion.current) return;
+      if (!Array.isArray(res.data.orders)) throw new Error('Invalid order list');
+      setOrders(res.data.orders);
+      setOrdersError(false);
+      setOrdersStale(false);
     } catch {
+      if (version !== ordersVersion.current) return;
       toast.error('Çamaşır siparişleri yüklenemedi');
-      setOrders([]);
+      setOrdersError(true);
     }
   }, []);
   const loadItems = useCallback(async () => {
+    const version = ++itemsVersion.current;
     try {
       const res = await axios.get('/laundry/items');
-      const list = res.data.items || [];
+      if (version !== itemsVersion.current) return;
+      if (!Array.isArray(res.data.items)) throw new Error('Invalid item list');
+      const list = res.data.items;
       setItems(list);
+      setItemsError(false);
       setItemToAdd(p => ({ ...p, code: p.code || list[0]?.code || '' }));
     } catch {
+      if (version !== itemsVersion.current) return;
       toast.error('Ürün listesi yüklenemedi');
-      setItems([]);
+      setItemsError(true);
     }
   }, []);
   useEffect(() => {
@@ -180,7 +197,7 @@ const LaundryTab = () => {
   };
   const submitOrder = async () => {
     if (submitting.current) return;
-    if (!request.current && (roomLookupBusy || roomError || !orderForm.booking_id || !orderForm.folio_id || orderForm.items.length === 0)) {
+    if (!request.current && (itemsError || roomLookupBusy || roomError || !orderForm.booking_id || !orderForm.folio_id || orderForm.items.length === 0)) {
       toast.error('Aktif konaklama, açık folyo ve en az bir ürün gereklidir');
       return;
     }
@@ -205,6 +222,7 @@ const LaundryTab = () => {
     submitting.current = false;
   };
   const updateStatus = async (orderId, newStatus) => {
+    if (ordersStale) return;
     try {
       const res = await axios.patch(`/laundry/orders/${orderId}`, {
         status: newStatus
@@ -339,6 +357,8 @@ const LaundryTab = () => {
   };
   const orderTotal = orderForm.items.reduce((s, i) => s + (i.total || 0), 0);
   return <div className="space-y-6">
+      {ordersError && <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Siparişlerin güncelliği doğrulanamadı. Son bilinen kayıtlar gösteriliyor; işlem yapmadan önce Yenile ile yeniden deneyin.</div>}
+      {itemsError && <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Ürün fiyatlarının güncelliği doğrulanamadı. Yeni sipariş için fiyat listesini yeniden yükleyin. <Button variant="outline" onClick={loadItems}>Fiyat listesini yenile</Button></div>}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold flex items-center gap-2">
           <Shirt className="w-6 h-6" /> {t('cm.components_pms_LaundryTab.camasirhane_yonetimi')}
@@ -355,7 +375,7 @@ const LaundryTab = () => {
 
         <TabsContent value="orders" className="space-y-4">
           <div className="flex justify-end gap-2">
-            <Button onClick={() => changeDialog(true)} className="bg-blue-600 hover:bg-blue-700">
+            <Button disabled={itemsError} onClick={() => changeDialog(true)} className="bg-blue-600 hover:bg-blue-700">
               <Plus className="w-4 h-4 mr-2" /> {t('cm.components_pms_LaundryTab.yeni_siparis')}
             </Button>
             <Button variant="outline" onClick={loadOrders}>
@@ -401,7 +421,7 @@ const LaundryTab = () => {
           }].map((s, i) => <Card key={s.id || i} className={`bg-${s.color}-50 border-${s.color}-200`}>
                 <CardContent className="p-3 text-center">
                   <p className={`text-xs text-${s.color}-600`}>{s.label}</p>
-                  <p className={`text-2xl font-bold text-${s.color}-700`}>{s.count}</p>
+                  <p className={`text-2xl font-bold text-${s.color}-700`}>{ordersStale ? '—' : s.count}</p>
                 </CardContent>
               </Card>)}
           </div>
@@ -409,7 +429,7 @@ const LaundryTab = () => {
           <div className="space-y-2">
             {filteredOrders.length === 0 ? <Card className="border-dashed"><CardContent className="py-8 text-center text-gray-400">
                 <Shirt className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p>{t('cm.components_pms_LaundryTab.siparis_bulunamadi')}</p>
+                <p>{ordersStale ? 'Sipariş listesi doğrulanıyor; yükleme tamamlanmadı.' : t('cm.components_pms_LaundryTab.siparis_bulunamadi')}</p>
               </CardContent></Card> : filteredOrders.map(order => {
             const sc = statusConfig[order.status] || statusConfig.pending;
             return <Card key={order.id} className="hover:shadow-sm transition">
@@ -432,14 +452,14 @@ const LaundryTab = () => {
                       <div className="flex items-center gap-3">
                         <Badge className={sc.color}>{sc.label}</Badge>
                         <span className="text-sm font-bold text-gray-700">{formatCurrency(order.total, order.currency || currency)}</span>
-                        <div className="flex gap-1">
+                        <fieldset disabled={ordersStale} className="flex gap-1">
                           {order.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Başla</Button>}
                           {order.status === 'in_progress' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>{t('cm.components_pms_LaundryTab.hazir_04e6f')}</Button>}
                           {order.status === 'ready' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'delivered')}>Teslim Et</Button>}
                           {['pending', 'in_progress', 'ready'].includes(order.status) && !order.folio_charged && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={async () => {
                             if (await confirmDialog({ message: 'Sipariş iptal edilsin mi? Kayıt korunur; folyoya ücret işlenmez.' })) updateStatus(order.id, 'cancelled');
                           }}>İptal Et</Button>}
-                        </div>
+                        </fieldset>
                       </div>
                     </div>
                   </CardContent>

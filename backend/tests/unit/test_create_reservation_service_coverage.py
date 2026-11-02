@@ -547,3 +547,32 @@ def test_request_hash_is_stable_and_tenant_and_payload_sensitive(harness):
     assert first == same
     assert first != other_tenant
     assert first != other_payload
+
+
+@pytest.mark.asyncio
+async def test_explicit_revenue_quote_is_revalidated_before_create_and_preserved(harness, monkeypatch):
+    from modules.pms_core import revenue_booking_quote
+
+    snapshot = {'quote_hash': 'a' * 64, 'currency': 'USD', 'total_amount': 1200,
+        'daily_rates': [{'date': harness.booking.check_in[:10], 'amount': 600}]}
+    validate = AsyncMock(return_value=snapshot)
+    monkeypatch.setattr(revenue_booking_quote, 'accept_quote', validate)
+    booking = _booking(currency='USD', apply_revenue_pricing=True, revenue_quote_hash='a' * 64)
+    result = await harness.service.create(booking, harness.user, harness.request)
+    validate.assert_awaited_once_with(harness.database, 'tenant-1', 'room-1',
+        booking.check_in, booking.check_out, 'USD', 1200, 'a' * 64)
+    assert result['pricing_source'] == 'revenue_controls' and result['revenue_quote_snapshot'] == snapshot
+    assert harness.repository.insert_folio.await_args.args[0]['currency'] == 'USD'
+
+
+@pytest.mark.asyncio
+async def test_rejected_revenue_quote_never_persists_a_booking_or_folio(harness, monkeypatch):
+    from modules.pms_core import revenue_booking_quote
+
+    monkeypatch.setattr(revenue_booking_quote, 'accept_quote', AsyncMock(side_effect=HTTPException(409, 'stale')))
+    booking = _booking(apply_revenue_pricing=True, revenue_quote_hash='a' * 64)
+    with pytest.raises(HTTPException) as error:
+        await harness.service.create(booking, harness.user, harness.request)
+    assert error.value.status_code == 409
+    harness.repository.insert_booking.assert_not_awaited()
+    harness.repository.insert_folio.assert_not_awaited()

@@ -216,6 +216,7 @@ async def create_booking(
     request: Request,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
+    _op=Depends(require_op("create_booking")),
 ):
     return await create_reservation_service.create(booking_data, current_user, request)
 
@@ -902,6 +903,7 @@ async def create_multi_room_booking(
     request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("frontdesk")),  # v97 DW
+    _op=Depends(require_op("create_booking")),
 ):
     """Create a multi-room booking under one group_booking_id.
 
@@ -937,32 +939,34 @@ async def create_multi_room_booking(
             existing_hash = existing[0].get("idempotency_payload_hash")
             if payload_hash and existing_hash and existing_hash != payload_hash:
                 raise HTTPException(status_code=409, detail="Idempotency-Key reused with different payload")
+            # A worker crash or incomplete saga compensation can leave just
+            # part of the group. Never turn that ambiguous result into 200 or
+            # create replacement rows/locks on a retry; require reconciliation.
+            expected_rooms = {row.get('room_id') for row in payload.rooms}
+            existing_ids = [row['id'] for row in existing]
+            folios = await tenant_db.folios.find({'tenant_id': current_user.tenant_id,
+                'booking_id': {'$in': existing_ids}}, {'_id': 0, 'booking_id': 1}).to_list(length=1000)
+            if (len(existing) != len(payload.rooms) or {row.get('room_id') for row in existing} != expected_rooms
+                or {row['booking_id'] for row in folios} != set(existing_ids)):
+                raise HTTPException(409, 'Rezervasyon grubu kısmen oluşmuş; mevcut kayıtları kontrol edin. Yeni kayıt açılmadı.')
             return existing
     else:
         deterministic_group = None
     # ────────────────────────────────────────────────────────────────────
 
-    # Resolve guest
+    # Validate the complete group before creating a guest or any stay.
     guest_id = payload.guest_id
-    if not guest_id and payload.guest:
-        guest = Guest(tenant_id=current_user.tenant_id, **payload.guest.model_dump())
-        guest_dict = guest.model_dump()
-        guest_dict["created_at"] = guest_dict["created_at"].isoformat()
-        from security.guest_write import encrypt_guest_insert
-
-        guest_dict = encrypt_guest_insert(guest_dict)
-        await tenant_db.guests.insert_one(guest_dict)
-        guest_id = guest.id
-
-    if not guest_id:
+    if not guest_id and not payload.guest:
         raise HTTPException(status_code=400, detail="guest_id or guest details must be provided")
+    if guest_id and not await tenant_db.guests.find_one({'id': guest_id, 'tenant_id': current_user.tenant_id}, {'_id': 0, 'id': 1}):
+        raise HTTPException(404, 'Misafir bu tesiste bulunamadı')
 
     try:
         check_in_dt = datetime.fromisoformat(payload.arrival_date.replace("Z", "+00:00"))
         check_out_dt = datetime.fromisoformat(payload.departure_date.replace("Z", "+00:00"))
     except (ValueError, AttributeError, TypeError) as _e:
         raise HTTPException(status_code=400, detail=f"Gecersiz tarih formati: {_e}")
-    if check_out_dt <= check_in_dt:
+    if check_out_dt.date() <= check_in_dt.date() or (check_out_dt.date() - check_in_dt.date()).days > 365:
         raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
 
     if not isinstance(payload.rooms, list) or not payload.rooms:
@@ -978,9 +982,35 @@ async def create_multi_room_booking(
         rid = room_data.get("room_id")
         if not rid or not isinstance(rid, str):
             raise HTTPException(status_code=400, detail="Her oda icin gecerli room_id gerekli")
+        from decimal import Decimal, InvalidOperation
+
+        try:
+            for field, default in (('adults', 1), ('children', 0)):
+                value = room_data.get(field, default)
+                if isinstance(value, bool):
+                    raise ValueError
+                number = Decimal(str(value))
+                if not number.is_finite() or number != number.to_integral_value() or not 0 <= number <= 50:
+                    raise ValueError
+            amount = room_data.get('total_amount', 0)
+            if isinstance(amount, bool):
+                raise ValueError
+            amount = Decimal(str(amount))
+            if not amount.is_finite() or not 0 <= amount <= Decimal('1e12') or amount * 100 != (amount * 100).to_integral_value():
+                raise ValueError
+            if int(room_data.get('adults', 1)) + int(room_data.get('children', 0)) < 1:
+                raise ValueError
+            ages = room_data.get('children_ages', [])
+            if not isinstance(ages, list) or any(type(age) is not int or not 0 <= age <= 17 for age in ages):
+                raise ValueError
+        except (ValueError, TypeError, InvalidOperation, OverflowError):
+            raise HTTPException(422, 'Oda kişi sayısı ve tutarı geçersiz; kesirli kişi, negatif/sonlu olmayan tutar kabul edilmez') from None
         requested_room_ids.append(rid)
+    if len(requested_room_ids) != len(set(requested_room_ids)):
+        raise HTTPException(409, 'Aynı fiziksel oda gruba iki kez eklenemez')
     found_rooms = await tenant_db.rooms.find(
-        {"id": {"$in": requested_room_ids}, "tenant_id": current_user.tenant_id},
+        {"id": {"$in": requested_room_ids}, "tenant_id": current_user.tenant_id,
+            "is_active": {"$ne": False}, "deleted_at": None, "is_virtual": {"$ne": True}},
         {
             "id": 1,
             "room_type": 1,
@@ -995,6 +1025,27 @@ async def create_multi_room_booking(
     missing = [r for r in requested_room_ids if r not in found_set]
     if missing:
         raise HTTPException(status_code=404, detail=f"Oda(lar) bulunamadi: {missing[:5]}")
+
+    revenue_quotes = {}
+    for index, row in enumerate(payload.rooms):
+        if row.get('apply_revenue_pricing') is not None and type(row.get('apply_revenue_pricing')) is not bool:
+            raise HTTPException(422, 'Gelir planı seçimi boolean olmalıdır')
+        if row.get('apply_revenue_pricing') is True:
+            if row.get('apply_occupancy_pricing'):
+                raise HTTPException(422, 'Gelir planı ve kişi bazlı fiyat aynı anda uygulanamaz')
+            from modules.pms_core.revenue_booking_quote import accept_quote
+
+            revenue_quotes[index] = await accept_quote(tenant_db, current_user.tenant_id, row['room_id'],
+                payload.arrival_date, payload.departure_date, payload.currency, row.get('total_amount'), row.get('revenue_quote_hash'))
+
+    if not guest_id:
+        guest = Guest(tenant_id=current_user.tenant_id, **payload.guest.model_dump())
+        guest_dict = guest.model_dump()
+        guest_dict['created_at'] = guest_dict['created_at'].isoformat()
+        from security.guest_write import encrypt_guest_insert
+
+        await tenant_db.guests.insert_one(encrypt_guest_insert(guest_dict))
+        guest_id = guest.id
 
     await record_booking_consent(tenant_db, current_user.tenant_id, guest_id, current_user.id, payload.whatsapp_consent, payload.whatsapp_consent_phone)
     group_id = deterministic_group or str(uuid.uuid4())
@@ -1030,7 +1081,7 @@ async def create_multi_room_booking(
         if compensation_errors:
             logger.error("SAGA COMPENSATION PARTIAL FAILURE group=%s reason=%s errors=%s", group_id, reason, compensation_errors)
 
-    for room_data in payload.rooms:
+    for room_index, room_data in enumerate(payload.rooms):
         try:
             room_id = room_data.get("room_id")
             if not room_id:
@@ -1105,6 +1156,7 @@ async def create_multi_room_booking(
                 "pricing_rule_version": pricing_quote["pricing_version"] if pricing_quote else None,
                 "pricing_breakdown": pricing_quote,
                 "pricing_rule_snapshot": pricing_rule,
+                **({'pricing_source': 'revenue_controls', 'revenue_quote_snapshot': revenue_quotes[room_index]} if room_index in revenue_quotes else {}),
                 "channel": getattr(payload.channel, "value", payload.channel) if payload.channel else "direct",
                 "rate_plan": rate_plan or "Standard",
                 "special_requests": special_req,
@@ -1156,6 +1208,7 @@ async def create_multi_room_booking(
                     folio_number=folio_number,
                     folio_type=FolioType.GUEST,
                     guest_id=guest_id,
+                    currency=payload.currency.upper(),
                 )
                 folio_dict = folio.model_dump()
                 folio_dict["created_at"] = folio_dict["created_at"].isoformat()

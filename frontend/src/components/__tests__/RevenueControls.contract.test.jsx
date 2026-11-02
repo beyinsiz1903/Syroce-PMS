@@ -119,3 +119,20 @@ it('fails closed when section versions are unavailable', async () => {
   expect(await screen.findByText(key('loadError'))).toBeInTheDocument();
   expect(saveButton()).toBeDisabled();
 });
+
+it('does not let an older explicit reload overwrite the latest settings and revision', async () => {
+  render(<RevenueControls rooms={rooms} />); await ready();
+  put.mockRejectedValueOnce({ response: { status: 409 } });
+  fireEvent.click(saveButton());
+  await screen.findByRole('alert');
+  let finishOld, finishNew;
+  const older = new Promise(resolve => { finishOld = resolve; });
+  const newer = new Promise(resolve => { finishNew = resolve; });
+  get.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+  fireEvent.click(screen.getByRole('button', { name: key('retry') }));
+  fireEvent.click(screen.getByRole('button', { name: key('retry') }));
+  const settings = amount => ({ data: { ...data(), hurdle_rates: { 'Junior Suite': { min_rate: amount, bar: amount, active: true } } } });
+  await act(async () => finishNew(settings(60)));
+  await act(async () => finishOld(settings(50)));
+  expect(screen.getByRole('spinbutton', { name: `Junior Suite ${key('minPrice')}` })).toHaveValue(60);
+});

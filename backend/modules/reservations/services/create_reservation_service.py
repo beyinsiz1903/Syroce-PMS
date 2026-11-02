@@ -160,6 +160,13 @@ class CreateReservationService:
                 float(pricing_quote['total_amount'] if pricing_quote else booking_data.total_amount),
                 2,
             )
+            revenue_quote = None
+            if booking_data.apply_revenue_pricing:
+                from modules.pms_core.revenue_booking_quote import accept_quote
+
+                revenue_quote = await accept_quote(_db, tenant_context.tenant_id, booking_data.room_id,
+                    booking_data.check_in, booking_data.check_out, booking_data.currency,
+                    commercial_total, booking_data.revenue_quote_hash)
             booking_dict = {
                 'id': booking_id,
                 'tenant_id': tenant_context.tenant_id,
@@ -180,6 +187,7 @@ class CreateReservationService:
                 'pricing_rule_version': pricing_quote['pricing_version'] if pricing_quote else None,
                 'pricing_breakdown': pricing_quote,
                 'pricing_rule_snapshot': pricing_rule,
+                **({'pricing_source': 'revenue_controls', 'revenue_quote_snapshot': revenue_quote} if revenue_quote else {}),
                 'paid_amount': 0.0,
                 'status': getattr(booking_data, 'status', None) or 'confirmed',
                 'channel': booking_data.channel.value if booking_data.channel else 'direct',
