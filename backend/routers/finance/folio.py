@@ -71,11 +71,11 @@ security = HTTPBearer()
 
 
 @router.get('/folio/booking/{booking_id}/paid-counter-preview')
-async def preview_paid_counter(booking_id: str, current_user: User = Depends(get_current_user),
+async def preview_paid_counter(booking_id: str, review_closed_folios: bool = False, current_user: User = Depends(get_current_user),
     _perm=Depends(require_op('manage_city_ledger'))):
     from modules.pms_core.payment_counter_reconciliation import preview
 
-    return await preview(db, current_user.tenant_id, booking_id)
+    return await preview(db, current_user.tenant_id, booking_id, review_closed_folios=review_closed_folios)
 
 
 @router.post('/folio/booking/{booking_id}/reconcile-paid-counter')
@@ -85,12 +85,17 @@ async def reconcile_paid_counter(booking_id: str, body: dict = Body(...),
 
     from modules.pms_core.payment_counter_reconciliation import reconcile
 
-    if set(body) != {'source_revision', 'reason'} or not isinstance(body['source_revision'], str) or len(body['source_revision']) != 64:
+    if set(body) not in ({'source_revision', 'reason'}, {'source_revision', 'reason', 'review_closed_folios'}):
+        raise HTTPException(422, 'Güncel kaynak önizlemesi gereklidir')
+    if 'review_closed_folios' in body and body['review_closed_folios'] is not True:
+        raise HTTPException(422, 'Kapalı folyolar için açık inceleme onayı gereklidir')
+    if not isinstance(body['source_revision'], str) or len(body['source_revision']) != 64:
         raise HTTPException(422, 'Güncel kaynak önizlemesi gereklidir')
     if not isinstance(body['reason'], str) or not 5 <= len(body['reason'].strip()) <= 500:
         raise HTTPException(422, '5–500 karakterlik mutabakat nedeni gereklidir')
     try:
-        return await reconcile(db, current_user.tenant_id, booking_id, body['source_revision'], body['reason'].strip(), current_user.id)
+        return await reconcile(db, current_user.tenant_id, booking_id, body['source_revision'], body['reason'].strip(), current_user.id,
+                               review_closed_folios=body.get('review_closed_folios', False))
     except OperationFailure as exc:
         if exc.has_error_label('TransientTransactionError'):
             raise HTTPException(409, 'Kaynak eşzamanlı değişti; önizlemeyi yenileyin') from None
