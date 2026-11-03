@@ -35,6 +35,10 @@ class WalkInBookingRequest(BaseModel):
     guest_phone: str
     guest_id_number: str | None = None
     nationality: str | None = None
+    id_type: str | None = None
+    passport_number: str | None = None
+    birth_date: str | None = None
+    gender: str | None = None
     room_id: str
     nights: int = 1
     adults: int = 1

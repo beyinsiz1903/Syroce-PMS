@@ -183,6 +183,11 @@ class QuickBookingCreate(WhatsAppFormConsent):
     guest_email: str | None = Field(default=None, max_length=320)
     guest_phone: str | None = Field(default=None, max_length=50)
     guest_id_number: str | None = Field(default=None, max_length=50)
+    guest_nationality: str | None = Field(default=None, max_length=60)
+    guest_id_type: str | None = Field(default=None, max_length=50)
+    guest_passport_number: str | None = Field(default=None, max_length=50)
+    guest_birth_date: str | None = Field(default=None, max_length=30)
+    guest_gender: str | None = Field(default=None, max_length=20)
     adults: int = Field(1, ge=0, le=50)
     children: int = Field(0, ge=0, le=50)
     daily_rate: float | None = Field(None, ge=0, le=1e12)
@@ -230,6 +235,16 @@ async def create_quick_booking(
 ):
     """Hizli rezervasyon: misafir adi + oda + tarih + fiyat ile tek adimda rezervasyon olustur."""
     tenant_id = current_user.tenant_id
+
+    if any((data.guest_nationality, data.guest_id_type, data.guest_passport_number, data.guest_birth_date, data.guest_gender)):
+        from core.kbs_readiness import identity_issues
+
+        missing = identity_issues({'guest_name': data.guest_name, 'nationality': data.guest_nationality,
+            'id_type': data.guest_id_type, 'id_number': data.guest_id_number,
+            'passport_number': data.guest_passport_number, 'birth_date': data.guest_birth_date, 'gender': data.guest_gender})
+        if missing:
+            raise HTTPException(422, {'error': 'kbs_payload_incomplete', 'missing_fields': missing,
+                'message': 'Rezervasyon öncesinde KBS kimlik bilgilerini tamamlayın.'})
 
     # Validate inputs
     if not data.guest_name.strip():
@@ -285,6 +300,9 @@ async def create_quick_booking(
                     "email": identity_candidate["email"] or f"walk-in-{guest_id[:8]}@placeholder.local",
                     "phone": identity_candidate["phone"],
                     "id_number": identity_candidate["id_number"],
+                    'nationality': data.guest_nationality, 'id_type': data.guest_id_type,
+                    'passport_number': data.guest_passport_number or '',
+                    'birth_date': data.guest_birth_date, 'gender': data.guest_gender,
                     "vip_status": False,
                     "loyalty_points": 0,
                     "total_stays": 0,

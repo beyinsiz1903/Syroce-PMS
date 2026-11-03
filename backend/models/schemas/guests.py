@@ -12,6 +12,7 @@ class GuestCreate(BaseModel):
     email: str = ""
     phone: str = ""
     id_number: str = ""
+    passport_number: str = ''
     nationality: str | None = None
     address: str | None = None
     id_type: str | None = None
@@ -33,6 +34,7 @@ class Guest(BaseModel):
     email: str | None = ""
     phone: str | None = ""
     id_number: str | None = ""
+    passport_number: str | None = ''
     nationality: str | None = None
     address: str | None = None
     id_type: str | None = None

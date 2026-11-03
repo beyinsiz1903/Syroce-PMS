@@ -737,6 +737,22 @@ async def kbs_queue_enqueue(
             })
             if uncertain:
                 raise HTTPException(409, "Önceki bildirimin sonucu belirsiz. Tekrar göndermeden önce kurum kaydını kontrol edin ve destekle uzlaştırın.")
+            held = await db.kbs_reports.find_one({
+                "tenant_id": tenant_id, "_kind": QUEUE_KIND, "booking_id": data.booking_id,
+                "guest_id": effective_guest_id, "action": data.action,
+                "last_error": {"$regex": "already_registered|[Zz]aten [Kk]ayıtlı|[Zz]aten [Kk]ayitli"},
+            }, {"_id": 1})
+            if held:
+                raise HTTPException(409, "Kurumda aynı kimlik için açık kayıt var; önce kurum kaydı uzlaştırılmalı.")
+            accepted = await db.kbs_reports.find_one({
+                "tenant_id": tenant_id, "_kind": QUEUE_KIND, "booking_id": data.booking_id,
+                "guest_id": effective_guest_id, "action": data.action, "status": "done", "kbs_test": {"$ne": True},
+            }, {"_id": 0})
+            if accepted:
+                response = {"job": accepted, "created": False}
+                if idem_lock_id:
+                    await complete_idempotency(db, lock_id=idem_lock_id, response_body=response)
+                return response
             if not data.force:
                 existing = await db.kbs_reports.find_one(
                     {
@@ -1176,6 +1192,12 @@ async def kbs_queue_claim(
 
     now = _now()
     leased_until = now + timedelta(seconds=data.lease_seconds)
+    stale = await db.kbs_reports.find_one({"_kind": QUEUE_KIND, "tenant_id": tenant_id,
+        "id": job_id, "status": "in_progress", "leased_until": {"$lt": _iso(now)}}, {"_id": 0})
+    if stale and not _kbs_test_mode():
+        from core.kbs_cloud import _hold_delivery
+        await _hold_delivery(db, stale, "delivery_unknown_check_authority", uncertain=True, transport="browser_extension")
+        raise HTTPException(409, "Teslim sonucu belirsiz; kurum kaydı uzlaştırılmadan tekrar gönderilemez.")
 
     # Atomik: ya pending (backoff penceresi geçmiş) ya da lease'i süren in_progress
     now_iso = _iso(now)
@@ -1221,6 +1243,10 @@ async def kbs_queue_claim(
             {"_id": 0, "booking_id": 1, "guest_id": 1, "action": 1},
         )
         if claimable:
+            from core.kbs_readiness import checkin_confirmed
+
+            if claimable.get('action') == 'checkout' and not _kbs_test_mode() and not await checkin_confirmed(db, {**claimable, 'tenant_id': tenant_id}):
+                raise HTTPException(409, 'awaiting_checkin_confirmation')
             _booking, _guest, fresh_snapshot = await _build_payload_snapshot(
                 tenant_id,
                 claimable["booking_id"],
@@ -1552,6 +1578,7 @@ class KBSQueueFail(BaseModel):
     worker_id: str = Field(..., min_length=1)
     error: str = Field(..., min_length=1, max_length=2000)
     retry: bool = True
+    delivery_uncertain: bool = False
 
 
 @router.post("/queue/{job_id}/fail")
@@ -1613,7 +1640,8 @@ async def kbs_queue_fail(
             attempts = job.get("attempts", 0)
             max_attempts = job.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
             permanent_error = _is_permanent_kbs_error(data.error)
-            will_retry = data.retry and not permanent_error and attempts < max_attempts
+            uncertain = data.delivery_uncertain or data.error == "delivery_unknown_check_authority"
+            will_retry = data.retry and not permanent_error and not uncertain and attempts < max_attempts
             next_retry_at = None
 
             if will_retry:
@@ -1636,8 +1664,11 @@ async def kbs_queue_fail(
 
             # CAS: idempotent. İş aralıkta başka bir transition geçirdiyse no-op
             update_op: dict = {"$set": update}
+            if uncertain:
+                update_op["$set"].update({"delivery_uncertain": True, "last_error": "delivery_unknown_check_authority"})
             # Closed state (dead): _open_lock'u kaldır → yeni iş açılabilsin
-            if not will_retry:
+            from core.kbs_operational_view import delivery_reason
+            if not will_retry and not uncertain and delivery_reason({"last_error": data.error}, []) != "already_registered":
                 update_op["$unset"] = {"_open_lock": ""}
             cas_result = await db.kbs_reports.update_one(
                 {
@@ -1764,31 +1795,48 @@ async def kbs_queue_requeue(
 
         if job.get("delivery_uncertain"):
             raise HTTPException(409, "Teslim sonucu belirsiz; kurum kaydı uzlaştırılmadan tekrar gönderilemez.")
-        if job["status"] not in ("done", "failed", "dead"):
+        from core.kbs_operational_view import delivery_reason
+        if delivery_reason(job, []) == 'already_registered':
+            raise HTTPException(409, 'Kurumda açık kimlik kaydı var; uzlaştırılmadan tekrar gönderilemez.')
+        if job["status"] not in ("failed", "dead"):
             raise HTTPException(
                 409,
-                f"Yalnızca done/failed/dead işler tekrar kuyruğa alınabilir (mevcut: {job['status']})",
+                "Yalnız reddedilmiş işler tekrar denenebilir; kabul edilmiş bildirim yeniden gönderilemez.",
             )
+        concurrent = await db.kbs_reports.find_one({
+            "_kind": QUEUE_KIND, "tenant_id": tenant_id, "booking_id": job["booking_id"],
+            "guest_id": job.get("guest_id"), "action": job.get("action"), "id": {"$ne": job_id},
+            "$or": [{"status": {"$in": ["pending", "in_progress"]}}, {"status": "done", "kbs_test": {"$ne": True}},
+                    {"delivery_uncertain": True}, {"last_error": "already_registered"}],
+        }, {"_id": 1})
+        if concurrent:
+            raise HTTPException(409, "Aynı kişi için başka açık veya teslim edilmiş bildirim var; önce durumunu kontrol edin.")
 
         now = _now()
-        await db.kbs_reports.update_one(
-            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
-            {
-                "$set": {
-                    "status": "pending",
-                    "worker_id": None,
-                    "claimed_at": None,
-                    "completed_at": None,
-                    "failed_at": None,
-                    "kbs_reference": None,
-                    "last_error": None,
-                    "next_retry_at": None,
-                    "updated_at": _iso(now),
-                    "notes": (job.get("notes") or "") + f"\n[{_iso(now)}] Tekrar kuyruğa alındı ({reason}) — {current_user.name}",
+        from pymongo.errors import DuplicateKeyError
+        try:
+            updated_result = await db.kbs_reports.update_one(
+                {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id, "status": job["status"], "delivery_uncertain": {"$ne": True}},
+                {
+                    "$set": {
+                        "status": "pending",
+                        "worker_id": None,
+                        "claimed_at": None,
+                        "completed_at": None,
+                        "failed_at": None,
+                        "kbs_reference": None,
+                        "last_error": None,
+                        "next_retry_at": None,
+                        "updated_at": _iso(now),
+                        "_open_lock": f"{tenant_id}:{job['booking_id']}:{job.get('guest_id') or 'primary'}:{job.get('action')}",
+                        "notes": (job.get("notes") or "") + f"\n[{_iso(now)}] Tekrar kuyruğa alındı ({reason}) — {current_user.name}",
+                    },
                 },
-                "$unset": {"_open_lock": ""},
-            },
-        )
+            )
+        except DuplicateKeyError:
+            raise HTTPException(409, 'Aynı kişi için başka bildirim zaten hazırlanıyor; listeyi yenileyin.') from None
+        if not updated_result.matched_count:
+            raise HTTPException(409, 'Bildirim durumu değişti; tekrar kontrol edin.')
 
         updated = await db.kbs_reports.find_one(
             {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
@@ -2142,3 +2190,113 @@ async def kbs_cloud_verify(
         return await verify_config(db, current_user.tenant_id)
     except JandarmaError as exc:
         raise HTTPException(409, exc.code) from None
+
+
+@router.get('/booking/{booking_id}/readiness')
+async def kbs_booking_readiness(booking_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op('view_bookings'))):
+    from core.kbs_operational_view import visible_stay
+    from core.kbs_readiness import booking_readiness
+    from security.guest_data_visibility import protect_guest_row
+
+    result = await booking_readiness(db, current_user.tenant_id, booking_id)
+    booking = await db.bookings.find_one({'tenant_id': current_user.tenant_id, 'id': booking_id},
+        {'_id': 0, 'status': 1, 'check_out': 1, 'checked_out_at': 1})
+    visible = (booking or {}).get('status') != 'checked_out' or visible_stay(booking, datetime.now(UTC))
+    if not visible:
+        result['guests'] = []
+    result['operational_visible'] = visible
+    return protect_guest_row(result, current_user)
+
+
+@router.get('/guests/{guest_id}/readiness')
+async def kbs_guest_readiness(guest_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op('view_bookings'))):
+    from core.kbs_readiness import identity_issues
+    from security.encrypted_lookup import decrypt_guest_doc
+
+    guest = decrypt_guest_doc(await db.guests.find_one({'tenant_id': current_user.tenant_id, 'id': guest_id}, {'_id': 0}))
+    if not guest:
+        raise HTTPException(404, 'Misafir bulunamadı')
+    missing = identity_issues({**guest, 'guest_name': guest.get('name'),
+        'birth_date': guest.get('date_of_birth') or guest.get('birth_date')})
+    return {'guest_id': guest_id, 'ready': not missing, 'missing_fields': missing}
+
+
+class KBSGuestIdentity(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    nationality: str | None = Field(None, min_length=2, max_length=60)
+    id_type: str | None = Field(None, max_length=50)
+    id_number: SecretStr | None = None
+    passport_number: SecretStr | None = None
+    date_of_birth: str | None = Field(None, max_length=30)
+    gender: str | None = Field(None, max_length=20)
+
+
+@router.put('/booking/{booking_id}/guests/{guest_id}/identity')
+async def kbs_update_guest_identity(booking_id: str, guest_id: str, data: KBSGuestIdentity,
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op('edit_booking'))):
+    from core.kbs_readiness import booking_readiness, identity_issues
+    from routers import pms_guests
+    from security.encrypted_lookup import decrypt_guest_doc
+    from security.guest_data_visibility import user_guest_data_visibility, visibility_mode_for_field
+
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({'tenant_id': tid, 'id': booking_id}, {'_id': 0, 'guest_id': 1})
+    if not booking or (booking.get('guest_id') != guest_id and not await db.booking_guests.find_one({
+        'tenant_id': tid, 'booking_id': booking_id, 'guest_id': guest_id}, {'_id': 1})):
+        raise HTTPException(404, 'Rezervasyona bağlı misafir bulunamadı')
+    guest = decrypt_guest_doc(await db.guests.find_one({'tenant_id': tid, 'id': guest_id}, {'_id': 0}))
+    if not guest:
+        raise HTTPException(404, 'Misafir bulunamadı')
+    changes = data.model_dump(exclude_none=True, exclude_unset=True)
+    changes = {k: (v.get_secret_value() if isinstance(v, SecretStr) else v).strip() for k, v in changes.items()}
+    changes = {k: v for k, v in changes.items() if v}
+    if changes.get('date_of_birth'):
+        changes['birth_date'] = changes['date_of_birth']
+    if not changes:
+        raise HTTPException(422, 'Tamamlanacak kimlik bilgilerini girin')
+    policy, _ = user_guest_data_visibility(current_user)
+    if any(visibility_mode_for_field(policy, key)[1] != 'full' for key in changes):
+        raise HTTPException(403, 'Bu kimlik alanlarını düzenleme yetkiniz yok')
+    candidate = {**guest, **changes}
+    missing = identity_issues({**candidate, 'guest_name': candidate.get('name'),
+        'birth_date': candidate.get('date_of_birth') or candidate.get('birth_date')})
+    if missing:
+        raise HTTPException(422, {'error': 'kbs_payload_incomplete', 'missing_fields': missing,
+            'message': 'KBS için eksik veya geçersiz kimlik alanlarını tamamlayın.'})
+    await pms_guests.update_guest(guest_id, changes, current_user=current_user, _=True)
+    await log_audit_event(tenant_id=tid, user_id=str(current_user.id), action='kbs.identity.complete',
+        entity_type='reservation', entity_id=booking_id, details='KBS kimlik alanları tamamlandı', db=db,
+        after_value={'guest_id': guest_id, 'fields': sorted(changes)})
+    state = await db.bookings.find_one({'tenant_id': tid, 'id': booking_id}, {'_id': 0, 'status': 1}) or {}
+    if state.get('status') in {'checked_in', 'checked_out'}:
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+
+        await auto_enqueue_kbs(tid, booking_id, 'checkin', actor=f'user:{current_user.id}', target_guest_id=guest_id)
+        if state['status'] == 'checked_out':
+            await auto_enqueue_kbs(tid, booking_id, 'checkout', actor=f'user:{current_user.id}', target_guest_id=guest_id)
+    return await booking_readiness(db, tid, booking_id)
+
+
+@router.get('/notifications')
+@router.get('/mobile/notifications')
+async def kbs_mobile_notifications(response: Response, limit: int = Query(50, ge=1, le=100), skip: int = Query(0, ge=0, le=100000),
+    booking_id: str | None = None, group: str | None = Query(None, pattern="^(sent|not_sent)$"),
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op('view_reports'))):
+    """Shared mobile/web operational list, two views and no identity payload."""
+    from core.kbs_operational_view import operational_notifications
+    from modules.pms_core.role_permission_service import RolePermissionService
+    from security.guest_data_visibility import protect_guest_row
+
+    if not current_user.tenant_id:
+        raise HTTPException(403, 'Otel bağlamı gerekli')
+    response.headers['Cache-Control'] = 'no-store'
+    result = await operational_notifications(db, current_user.tenant_id, booking_id=booking_id)
+    all_items = result.pop('items')
+    counts = {key: sum(r['delivery_group'] == key for r in all_items) for key in ('sent', 'not_sent')}
+    rows = [r for r in all_items if not group or r['delivery_group'] == group]
+    total = len(rows)
+    return {**result, 'items': [protect_guest_row(r, current_user) for r in rows[skip:skip + limit]],
+        'can_edit': RolePermissionService().check_permission(current_user.role, 'edit_booking', getattr(current_user, 'permissions', None)),
+        'counts': counts, 'total': total, 'skip': skip, 'limit': limit, 'has_more': skip + limit < total}

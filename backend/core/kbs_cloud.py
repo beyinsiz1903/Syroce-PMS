@@ -158,6 +158,7 @@ async def dispatch_cloud_jobs(db, *, limit: int = 50) -> dict:
     from core.kbs_dispatch import _claim_one, _complete, _handle_missing_data, _raise_alert
     from core.kbs_payload_builder import build_kbs_payload_snapshot
     from core.kbs_payload_validation import validate_kbs_payload
+    from core.kbs_readiness import defer_checkout, identity_issues
 
     summary = {"processed": 0, "sent": 0, "blocked": 0}
     if os.environ.get("KBS_AUTO_DISPATCH", "1") == "0" or os.environ.get("KBS_TEST_MODE", "0") == "1":
@@ -204,13 +205,18 @@ async def dispatch_cloud_jobs(db, *, limit: int = 50) -> dict:
             summary["processed"] += 1
             try:
                 _booking, _guest, payload = await build_kbs_payload_snapshot(db, tenant_id, job["booking_id"], job.get("guest_id"))
-                if not payload:
+                if not payload or not _guest:
                     raise JandarmaError("source_guest_missing")
                 if job.get("guest_id") and job["guest_id"] != _booking.get("guest_id"):
                     linked = await db.booking_guests.find_one({"tenant_id": tenant_id, "booking_id": job["booking_id"], "guest_id": job["guest_id"]})
                     if not linked:
                         raise JandarmaError("source_guest_missing")
+                if await defer_checkout(db, job):
+                    summary['blocked'] += 1
+                    continue
                 valid, missing = validate_kbs_payload(payload, job.get("action", "checkin"))
+                missing = sorted(set(missing + identity_issues(payload, job.get('action', 'checkin'))))
+                valid = valid and not missing
                 if not valid:
                     await _handle_missing_data(db, job, missing)
                     summary["blocked"] += 1
@@ -227,26 +233,31 @@ async def dispatch_cloud_jobs(db, *, limit: int = 50) -> dict:
                 summary["blocked"] += 1
                 continue
             receipt = f"JANDARMA-CLOUD-{uuid.uuid4().hex}"
-            await _complete(
-                db,
-                job,
-                receipt,
-                receipt_metadata={
+            try:
+                completed = await _complete(db, job, receipt, receipt_metadata={
                     "authority": "jandarma",
                     "official_reference": False,
                     "authority_response_code": outcome["code"],
                     "authority_method": outcome["method"],
                     "transport": "cloud_jandarma",
                     "payload": payload,
-                },
-            )
-            summary["sent"] += 1
+                })
+            except Exception:
+                # The authority may already have accepted the notification.
+                # Hold this lease, never resend it, and continue other guests.
+                await _hold_delivery(db, job, 'delivery_unknown_check_authority', uncertain=True)
+                summary['blocked'] += 1
+                continue
+            if completed:
+                summary["sent"] += 1
+            else:
+                summary['blocked'] += 1
         if summary["processed"] >= limit:
             break
     return summary
 
 
-async def _hold_delivery(db, job: dict, code: str, *, uncertain: bool):
+async def _hold_delivery(db, job: dict, code: str, *, uncertain: bool, transport: str = 'cloud_jandarma'):
     await db.kbs_reports.update_one(
         {"tenant_id": job["tenant_id"], "id": job["id"], "status": "in_progress", "worker_id": job.get("worker_id")},
         {
@@ -255,8 +266,8 @@ async def _hold_delivery(db, job: dict, code: str, *, uncertain: bool):
                 "delivery_uncertain": uncertain,
                 "last_error": code,
                 "updated_at": datetime.now(UTC).isoformat(),
-                "transport": "cloud_jandarma",
+                "transport": transport,
             },
-            **({} if uncertain else {"$unset": {"_open_lock": ""}}),
+            **({} if uncertain or code == 'already_registered' else {"$unset": {"_open_lock": ""}}),
         },
     )

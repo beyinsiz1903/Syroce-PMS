@@ -751,6 +751,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       && currentLock?.status === 'acquired'
     );
     try {
+      const { data: readiness } = await axios.get(`/kbs/booking/${encodeURIComponent(bookingId)}/readiness`);
+      if (!readiness?.ready) {
+        setReservationDetailId(bookingId);
+        throw new Error('Girişten önce tüm konaklayanları ve KBS kimlik bilgilerini tamamlayın.');
+      }
       const lock = await reservationEditLockManager?.acquire?.(bookingId);
       if (!lock || lock.status !== 'acquired') {
         throw new Error('Rezervasyon düzenleme kilidi alınamadı. Lütfen tekrar deneyin.');
@@ -886,7 +891,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     setNewBooking({ ...newBooking, children_ages: newAges });
   };
 
-  const handleCreateBooking = async (e, inlineGuestName) => {
+  const handleCreateBooking = async (e, inlineGuestName, guestIdentity) => {
     e?.preventDefault();
     if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Fiyat değişikliği için açıklama girin'); return; }
     if (!newBooking.guest_id && !inlineGuestName) { toast.error('Misafir seçin veya misafir adını yazın'); return; }
@@ -914,7 +919,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       if (newBooking.guest_id) {
         payload.guest_id = newBooking.guest_id;
       } else {
-        payload.guest = { name: inlineGuestName, phone: newBooking.guest_phone || '' };
+        payload.guest = { name: inlineGuestName, phone: newBooking.guest_phone || '', ...(guestIdentity || {}) };
       }
       await axios.post('/pms/bookings/multi-room', payload);
       toast.success('Rezervasyon oluşturuldu'); setOpenDialog(null); loadData(); setSelectedCompany(null);

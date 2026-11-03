@@ -179,6 +179,10 @@ def parse_response(content: bytes, method: str) -> dict:
     ok = outcome.findtext(f"{{{DATA_NS}}}Basarili", "").lower() == "true"
     code = outcome.findtext(f"{{{DATA_NS}}}HataKodu", "")
     if not ok or code not in {"100", "Basarili"}:
+        # Classify only; never persist/return a raw explanation containing PII.
+        explanation = " ".join(outcome.itertext()).casefold()
+        if any(term in explanation for term in ("müşteri tesiste zaten kayıtlı", "musteri tesiste zaten kayitli")):
+            raise JandarmaError("already_registered")
         safe_code = code if re.fullmatch(r"[A-Za-z0-9_]{1,60}", code) else "unknown"
         raise JandarmaError("jandarma_" + safe_code)
     return {"code": code, "method": method}

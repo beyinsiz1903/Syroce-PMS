@@ -1,638 +1,174 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  axiosGet, axiosPatch, axiosPost, toastError, toastSuccess, toastInfo,
-  pingExtension, sendViaExtension, buildKbsBody,
-} = vi.hoisted(() => ({
-  axiosGet: vi.fn(),
-  axiosPatch: vi.fn(),
-  axiosPost: vi.fn(),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastInfo: vi.fn(),
-  pingExtension: vi.fn(),
-  sendViaExtension: vi.fn(),
-  buildKbsBody: vi.fn(),
+const { get, put, post, success, error, info, ping, send, body } = vi.hoisted(() => ({
+  get: vi.fn(), put: vi.fn(), post: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn(),
+  ping: vi.fn(), send: vi.fn(), body: vi.fn(),
 }));
-
-vi.mock('axios', () => ({
-  default: {
-    get: axiosGet,
-    patch: axiosPatch,
-    post: axiosPost,
-  },
-}));
-
-vi.mock('sonner', () => ({
-  toast: { success: toastSuccess, error: toastError, info: toastInfo },
-}));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key) => key.split('.').at(-1),
-  }),
-}));
-
-vi.mock('@/lib/kbsExtensionBridge', () => ({
-  pingExtension,
-  sendViaExtension,
-  buildKbsBody,
-}));
-
+vi.mock('axios', () => ({ default: { get, put, post } }));
+vi.mock('sonner', () => ({ toast: { success, error, info } }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key.split('.').at(-1) }) }));
+vi.mock('@/lib/kbsExtensionBridge', () => ({ pingExtension: ping, sendViaExtension: send, buildKbsBody: body }));
 import KBSNotification from '../KBSNotification';
 
-describe('KBSNotification pending guest identity editing', () => {
+const base = { id: 'job-110', booking_id: 'booking-110', guest_id: 'guest-110',
+  guest_name: 'Synthetic Guest', room_number: '110', action: 'checkin',
+  delivery_group: 'not_sent', status: 'pending', status_reason: 'awaiting_delivery', missing_fields: [] };
+let rows;
+let hidden;
+
+describe('KBS two-view operational screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.removeItem('kbs_ext_authority');
-    localStorage.removeItem('kbs_ext_autosend');
-    axiosGet.mockResolvedValue({
-      data: {
-        jobs: [],
-        stats: { pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0 },
-      },
-    });
-    axiosPatch.mockResolvedValue({ data: { status: 'updated' } });
-    axiosPost.mockResolvedValue({ data: { created: true } });
-    pingExtension.mockResolvedValue({
-      present: false,
-      state: 'absent',
-      states: {},
-      version: '',
-      installId: '',
-    });
-    buildKbsBody.mockReturnValue({ action: 'checkin' });
-  });
-
-  it('opens the identity form from the pending-row warning and makes the guest sendable after save', async () => {
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110',
-          guest_id: 'guest-110',
-          status: 'checked_in',
-          guest_name: 'Abdulhakim Tavlasoğlu',
-          room_number: '110',
-          nationality: 'TC',
-          id_number: '',
-          birth_date: '',
-        }]}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', {
-      name: 'idMissing: Abdulhakim Tavlasoğlu',
-    }));
-
-    expect(screen.getByText('updateTitle')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/idLabel/i), {
-      target: { value: ' 12345678901 ' },
-    });
-    fireEvent.change(screen.getByLabelText('birthDateLabel'), {
-      target: { value: '1990-05-12' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'save' }));
-
-    await waitFor(() => {
-      expect(axiosPatch).toHaveBeenCalledWith(
-        '/pms/guests/guest-110/preferences',
-        { id_type: 'tc_kimlik', id_number: '12345678901', birth_date: '1990-05-12', nationality: 'TC' },
-      );
-    });
-
-    await waitFor(() => {
-      expect(screen.queryByRole('button', {
-        name: 'idMissing: Abdulhakim Tavlasoğlu',
-      })).not.toBeInTheDocument();
-    });
-    expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
-  });
-
-  it('queues the booking without submitting or navigating the surrounding page', async () => {
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110',
-          guest_id: 'guest-110',
-          status: 'checked_in',
-          guest_name: 'Abdulhakim Tavlasoğlu',
-          room_number: '110',
-          nationality: 'TC',
-          id_number: '12345678901',
-          birth_date: '1990-05-12',
-        }]}
-      />,
-    );
-
-    const queueButton = screen.getByRole('button', { name: 'addToQueue' });
-    expect(queueButton).toHaveAttribute('type', 'button');
-    fireEvent.click(queueButton);
-
-    await waitFor(() => {
-      expect(axiosPost).toHaveBeenCalledWith('/kbs/queue', {
-        booking_id: 'booking-110',
-        action: 'checkin',
-        guest_id: 'guest-110',
-      });
-    });
-  });
-
-  it('renders a structured enqueue validation error as text without crashing the page', async () => {
-    axiosPost.mockRejectedValueOnce({
-      response: {
-        data: {
-          detail: {
-            error: 'kbs_payload_incomplete',
-            missing_fields: ['check_in'],
-            message: 'KBS bildirimi için zorunlu alanlar eksik: check_in',
-          },
-        },
-      },
-    });
-
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110',
-          guest_id: 'guest-110',
-          status: 'checked_in',
-          guest_name: 'Abdulhakim Tavlasoğlu',
-          room_number: '110',
-          nationality: 'TC',
-          id_number: '12345678901',
-          birth_date: '',
-        }]}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'addToQueue' }));
-
-    await waitFor(() => {
-      expect(toastError).toHaveBeenCalledWith(
-        'KBS bildirimi için zorunlu alanlar eksik: check_in',
-      );
-    });
-    expect(screen.getByRole('button', { name: 'addToQueue' })).toBeInTheDocument();
-  });
-
-  it('does not require a birth date for a Turkish guest with a valid identity number', () => {
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110',
-          guest_id: 'guest-110',
-          status: 'checked_in',
-          guest_name: 'Abdulhakim Tavlasoğlu',
-          room_number: '110',
-          nationality: 'TC',
-          id_number: '12345678901',
-          birth_date: '',
-        }]}
-      />,
-    );
-
-    expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
-    expect(screen.getByRole('tab', { name: 'missingTab (0)' })).toBeInTheDocument();
-  });
-
-  it('never calls the retired fake endpoint and does not show success when no live extension is present', async () => {
-    axiosPost.mockResolvedValueOnce({
-      data: {
-        created: true,
-        job: { id: 'job-110', booking_id: 'booking-110', action: 'checkin', payload: {} },
-      },
-    });
-
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110',
-          guest_id: 'guest-110',
-          status: 'checked_in',
-          guest_name: 'Test Guest',
-          room_number: '110',
-          nationality: 'TC',
-          id_number: '12345678901',
-        }]}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'send' }));
-
-    await waitFor(() => {
-      expect(axiosPost).toHaveBeenCalledWith('/kbs/queue', {
-        booking_id: 'booking-110',
-        action: 'checkin',
-        guest_id: 'guest-110',
-      });
-    });
-    expect(axiosPost).not.toHaveBeenCalledWith('/kbs/send', expect.anything());
-    expect(toastSuccess).not.toHaveBeenCalled();
-    expect(toastInfo).toHaveBeenCalledWith(expect.stringContaining('henüz kuruma gönderilmedi'));
-  });
-
-  it('shows success only after a configured extension is claimed and completed', async () => {
-    pingExtension.mockResolvedValue({
-      present: true,
-      state: 'absent',
-      states: { jandarma: 'configured' },
-      version: '1.3.0',
-      installId: 'install-1',
-    });
-    localStorage.setItem('kbs_ext_authority', 'jandarma');
-    const job = { id: 'job-110', booking_id: 'booking-110', action: 'checkin', payload: {} };
-    axiosPost.mockImplementation((url) => {
-      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
-      if (url === '/kbs/queue/job-110/claim') return Promise.resolve({ data: { job } });
-      if (url === '/kbs/queue/job-110/complete') return Promise.resolve({ data: { job: { ...job, status: 'done' } } });
-      return Promise.resolve({ data: {} });
-    });
-    sendViaExtension.mockResolvedValue({
-      ok: true,
-      reference: 'JANDARMA-MusteriKimlikNoGiris-123',
-      error: '',
-      test: false,
-    });
-
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110', guest_id: 'guest-110', status: 'checked_in',
-          guest_name: 'Test Guest', room_number: '110', nationality: 'TC',
-          id_number: '12345678901',
-        }]}
-      />,
-    );
-
-    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: 'send' }));
-
-    await waitFor(() => {
-      expect(axiosPost).toHaveBeenCalledWith(
-        '/kbs/queue/job-110/complete',
-        expect.objectContaining({
-          worker_id: 'ext:install-1',
-          kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
-        }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
-    });
-    expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('KBS kabulü doğrulandı'));
-    expect(screen.getByRole('tab', { name: 'pendingTab (0)' })).toBeInTheDocument();
-    const sentTab = screen.getByRole('tab', { name: 'sentTab (1)' });
-    fireEvent.click(sentTab);
-    expect(screen.getByText('Test Guest')).toBeVisible();
-    expect(screen.getByText(/JANDARMA-MusteriKimlikNoGiris-123/)).toBeVisible();
-  });
-
-  it('releases the claimed queue job when the extension transport throws', async () => {
-    pingExtension.mockResolvedValue({
-      present: true,
-      state: 'absent',
-      states: { jandarma: 'configured' },
-      version: '1.3.0',
-      installId: 'install-1',
-    });
-    localStorage.setItem('kbs_ext_authority', 'jandarma');
-    const job = {
-      id: 'job-110', booking_id: 'booking-110', guest_id: 'guest-110',
-      action: 'checkin', payload: {},
-    };
-    axiosPost.mockImplementation((url) => {
-      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
-      if (url === '/kbs/queue/job-110/claim') return Promise.resolve({ data: { job } });
-      if (url === '/kbs/queue/job-110/fail') return Promise.resolve({ data: { job: { ...job, status: 'pending' } } });
-      return Promise.resolve({ data: {} });
-    });
-    sendViaExtension.mockRejectedValue(new Error('extension_transport_disconnected'));
-
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110', guest_id: 'guest-110', status: 'checked_in',
-          guest_name: 'Test Guest', room_number: '110', nationality: 'TC',
-          id_number: '12345678901',
-        }]}
-      />,
-    );
-
-    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: 'send' }));
-
-    await waitFor(() => {
-      expect(axiosPost).toHaveBeenCalledWith(
-        '/kbs/queue/job-110/fail',
-        expect.objectContaining({
-          worker_id: 'ext:install-1',
-          error: 'extension_transport_disconnected',
-          retry: true,
-        }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
-    });
-    expect(axiosPost).not.toHaveBeenCalledWith(
-      '/kbs/queue/job-110/complete', expect.anything(), expect.anything(),
-    );
-    expect(toastError).toHaveBeenCalled();
-  });
-
-  it('does not complete or report success for an extension test result', async () => {
-    pingExtension.mockResolvedValue({
-      present: true,
-      state: 'configured',
-      states: { polis: 'configured' },
-      version: '1.3.0',
-      installId: 'install-1',
-    });
-    localStorage.setItem('kbs_ext_authority', 'polis');
-    const job = { id: 'job-110', booking_id: 'booking-110', action: 'checkin', payload: {} };
-    axiosPost.mockImplementation((url) => {
-      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
-      if (url === '/kbs/queue/job-110/claim') return Promise.resolve({ data: { job } });
-      if (url === '/kbs/queue/job-110/fail') return Promise.resolve({ data: { job: { ...job, status: 'dead' } } });
-      return Promise.resolve({ data: {} });
-    });
-    sendViaExtension.mockResolvedValue({
-      ok: true,
-      reference: 'TEST-FAKE',
-      error: '',
-      test: true,
-    });
-
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110', guest_id: 'guest-110', status: 'checked_in',
-          guest_name: 'Test Guest', room_number: '110', nationality: 'TC',
-          id_number: '12345678901',
-        }]}
-      />,
-    );
-
-    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: 'send' }));
-
-    await waitFor(() => {
-      expect(axiosPost).toHaveBeenCalledWith(
-        '/kbs/queue/job-110/fail',
-        expect.objectContaining({ retry: false }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
-    });
-    expect(axiosPost).not.toHaveBeenCalledWith(
-      '/kbs/queue/job-110/complete', expect.anything(), expect.anything(),
-    );
-    expect(toastSuccess).not.toHaveBeenCalled();
-    expect(toastError).toHaveBeenCalledWith(expect.stringContaining('Test modu'));
-  });
-
-  it('shows the official Jandarma error and disables retry for permanent input failures', async () => {
-    pingExtension.mockResolvedValue({
-      present: true,
-      state: 'absent',
-      states: { jandarma: 'configured' },
-      version: '1.3.1',
-      installId: 'install-1',
-    });
-    localStorage.setItem('kbs_ext_authority', 'jandarma');
-    const job = {
-      id: 'job-110', booking_id: 'booking-110', action: 'checkin',
-      payload: { guest_name: 'Test Guest', room_number: '110' },
-    };
-    axiosPost.mockImplementation((url) => {
-      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
-      if (url === '/kbs/queue/job-110/claim') return Promise.resolve({ data: { job } });
-      if (url === '/kbs/queue/job-110/fail') return Promise.resolve({ data: { job: { ...job, status: 'dead' } } });
-      return Promise.resolve({ data: {} });
-    });
-    sendViaExtension.mockResolvedValue({
-      ok: false,
-      reference: '',
-      error: 'jandarma_GirdiHatasi: Oda Numarası Eksik.&lt;br&gt;',
-      test: false,
-    });
-
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110', guest_id: 'guest-110', status: 'checked_in',
-          guest_name: 'Test Guest', room_number: '110', nationality: 'TC',
-          id_number: '12345678901',
-        }]}
-      />,
-    );
-
-    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: 'send' }));
-
-    await waitFor(() => {
-      expect(axiosPost).toHaveBeenCalledWith(
-        '/kbs/queue/job-110/fail',
-        expect.objectContaining({
-          retry: false,
-          error: 'jandarma_GirdiHatasi: Oda Numarası Eksik.&lt;br&gt;',
-        }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
-    });
-    expect(toastError).toHaveBeenCalledWith('Jandarma veri hatası: Oda Numarası Eksik.');
-  });
-
-  it('does not retry when Jandarma reports the guest is already registered', async () => {
-    pingExtension.mockResolvedValue({
-      present: true,
-      state: 'absent',
-      states: { jandarma: 'configured' },
-      version: '1.3.2',
-      installId: 'install-1',
-    });
-    localStorage.setItem('kbs_ext_authority', 'jandarma');
-    const job = {
-      id: 'job-registered', booking_id: 'booking-registered', action: 'checkin',
-      payload: { guest_name: 'Existing Guest', room_number: '103' },
-    };
-    axiosPost.mockImplementation((url) => {
-      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
-      if (url === '/kbs/queue/job-registered/claim') return Promise.resolve({ data: { job } });
-      if (url === '/kbs/queue/job-registered/fail') return Promise.resolve({ data: { job: { ...job, status: 'dead' } } });
-      return Promise.resolve({ data: {} });
-    });
-    sendViaExtension.mockResolvedValue({
-      ok: false,
-      reference: '',
-      error: 'jandarma_VTHatasi: Müşteri Tesiste Zaten Kayıtlı.&lt;br&gt;',
-      test: false,
-    });
-
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-registered', guest_id: 'guest-registered', status: 'checked_in',
-          guest_name: 'Existing Guest', room_number: '103', nationality: 'TC',
-          id_number: '12345678901',
-        }]}
-      />,
-    );
-
-    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: 'send' }));
-
-    await waitFor(() => {
-      expect(axiosPost).toHaveBeenCalledWith(
-        '/kbs/queue/job-registered/fail',
-        expect.objectContaining({ retry: false }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
-    });
-    expect(toastError).toHaveBeenCalledWith(
-      'Jandarma KBS aynı misafir için tesiste açık kayıt olduğunu bildirdi; tekrar gönderim durduruldu.',
-    );
-  });
-
-  it('shows a completed Jandarma guest only in Sent, never in Queue', async () => {
-    axiosGet.mockImplementation((url) => {
-      if (url === '/kbs/guests') {
-        return Promise.resolve({
-          data: {
-            guests: [{
-              // Production can return a delivery/report row id separately
-              // from the reservation identity. Queue de-duplication must use
-              // booking_id, not the report's own id.
-              id: 'report-110',
-              booking_id: 'booking-110',
-              guest_id: 'guest-110',
-              status: 'checked_in',
-              guest_name: 'Test Guest',
-              room_number: '110',
-              nationality: 'TR',
-              id_number: '12345678901',
-              kbs_status: 'sent',
-              kbs_sent_at: '2026-08-30T10:00:00Z',
-              kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
-              kbs_action: 'checkin',
-            }],
-          },
-        });
+    localStorage.clear();
+    rows = [{ ...base }];
+    hidden = 0;
+    ping.mockResolvedValue({ present: false, state: 'absent', states: {}, version: '', installId: '' });
+    get.mockImplementation(async (url, config) => {
+      if (url === '/kbs/notifications') {
+        const group = config?.params?.group;
+        return { data: { can_edit: true, items: rows.filter(r => r.delivery_group === group),
+          counts: { sent: rows.filter(r => r.delivery_group === 'sent').length, not_sent: rows.filter(r => r.delivery_group === 'not_sent').length },
+          hidden_unresolved_count: hidden, has_more: false } };
       }
-      return Promise.resolve({
-        data: {
-          // Eski backend done isiyle birlikte ayni rezervasyonun daha eski
-          // basarisiz kopyasini dondurse bile misafir Kuyruk'ta gorunmemeli.
-          jobs: [
-            {
-              id: 'job-jandarma',
-              booking_id: 'booking-110',
-              action: 'checkin',
-              status: 'done',
-              attempts: 1,
-              max_attempts: 5,
-              kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
-              payload: { guest_name: 'Test Guest', room_number: '110' },
-            },
-            {
-              id: 'job-jandarma-old-dead',
-              booking_id: 'booking-110',
-              action: 'checkin',
-              status: 'dead',
-              attempts: 5,
-              max_attempts: 5,
-              last_error: 'Eski basarisiz deneme',
-              payload: { guest_name: 'Test Guest', room_number: '110' },
-            },
-          ],
-          stats: { pending: 0, in_progress: 0, done: 1, failed: 0, dead: 1 },
-        },
-      });
+      if (url === '/kbs/cloud/status') return { data: { managed: false } };
+      return { data: { jobs: [] } };
     });
+    put.mockImplementation(async () => { rows[0] = { ...rows[0], missing_fields: [], status_reason: 'awaiting_delivery' }; return { data: { ready: true } }; });
+    post.mockImplementation(async url => {
+      if (url === '/kbs/queue') return { data: { created: true, job: { ...base, payload: {} } } };
+      if (url.endsWith('/claim')) return { data: { job: { ...base, payload: {} } } };
+      if (url.endsWith('/complete')) {
+        rows[0] = { ...base, status: 'done', delivery_group: 'sent', status_reason: 'accepted', completed_at: '2026-11-02T18:20:00Z' };
+      }
+      return { data: {} };
+    });
+    body.mockReturnValue({ action: 'checkin' });
+  });
 
+  async function show() {
     render(<KBSNotification />);
+    await screen.findByText('Synthetic Guest');
+  }
+  function extension() {
+    localStorage.setItem('kbs_ext_authority', 'jandarma');
+    ping.mockResolvedValue({ present: true, state: 'absent', states: { jandarma: 'configured' }, version: '1.3.2', installId: 'install-1' });
+  }
 
-    const sentTab = await screen.findByRole('tab', { name: 'sentTab (1)' });
-    const queueTab = screen.getByRole('tab', { name: 'queueTab (0)' });
-    fireEvent.click(sentTab);
-
-    expect(await screen.findByText('Test Guest')).toBeInTheDocument();
-    expect(screen.getByText(/JANDARMA-MusteriKimlikNoGiris-123/)).toBeInTheDocument();
-
-    fireEvent.click(queueTab);
-    const queuePanel = screen.getByText('noQueueJobs').closest('[role="tabpanel"]');
-    expect(queuePanel).toBeInTheDocument();
-    expect(within(queuePanel).queryByText('Test Guest')).not.toBeInTheDocument();
+  it('shows exactly two options, no status counters or destructive queue reset', async () => {
+    await show();
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getByRole('tab', { name: 'Gönderilen (0)' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Gönderilmeyen (1)' })).toBeInTheDocument();
+    expect(screen.queryByText('Kuyruğu sıfırla')).not.toBeInTheDocument();
+    expect(screen.queryByText('qPending')).not.toBeInTheDocument();
   });
 
-  it('rehydrates saved identity fields from the linked guest after the page remounts', () => {
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110',
-          guest_id: 'guest-110',
-          status: 'checked_in',
-          guest_name: 'Abdulhakim Tavlasoğlu',
-          room_number: '110',
-          nationality: 'TC',
-        }]}
-        guests={[{
-          id: 'guest-110',
-          id_number: '12345678901',
-          birth_date: '1990-05-12',
-        }]}
-      />,
-    );
-
-    expect(screen.queryByRole('button', {
-      name: 'idMissing: Abdulhakim Tavlasoğlu',
-    })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'addToQueue' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
+  it('completes identity with the scoped encrypted-write endpoint and refreshes readiness', async () => {
+    rows[0] = { ...base, status_reason: 'missing_data', missing_fields: ['id_number'] };
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'idMissing: Synthetic Guest' }));
+    fireEvent.change(screen.getByLabelText('KBS kimlik numarası'), { target: { value: '12345678901' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() => expect(put).toHaveBeenCalledWith('/kbs/booking/booking-110/guests/guest-110/identity',
+      { id_number: '12345678901', id_type: 'tc_kimlik', nationality: 'TR' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'send' })).toBeEnabled());
+    expect(screen.queryByDisplayValue('12345678901')).not.toBeInTheDocument();
   });
 
-  it('refreshes a stale calendar guest from the canonical KBS guest API', async () => {
-    axiosGet.mockImplementation((url) => {
-      if (url === '/kbs/guests') {
-        return Promise.resolve({
-          data: {
-            guests: [{
-              id: 'booking-110',
-              guest_id: 'guest-110',
-              status: 'checked_in',
-              guest_name: 'Abdulhakim Tavlasoğlu',
-              room_number: '110',
-              nationality: 'TR',
-              id_number: '12345678901',
-              birth_date: '',
-            }],
-          },
-        });
-      }
-      return Promise.resolve({
-        data: {
-          jobs: [],
-          stats: { pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0 },
-        },
-      });
-    });
+  it('allows a ready domestic guest without requiring DOB, and never auto-submits the surrounding form', async () => {
+    await show();
+    const button = screen.getByRole('button', { name: 'send' });
+    expect(button).toHaveAttribute('type', 'button');
+    fireEvent.click(button);
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/kbs/queue', {
+      booking_id: 'booking-110', action: 'checkin', guest_id: 'guest-110',
+    }));
+    expect(post).not.toHaveBeenCalledWith('/kbs/send', expect.anything());
+    expect(success).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('henüz kuruma gönderilmedi'));
+  });
 
-    render(
-      <KBSNotification
-        bookings={[{
-          id: 'booking-110',
-          guest_id: 'guest-110',
-          status: 'checked_in',
-          guest_name: 'Abdulhakim Tavlasoğlu',
-          room_number: '110',
-          nationality: 'TR',
-          id_number: '',
-        }]}
-      />,
-    );
+  it('renders structured validation errors without crashing or declaring success', async () => {
+    post.mockRejectedValueOnce({ response: { data: { detail: { message: 'Eksik check_in' } } } });
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    await waitFor(() => expect(error).toHaveBeenCalledWith('Eksik check_in'));
+    expect(success).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => {
-      expect(screen.queryByRole('button', {
-        name: 'idMissing: Abdulhakim Tavlasoğlu',
-      })).not.toBeInTheDocument();
-    });
-    expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
+  it('shows accepted only after extension claim and durable complete, formatted in Istanbul time', async () => {
+    extension();
+    send.mockResolvedValue({ ok: true, reference: 'JANDARMA-local-receipt', test: false });
+    await show();
+    await waitFor(() => expect(ping).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/kbs/queue/job-110/complete',
+      expect.objectContaining({ worker_id: 'ext:install-1', kbs_reference: 'JANDARMA-local-receipt' }), expect.anything()));
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Gönderilen (1)' })).toBeInTheDocument());
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Gönderilen (1)' }), { button: 0, ctrlKey: false });
+    expect(await screen.findByText(/21:20:00/)).toBeInTheDocument();
+    expect(success).toHaveBeenCalledWith(expect.stringContaining('KBS kabulü doğrulandı'));
+  });
+
+  it('holds disconnected transport as uncertain and never blindly retries', async () => {
+    extension();
+    send.mockRejectedValue(new Error('extension_transport_disconnected'));
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/kbs/queue/job-110/fail',
+      expect.objectContaining({ retry: false, delivery_uncertain: true, error: 'delivery_unknown_check_authority' }), expect.anything()));
+    expect(post.mock.calls.some(([url]) => url.endsWith('/complete'))).toBe(false);
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('does not accept extension test receipts as real delivery', async () => {
+    extension();
+    send.mockResolvedValue({ ok: true, reference: 'TEST-FAKE', test: true });
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/kbs/queue/job-110/fail',
+      expect.objectContaining({ retry: false }), expect.anything()));
+    expect(post.mock.calls.some(([url]) => url.endsWith('/complete'))).toBe(false);
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['already_registered', /aynı kimlik için tesiste açık kayıt/],
+    ['delivery_uncertain', /Teslim sonucu belirsiz/],
+    ['awaiting_checkin', /giriş kabulü alınmadan çıkış gönderilemez/],
+    ['test_only', /Test sonucu resmî bildirim değildir/],
+  ])('keeps %s in Not sent with its real cause and no duplicate send button', async (reason, text) => {
+    rows[0] = { ...base, status_reason: reason };
+    await show();
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'send' })).not.toBeInTheDocument();
+  });
+
+  it('keeps already-registered extension failures permanent and visible, not success', async () => {
+    extension();
+    send.mockResolvedValue({ ok: false, error: 'jandarma_VTHatasi: Müşteri Tesiste Zaten Kayıtlı.&lt;br&gt;', test: false });
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/kbs/queue/job-110/fail',
+      expect.objectContaining({ retry: false }), expect.anything()));
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('tesiste açık kayıt'));
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect expired rows from old calendar props and shows only an anonymous unresolved count', async () => {
+    rows = [];
+    hidden = 2;
+    render(<KBSNotification bookings={[{ id: 'old', status: 'checked_in', guest_name: 'Expired Calendar Person' }]} />);
+    expect(await screen.findByText(/Görünürlük süresi dolmuş 2 bildirim/)).toBeInTheDocument();
+    expect(screen.queryByText('Expired Calendar Person')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+  });
+
+  it('keeps list errors explicit instead of reporting an empty successful state', async () => {
+    get.mockRejectedValue(new Error('offline'));
+    render(<KBSNotification />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Bildirim listesi yenilenemedi');
+    expect(screen.queryByText('Bu görünümde gönderilmeyen bildirim yok.')).not.toBeInTheDocument();
   });
 });

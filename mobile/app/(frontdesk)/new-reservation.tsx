@@ -15,6 +15,8 @@ import { parsePaymentAmount } from '../../src/utils/paymentEntry';
 import { reservationDateInput, reservationGuestCount } from '../../src/utils/reservationEntry';
 import { errorMessage } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
+import { KbsIdentityFields } from '../../src/components/KbsIdentityFields';
+import { emptyKbsIdentity, kbsIdentityMissing, kbsMissingText } from '../../src/utils/kbs';
 
 function localTodayISO(): string {
   const now = new Date();
@@ -50,6 +52,7 @@ export default function NewReservationScreen() {
     : addDaysISO(initialCheckIn, 1);
 
   const [guestName, setGuestName] = useState(String(p.guest_name || ''));
+  const [identity, setIdentity] = useState(() => ({ ...emptyKbsIdentity(), name: String(p.guest_name || ''), id_number: String(p.guest_id_number || '') }));
   const [checkIn, setCheckIn] = useState(initialCheckIn);
   const [checkOut, setCheckOut] = useState(initialCheckOut);
   const [room, setRoom] = useState<AvailabilityRoom | null>(null);
@@ -93,6 +96,8 @@ export default function NewReservationScreen() {
       const total = parsePaymentAmount(amount);
       const adultCount = reservationGuestCount(adults, 1);
       const childCount = reservationGuestCount(children || '0', 0);
+      const missing = kbsIdentityMissing({ ...identity, name: guestName });
+      if (missing.length) throw new Error(`KBS için tamamlayın: ${kbsMissingText(missing)}`);
       if (
         !guestName.trim() ||
         !datesValid ||
@@ -109,7 +114,10 @@ export default function NewReservationScreen() {
         check_in: `${checkIn}T14:00:00+03:00`,
         check_out: `${checkOut}T12:00:00+03:00`,
         total_amount: total,
-        guest_id_number: String(p.guest_id_number || '').trim() || undefined,
+        guest_id_number: identity.id_number.trim() || undefined,
+        guest_nationality: identity.nationality.trim(), guest_id_type: identity.id_type,
+        guest_passport_number: identity.passport_number.trim() || undefined,
+        guest_birth_date: identity.date_of_birth || undefined, guest_gender: identity.gender || undefined,
         adults: adultCount,
         children: childCount,
       };
@@ -123,6 +131,7 @@ export default function NewReservationScreen() {
       haptic.success();
       setFormError(null);
       setDone(true);
+      setIdentity(emptyKbsIdentity());
       void qc.invalidateQueries({ queryKey: ['reservations-search'] });
       void qc.invalidateQueries({ queryKey: ['calendar'] });
       void qc.invalidateQueries({ queryKey: ['frontdesk-rooms'] });
@@ -178,12 +187,9 @@ export default function NewReservationScreen() {
       ) : null}
 
       <Card>
-        <Field
-          label={tr.reservations.guestName}
-          value={guestName}
-          onChangeText={setGuestName}
-          autoCapitalize="words"
-        />
+        <H2>Misafir ve KBS bilgileri</H2>
+        <KbsIdentityFields value={{ ...identity, name: guestName }} onChange={v => { setIdentity(v); setGuestName(v.name); }} />
+        <Muted>Rezervasyondaki her konaklayan ayrı kaydedilmelidir. Diğer misafirlerin bilgilerini girişten önce tamamlayın.</Muted>
         <View style={{ height: spacing.sm }} />
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <Field

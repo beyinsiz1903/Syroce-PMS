@@ -100,7 +100,7 @@ export function setupOfflineCache(client: QueryClient): () => void {
     dehydrateOptions: {
       // Don't persist queries that errored — we don't want to "remember"
       // a failure; the next online tick will re-fetch fresh data.
-      shouldDehydrateQuery: (q) => q.state.status === 'success',
+      shouldDehydrateQuery: (q) => q.state.status === 'success' && !String(q.queryKey[0]).startsWith('kbs-'),
     },
   });
   return unsubscribe;

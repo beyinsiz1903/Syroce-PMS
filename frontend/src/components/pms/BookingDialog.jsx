@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import axios from 'axios';
 import WhatsAppConsent from './WhatsAppConsent';
 import RevenueBookingQuote from './RevenueBookingQuote';
+import KBSGuestFields from './KBSGuestFields';
+import { emptyKbsIdentity, kbsIdentityMissing } from '@/lib/kbsIdentity';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +52,23 @@ const BookingDialog = ({
   const guestSearchTimerRef = useRef(null);
   const guestSearchController = useRef(null);
   const [submitting, setSubmitting] = useState(false);
+  const [identity, setIdentity] = useState(emptyKbsIdentity);
+  const [identityStatus, setIdentityStatus] = useState('idle');
+  const [identityError, setIdentityError] = useState('');
+  useEffect(() => {
+    setIdentity(emptyKbsIdentity()); setIdentityError('');
+    if (!open || !selectedGuest?.id) { setIdentityStatus('idle'); return; }
+    let active = true;
+    const controller = new AbortController();
+    setIdentityStatus('loading');
+    axios.get(`/kbs/guests/${encodeURIComponent(selectedGuest.id)}/readiness`, { signal: controller.signal })
+      .then(({ data }) => { if (active) setIdentityStatus(data?.ready === true ? 'ready' : 'missing'); })
+      .catch(() => { if (active) setIdentityStatus('error'); });
+    return () => { active = false; controller.abort(); };
+  }, [open, selectedGuest?.id]);
+  const identityMissing = kbsIdentityMissing(identity, selectedGuest?.name || guestSearchQuery);
+  const hasGuest = Boolean(selectedGuest || guestSearchQuery.trim());
+  const kbsReady = !hasGuest || identityStatus === 'ready' || identityMissing.length === 0;
   const submitLock = useRef(false);
   const [availability, setAvailability] = useState({ key: '', status: 'idle', rooms: [] });
   const [availabilityRetry, setAvailabilityRetry] = useState(0);
@@ -165,7 +184,21 @@ const BookingDialog = ({
       <DialogTitle>{t('cm.components_pms_BookingDialog.yeni_rezervasyon_olustur')}</DialogTitle>
       <DialogDescription>{t('cm.components_pms_BookingDialog.rezervasyon_bilgilerini_asagiya_girin')}</DialogDescription>
     </DialogHeader>
-    <form onSubmit={async (e) => { e.preventDefault(); if (submitLock.current || !availabilityReady || !validRoomSelection) return; submitLock.current = true; setSubmitting(true); try { await handleCreateBooking(e, selectedGuest ? null : guestSearchQuery); } finally { submitLock.current = false; setSubmitting(false); } }} className="space-y-6">
+    <form onSubmit={async (e) => {
+      e.preventDefault();
+      if (submitLock.current || !availabilityReady || !validRoomSelection || !kbsReady) return;
+      submitLock.current = true; setSubmitting(true); setIdentityError('');
+      try {
+        if (selectedGuest && identityStatus !== 'ready') {
+          const changes = Object.fromEntries(Object.entries(identity).filter(([, value]) => String(value).trim()));
+          await axios.put(`/pms/guests/${encodeURIComponent(selectedGuest.id)}`, changes);
+          const { data } = await axios.get(`/kbs/guests/${encodeURIComponent(selectedGuest.id)}/readiness`);
+          if (data?.ready !== true) throw new Error('Kimlik alanları doğrulanamadı. Düzenleme yetkinizi ve bilgileri kontrol edin.');
+        }
+        await handleCreateBooking(e, selectedGuest ? null : guestSearchQuery, identity);
+      } catch { setIdentityError('Kimlik bilgileri kaydedilemedi veya doğrulanamadı; rezervasyon oluşturulmadı.'); }
+      finally { submitLock.current = false; setSubmitting(false); }
+    }} className="space-y-6">
       {/* Check-in and Check-out */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
@@ -258,6 +291,10 @@ const BookingDialog = ({
         <Input type="tel" placeholder="+905xxxxxxxxx" value={newBooking.guest_phone || ''}
           onChange={e => setNewBooking(prev => ({ ...prev, guest_phone: e.target.value }))} />
       </label>}
+      {hasGuest && <KBSGuestFields value={identity} onChange={setIdentity} missing={identityStatus === 'ready' ? [] : identityMissing} existingReady={identityStatus === 'ready'} />}
+      {identityStatus === 'loading' && <p className="text-sm">Kayıtlı kimlik alanları kontrol ediliyor…</p>}
+      {identityStatus === 'error' && <p className="text-sm text-amber-700">Kayıtlı kimlik bilgileri doğrulanamadı. Zorunlu alanları girerek tamamlayabilirsiniz.</p>}
+      {!!identityError && <p role="alert" className="text-sm text-destructive">{identityError}</p>}
       <WhatsAppConsent open={open} identity={newBooking.guest_id || guestSearchQuery}
         phone={newBooking.guest_phone} value={newBooking.whatsapp_consent}
         onChange={value => setNewBooking(prev => ({ ...prev, whatsapp_consent: value, whatsapp_consent_phone: value ? prev.guest_phone : '' }))} />
@@ -574,7 +611,7 @@ const BookingDialog = ({
           })} placeholder={t('experience.booking.overrideHelp', "Fiyat değişikliğinin nedenini açıklayın.")} className="mt-2" required />
         </div>}
 
-      <div className="sticky bottom-0 -mx-4 border-t bg-background px-4 py-3 sm:-mx-6 sm:px-6"><p className="mb-2 text-sm text-muted-foreground">{t("experience.booking.review", "Kaydetmeden önce tarihleri, oda seçimini ve toplam tutarı kontrol edin.")}</p><Button type="submit" disabled={submitting || !availabilityReady || !validRoomSelection} aria-busy={submitting} className="w-full">{t('experience.booking.create', "Rezervasyonu oluştur")}</Button></div>
+      <div className="sticky bottom-0 -mx-4 border-t bg-background px-4 py-3 sm:-mx-6 sm:px-6"><p className="mb-2 text-sm text-muted-foreground">{t("experience.booking.review", "Kaydetmeden önce tarihleri, oda seçimini ve toplam tutarı kontrol edin.")}</p><Button type="submit" disabled={submitting || !availabilityReady || !validRoomSelection || !kbsReady} aria-busy={submitting} className="w-full">{t('experience.booking.create', "Rezervasyonu oluştur")}</Button></div>
     </form>
   </DialogContent>
 </Dialog>;

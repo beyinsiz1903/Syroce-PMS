@@ -222,7 +222,7 @@ async def test_delivery_failure_does_not_complete_or_automatically_retry(crypto,
     }
     job = {"tenant_id": "tenant-a", "id": "j1", "booking_id": "b1", "action": "checkin", "worker_id": kbs_dispatch.WORKER_ID}
     db = database(config, [job])
-    monkeypatch.setattr(kbs_payload_builder, "build_kbs_payload_snapshot", AsyncMock(return_value=({"guest_id": "g1"}, {}, PAYLOAD)))
+    monkeypatch.setattr(kbs_payload_builder, "build_kbs_payload_snapshot", AsyncMock(return_value=({"guest_id": "g1"}, {"id": "g1"}, PAYLOAD)))
     call = AsyncMock(side_effect=[{"code": "Basarili"}, soap.JandarmaError("delivery_unknown_check_authority", uncertain=uncertain)])
     monkeypatch.setattr(cloud, "call_jandarma", call)
     complete = AsyncMock()
@@ -243,6 +243,8 @@ async def test_delivery_failure_does_not_complete_or_automatically_retry(crypto,
 @pytest.mark.asyncio
 async def test_received_reply_is_preserved_as_local_receipt_not_official_reference(crypto, monkeypatch):
     from core import kbs_dispatch, kbs_payload_builder
+    from core import kbs_readiness
+    monkeypatch.setattr(kbs_readiness, 'checkin_confirmed', AsyncMock(return_value=True))
 
     monkeypatch.setenv("KBS_TEST_MODE", "0")
     config = {
@@ -256,7 +258,7 @@ async def test_received_reply_is_preserved_as_local_receipt_not_official_referen
     }
     job = {"tenant_id": "tenant-a", "id": "j1", "booking_id": "b1", "action": "checkout", "worker_id": kbs_dispatch.WORKER_ID}
     db = database(config, [job])
-    monkeypatch.setattr(kbs_payload_builder, "build_kbs_payload_snapshot", AsyncMock(return_value=({"guest_id": "g1"}, {}, PAYLOAD)))
+    monkeypatch.setattr(kbs_payload_builder, "build_kbs_payload_snapshot", AsyncMock(return_value=({"guest_id": "g1"}, {"id": "g1"}, PAYLOAD)))
     monkeypatch.setattr(cloud, "call_jandarma", AsyncMock(return_value={"code": "Basarili", "method": "MusteriKimlikNoCikis"}))
     result = await cloud.dispatch_cloud_jobs(db)
     assert result["sent"] == 1

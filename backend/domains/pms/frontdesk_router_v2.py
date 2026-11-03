@@ -66,6 +66,11 @@ class WalkInRequest(BaseModel):
     guest_email: str | None = None
     guest_phone: str | None = None
     id_number: str | None = None
+    nationality: str | None = None
+    id_type: str | None = None
+    passport_number: str | None = None
+    birth_date: str | None = None
+    gender: str | None = None
 
 
 class PostChargeRequest(BaseModel):
@@ -175,7 +180,8 @@ async def walk_in(
     )
     if replay is not None:
         return replay
-    result = await frontdesk_service_v2.walk_in(ctx, req.guest_name, req.room_id, req.nights, req.rate_amount, req.payment_method, req.guest_email, req.guest_phone, req.id_number)
+    identity = {k: getattr(req, k) for k in ('nationality', 'id_type', 'passport_number', 'birth_date', 'gender') if getattr(req, k) is not None}
+    result = await frontdesk_service_v2.walk_in(ctx, req.guest_name, req.room_id, req.nights, req.rate_amount, req.payment_method, req.guest_email, req.guest_phone, req.id_number, identity=identity)
     if not result.ok:
         # Logical failure with no durable booking -> release so the same key
         # can be retried.

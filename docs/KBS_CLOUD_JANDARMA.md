@@ -5,7 +5,9 @@
 Jandarma için tarayıcıdan bağımsız SOAP göndericisi, otel bazlı güvenli ayarlar
 ve mevcut Celery kuyruğu kullanılır. İstek telefondan PMS web ekranında kuyruğa
 alınabilir; telefon ve resepsiyon bilgisayarı kapalıyken sunucu işi yürütür.
-Bu, native iOS uygulamasına ayrıca bir KBS ekranı eklendiği anlamına gelmez.
+Native uygulamada Ön büro → Diğer → KBS bildirimleri ve rezervasyondan KBS
+kısayolu bulunur. Native değişikliklerin cihazlara ulaşması yeni uygulama
+sürümünün dağıtılmasını gerektirir; yalnız backend deploy'u yeterli değildir.
 Bu geliştirme tek başına canlı kurulum veya resmi kabul testi değildir.
 
 EGM/Polis bağlantısı aynı servis değildir. Mevcut `egm-session` adaptörü
@@ -74,6 +76,36 @@ Kaynaklar:
 - Açık kurum reddi de başarı değildir; düzeltilmiş veriyle kullanıcı kontrollü
   yeniden kuyruğa alma mümkündür. Gerçek bildirimler test verisiyle denenmez.
 
+## Otomatik giriş / çıkış ve iki görünüm
+
+- Normal, atomik, kiosk ve v2 giriş/çıkış yolları her konaklayan için ayrı iş
+  oluşturur. Gerçek giriş olmadan onaylı/garantili rezervasyon gece taramasında
+  kuruma bildirilmez. Rezervasyon formları kimlik bilgilerini toplar; cloud KBS
+  akışını benimsemiş tesislerde backend de girişten önce tüm konaklayanları
+  denetler. Eksik kayıtta oda, folyo veya giriş durumu değiştirilmez.
+- Çıkış, aynı kişinin giriş kabulü alınana kadar saklanır; düşürülmez.
+  Diğer misafirlerin işleri işlenmeye devam eder. Eksik veri, açık ret,
+  zaman aşımı ve kabul sonrası yerel rapor yazma hatası ayrı ele alınır.
+- Web ve native yalnız **Gönderilen** / **Gönderilmeyen** görünümlerini kullanır.
+  Gönderilmeyen satır gerçek nedeni gösterir: eksik/geçersiz alan, henüz
+  alınmamış kabul, önceki girişin kabulünü bekleme, kurumda aynı kimlik için
+  açık kayıt, açık ret veya belirsiz teslimat. Test sonucu gönderilmiş sayılmaz.
+- Kurumda zaten açık kimlik kaydı, sırf bu yanıttan dolayı bizim yeni
+  bildirimimiz kabul edilmiş sayılmaz. Otomatik ve manuel tekrar engellenir;
+  kurum kaydı uzlaştırılmalıdır. Başarılı kalıcı makbuz da yeniden gönderilmez.
+- Ana KBS ekranında gerçek çıkıştan **24 saat** sonra kişi satırları gizlenir.
+  Erken çıkan ek kişi kendi çıkış saatine göre gizlenir; otelde kalan kişi,
+  planlı çıkış tarihi eskidi diye kaybolmaz. Bu bir ekran görünürlük tercihidir,
+  yasal veri saklama süresi değildir.
+- Süre dolması kuyruğu, makbuzu, denetimi veya belirsiz teslim kilidini SİLMEZ.
+  Sonuçlanmamış eski bildirimler ana ekranda kimliksiz toplam uyarısı olarak
+  kalır; yetkili yönetici denetim/operasyon kayıtlarından takip eder.
+- Ortak liste kimlik/pasaport numarası, ham kurum cevabı veya bağlantı sırrı
+  döndürmez. Ad görünürlüğü personelin veri profiline uyar. Kimlik tamamlama
+  otel/rezervasyon/kişi ilişkisini ve düzenleme yetkisini denetler, normal
+  şifreli misafir yazma yolunu kullanır. Native KBS sorguları çevrimdışı diske
+  kaydedilmez; form alanları ekrandan çıkışta temizlenir.
+
 ## Testler
 
 `backend/tests/unit/test_kbs_cloud.py`: WSDL alan sırası, TR/yabancı giriş/çıkış,
@@ -85,3 +117,13 @@ lease'in tekrar gönderilmemesi. Kurum çağrıları tüm testlerde mock'tur.
 
 `frontend/src/components/pms/__tests__/KBSCloudSettings.test.jsx`: kullanıcı
 onayı, yetki görünürlüğü, gizli alanların temizlenmesi ve yanlış başarı engeli.
+
+`backend/tests/test_kbs_mobile_lifecycle.py`: yerel replica üzerinde çok
+konaklayan, giriş-çıkış bağımlılığı, arızalı ilk kişiden sonra ilerleme,
+mükerrer/uncertain koruması, eşzamanlı enqueue, kimlik yetkileri, iki görünüm
+ve 24 saatlik gizleme. Tüm kurum çağrıları mock; hiçbir resmî bildirim yapılmaz.
+
+`frontend/src/components/pms/__tests__/KBSNotification.identity-edit.test.jsx`
+iki görünüm, nedenler, kimlik tamamlama ve eklenti kabul/ret/belirsizlik
+davranışını kapsar. Native kimlik/izin/PII-cache sözleşmeleri
+`mobile/src/utils/__tests__/kbs.test.ts` içinde doğrulanır.

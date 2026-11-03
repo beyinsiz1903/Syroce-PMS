@@ -150,6 +150,11 @@ export async function getBooking(id: string): Promise<Booking | null> {
 
 // POST /api/frontdesk/checkin/{booking_id}
 export async function checkin(bookingId: string): Promise<unknown> {
+  const { getKbsReadiness } = await import('./kbs');
+  const readiness = await getKbsReadiness(bookingId);
+  if (!readiness.ready) {
+    throw new Error('Girişten önce KBS kimlik bilgilerini ve tüm konaklayanları tamamlayın. Rezervasyonun KBS ekranını açın.');
+  }
   const result = await api.post(`/api/frontdesk/checkin/${bookingId}`, {});
   await invalidateRoomOccupancy(queryClient);
   return result;
@@ -184,6 +189,11 @@ export type WalkInPayload = {
   guest_phone?: string;
   guest_email?: string;
   id_number?: string;
+  nationality?: string;
+  id_type?: string;
+  passport_number?: string;
+  birth_date?: string;
+  gender?: string;
 };
 
 // POST /api/frontdesk/v2/walk-in (frontdesk_router_v2.py)
@@ -207,6 +217,11 @@ export type QuickBookingPayload = {
   guest_email?: string;
   guest_phone?: string;
   guest_id_number?: string;
+  guest_nationality?: string;
+  guest_id_type?: string;
+  guest_passport_number?: string;
+  guest_birth_date?: string;
+  guest_gender?: string;
   adults?: number;
   children?: number;
   daily_rate?: number;

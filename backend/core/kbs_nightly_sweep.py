@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("core.kbs_nightly_sweep")
 
 QUEUE_KIND = "queue_job"
-_ACTIVE_STATUSES = ["checked_in", "confirmed", "guaranteed", "checked_out"]
+_ACTIVE_STATUSES = ["checked_in", "checked_out"]
 
 
 async def _has_job_for(raw_db, tenant_id: str, booking_id: str, action: str) -> bool:
@@ -56,6 +57,9 @@ async def sweep_tenant_kbs(raw_db, tenant_id: str, day_iso: str) -> dict:
 
     lo = day_iso + "T00:00:00"
     hi = day_iso + "T23:59:59"
+    local_start = datetime.fromisoformat(day_iso).replace(tzinfo=ZoneInfo(await resolve_tenant_timezone(raw_db, tenant_id)))
+    actual_lo = local_start.astimezone(UTC).isoformat()
+    actual_hi = (local_start + timedelta(days=1)).astimezone(UTC).isoformat()
 
     enqueued = 0
     skipped = 0
@@ -69,16 +73,16 @@ async def sweep_tenant_kbs(raw_db, tenant_id: str, day_iso: str) -> dict:
             {
                 "tenant_id": tenant_id,
                 "status": {"$in": _ACTIVE_STATUSES},
-                "check_in": {"$gte": lo, "$lte": hi},
+                "$or": [
+                    {"checked_in_at": {"$gte": actual_lo, "$lt": actual_hi}},
+                    {"checked_in_at": {"$in": [None, ""]}, "check_in": {"$gte": lo, "$lte": hi}},
+                ],
             },
             {"_id": 0, "id": 1, "check_out": 1, "status": 1},
         )
         async for b in checkin_cursor:
             booking_id = b.get("id")
             if not booking_id:
-                continue
-            if await _has_job_for(raw_db, tenant_id, booking_id, "checkin"):
-                skipped += 1
                 continue
             result = await ae.auto_enqueue_kbs(
                 tenant_id,
@@ -96,16 +100,16 @@ async def sweep_tenant_kbs(raw_db, tenant_id: str, day_iso: str) -> dict:
             {
                 "tenant_id": tenant_id,
                 "status": "checked_out",
-                "check_out": {"$gte": lo, "$lte": hi},
+                "$or": [
+                    {"checked_out_at": {"$gte": actual_lo, "$lt": actual_hi}},
+                    {"checked_out_at": {"$in": [None, ""]}, "check_out": {"$gte": lo, "$lte": hi}},
+                ],
             },
             {"_id": 0, "id": 1},
         )
         async for b in checkout_cursor:
             booking_id = b.get("id")
             if not booking_id:
-                continue
-            if await _has_job_for(raw_db, tenant_id, booking_id, "checkout"):
-                skipped += 1
                 continue
             result = await ae.auto_enqueue_kbs(
                 tenant_id,
