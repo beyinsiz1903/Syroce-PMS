@@ -2,11 +2,11 @@ import {
   api,
   apiRequest,
   clearAllAuthStorage,
+  commitAuthTokens,
   getOrCreateDeviceId,
   getRefreshToken,
-  setRefreshToken,
-  setToken,
 } from './client';
+import { currentAuthSession, writeForAuthSession } from '../state/authSession';
 
 export type AuthUser = {
   id?: string;
@@ -42,33 +42,27 @@ export type LoginResponse = {
 };
 
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  const res = await api.post<LoginResponse>('/api/auth/login', { email, password });
+  const revision = currentAuthSession();
+  const res = await apiRequest<LoginResponse>('/api/auth/login', { method: 'POST', body: { email, password }, auth: false });
   if (res?.access_token) {
-    await setToken(res.access_token);
-  }
-  if (res?.refresh_token) {
-    await setRefreshToken(res.refresh_token);
-  } else {
-    // Server didn't issue a refresh token (legacy deployment). Wipe any
-    // stale refresh slot so we don't try to use a previous user's token.
-    await setRefreshToken(null);
+    await commitAuthTokens(revision, res.access_token, res.refresh_token);
   }
   return res;
 }
 
 export async function verifyTwoFactor(challengeToken: string, code: string): Promise<LoginResponse> {
+  const revision = currentAuthSession();
   const res = await apiRequest<LoginResponse>('/api/auth/2fa/verify', {
     method: 'POST',
     body: { challenge_token: challengeToken, code: code.trim() },
     auth: false,
   });
-  if (res?.access_token) await setToken(res.access_token);
-  if (res?.refresh_token) await setRefreshToken(res.refresh_token);
-  else await setRefreshToken(null);
+  if (res?.access_token) await commitAuthTokens(revision, res.access_token, res.refresh_token);
   return res;
 }
 
 export async function logout(): Promise<void> {
+  const revision = currentAuthSession();
   // V3 (round 7): unregister this device's push token FIRST so the
   // backend stops fanning notifications to a logged-out phone (privacy
   // + duplicate-delivery on next user). The unregister call needs the
@@ -89,7 +83,7 @@ export async function logout(): Promise<void> {
   } catch {
     // ignore — server may already have rejected us
   }
-  await clearAllAuthStorage();
+  await writeForAuthSession(revision, clearAllAuthStorage);
 }
 
 export async function me(): Promise<AuthUser> {
@@ -104,6 +98,7 @@ export type RefreshResponse = {
 };
 
 export async function refreshAccessToken(): Promise<RefreshResponse> {
+  const revision = currentAuthSession();
   // V3 — Syroce mobil refresh flow.
   // Preferred: send the long-lived refresh JWT in the body. The backend
   // validates it independently (does NOT require a valid Authorization
@@ -122,10 +117,7 @@ export async function refreshAccessToken(): Promise<RefreshResponse> {
     auth: !stored, // attach Authorization only on the legacy fallback path
   });
   if (res?.access_token) {
-    await setToken(res.access_token);
-    if (res.refresh_token) {
-      await setRefreshToken(res.refresh_token);
-    }
+    await commitAuthTokens(revision, res.access_token, res.refresh_token || stored || undefined);
   }
   return res;
 }

@@ -135,7 +135,12 @@ async def send_expo_push(
             "to": token,
             "title": title,
             "body": body,
-            "data": {**base_data, "device_id": device.get("device_id")},
+            "data": {
+                **base_data,
+                "device_id": device.get("device_id"),
+                "tenant_id": tenant_id,
+                "user_id": device.get("user_id"),
+            },
             "priority": priority,
         }
         if sound:

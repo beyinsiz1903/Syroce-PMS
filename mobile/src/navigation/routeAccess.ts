@@ -3,7 +3,9 @@ import { ROUTES } from './routes';
 
 export function mobileTargetAllowed(user: ServerAccessContext | null, target: unknown): boolean {
   if (!user || typeof target !== 'string') return false;
-  return mobileRouteAllowed(user, target.split('/').filter(Boolean));
+  const pathname = target.split(/[?#]/, 1)[0];
+  if (!(Object.values(ROUTES) as string[]).includes(pathname)) return false;
+  return mobileRouteAllowed(user, pathname.split('/').filter(Boolean));
 }
 
 export function paidDepartmentForSegments(segments: readonly string[]): 'spa' | 'mice' | 'pos' | 'revenue' | undefined {
