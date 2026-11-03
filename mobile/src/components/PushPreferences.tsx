@@ -14,7 +14,7 @@ export function PushPreferences() {
   };
   return <Card>
     <H2>Bildirimler</H2>
-    <Muted accessibilityLiveRegion="polite">{labels[status]}</Muted>
+    <Muted testID="smoke-push-status" accessibilityLiveRegion="polite">{labels[status]}</Muted>
     {Platform.OS !== 'web' && status !== 'registered' ? <Button title="Bildirimleri etkinleştir" loading={busy} onPress={async () => {
       setBusy(true);
       try { await registerForPush(); } finally { setBusy(false); }

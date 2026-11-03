@@ -16,10 +16,7 @@ import {
   authenticateBiometric,
   getBiometricCapability,
 } from '../../src/biometrics/lock';
-import {
-  getLastPushStatus,
-  type PushRegistrationStatus,
-} from '../../src/notifications/push';
+import { PushPreferences } from '../../src/components/PushPreferences';
 import { demoPreviewEnabled } from '../../src/utils/previewMode';
 import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
 
@@ -34,9 +31,6 @@ export default function MoreScreen() {
 
   const [bioAvailable, setBioAvailable] = useState<boolean>(false);
   const [bioLabel, setBioLabel] = useState<string>('Biyometrik');
-  const [pushStatus, setPushStatus] = useState<PushRegistrationStatus>(
-    getLastPushStatus(),
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -50,22 +44,6 @@ export default function MoreScreen() {
       cancelled = true;
     };
   }, []);
-
-  // Poll the push registration outcome so the indicator updates without
-  // a screen reload — `registerForPush()` runs asynchronously in
-  // AuthGate after sign-in, so it may finish a few seconds after this
-  // tab is first opened. Stops polling once we have a definitive result.
-  useEffect(() => {
-    if (pushStatus !== 'unknown') return;
-    const t = setInterval(() => {
-      const next = getLastPushStatus();
-      if (next !== 'unknown') {
-        setPushStatus(next);
-        clearInterval(t);
-      }
-    }, 500);
-    return () => clearInterval(t);
-  }, [pushStatus]);
 
   const onLogout = () => {
     Alert.alert(tr.more.logout, '', [
@@ -108,41 +86,41 @@ export default function MoreScreen() {
         <Card accent={c.warning}><Muted>Salt okunur tasarım önizlemesi. Bu demo günlük PMS ekranlarını kapsar; diğer rol deneyimleri burada doğrulanmaz.</Muted></Card>
       )}
 
-      <Card style={{ gap: spacing.sm }}>
+      {[ROUTES.frontdeskKbs, ROUTES.reservations, ROUTES.availability, ROUTES.frontdeskGuests, ROUTES.frontdeskReports].some(route => mobileTargetAllowed(user, route)) && <Card style={{ gap: spacing.sm }}>
         <H2>Operasyon kısayolları</H2>
         <Muted>Günlük sekmelerin dışında kalan araçlar.</Muted>
         {mobileTargetAllowed(user, ROUTES.frontdeskKbs) && <Button title="KBS bildirimleri" icon="shield-checkmark-outline" variant="secondary" onPress={() => router.push(ROUTES.frontdeskKbs)} testID="more-kbs" fullWidth />}
-        <Button
+        {mobileTargetAllowed(user, ROUTES.reservations) && <Button
           title={tr.tabs.bookings}
           icon="reader-outline"
           variant="secondary"
           onPress={() => router.push(ROUTES.reservations)}
           testID="more-reservations"
           fullWidth
-        />
-        <Button
+        />}
+        {mobileTargetAllowed(user, ROUTES.availability) && <Button
           title={tr.availability.title}
           icon="calendar-outline"
           variant="secondary"
           onPress={() => router.push(ROUTES.availability)}
           fullWidth
-        />
-        <Button
+        />}
+        {mobileTargetAllowed(user, ROUTES.frontdeskGuests) && <Button
           title={tr.tabs.guests}
           icon="people-outline"
           variant="secondary"
           onPress={() => router.push(ROUTES.frontdeskGuests)}
           fullWidth
-        />
-          <Button
+        />}
+          {mobileTargetAllowed(user, ROUTES.frontdeskReports) && <Button
             title={tr.manager.reportsTitle}
             icon="bar-chart-outline"
             variant="secondary"
             onPress={() => router.push(ROUTES.frontdeskReports)}
             testID="more-reports"
             fullWidth
-          />
-      </Card>
+          />}
+      </Card>}
 
       <ThemeModeSelector />
 
@@ -181,20 +159,7 @@ export default function MoreScreen() {
         </View>
       </Card>
 
-      <Card>
-        <H2>{tr.more.pushStatus}</H2>
-        <Body testID="smoke-push-status">
-          {pushStatus === 'registered'
-            ? tr.more.pushOn
-            : pushStatus === 'denied'
-            ? tr.more.pushDenied
-            : pushStatus === 'error'
-            ? tr.more.pushError
-            : pushStatus === 'unavailable'
-            ? tr.more.pushOff
-            : tr.more.pushPending}
-        </Body>
-      </Card>
+      <PushPreferences />
 
       <Card>
         <Muted>{tr.more.apiUrl}</Muted>
