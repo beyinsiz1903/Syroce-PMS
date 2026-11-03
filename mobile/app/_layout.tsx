@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Pressable, Text, View } from 'react-native';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -21,6 +21,7 @@ import { BiometricLockGate } from '../src/components/BiometricLockGate';
 import { installCertPinning } from '../src/security/certPinning';
 import { queryClient } from '../src/cache/queryClient';
 import { captureNativeError, installNativeErrorTracking, setNativeErrorRoute } from '../src/observability/nativeErrors';
+import { attachPushListeners, registerForPush, resetPushStatus } from '../src/notifications/push';
 
 // V3: install the pinned-fetch wrapper before anything else — this swaps
 // `globalThis.fetch` so subsequent API calls in client.ts route through
@@ -56,6 +57,33 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     hydrate();
     hydrateSettings();
   }, [hydrate, hydrateSettings]);
+
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const sub = AppState.addEventListener('change', state => {
+      const resumed = state === 'active' && previous !== 'active';
+      previous = state;
+      const auth = useAuthStore.getState();
+      if (resumed && auth.user && !auth.loading) void auth.hydrate();
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!user) useSettingsStore.setState({ biometricLock: false });
+  }, [user]);
+
+  useEffect(() => {
+    resetPushStatus();
+    // Only reuse permission already granted to this installation. The profile
+    // has an explicit opt-in action; routine login never opens an OS prompt.
+    if (user) void registerForPush({ requestPermission: false });
+  }, [user?.id, user?.user_id, user?.tenant_id, user?.hotel_id]);
+
+  useEffect(() => {
+    if (!user || loading || !rootNavigationState?.key) return;
+    return attachPushListeners(router, user);
+  }, [user, loading, router, rootNavigationState?.key]);
 
   useEffect(() => {
     // Login/hydration can finish before Expo Router has mounted the root

@@ -74,6 +74,19 @@ test('guests cannot enter staff pages and staff JWTs cannot impersonate the gues
   assert.equal(mobileRouteAllowed(finance, ['(departments)', 'typo']), false);
 });
 
+test('shared HK/guest More menus never advertise frontdesk operations their routes deny', () => {
+  const menu = readFileSync(resolve('app/(frontdesk)/more.tsx'), 'utf8');
+  for (const key of ['frontdeskKbs', 'reservations', 'availability', 'frontdeskGuests', 'frontdeskReports']) {
+    assert.ok(menu.includes(`mobileTargetAllowed(user, ROUTES.${key})`), key);
+  }
+  for (const user of [hk, { role: 'guest' }]) {
+    for (const screen of ['kbs', 'reservations', 'availability', 'guests', 'reports']) {
+      assert.equal(mobileTargetAllowed(user, `/(frontdesk)/${screen}`), false);
+    }
+  }
+  assert.match(menu, /<PushPreferences \/>/);
+});
+
 test('password, 2FA and hydration share a derivation; all six layouts gate children before mount', () => {
   const auth = readFileSync(resolve('src/state/authStore.ts'), 'utf8');
   assert.match(auth, /hydrate\(\)[\s\S]*?\.\.\.deriveMobileAccess\(user\)/);

@@ -14,7 +14,7 @@ export function useNavigationAccess() {
   });
   return (target: unknown) => {
     if (!mobileTargetAllowed(user, target) || typeof target !== 'string') return false;
-    const tile = paidDepartmentForSegments(target.split('/').filter(Boolean));
+    const tile = paidDepartmentForSegments(target.split(/[?#]/, 1)[0].split('/').filter(Boolean));
     return !tile || (!subscription.isError && hubModuleState(tile, subscription.data) === 'enabled');
   };
 }

@@ -17,7 +17,7 @@ import { useNavigationAccess } from '../../src/navigation/useNavigationAccess';
 import { useSettingsStore } from '../../src/state/settingsStore';
 import { getApiUrl } from '../../src/api/client';
 import { authenticateBiometric, getBiometricCapability } from '../../src/biometrics/lock';
-import { getLastPushStatus, type PushRegistrationStatus } from '../../src/notifications/push';
+import { PushPreferences } from '../../src/components/PushPreferences';
 import { getCurrentSubscription } from '../../src/api/subscription';
 
 type Shortcut = {
@@ -48,7 +48,7 @@ export default function GMMoreScreen() {
   const posAccess = useAuthStore((s) => s.posAccess);
   const deptAccess = useAuthStore((s) => s.deptAccess);
   const subscription = useQuery({
-    queryKey: ['current-subscription'],
+    queryKey: ['current-subscription', user?.tenant_id || user?.hotel_id],
     queryFn: getCurrentSubscription,
     staleTime: 5 * 60 * 1000,
   });
@@ -59,7 +59,6 @@ export default function GMMoreScreen() {
 
   const [bioAvailable, setBioAvailable] = useState<boolean>(false);
   const [bioLabel, setBioLabel] = useState<string>('Biyometrik');
-  const [pushStatus, setPushStatus] = useState<PushRegistrationStatus>(getLastPushStatus());
 
   useEffect(() => {
     let cancelled = false;
@@ -73,21 +72,6 @@ export default function GMMoreScreen() {
       cancelled = true;
     };
   }, []);
-
-  // Poll the push registration outcome so the indicator updates without a
-  // screen reload — registerForPush() runs asynchronously in AuthGate after
-  // sign-in. Stops polling once we have a definitive result.
-  useEffect(() => {
-    if (pushStatus !== 'unknown') return;
-    const t = setInterval(() => {
-      const next = getLastPushStatus();
-      if (next !== 'unknown') {
-        setPushStatus(next);
-        clearInterval(t);
-      }
-    }, 500);
-    return () => clearInterval(t);
-  }, [pushStatus]);
 
   const onLogout = () => {
     Alert.alert(tr.more.logout, '', [
@@ -184,17 +168,6 @@ export default function GMMoreScreen() {
   const canNavigate = useNavigationAccess();
   const visibleShortcuts = shortcuts.filter((s) => canNavigate(s.route) && (!['spa', 'mice'].includes(s.key) || s.visible));
 
-  const pushLabel =
-    pushStatus === 'registered'
-      ? tr.more.pushOn
-      : pushStatus === 'denied'
-      ? tr.more.pushDenied
-      : pushStatus === 'error'
-      ? tr.more.pushError
-      : pushStatus === 'unavailable'
-      ? tr.more.pushOff
-      : tr.more.pushPending;
-
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -259,13 +232,6 @@ export default function GMMoreScreen() {
           }
         />
         <ListRow
-          testID="smoke-push-status"
-          icon="notifications-outline"
-          label={tr.more.pushStatus}
-          value={pushLabel}
-          showChevron={false}
-        />
-        <ListRow
           icon="server-outline"
           label={tr.more.apiUrl}
           value={getApiUrl()}
@@ -274,6 +240,7 @@ export default function GMMoreScreen() {
         />
       </ListGroup>
 
+      <PushPreferences />
       <LegalSupportLinks />
       <Button title={tr.more.logout} variant="danger" onPress={onLogout} fullWidth />
     </ScrollView>

@@ -41,9 +41,8 @@ import type { AppRole } from '../state/roleAccess';
 //     states, because a cold deep link has no warm list cache to fall back on.
 //     The `<DepartmentListState>` / list->detail->action example pattern shows
 //     this (see components/ExampleDepartmentScreen.tsx).
-//   - Detail routes are declared WITHOUT the id segment here (e.g.
-//     `reservationDetail: '/(frontdesk)/reservation'`); append the id at the
-//     call site: `router.push(\`\${ROUTES.reservationDetail}/\${id}\`)`.
+//   - Detail screens receive IDs as route params, not nonexistent child paths:
+//     router.push({ pathname: ROUTES.reservationDetail, params: { bookingId: id } }).
 export const ROUTES = {
   login: '/(auth)/login',
   passwordReset: '/(auth)/reset-password',

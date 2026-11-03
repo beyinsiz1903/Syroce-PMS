@@ -15,6 +15,7 @@ import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import { useNavigationAccess } from '../../src/navigation/useNavigationAccess';
 import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
+import { PushPreferences } from '../../src/components/PushPreferences';
 
 type ModuleEntry = {
   key: string;
@@ -190,6 +191,8 @@ export default function ProfileScreen() {
         <AccessibilityPreferences />
 
         <LanguagePreferences />
+
+        <PushPreferences />
 
         <NightScreen inline />
 

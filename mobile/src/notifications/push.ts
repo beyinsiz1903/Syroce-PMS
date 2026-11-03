@@ -17,8 +17,8 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { getOrCreateDeviceId } from '../api/client';
 import { registerPushDevice } from '../api/auth';
-import { ROUTES, rootForRole } from '../navigation/routes';
-import type { AppRole } from '../state/authStore';
+import { notificationTarget, type PushPayload, type NotificationTarget, type NotificationUser } from '../navigation/notificationRoutes';
+import { currentAuthSession, isCurrentAuthSession } from '../state/authSession';
 
 let _handlerSet = false;
 let _tapSub: Notifications.Subscription | null = null;
@@ -37,6 +37,16 @@ export type PushRegistrationStatus =
   | 'unavailable'
   | 'error';
 let _lastPushStatus: PushRegistrationStatus = 'unknown';
+const statusListeners = new Set<(status: PushRegistrationStatus) => void>();
+function setPushStatus(status: PushRegistrationStatus) {
+  _lastPushStatus = status;
+  statusListeners.forEach(listener => listener(status));
+}
+export const resetPushStatus = () => setPushStatus('unknown');
+export function subscribePushStatus(listener: (status: PushRegistrationStatus) => void) {
+  statusListeners.add(listener);
+  return () => { statusListeners.delete(listener); };
+}
 
 type PushRouter = {
   push: (target: never) => void;
@@ -78,57 +88,36 @@ async function ensureAndroidChannel() {
  * Returns the token on success or null when push is unavailable (web,
  * simulator without Expo Go push entitlement, permission denied, …).
  */
-export async function registerForPush(): Promise<string | null> {
-  setForegroundHandler();
-  await ensureAndroidChannel();
-
+export async function registerForPush({ requestPermission = true } = {}): Promise<string | null> {
+  const revision = currentAuthSession();
+  const status = (value: PushRegistrationStatus) => { if (isCurrentAuthSession(revision)) setPushStatus(value); };
   if (Platform.OS === 'web') {
-    _lastPushStatus = 'unavailable';
+    status('unavailable');
     return null;
   }
-
-  let perms = await Notifications.getPermissionsAsync();
-  if (perms.status !== 'granted') {
-    perms = await Notifications.requestPermissionsAsync();
-  }
-  if (perms.status !== 'granted') {
-    _lastPushStatus = 'denied';
-    return null;
-  }
-
-  // EAS builds and the legacy Constants.manifest both expose the projectId.
-  // We tolerate it being missing (Expo Go on first run) — the call still
-  // returns a valid token when the device is paired with an EAS account.
-  const projectId =
-    (Constants.expoConfig as { extra?: { eas?: { projectId?: string } } } | null)?.extra?.eas
-      ?.projectId ||
-    (Constants as unknown as { easConfig?: { projectId?: string } }).easConfig?.projectId;
-
-  let tokenResp;
   try {
-    tokenResp = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined,
-    );
-  } catch {
-    _lastPushStatus = 'error';
-    return null;
-  }
-  const token = tokenResp?.data;
-  if (!token) {
-    _lastPushStatus = 'unavailable';
-    return null;
-  }
+    setForegroundHandler();
+    await ensureAndroidChannel();
+    let perms = await Notifications.getPermissionsAsync();
+    if (!isCurrentAuthSession(revision)) return null;
+    if (perms.status !== 'granted' && requestPermission) {
+      perms = await Notifications.requestPermissionsAsync();
+    }
+    if (perms.status !== 'granted') {
+      status(perms.status === 'denied' ? 'denied' : 'unknown');
+      return null;
+    }
 
-  // Backend POST failure must surface as 'error' so the More-screen
-  // indicator (and the smoke test that asserts on it) doesn't silently
-  // collapse a broken /push/register endpoint into "not yet attempted".
-  // `registerPushDevice` returns false on HTTP failure; we additionally
-  // try/catch in case a future refactor lets a SecureStore error escape
-  // `getOrCreateDeviceId()`.
-  let posted = false;
-  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
+    const tokenResp = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+    const token = tokenResp?.data;
+    if (!token) {
+      status('unavailable');
+      return null;
+    }
     const deviceId = await getOrCreateDeviceId();
-    posted = await registerPushDevice({
+    if (!isCurrentAuthSession(revision)) return null;
+    const posted = await registerPushDevice({
       device_id: deviceId,
       push_token: token,
       platform: Platform.OS,
@@ -136,113 +125,15 @@ export async function registerForPush(): Promise<string | null> {
       os_version: String(Platform.Version),
       device_name: Constants.deviceName ?? undefined,
     });
+    status(posted ? 'registered' : 'error');
+    return posted ? token : null;
   } catch {
-    _lastPushStatus = 'error';
+    status('error');
     return null;
-  }
-  if (!posted) {
-    _lastPushStatus = 'error';
-    return null;
-  }
-
-  _lastPushStatus = 'registered';
-  return token;
-}
-
-type PushPayload = {
-  type?: string;
-  booking_id?: string;
-  room_id?: string;
-  damage_report_id?: string;
-  thread_id?: string;
-  business_date?: string;
-};
-
-type RouteTarget = string | { pathname: string; params?: Record<string, string> };
-
-/**
- * Pick the deep-link target for an incoming push payload, **scoped to the
- * recipient's role**. This matters because `AuthGate` in `_layout.tsx`
- * force-redirects users back to their role's group root whenever the
- * current segment doesn't match `groupForRole(role)`. So a damage_report
- * push that hard-routes to `/(housekeeping)` would be silently ejected
- * for a GM recipient (who only has access to `/(gm)`), losing the deep
- * link entirely.
- *
- * Rule of thumb: every returned route MUST live inside the user's own
- * group — when no domain-specific screen exists for that role we fall
- * back to the role root (still better than no-op or a redirect loop).
- */
-function routeForRole(payload: PushPayload, role: AppRole): RouteTarget | null {
-  const type = (payload.type || '').toLowerCase();
-  const home: RouteTarget = rootForRole(role) as unknown as RouteTarget;
-
-  switch (type) {
-    case 'vip_arrival':
-      // Front-desk + GM both receive this push. FD lands on the today
-      // overview (arrivals row); GM lands on the GM overview. HK doesn't
-      // receive this type but if it ever does, send them home safely.
-      return home;
-
-    case 'no_show_risk':
-      // FD can pre-fill the check-in form; everybody else lands on home.
-      if (role === 'front_desk' && payload.booking_id) {
-        return { pathname: ROUTES.checkin, params: { bookingId: payload.booking_id } };
-      }
-      return home;
-
-    case 'damage_report':
-      // HK has the dedicated damage screen; GM sees damage in their
-      // overview; engineering/maintenance share the HK group in V3.
-      if (role === 'housekeeping') {
-        return ROUTES.housekeeping;
-      }
-      return home;
-
-    case 'guest_message': {
-      // Guest taps go to their thread; staff stay inside their own group
-      // (no shared cross-role thread screen exists yet — V4).
-      if (role === 'guest_app') {
-        const bookingId = payload.booking_id || payload.thread_id;
-        return bookingId
-          ? { pathname: ROUTES.guestMessageThread, params: { bookingId } }
-          : ROUTES.guestMessages;
-      }
-      return home;
-    }
-
-    case 'eod_ready':
-      // Only GM receives EOD pushes; for any other role just go home.
-      return home;
-
-    case 'housekeeping_task':
-    case 'maintenance_task':
-      // Task #327/#328 — a task-assigned / fault-filed push (existing Expo
-      // channel, no new notification type) takes staff to "Görevlerim" in the
-      // common shell. Guests never receive this; if they somehow do, send them
-      // home.
-      if (role !== 'guest_app') {
-        return ROUTES.homeTasks;
-      }
-      return home;
-
-    case 'qr_charge_approval':
-    case 'qr_charge_rejected':
-      // QR Rozet — misafir telefonuna onay isteği veya personele red
-      // bildirimi düşer. Misafir tap ederse direkt kendi rozet ekranına
-      // gitsin (5sn polling zaten bekleyen şarjı yakalar). Personel
-      // şu an mobil uygulamada PMS ekranı yok — home'a gitsin.
-      if (role === 'guest_app') {
-        return ROUTES.guestQrBadge;
-      }
-      return home;
-
-    default:
-      return null;
   }
 }
 
-function navigateTo(router: PushRouter, target: RouteTarget | null) {
+function navigateTo(router: PushRouter, target: NotificationTarget | null) {
   if (!target) return;
   try {
     if (typeof target === 'string') router.push(target as never);
@@ -252,7 +143,7 @@ function navigateTo(router: PushRouter, target: RouteTarget | null) {
   }
 }
 
-let _coldStartHandled = false;
+let _lastHandledResponse: string | null = null;
 
 /**
  * Wire up tap + foreground listeners so a push notification can route the
@@ -263,11 +154,13 @@ let _coldStartHandled = false;
  * `getLastNotificationResponseAsync()`. When the OS launches the app
  * because the user tapped a push, the ResponseReceived listener won't
  * fire (the event was already dispatched before JS booted), so we read
- * it explicitly on first attach. Guarded by `_coldStartHandled` so a
- * later re-attach (e.g. on hot reload or login state change) does not
- * re-route to the original notification.
+ * it on attach, requiring matching recipient context. A response-ID guard
+ * prevents later permission refreshes from replaying the same navigation.
  */
-export function attachPushListeners(router: PushRouter, role: AppRole): () => void {
+export function attachPushListeners(router: PushRouter, user: NotificationUser): () => void {
+  if (Platform.OS === 'web') return () => {};
+  const revision = currentAuthSession();
+  let disposed = false;
   setForegroundHandler();
   if (_tapSub) {
     _tapSub.remove();
@@ -277,33 +170,27 @@ export function attachPushListeners(router: PushRouter, role: AppRole): () => vo
     _fgSub.remove();
     _fgSub = null;
   }
-  _tapSub = Notifications.addNotificationResponseReceivedListener((response) => {
+  const handle = (response: Notifications.NotificationResponse | null, coldStart = false) => {
+    if (!response || disposed || !isCurrentAuthSession(revision)) return;
+    const key = `${response.notification.request.identifier}:${response.actionIdentifier}`;
+    if (_lastHandledResponse === key) return;
     const data = (response.notification.request.content.data ?? {}) as PushPayload;
-    navigateTo(router, routeForRole(data, role));
-  });
+    const target = notificationTarget(data, user, coldStart);
+    if (!target) return;
+    _lastHandledResponse = key;
+    navigateTo(router, target);
+  };
+  _tapSub = Notifications.addNotificationResponseReceivedListener(response => handle(response));
   _fgSub = Notifications.addNotificationReceivedListener(() => {
     // No-op for now — we just rely on the OS banner. Hook-point for
     // V4 in-app toasts / unread-count refresh.
   });
 
-  if (!_coldStartHandled) {
-    _coldStartHandled = true;
-    // Defer one tick so expo-router's navigation tree has mounted before
-    // we try to push. The async chain is intentionally fire-and-forget.
-    setTimeout(() => {
-      Notifications.getLastNotificationResponseAsync()
-        .then((response) => {
-          if (!response) return;
-          const data = (response.notification.request.content.data ?? {}) as PushPayload;
-          navigateTo(router, routeForRole(data, role));
-        })
-        .catch(() => {
-          // Cold-start push read failed (no permission yet, etc.) — ignore.
-        });
-    }, 0);
-  }
+  // Root waits for navigator readiness before attaching; no timing guess.
+  void Notifications.getLastNotificationResponseAsync().then(response => handle(response, true)).catch(() => {});
 
   return () => {
+    disposed = true;
     _tapSub?.remove();
     _fgSub?.remove();
     _tapSub = null;

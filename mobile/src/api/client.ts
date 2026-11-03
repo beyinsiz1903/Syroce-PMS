@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import * as SecureStore from '../storage/secureStore';
+import { assertAuthSession, currentAuthSession, expireAuthSession, isCurrentAuthSession, writeForAuthSession } from '../state/authSession';
 
 const TOKEN_KEY = 'syroce.auth.token';
 const REFRESH_TOKEN_KEY = 'syroce.auth.refresh_token';
@@ -92,6 +93,14 @@ export async function setRefreshToken(token: string | null): Promise<void> {
   }
 }
 
+export async function commitAuthTokens(revision: number, access: string, refresh?: string) {
+  await writeForAuthSession(revision, async () => {
+    await setToken(access);
+    await setRefreshToken(refresh || null);
+  });
+  assertAuthSession(revision);
+}
+
 async function getTokenIssuedAt(): Promise<number | null> {
   try {
     const raw = await SecureStore.getItemAsync(TOKEN_ISSUED_AT_KEY);
@@ -175,7 +184,7 @@ function isFormData(body: unknown): body is FormData {
 // Concurrent callers share a single in-flight promise so we never fire two
 // refresh requests in parallel (which would race on revoke + lose one token).
 
-let _refreshInFlight: Promise<string | null> | null = null;
+let _refreshInFlight: { revision: number; promise: Promise<string | null> } | null = null;
 
 async function _doRefresh(): Promise<string | null> {
   // Lazy import to avoid the cycle (`auth.ts` imports `client.ts`).
@@ -189,7 +198,8 @@ async function _doRefresh(): Promise<string | null> {
 }
 
 async function refreshIfNeeded(force: boolean): Promise<string | null> {
-  if (_refreshInFlight) return _refreshInFlight;
+  const revision = currentAuthSession();
+  if (_refreshInFlight?.revision === revision) return _refreshInFlight.promise;
   if (!force) {
     const issuedAt = await getTokenIssuedAt();
     if (!issuedAt) return null;
@@ -197,11 +207,15 @@ async function refreshIfNeeded(force: boolean): Promise<string | null> {
     if (remaining > REFRESH_GRACE_MS) return null;
   }
   const refreshToken = await getRefreshToken();
+  assertAuthSession(revision);
   if (!refreshToken) return null;
-  _refreshInFlight = _doRefresh().finally(() => {
-    _refreshInFlight = null;
-  });
-  return _refreshInFlight;
+  // Another caller may have started rotation during the storage awaits.
+  if (_refreshInFlight?.revision === revision) return _refreshInFlight.promise;
+  const flight = { revision, promise: _doRefresh().finally(() => {
+    if (_refreshInFlight === flight) _refreshInFlight = null;
+  }) };
+  _refreshInFlight = flight;
+  return flight.promise;
 }
 
 // Sleep that resolves after `ms` OR rejects immediately if the caller's
@@ -253,6 +267,7 @@ function createRequestSignal(external?: AbortSignal, timeoutMs = REQUEST_TIMEOUT
 }
 
 export async function apiRequest<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
+  const revision = currentAuthSession();
   const url = buildUrl(path, opts.query);
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -287,6 +302,7 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
   let text = '';
   let warmupAttempts = 0;
   for (;;) {
+    assertAuthSession(revision);
     const requestSignal = createRequestSignal(opts.signal, opts.timeoutMs);
     try {
       res = await fetch(url, {
@@ -324,6 +340,8 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
     break;
   }
 
+  assertAuthSession(revision);
+
   // Reactive refresh: 401 once → rotate → replay original request once.
   if (
     res.status === 401 &&
@@ -333,9 +351,16 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
     path !== '/api/auth/login'
   ) {
     const fresh = await refreshIfNeeded(true).catch(() => null);
+    assertAuthSession(revision);
     if (fresh) {
       return apiRequest<T>(path, { ...opts, _retried: true });
     }
+  }
+
+  if (res.status === 401 && isAuthCall && !path.startsWith('/api/auth/')) {
+    // A final 401 is not an offline error. Drop stale screens/cache and
+    // return to login, but never let an old account's response log out a new one.
+    if (isCurrentAuthSession(revision)) await expireAuthSession(revision);
   }
 
   // `text` was already read inside the warm-up loop above (body is single-use).

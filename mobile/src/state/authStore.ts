@@ -7,11 +7,12 @@ import {
   me as apiMe,
   verifyTwoFactor as apiVerifyTwoFactor,
 } from '../api/auth';
-import { ApiError, clearAllAuthStorage, getToken, setRefreshToken, setToken } from '../api/client';
+import { ApiError, clearAllAuthStorage, getToken } from '../api/client';
 import { clearOfflineCache } from '../cache/persister';
 import { queryClient } from '../cache/queryClient';
 import { tr } from '../i18n/tr';
 import { deriveMobileAccess } from './roleAccess';
+import { beginAuthSession, currentAuthSession, expireAuthSession, isCurrentAuthSession, onAuthSessionExpired, writeForAuthSession } from './authSession';
 
 // The pure role/entitlement helpers live in `roleAccess.ts` (no React/RN/
 // zustand imports) so the plain-Node unit test runner can exercise them. They
@@ -57,12 +58,18 @@ export type AuthState = ReturnType<typeof deriveMobileAccess> & {
   logout: () => Promise<void>;
 };
 
-async function persistUser(user: AuthUser | null) {
-  if (user) {
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
-  } else {
+async function persistUser(user: AuthUser, revision: number) {
+  await writeForAuthSession(revision, () => SecureStore.setItemAsync(USER_KEY, JSON.stringify(user)));
+}
+
+async function clearLocalSession(revision: number) {
+  await writeForAuthSession(revision, async () => {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await clearOfflineCache();
     await SecureStore.deleteItemAsync(USER_KEY);
-  }
+    await clearAllAuthStorage();
+  });
 }
 
 async function readPersistedUser(): Promise<AuthUser | null> {
@@ -94,11 +101,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
 
   async hydrate() {
+    const revision = currentAuthSession();
     set({ loading: true, error: null });
     const token = await getToken();
+    if (!isCurrentAuthSession(revision)) return;
     if (!token) {
-      queryClient.clear();
-      await clearOfflineCache();
+      await clearLocalSession(revision);
+      if (!isCurrentAuthSession(revision)) return;
       set({
         ...deriveMobileAccess(null),
         user: null,
@@ -121,24 +130,29 @@ export const useAuthStore = create<AuthState>((set) => ({
     let user = await readPersistedUser();
     try {
       const fresh = await apiMe();
+      if (!isCurrentAuthSession(revision)) return;
       if (fresh) {
+        if (JSON.stringify(user) !== JSON.stringify(fresh)) {
+          await queryClient.cancelQueries();
+          queryClient.clear();
+          await clearOfflineCache();
+        }
         user = fresh;
-        await persistUser(fresh);
+        await persistUser(fresh, revision);
       }
     } catch (e: unknown) {
-      if (e instanceof ApiError && e.status === 401) {
+      if (!isCurrentAuthSession(revision)) return;
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
         // Refresh already had one chance in the API interceptor. A remaining
         // 401 means the session was revoked/expired; do not expose a stale
         // cached identity or leave the app in a failing request loop.
-        await persistUser(null);
-        await clearAllAuthStorage();
-        queryClient.clear();
-        await clearOfflineCache();
-        user = null;
+        await expireAuthSession(revision);
+        return;
       }
       // Network/5xx failures keep the cached user so an already-authenticated
       // operator can continue using the offline-capable surfaces.
     }
+    if (!isCurrentAuthSession(revision)) return;
     set({
       user,
       ...deriveMobileAccess(user),
@@ -147,6 +161,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   async login(email, password) {
+    const revision = beginAuthSession();
     set({
       ...deriveMobileAccess(null),
       loading: true,
@@ -169,21 +184,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       // A fresh credential attempt starts with no previous account data in
       // memory or on disk. Per-account POS queues are kept separately.
-      queryClient.clear();
-      await clearOfflineCache();
-      await setToken(null);
-      await setRefreshToken(null);
-      await persistUser(null);
+      await clearLocalSession(revision);
+      if (!isCurrentAuthSession(revision)) return;
       const res = await apiLogin(email, password);
+      if (!isCurrentAuthSession(revision)) return;
       if (res.requires_2fa && res.challenge_token) {
-        await setToken(null);
         set({ loading: false, pendingTwoFactorToken: res.challenge_token, error: null });
         return;
       }
       if (!res.access_token) {
         throw new Error('Geçersiz yanıt');
       }
-      await persistUser(res.user);
+      await persistUser(res.user, revision);
+      if (!isCurrentAuthSession(revision)) return;
       set({
         user: res.user,
         pendingTwoFactorToken: null,
@@ -192,6 +205,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         error: null,
       });
     } catch (e: unknown) {
+      if (!isCurrentAuthSession(revision)) return;
       let msg: string;
       if (e instanceof ApiError) {
         msg =
@@ -205,19 +219,24 @@ export const useAuthStore = create<AuthState>((set) => ({
       } else {
         msg = 'Giriş başarısız';
       }
+      await clearLocalSession(revision);
+      if (!isCurrentAuthSession(revision)) return;
       set({ loading: false, error: msg });
       throw new Error(msg);
     }
   },
 
   async verifyTwoFactor(code) {
+    const revision = currentAuthSession();
     const challengeToken = useAuthStore.getState().pendingTwoFactorToken;
     if (!challengeToken) throw new Error('Giriş doğrulamasını yeniden başlatın');
     set({ loading: true, error: null });
     try {
       const res = await apiVerifyTwoFactor(challengeToken, code);
+      if (!isCurrentAuthSession(revision)) return;
       if (!res.access_token || !res.user) throw new Error('İki aşamalı doğrulama yanıtı geçersiz');
-      await persistUser(res.user);
+      await persistUser(res.user, revision);
+      if (!isCurrentAuthSession(revision)) return;
       set({
         user: res.user,
         pendingTwoFactorToken: null,
@@ -226,28 +245,27 @@ export const useAuthStore = create<AuthState>((set) => ({
         error: null,
       });
     } catch (e: unknown) {
+      if (!isCurrentAuthSession(revision)) return;
       // Backend challenges are single-use. A rejected code needs a new
       // password login before another verification attempt can be made.
-      await setToken(null);
-      await setRefreshToken(null);
-      await persistUser(null);
+      await clearLocalSession(revision);
+      if (!isCurrentAuthSession(revision)) return;
       set({ loading: false, pendingTwoFactorToken: null, error: tr.auth.twoFactorInvalid });
       throw e;
     }
   },
 
   cancelTwoFactor() {
-    set({ pendingTwoFactorToken: null, error: null });
+    // A late accepted code from a cancelled challenge cannot sign back in.
+    const revision = beginAuthSession();
+    set({ pendingTwoFactorToken: null, error: null, loading: true });
+    void clearLocalSession(revision).finally(() => {
+      if (isCurrentAuthSession(revision)) set({ loading: false });
+    });
   },
 
   async logout() {
-    await apiLogout();
-    await persistUser(null);
-    // V3: wipe ALL credential / device-id storage so the next user starts
-    // clean and a stolen handset cannot resume the previous session.
-    await clearAllAuthStorage();
-    queryClient.clear();
-    await clearOfflineCache();
+    const revision = beginAuthSession();
     set({
       ...deriveMobileAccess(null),
       user: null,
@@ -264,6 +282,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       posAccess: false,
       deptAccess: false,
       approvalsAccess: false,
+      loading: true,
     });
+    try { await apiLogout(); }
+    finally {
+      await clearLocalSession(revision);
+      if (isCurrentAuthSession(revision)) set({ loading: false, error: null });
+    }
   },
 }));
+
+onAuthSessionExpired(async revision => {
+  useAuthStore.setState({ ...deriveMobileAccess(null), user: null, pendingTwoFactorToken: null, loading: true });
+  try { await clearLocalSession(revision); }
+  finally {
+    if (isCurrentAuthSession(revision)) useAuthStore.setState({ loading: false, error: 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.' });
+  }
+});
