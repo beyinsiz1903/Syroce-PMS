@@ -4,6 +4,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { pingExtension, sendViaExtension, buildKbsBody } from '@/lib/kbsExtensionBridge';
 import KBSCloudSettings from './KBSCloudSettings';
+import KBSBackgroundSender from './KBSBackgroundSender';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -156,6 +157,7 @@ const KBSNotification = ({ tenantId = '' }) => {
     try { return readTenantKbsSetting('kbs_ext_autosend', tenantId) === '1'; } catch { return false; }
   });
   const [draining, setDraining] = useState(false);
+  const [backgroundOwned, setBackgroundOwned] = useState(true);
   const [lastDrain, setLastDrain] = useState(null);
   const drainingRef = useRef(false);
 
@@ -378,7 +380,8 @@ const KBSNotification = ({ tenantId = '' }) => {
         {
           worker_id: workerId,
           error: sent.error || 'extension_send_failed',
-          retry: !isPermanentKbsError(sent.error),
+          retry: !sent.deliveryUncertain && !isPermanentKbsError(sent.error),
+          delivery_uncertain: sent.deliveryUncertain === true,
         },
         { headers: { 'Idempotency-Key': idem } });
     } catch {
@@ -388,6 +391,7 @@ const KBSNotification = ({ tenantId = '' }) => {
   }, [authority, markBookingSent]);
 
   const drainViaExtension = useCallback(async () => {
+    if ((authority === 'polis' || extInfo.backgroundSupported) && backgroundOwned) return;
     if (!extReady || !extInfo.installId) return;
     if (drainingRef.current) return;
     drainingRef.current = true;
@@ -410,7 +414,7 @@ const KBSNotification = ({ tenantId = '' }) => {
       setLastDrain({ ok, fail, at: new Date().toISOString() });
       fetchQueue();
     }
-  }, [extReady, extInfo.installId, processJobViaExtension, fetchQueue]);
+  }, [authority, backgroundOwned, extReady, extInfo.backgroundSupported, extInfo.installId, processJobViaExtension, fetchQueue]);
 
   const toggleAutoSend = () => {
     setAutoSend((prev) => {
@@ -422,6 +426,7 @@ const KBSNotification = ({ tenantId = '' }) => {
 
   const changeAuthority = (a) => {
     const next = a === 'jandarma' ? 'jandarma' : 'polis';
+    if (next === 'jandarma' && extInfo.backgroundSupported && backgroundOwned) return;
     setAuthority(next);
     try { localStorage.setItem(`kbs_ext_authority:${tenantId || 'default'}`, next); } catch { /* yoksay */ }
   };
@@ -456,11 +461,11 @@ const KBSNotification = ({ tenantId = '' }) => {
     const id = setInterval(() => {
       if (document.hidden) return;
       refreshExt();
-      if (autoSend) drainViaExtension();
+      if (autoSend && authority === 'jandarma') drainViaExtension();
     }, 30000);
-    if (!document.hidden && autoSend) drainViaExtension();
+    if (!document.hidden && autoSend && authority === 'jandarma') drainViaExtension();
     return () => clearInterval(id);
-  }, [autoSend, refreshExt, drainViaExtension]);
+  }, [autoSend, authority, refreshExt, drainViaExtension]);
 
   const sendToKBS = async (guest) => {
     setSending(true);
@@ -477,6 +482,10 @@ const KBSNotification = ({ tenantId = '' }) => {
       }
       if (!extReady || !extInfo.installId) {
         toast.info('Bildirim kuyruğa eklendi; henüz kuruma gönderilmedi. Canlı moddaki resepsiyon eklentisi gönderecek.');
+        return;
+      }
+      if ((authority === 'polis' || extInfo.backgroundSupported) && backgroundOwned) {
+        toast.info('Bildirim kuyruğa eklendi. Arka plan göndericisi kurum kabulünü aldıktan sonra Gönderilen görünümüne geçer.');
         return;
       }
       const result = job
@@ -570,7 +579,8 @@ const KBSNotification = ({ tenantId = '' }) => {
                 Polis
               </Button>
               <Button variant={authority === 'jandarma' ? 'default' : 'outline'} size="sm"
-                className="h-7 px-2 text-xs" onClick={() => changeAuthority('jandarma')}>
+                className="h-7 px-2 text-xs" onClick={() => changeAuthority('jandarma')}
+                disabled={extInfo.backgroundSupported && backgroundOwned}>
                 Jandarma
               </Button>
             </div>
@@ -587,12 +597,12 @@ const KBSNotification = ({ tenantId = '' }) => {
             )}
             {extReady && (
               <>
-                <Button variant={autoSend ? 'default' : 'outline'} size="sm"
+                {authority === 'jandarma' && <Button variant={autoSend ? 'default' : 'outline'} size="sm"
                   className="h-7 px-2 text-xs" onClick={toggleAutoSend}>
                   {autoSend ? 'Otomatik gonderim: Acik' : 'Otomatik gonderim: Kapali'}
-                </Button>
+                </Button>}
                 <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
-                  onClick={drainViaExtension} disabled={draining}>
+                  onClick={drainViaExtension} disabled={draining || ((authority === 'polis' || extInfo.backgroundSupported) && backgroundOwned)}>
                   <Send className={`w-3 h-3 mr-1 ${draining ? 'animate-pulse' : ''}`} />
                   Simdi gonder
                 </Button>
@@ -600,6 +610,7 @@ const KBSNotification = ({ tenantId = '' }) => {
             )}
           </div>
         </div>
+        {(authority === 'polis' || extInfo.backgroundSupported) && extInfo.present && <KBSBackgroundSender key={tenantId} tenantId={tenantId} allowStart={authority === 'polis'} onOwnershipChange={setBackgroundOwned} />}
         <p className="text-[11px] text-gray-500 mt-1">
           {extInfo.present
             ? authority === 'polis'

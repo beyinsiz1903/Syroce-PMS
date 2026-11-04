@@ -72,6 +72,8 @@ jobs:
               run: cd frontend && yarn install --ignore-engines --frozen-lockfile
             - name: Enforce skip and test-inventory budgets
               run: python3 scripts/check_skip_budget.py
+            - name: KBS extension transport and background-worker safety tests
+              run: node --test extension/tests/*.test.js
             - name: Run vitest with coverage thresholds (hard gate)
               run: cd frontend && yarn test:coverage
             - name: Upload frontend coverage report

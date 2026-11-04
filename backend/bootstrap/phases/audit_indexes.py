@@ -32,6 +32,9 @@ _AUDIT_INDEXES: list[tuple[str, list[tuple[str, int]], str, dict]] = [
     ("cp_failures", [("tenant_id", 1), ("created_at", -1)], "idx_cp_failures_tenant_created", {}),
     ("tenant_settings", [("tenant_id", 1)], "idx_tenant_settings_tenant", {}),
     ("kbs_reports", [("tenant_id", 1), ("report_date", -1)], "idx_kbs_reports_tenant_date", {}),
+    # Alarm-driven KBS worker: tenant/status equality + stable keyset ordering.
+    # Includes both pending and expired-lease branches without a whole-tenant sort.
+    ("kbs_reports", [("tenant_id", 1), ("_kind", 1), ("status", 1), ("created_at", 1), ("id", 1)], "idx_kbs_background_queue", {}),
     ("room_blocks", [("tenant_id", 1), ("start_date", 1), ("end_date", 1)], "idx_room_blocks_tenant_range", {}),
     # Task #568 — tamper-evident audit chain walk: ordered by per-tenant `seq`.
     # Backs both the chain verifier and the chained-record reads.

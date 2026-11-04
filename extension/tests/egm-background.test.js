@@ -7,6 +7,7 @@ const { webcrypto } = require("node:crypto");
 
 function loadWorker(fetchImpl, overrides = {}) {
   let listener;
+  let alarmListener;
   const extensionDir = path.join(__dirname, "..");
   const local = {
     kbsConfig: overrides.kbsConfig || { polis: { mode: "egm-session" }, jandarma: { mode: "test" } },
@@ -23,8 +24,12 @@ function loadWorker(fetchImpl, overrides = {}) {
           set: async (values) => Object.assign(local, values),
           remove: async (key) => { delete local[key]; },
         },
-        session: { get: async (key) => ({ [key]: session[key] }) },
+        session: { get: async (key) => ({ [key]: session[key] }), ...(overrides.agent ? {
+          set: async values => Object.assign(session, JSON.parse(JSON.stringify(values))),
+        } : {}) },
       },
+      ...(overrides.agent ? { alarms: { create: async () => {}, get: async () => null, clear: async () => {},
+        onAlarm: { addListener: fn => { alarmListener = fn; } } } } : {}),
       runtime: {
         id: "test-extension",
         getManifest: () => ({ version: "1.3.0" }),
@@ -41,10 +46,12 @@ function loadWorker(fetchImpl, overrides = {}) {
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(extensionDir, "background.js"), "utf8"), context);
-  return (message, sender = { id: "test-extension", tab: { id: 1 } }) => new Promise((resolve) => {
+  const send = (message, sender = { id: "test-extension", tab: { id: 1 } }) => new Promise((resolve) => {
     const keepOpen = listener(message, sender, resolve);
-    assert.equal(keepOpen, true);
+    assert.equal(typeof keepOpen, 'boolean');
   });
+  send.alarm = () => alarmListener({ name: 'syroce-kbs-police' });
+  return send;
 }
 
 test("EGM session mode posts Turkish check-in without opening a tab", async () => {
@@ -75,7 +82,84 @@ test("EGM session mode fails closed when the portal session expired", async () =
     type: "KBS_SEND", authority: "polis",
     body: { action: "checkin", guest_name: "Ali Veli", nationality: "TR", id_number: "10000000146", room_number: "101", check_in: "2026-08-23", check_out: "2026-08-24" },
   });
-  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ok: false, error: "egm_login_required" });
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ok: false, error: "egm_login_required", deliveryUncertain: true });
+});
+
+for (const mode of ['network', 'invalid-json', 'unknown-acceptance', 'http-500']) test(`EGM write ${mode} is uncertain, never a retryable rejection`, async () => {
+  const send = loadWorker(async () => {
+    if (mode === 'network') throw new TypeError('Failed to fetch');
+    return new Response(mode === 'invalid-json' ? 'incomplete {' : '{}', {
+      status: mode === 'http-500' ? 500 : 200, headers: { 'content-type': 'application/json' },
+    });
+  });
+  const result = await send({ type: 'KBS_SEND', authority: 'polis', body: {
+    action: 'checkin', nationality: 'TR', id_number: '10000000146', room_number: '101', check_in: '2026-11-04',
+  } });
+  assert.equal(result.ok, false); assert.equal(result.deliveryUncertain, true); assert.equal(result.reference, undefined);
+});
+
+test('only the exact PMS top-level content script may control the background agent', async () => {
+  const send = loadWorker(async () => { throw new Error('no network allowed'); });
+  for (const sender of [
+    { id: 'other-extension', tab: { id: 1 }, url: 'https://pms.syroce.com/app/pms', frameId: 0 },
+    { id: 'test-extension', tab: { id: 1 }, url: 'https://other.syroce.com/', frameId: 0 },
+    { id: 'test-extension', tab: { id: 1 }, url: 'https://pms.syroce.com.evil.test/', frameId: 0 },
+    { id: 'test-extension', tab: { id: 1 }, url: 'https://pms.syroce.com/app/pms', frameId: 1 },
+    { id: 'test-extension', url: 'chrome-extension://test-extension/options.html' },
+  ]) {
+    const result = await send({ type: 'KBS_AGENT_START', binding: { tenantId: 't', userId: 'u', consent: true } }, sender);
+    assert.equal(result.error, 'forbidden');
+  }
+});
+
+test('real worker wiring claims and reports check-in/check-out on alarms without a page', async () => {
+  const calls = [], session = {};
+  const sender = { id: 'test-extension', tab: { id: 1 }, frameId: 0, url: 'https://pms.syroce.com/app/pms' };
+  const send = loadWorker(async (url, init) => {
+    calls.push({ url, init });
+    let data = { isSuccess: true };
+    if (url.endsWith('/background/context')) data = { tenant_id: 'hotel-a', user_id: 'user-a' };
+    else if (url.endsWith('/background/jobs')) data = { jobs: ['in', 'out'].map(id => ({ id, created_at: '2026-11-04T09:00:00+00:00' })) };
+    else if (url.endsWith('/claim')) {
+      const id = url.split('/').at(-2);
+      data = { job: { id, tenant_id: 'hotel-a', action: id === 'in' ? 'checkin' : 'checkout', payload: {
+        nationality: 'TR', id_number: '10000000146', room_number: '101', check_in: '2026-11-04', check_out: '2026-11-05',
+      } } };
+    } else if (url.endsWith('/AktifKonaklayanGetir')) data = { isSuccess: true, data: { items: [
+      { konaklayanId: 'official-guest', kimlikNo: 10000000146, verilenOda: '101' },
+    ] } };
+    return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  }, { agent: true, session });
+  assert.equal((await send({ type: 'KBS_STATE' }, sender)).backgroundSupported, true);
+  await send.alarm(); assert.equal(calls.length, 0);
+  const enabled = await send({ type: 'KBS_AGENT_START', binding: { consent: true, tenantId: 'hotel-a', userId: 'user-a' } }, sender);
+  assert.equal(enabled.ok, true); await send.alarm();
+  assert.equal(calls.filter(c => c.url.endsWith('/complete')).length, 2);
+  assert.equal(calls.filter(c => c.url.includes('KonaklayanTurkVatandasiEkle')).length, 1);
+  assert.equal(calls.filter(c => c.url.includes('KonaklayanPasifYap')).length, 1);
+  for (const call of calls.filter(c => c.url.endsWith('/complete'))) assert.equal(JSON.parse(call.init.body).official_reference, false);
+  assert.equal((await send({ type: 'KBS_AGENT_STATUS' }, sender)).state.sent, 2);
+  assert.equal(JSON.stringify(session).includes('10000000146'), false);
+});
+
+test('profile edit after claim cannot switch an EGM-session batch to a custom token transport', async () => {
+  const config = { polis: { mode: 'egm-session' }, jandarma: { mode: 'test' } };
+  const sender = { id: 'test-extension', tab: { id: 1 }, frameId: 0, url: 'https://pms.syroce.com/app/pms' };
+  const calls = [];
+  const send = loadWorker(async (url) => {
+    calls.push(url); let data = {};
+    if (url.endsWith('/background/context')) data = { tenant_id: 'hotel-a', user_id: 'user-a' };
+    if (url.endsWith('/background/jobs')) data = { jobs: [{ id: 'one', created_at: '2026-11-04T09:00:00+00:00' }] };
+    if (url.endsWith('/claim')) {
+      config.polis.mode = 'token'; config.polis.token = 'never-used'; config.polis.endpoint = 'https://kbs.egm.gov.tr/custom';
+      data = { job: { id: 'one', tenant_id: 'hotel-a', action: 'checkin', payload: { nationality: 'TR', id_number: '10000000146', room_number: '101', check_in: '2026-11-04' } } };
+    }
+    return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  }, { agent: true, kbsConfig: config });
+  await send({ type: 'KBS_AGENT_START', binding: { consent: true, tenantId: 'hotel-a', userId: 'user-a' } }, sender);
+  await send.alarm();
+  assert.equal(calls.some(url => url.includes('egm.gov.tr')), false);
+  assert.equal((await send({ type: 'KBS_AGENT_STATUS' }, sender)).state.reason, 'egm_session_mode_required');
 });
 
 test("EGM checkout resolves the active guest before deactivating it", async () => {

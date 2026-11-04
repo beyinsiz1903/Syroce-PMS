@@ -23,6 +23,16 @@
     const data = event.data;
     if (!data || data[REQ] !== true || typeof data.type !== "string") return;
 
+    if (["AGENT_STATUS", "AGENT_START", "AGENT_STOP"].includes(data.type)) {
+      if (window.location.origin !== "https://pms.syroce.com") return;
+      chrome.runtime.sendMessage({ type: `KBS_${data.type}`, binding: data.binding }, (resp) => {
+        post({ type: "AGENT_RESULT", requestId: data.requestId,
+          ok: !chrome.runtime.lastError && resp?.ok === true,
+          state: resp?.state, error: resp?.error || "" });
+      });
+      return;
+    }
+
     if (data.type === "PING") {
       chrome.runtime.sendMessage({ type: "KBS_STATE" }, (resp) => {
         if (chrome.runtime.lastError || !resp) {
@@ -37,6 +47,7 @@
           state: resp.state,
           states: resp.states,
           installId: resp.installId,
+          backgroundSupported: resp.backgroundSupported === true,
         });
       });
       return;
@@ -50,7 +61,7 @@
       }
       chrome.runtime.sendMessage({ type: "KBS_SEND", body, authority: data.authority }, (resp) => {
         if (chrome.runtime.lastError || !resp) {
-          post({ type: "RESULT", requestId: data.requestId, ok: false, error: "extension_error" });
+          post({ type: "RESULT", requestId: data.requestId, ok: false, error: "extension_error", deliveryUncertain: true });
           return;
         }
         post({
@@ -63,6 +74,7 @@
           officialReference: resp.officialReference !== false,
           responseCode: resp.responseCode || "",
           responseMessage: resp.responseMessage || "",
+          deliveryUncertain: resp.deliveryUncertain === true,
         });
       });
       return;
