@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { runInNewContext } from 'node:vm';
 
 const require = createRequire(import.meta.url);
 const decoder = require('decode-uri-component');
@@ -110,4 +111,70 @@ test('forge signing verifies valid content but rejects changed content', () => {
   assert.equal(keys.publicKey.verify(md.digest().bytes(), signature), true);
   const changed = forge.md.sha256.create().update('changed');
   assert.equal(keys.publicKey.verify(changed.digest().bytes(), signature), false);
+});
+
+test('the actual Expo tunnel consumer uses the patched CommonJS UUID API', async () => {
+  const ngrokEntry = require.resolve('@expo/ngrok');
+  const ngrokRequire = createRequire(ngrokEntry);
+  const uuid = ngrokRequire('uuid');
+  assert.equal(ngrokRequire('uuid/package.json').version, '11.1.1');
+  assert.equal(typeof require('@expo/ngrok').connect, 'function');
+  assert.equal(uuid.validate(uuid.v4()), true);
+
+  const requests = [];
+  const processes = [];
+  let attempts = 0;
+  class OfflineClient {
+    constructor(url) { assert.equal(url, 'http://127.0.0.1:4040'); }
+    async startTunnel(options) {
+      requests.push({ ...options });
+      if (attempts++ === 0) {
+        throw { response: { statusCode: 502 },
+          body: { details: { err: 'tunnel session not ready yet' } } };
+      }
+      return { public_url: 'https://synthetic-tunnel.example.invalid' };
+    }
+  }
+  const isolated = { exports: {} };
+  // Execute the installed consumer itself; stub only I/O. No tunnel is opened,
+  // no agent binary starts and no local ngrok config or credential is read.
+  runInNewContext(readFileSync(ngrokEntry, 'utf8'), {
+    module: isolated,
+    require(id) {
+      if (id === './src/client') return { NgrokClient: OfflineClient };
+      if (id === './src/process') return {
+        getProcess: async options => {
+          processes.push({ ...options });
+          return 'http://127.0.0.1:4040';
+        },
+        setAuthtoken: async () => { throw new Error('Unexpected credential use'); },
+      };
+      return ngrokRequire(id);
+    },
+    setTimeout,
+  }, { filename: ngrokEntry });
+  const result = await isolated.exports.connect({ addr: 8081, proto: 'http' });
+  assert.equal(result, 'https://synthetic-tunnel.example.invalid');
+  assert.equal(processes.length, 1);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].name, requests[1].name);
+  assert.equal(uuid.validate(requests[0].name), true);
+  assert.equal(uuid.version(requests[0].name), 4);
+  assert.equal(requests[0].addr, 8081);
+});
+
+test('patched tunnel UUID rejects out-of-bounds v3/v5/v6 writes without partial data', () => {
+  const ngrokRequire = createRequire(require.resolve('@expo/ngrok'));
+  const uuid = ngrokRequire('uuid');
+  for (const offset of [-1, 0, 4]) {
+    for (const generate of [
+      buffer => uuid.v3('synthetic', uuid.v3.DNS, buffer, offset),
+      buffer => uuid.v5('synthetic', uuid.v5.DNS, buffer, offset),
+      buffer => uuid.v6({}, buffer, offset),
+    ]) {
+      const buffer = new Uint8Array(8).fill(0xaa);
+      assert.throws(() => generate(buffer), RangeError);
+      assert.deepEqual(buffer, new Uint8Array(8).fill(0xaa));
+    }
+  }
 });
