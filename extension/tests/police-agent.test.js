@@ -21,7 +21,10 @@ function harness(options = {}) {
       get: async key => ({ [key]: saved[key] }),
       set: async values => { writes.push(plain(values)); Object.assign(saved, plain(values)); },
     } },
-    alarms: { create: async (key, value) => alarms.set(key, value), clear: async key => alarms.delete(key) },
+    alarms: { create: async (key, value) => {
+      if (options.alarmError) throw new Error('alarm unavailable');
+      alarms.set(key, value);
+    }, clear: async key => alarms.delete(key) },
   };
   const context = { crypto: webcrypto, AbortController, setTimeout, clearTimeout };
   context.globalThis = context;
@@ -83,6 +86,21 @@ test('an enabled account cannot be silently retargeted even by another start com
   const result = await h.agent.start({ ...binding, tenantId: 'tenant-b', userId: 'user-b' });
   assert.equal(result.ok, false); assert.equal(result.error, 'existing_sender_must_stop');
   assert.equal((await h.agent.status()).tenantId, 'tenant-a');
+});
+
+test('failed alarm creation is not displayed or stored as active', async () => {
+  const h = harness({ alarmError: true });
+  assert.equal((await h.agent.start(binding)).ok, false);
+  assert.equal((await h.agent.status()).enabled, false);
+  assert.equal((await h.agent.status()).reason, 'alarm_unavailable');
+});
+
+test('failed alarm restoration disables an otherwise stale active flag', async () => {
+  const first = harness(); await first.agent.start(binding);
+  const h = harness({ saved: first.saved, alarmError: true });
+  await h.agent.restore(); await h.agent.run();
+  assert.equal((await h.agent.status()).enabled, false);
+  assert.equal(h.sent.length, 0);
 });
 
 for (const status of [401, 403, 409, 423]) test(`PMS status ${status} stops without authority traffic`, async () => {

@@ -183,7 +183,11 @@
           catch (_) { return { ok: false, error: "pms_login_or_context_required" }; }
           revision++;
           await write(state);
-          await chrome.alarms.create(ALARM, { periodInMinutes: 1, delayInMinutes: 1 });
+          try { await chrome.alarms.create(ALARM, { periodInMinutes: 1, delayInMinutes: 1 }); }
+          catch (_) {
+            state.enabled = false; state.reason = "alarm_unavailable"; await write(state);
+            return { ok: false, error: "alarm_unavailable", state: publicState(state) };
+          }
           // The first pass is deliberately alarm-driven, not tied to a response port.
           return { ok: true, state: publicState(state) };
         }),
@@ -196,7 +200,10 @@
         }),
         restore: () => serial(async () => {
           const state = await read();
-          if (state?.enabled) await chrome.alarms.create(ALARM, { periodInMinutes: 1, delayInMinutes: 1 });
+          if (state?.enabled) {
+            try { await chrome.alarms.create(ALARM, { periodInMinutes: 1, delayInMinutes: 1 }); }
+            catch (_) { state.enabled = false; state.reason = "alarm_unavailable"; await write(state); }
+          }
           else await chrome.alarms.clear(ALARM);
         }),
       };

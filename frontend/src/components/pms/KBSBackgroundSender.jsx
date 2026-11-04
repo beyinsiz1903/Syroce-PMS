@@ -11,6 +11,7 @@ const reasons = {
   egm_session_mode_required: 'Eklentinin Polis profilinde EGM oturumu seçilmeli.',
   server_managed: 'Bu tesis sunucu göndericisi tarafından yönetiliyor; tarayıcı gönderimi durduruldu.',
   server_test_mode: 'PMS sunucusu KBS test modunda; kuruma canlı bildirim gönderimi kapalı.',
+  alarm_unavailable: 'Tarayıcı arka plan alarmı kurulamadı. Eklenti izinlerini kontrol edip yeniden etkinleştirin.',
   pms_unavailable: 'PMS bağlantısı doğrulanamadı. Kabul alınmamış kayıtlar gönderilmiş sayılmaz.',
 };
 
