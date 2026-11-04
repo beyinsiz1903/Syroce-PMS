@@ -201,7 +201,11 @@
         restore: () => serial(async () => {
           const state = await read();
           if (state?.enabled) {
-            try { await chrome.alarms.create(ALARM, { periodInMinutes: 1, delayInMinutes: 1 }); }
+            // Repeated page pings may wake a suspended MV3 worker. Replacing
+            // an existing alarm on every wake would postpone it indefinitely.
+            try {
+              if (!await chrome.alarms.get(ALARM)) await chrome.alarms.create(ALARM, { periodInMinutes: 1, delayInMinutes: 1 });
+            }
             catch (_) { state.enabled = false; state.reason = "alarm_unavailable"; await write(state); }
           }
           else await chrome.alarms.clear(ALARM);

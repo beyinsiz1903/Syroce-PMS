@@ -28,7 +28,7 @@ function loadWorker(fetchImpl, overrides = {}) {
           set: async values => Object.assign(session, JSON.parse(JSON.stringify(values))),
         } : {}) },
       },
-      ...(overrides.agent ? { alarms: { create: async () => {}, clear: async () => {},
+      ...(overrides.agent ? { alarms: { create: async () => {}, get: async () => null, clear: async () => {},
         onAlarm: { addListener: fn => { alarmListener = fn; } } } } : {}),
       runtime: {
         id: "test-extension",

@@ -24,7 +24,7 @@ function harness(options = {}) {
     alarms: { create: async (key, value) => {
       if (options.alarmError) throw new Error('alarm unavailable');
       alarms.set(key, value);
-    }, clear: async key => alarms.delete(key) },
+    }, get: async key => alarms.get(key), clear: async key => alarms.delete(key) },
   };
   const context = { crypto: webcrypto, AbortController, setTimeout, clearTimeout };
   context.globalThis = context;
@@ -101,6 +101,14 @@ test('failed alarm restoration disables an otherwise stale active flag', async (
   await h.agent.restore(); await h.agent.run();
   assert.equal((await h.agent.status()).enabled, false);
   assert.equal(h.sent.length, 0);
+});
+
+test('ordinary MV3 wakes do not postpone an already scheduled alarm', async () => {
+  const h = harness(); await h.agent.start(binding);
+  const scheduled = { scheduledTime: 1800000000000, periodInMinutes: 1 };
+  h.alarms.set('syroce-kbs-police', scheduled);
+  await h.agent.restore(); await h.agent.restore();
+  assert.equal(h.alarms.get('syroce-kbs-police'), scheduled);
 });
 
 for (const status of [401, 403, 409, 423]) test(`PMS status ${status} stops without authority traffic`, async () => {
