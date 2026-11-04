@@ -243,9 +243,10 @@ async def _push_to_exely(
             if not exely_room_code or not rp_code:
                 continue
 
-            # A booking event must not replace a smaller configured commercial
-            # allotment with the entire physical capacity. Keep canonical locks
-            # as an upper bound, and use the same category occupancy as the grid.
+            # Preserve the owner's manual sales stock, even when the operator
+            # intentionally allows overbooking. Automatic dates use physical
+            # capacity; legacy allotments retain their original physical cap.
+            # The shared projection also keeps the grid and event ARI aligned.
             publishable = await exely_publishable_availability(
                 db, tenant_id, pms_room_type, mapping, date_availability,
             )

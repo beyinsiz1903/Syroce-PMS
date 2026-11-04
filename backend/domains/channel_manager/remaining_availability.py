@@ -1,16 +1,26 @@
-"""Read-only preflight for the Exely editor's explicit remaining-room input.
+"""Read-only preflight for manual sales inventory or automatic physical stock.
 
 The legacy calendar stores base allotments. Store remaining + already sold,
 but send remaining unchanged to Exely; subsequent bookings still reduce the
-calendar and normal booking-event ARI by one. Never rewrite legacy rows.
+calendar and normal booking-event ARI by one. An explicit manual value may
+oversell physical capacity; None resets the selected dates to automatic stock.
+Never reinterpret unmarked legacy rows as an overbooking instruction.
 """
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 
-from .calendar_inventory import booking_room_type, build_sold_count_index, get_active_bookings, get_room_counts
+from .calendar_inventory import booking_room_type, build_sold_count_index, get_active_bookings, get_room_counts, lock_adjusted_capacities
+
+
+@dataclass(frozen=True)
+class RemainingAvailabilityPlan:
+    base_values: dict
+    remaining_values: dict
+    modes: dict
 
 
 def _blocked(code, message, *, status_code=409, **context):
@@ -62,19 +72,12 @@ async def prepare_exely_remaining_values(database, tenant_id, pairs, room_values
         types[room] = room_type
         if mapping.get("sync_availability", True):
             availability_owners.add(room)
-    if set(types) != availability_owners or any(room_values.get(room) is None for room in types):
-        _blocked("EXELY_REMAINING_SYNC_REQUIRED", "Her oda için müsaitlik eşleştirmesi açık bir tarife ve net oda sayısı seçin.")
-
-    physical_ids = {rid for room_type in types.values() for rid in ids[room_type]}
-    try:
-        locks = await database.room_night_locks.find(
-            {"tenant_id": tenant_id, "room_id": {"$in": sorted(physical_ids)}, "night_date": {"$in": days}},
-            {"_id": 0, "room_id": 1, "night_date": 1, "lock_type": 1},
-        ).to_list(100001)
-    except Exception:
-        _blocked("EXELY_REMAINING_INVENTORY_UNAVAILABLE", "Güncel oda-gece kilitleri okunamadı; hiçbir kayıt değiştirilmedi.", status_code=503)
-    if len(locks) >= 100001:
-        _blocked("EXELY_REMAINING_INVENTORY_INCOMPLETE", "Oda-gece kilitleri eksiksiz doğrulanamadı; aralığı daraltın.")
+    if set(types) != availability_owners or not set(types).issubset(room_values):
+        _blocked("EXELY_REMAINING_SYNC_REQUIRED", "Her oda için müsaitlik eşleştirmesi açık bir tarife seçin.")
+    for room in types:
+        owners = [m for m in mappings if str(m.get("exely_room_code")) == room and m.get("sync_availability", True)]
+        if len(owners) != 1:
+            _blocked("EXELY_REMAINING_SYNC_REQUIRED", "Her oda için yalnız bir müsaitlik tarifesi eşleştirilmelidir.")
     by_id = {rid: room_type for room_type, room_ids in ids.items() for rid in room_ids}
     if len(by_id) != sum(v["total"] for v in counts.values()):
         _blocked("EXELY_REMAINING_INVENTORY_INCOMPLETE", "Fiziksel oda listesi tutarlı değil; hiçbir kayıt değiştirilmedi.")
@@ -88,32 +91,28 @@ async def prepare_exely_remaining_values(database, tenant_id, pairs, room_values
                 raise ValueError
         except (KeyError, TypeError, ValueError):
             _blocked("EXELY_REMAINING_INVENTORY_INCOMPLETE", "Rezervasyon tarihleri doğrulanamadı; hiçbir kayıt değiştirilmedi.")
-    locked = {}
-    seen = set()
-    day_set = set(days)
-    for lock in locks:
-        key = (lock.get("room_id"), lock.get("night_date"))
-        if key in seen or key[0] not in physical_ids or key[1] not in day_set or lock.get("lock_type") not in {"booking", "hold", "ooo", "oos", "maintenance"}:
-            _blocked("EXELY_REMAINING_INVENTORY_INCOMPLETE", "Oda-gece kilitleri tutarlı değil; hiçbir kayıt değiştirilmedi.")
-        seen.add(key)
-        type_day = (by_id[key[0]], key[1])
-        locked[type_day] = locked.get(type_day, 0) + 1
+    automatic_types = {room_type for room, room_type in types.items() if room_values[room] is None}
+    automatic_capacities = {}
+    if automatic_types:
+        try:
+            automatic_capacities = await lock_adjusted_capacities(
+                database, tenant_id, {t: counts[t] for t in automatic_types},
+                {t: ids[t] for t in automatic_types}, bookings, start_date, end_date,
+            )
+        except Exception:
+            _blocked("EXELY_REMAINING_INVENTORY_UNAVAILABLE", "Otomatik müsaitlik için güncel oda-gece kapasitesi doğrulanamadı; hiçbir kayıt değiştirilmedi.", status_code=503)
     sold = build_sold_count_index(ids, bookings, start_date, end_date)
-    unassigned = build_sold_count_index(ids, [b for b in bookings if b.get("room_id") not in by_id], start_date, end_date)
-    base_values = {}
+    base_values, remaining_values, modes = {}, {}, {}
     for room, room_type in types.items():
         net = room_values[room]
-        if type(net) is not int or not 0 <= net <= 999:
+        if net is not None and (type(net) is not int or not 0 <= net <= 999):
             _blocked("EXELY_REMAINING_VALUE_INVALID", "Net müsaitlik sıfır veya pozitif tam sayı olmalıdır.")
+        modes[room] = "automatic" if net is None else "manual_remaining"
         for day in days:
             key = (room_type, day)
             consumed = sold.get(key, 0)
-            total = counts[room_type]["total"]
-            # Booking counts include unassigned category reservations; locks
-            # additionally cover holds/OOO/OOS and in-flight physical bookings.
-            maximum = max(0, min(total - consumed, total - locked.get(key, 0) - unassigned.get(key, 0)))
-            if net > maximum:
-                _blocked("EXELY_REMAINING_EXCEEDS_CAPACITY", "İstenen net müsaitlik, rezervasyonlar ve oda blokajları sonrası kalan kapasiteyi aşıyor.",
-                         room_type_code=room, date=day, requested=net, maximum=maximum)
-            base_values[(room, day)] = net + consumed
-    return base_values
+            # Explicitly entered sales stock is an operator override, NOT a
+            # physical room assignment. Preserve booking/OOO locks unchanged.
+            base_values[(room, day)] = None if net is None else net + consumed
+            remaining_values[(room, day)] = automatic_capacities[key] if net is None else net
+    return RemainingAvailabilityPlan(base_values, remaining_values, modes)

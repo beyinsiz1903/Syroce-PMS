@@ -2,12 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { CalendarGridView } from '../CalendarGridView';
 
-const setup = () => {
+const setup = (overrides = {}) => {
   const props = {
     filteredGrid: [], dates: [], roomTypes: [], ratePlans: [],
     gridRoomType: 'all', setGridRoomType: vi.fn(), gridRatePlan: 'all', setGridRatePlan: vi.fn(),
     startDate: '2026-10-30', endDate: '2026-11-12', setStartDate: vi.fn(), setEndDate: vi.fn(),
-    shiftDates: vi.fn(), fetchGrid: vi.fn(), loading: false, formatDate: vi.fn(), currency: 'USD',
+    shiftDates: vi.fn(), fetchGrid: vi.fn(), loading: false, formatDate: vi.fn(), currency: 'USD', ...overrides,
   };
   const view = render(<CalendarGridView {...props} />);
   const choose = (start, end) => {
@@ -19,6 +19,17 @@ const setup = () => {
 };
 
 describe('read-only calendar date selection', () => {
+  it.each([
+    ['manual_remaining', 'Manuel satış kontenjanı (overbooking mümkün)'],
+    ['automatic', 'Otomatik müsaitlik'],
+    ['legacy', 'Takvim kontenjanı'],
+  ])('identifies %s inventory without silently clamping its displayed value', (mode, label) => {
+    setup({ filteredGrid: [{ room_type_code: 'STD', room_type_name: 'Standard', rate_plan_code: 'BASE',
+      rate_plan_name: 'Base', total_rooms: 8, dates: [{ date: '2026-11-10', availability: 10,
+        base_availability: 12, sold: 2, availability_mode: mode }] }], formatDate: () => ({}) });
+    expect(screen.getByTitle(new RegExp(label.replace(/[()]/g, '\\$&')))).toHaveTextContent('10 oda');
+  });
+
   it('applies a single-day range only on explicit submit', () => {
     const { props, choose, apply } = setup();
     choose('2026-11-10', '2026-11-10');

@@ -48,7 +48,7 @@ export const CalendarGridView = ({
         <div>
           <CardTitle className="text-base">Mevcut Fiyat Takvimi</CardTitle>
           <CardDescription className="text-xs">
-            Tarih bazında mevcut fiyat, net kalan oda ve kısıtlamaları görüntüleyin. Satılan odalar müsaitlikten zaten düşülmüştür.
+            Tarih bazında fiyat, satışa açık oda ve kısıtlamaları görüntüleyin. Manuel kontenjan fiziksel kapasiteyi aşabilir; otomatik müsaitlik rezervasyon ve blokajlara göre hesaplanır.
           </CardDescription>
         </div>
         <Button variant="outline" size="sm" onClick={fetchGrid} disabled={loading}>
@@ -186,7 +186,7 @@ export const CalendarGridView = ({
                           )}
                           <div className="text-[10px] text-gray-400">
                             {cell.availability != null ? (
-                              <span title={`Net kalan: ${cell.availability}; temel kontenjan: ${cell.base_availability ?? '—'}; satılan: ${cell.sold ?? 0}`} className={cell.availability === 0 ? 'text-red-500 font-semibold' : cell.availability <= 2 ? 'text-amber-500 font-medium' : ''}>
+                              <span title={`${cell.availability_mode === 'manual_remaining' ? 'Manuel satış kontenjanı (overbooking mümkün)' : cell.availability_mode === 'automatic' ? 'Otomatik müsaitlik' : 'Takvim kontenjanı'}; net kalan: ${cell.availability}; temel kontenjan: ${cell.base_availability ?? '—'}; satılan: ${cell.sold ?? 0}`} className={cell.availability === 0 ? 'text-red-500 font-semibold' : cell.availability <= 2 ? 'text-amber-500 font-medium' : ''}>
                                 {cell.availability} oda
                               </span>
                             ) : ''}

@@ -9,6 +9,10 @@ const parseDate = (value) => {
 
 const hasValue = (value) => value !== null && value !== undefined && value !== '';
 
+// Blank explicitly selects automatic stock; 0 is an explicit manual closure.
+export const isValidExelyAvailability = value => !hasValue(value)
+  || typeof value !== 'boolean' && String(value).trim() !== '' && Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= 999;
+
 export const countTargetNights = ({ dateFrom, dateTo, allDays, selectedDays }) => {
   const start = parseDate(dateFrom);
   const end = parseDate(dateTo);
@@ -52,8 +56,14 @@ export const buildRateUpdateReview = ({
     if (enabledFields.has('rate') && (!hasValue(values.rate) || Number(values.rate) <= 0)) {
       errors.push(`${label} için fiyat sıfırdan büyük olmalıdır.`);
     }
-    if (enabledFields.has('availability') && (!hasValue(values.availability) || !Number.isInteger(Number(values.availability)) || Number(values.availability) < 0)) {
-      errors.push(`${label} için müsaitlik sıfır veya pozitif tam sayı olmalıdır.`);
+    if (enabledFields.has('availability')) {
+      if (channelProvider === 'exely' && !agenciesOnly) {
+        if (!isValidExelyAvailability(values.availability)) errors.push(`${label} için müsaitliği boş bırakın veya 0–999 arasında tam sayı girin.`);
+        else if (!hasValue(values.availability)) warnings.push(`${label}: Müsaitlik otomatik hesaba dönecek; mevcut manuel kontenjan seçili günlerde kaldırılacak.`);
+        else warnings.push(`${label}: Manuel satış kontenjanı ${Number(values.availability)} oda. Fiziksel kapasite aşılabilir (overbooking); mevcut doluluk tekrar düşülmez.`);
+      } else if (!hasValue(values.availability) || !Number.isInteger(Number(values.availability)) || Number(values.availability) < 0) {
+        errors.push(`${label} için müsaitlik sıfır veya pozitif tam sayı olmalıdır.`);
+      }
     }
     ['min_stay', 'min_los_arrival', 'max_stay'].forEach((field) => {
       const canRemove = channelProvider === 'exely' && !agenciesOnly;
@@ -81,7 +91,7 @@ export const buildRateUpdateReview = ({
   } else if (channelProvider === 'exely') {
     warnings.push('Gönderim hedefi Exely kanal yöneticisidir; OTA bazlı kanal seçimi yapılmaz. Exely teslim sonucu ayrıca doğrulanmalıdır.');
     if (enabledFields.has('availability')) {
-      warnings.push('Müsaitlik net kalan oda sayısıdır; mevcut rezervasyonlar tekrar düşülmez. Kapasite her gece için sunucuda doğrulanır.');
+      warnings.push('Elle girilen kontenjan doluluktan bağımsızdır; sonraki yeni rezervasyonlarla azalır. Boş alan otomatik net müsaitliktir; 0 manuel sıfır kontenjandır.');
       if (dateCount > 731) errors.push('Net müsaitlik için tek gönderimde en fazla 731 gece seçin.');
     }
   } else if ((selectedChannelCodes?.size ?? 0) === 0) {
