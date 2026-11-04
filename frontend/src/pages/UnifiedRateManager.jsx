@@ -15,6 +15,7 @@ import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { UPDATE_FIELDS, usesExpandedAriLayout } from './rate-manager/constants';
+import { isValidExelyAvailability } from './rate-manager/updateReview';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
@@ -40,7 +41,7 @@ export const RateDeliveryReceipt = ({ receipt }) => {
     <p>{feedback.message}</p>
     <p>{receipt.dateFrom} – {receipt.dateTo} · {receipt.roomCount} oda tipi · {receipt.fields.join(', ')}</p>
     <p>Teslim durumu: {receipt.data.provider_delivery_state || 'NOT_SENT'}</p>
-    {receipt.data.availability_input_mode === 'remaining' && <p>Gönderilen müsaitlik: net kalan oda sayısı. Mevcut rezervasyonlar tekrar düşülmez.</p>}
+    {receipt.data.availability_input_mode === 'remaining' && <p>Gönderilen müsaitlik: manuel satış kontenjanı veya otomatik net kalan oda sayısı. Mevcut rezervasyonlar tekrar düşülmez. Boş alan otomatik hesaptır; elle girilen kontenjan fiziksel kapasiteyi aşabilir.</p>}
   </div>;
 };
 
@@ -615,13 +616,12 @@ const UnifiedRateManager = ({
     const hasValue = value => value !== null && value !== undefined && value !== '';
     const netAvailability = provider === 'exely' && !agenciesOnly && enabledFields.has('availability');
     if (netAvailability && selectedRoomCodes.some(code => {
-      const value = roomValues[code]?.availability;
-      return !hasValue(value) || !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > 999;
+      return !isValidExelyAvailability(roomValues[code]?.availability);
     })) {
-      toast.error('Her oda için net müsaitliği 0–999 arasında tam sayı girin.');
+      toast.error('Müsaitliği otomatik hesap için boş bırakın veya 0–999 arasında tam sayı girin.');
       return;
     }
-    const hasAnyValue = selectedRoomCodes.some(rtCode => {
+    const hasAnyValue = netAvailability || selectedRoomCodes.some(rtCode => {
       const rv = roomValues[rtCode];
       if (!rv) return false;
       return enabledFields.has('rate') && hasValue(rv.rate) || enabledFields.has('availability') && hasValue(rv.availability) || enabledFields.has('min_stay') && hasValue(rv.min_stay) || enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) || enabledFields.has('max_stay') && hasValue(rv.max_stay) || enabledFields.has('stop_sell') && typeof rv.stop_sell === 'boolean' || enabledFields.has('cta') && typeof rv.cta === 'boolean' || enabledFields.has('ctd') && typeof rv.ctd === 'boolean';
@@ -645,7 +645,7 @@ const UnifiedRateManager = ({
           room_type_code: rtCode,
           rate_plan_codes: Array.from(selections[rtCode]),
           rate: enabledFields.has('rate') && hasValue(rv.rate) ? parseFloat(rv.rate) : null,
-          availability: enabledFields.has('availability') && hasValue(rv.availability) ? parseInt(rv.availability) : null,
+          availability: enabledFields.has('availability') && hasValue(rv.availability) ? Number(rv.availability) : null,
           min_stay: enabledFields.has('min_stay') && hasValue(rv.min_stay) ? parseInt(rv.min_stay) : null,
           min_los_arrival: enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) ? parseInt(rv.min_los_arrival) : null,
           max_stay: enabledFields.has('max_stay') && hasValue(rv.max_stay) ? parseInt(rv.max_stay) : null,

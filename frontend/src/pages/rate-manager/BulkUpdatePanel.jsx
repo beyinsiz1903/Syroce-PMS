@@ -113,7 +113,7 @@ export const BulkUpdatePanel = ({
               </label>
             ))}
             {remainingAvailability && enabledFields.has('availability') && <p className="rounded border border-sky-200 bg-sky-50 p-2 text-xs text-sky-900" data-testid="remaining-availability-help">
-              Exely’ye gönderilecek net kalan oda sayısını girin. Mevcut rezervasyonlar bu sayıdan tekrar düşülmez. Her gecenin rezervasyon ve blokaj kapasitesi gönderimden önce kontrol edilir.
+              Sayı girerseniz doluluktan bağımsız manuel satış kontenjanı gönderilir; fiziksel kapasite aşılabilir (overbooking). Sonraki yeni rezervasyonlarla azalır. Boş bırakarak yayımlarsanız seçili günler rezervasyon ve blokajlara göre otomatik hesaplanır. 0, sıfır satış kontenjanıdır.
             </p>}
           </CardContent>
         </Card>
@@ -428,7 +428,7 @@ const RoomTypeList = ({
               {enabledFields.has('availability') && (
                 <div className="flex items-center gap-1">
                   <Home className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <Input type="number" min="0" step="1" max={remainingAvailability ? '999' : undefined} placeholder={remainingAvailability ? 'Net oda' : 'Müsaitlik'} aria-label={remainingAvailability ? `Net müsait oda — ${rt.name}` : `Müsaitlik — ${rt.name}`} value={rv.availability} onChange={e => updateRoomValue(rt.code, 'availability', e.target.value)} className="h-8 text-sm" data-testid={`avail-input-${rt.code}`} />
+                  <Input type="number" min="0" step="1" max={remainingAvailability ? '999' : undefined} placeholder={remainingAvailability ? 'Boş: otomatik' : 'Müsaitlik'} aria-label={remainingAvailability ? `Net müsait oda — ${rt.name}` : `Müsaitlik — ${rt.name}`} value={rv.availability} onChange={e => updateRoomValue(rt.code, 'availability', e.target.value)} className="h-8 text-sm" data-testid={`avail-input-${rt.code}`} />
                   <ApplyAllButton field="availability" value={rv.availability} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
@@ -506,7 +506,7 @@ const RoomTypeList = ({
                   </div>
                 </label>
                 {enabledFields.has('rate') && <div className="text-xs text-gray-400 italic">{rv.rate ? `Ana Fiyat: ${rv.rate} ${currency}` : '\u2014'}</div>}
-                {enabledFields.has('availability') && <div className="text-xs text-gray-400 italic">{rv.availability !== '' && rv.availability != null ? rv.availability : '\u2014'}</div>}
+                {enabledFields.has('availability') && <div className="text-xs text-gray-400 italic">{rv.availability !== '' && rv.availability != null ? rv.availability : remainingAvailability ? 'Otomatik' : '\u2014'}</div>}
                 {enabledFields.has('min_stay') && <div className="text-xs text-gray-400 italic">{rv.min_stay ? rv.min_stay : '\u2014'}</div>}
                 {enabledFields.has('min_los_arrival') && <div className="text-xs text-gray-400 italic">{rv.min_los_arrival ? rv.min_los_arrival : '\u2014'}</div>}
                 {enabledFields.has('max_stay') && <div className="text-xs text-gray-400 italic">{rv.max_stay ? rv.max_stay : '\u2014'}</div>}

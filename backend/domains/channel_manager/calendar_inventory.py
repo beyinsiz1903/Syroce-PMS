@@ -113,13 +113,36 @@ async def lock_adjusted_capacities(database, tenant_id, counts, ids, bookings, s
     return capacities
 
 
+def calendar_remaining_availability(entry, sold, physical_remaining):
+    """One projection for grid and booking-event delivery.
+
+    Only explicitly marked manual rows authorize commercial overbooking.
+    Old allotments retain their physical upper bound; blank/reset rows use
+    physical capacity. New sales reduce a manual remaining value once.
+    """
+    mode = entry.get("availability_mode")
+    base = entry.get("availability")
+    if mode not in (None, "automatic", "manual_remaining"):
+        raise ValueError("Unknown availability mode")
+    if base is not None and (type(base) is not int or base < 0):
+        raise ValueError("Invalid calendar allotment")
+    if mode == "manual_remaining":
+        if base is None:
+            raise ValueError("Missing manual allotment")
+        return min(999, max(base - sold, 0))
+    if mode == "automatic" or base is None:
+        return physical_remaining
+    return min(physical_remaining, max(base - sold, 0))
+
+
 async def exely_publishable_availability(database, tenant_id, room_type, mapping, canonical):
-    """Respect the availability owner's calendar allotment AND physical locks.
+    """Respect manual sales inventory or automatic physical capacity.
 
     Calendar keys are panel IDs, not wire aliases. A cap is a base allotment:
     subtract current active category bookings once (the calendar's rule), then
-    take the minimum with lock-based sellable inventory. Never subtract those
-    bookings again from canonical sellable or replace zero with a fallback.
+    take the physical minimum ONLY for unmarked legacy allotments. Manual
+    overrides may exceed it; automatic dates use canonical sellable inventory.
+    Never subtract bookings again from canonical or replace zero with fallback.
     """
     dates = sorted(canonical)
     if not dates:
@@ -137,15 +160,13 @@ async def exely_publishable_availability(database, tenant_id, room_type, mapping
     rows = await database.rate_calendar.find(
         {'tenant_id': tenant_id, 'room_type_code': room_code, 'rate_plan_code': rate_code,
          'date': {'$in': dates}},
-        {'_id': 0, 'date': 1, 'availability': 1},
+        {'_id': 0, 'date': 1, 'availability': 1, 'availability_mode': 1},
     ).to_list(len(dates) + 1)
     caps = {}
     for row in rows:
-        day, cap = row['date'], row.get('availability')
-        if day not in canonical or day in caps or (cap is not None and (type(cap) is not int or cap < 0)):
+        day = row['date']
+        if day not in canonical or day in caps:
             raise ValueError('Ambiguous or invalid calendar allotment')
-        caps[day] = cap
-    physical_total = counts.get(room_type, {}).get('total', 0)
-    return {day: min(value, max((caps.get(day) if caps.get(day) is not None else physical_total)
-                               - sold.get((room_type, day), 0), 0))
+        caps[day] = row
+    return {day: calendar_remaining_availability(caps.get(day, {}), sold.get((room_type, day), 0), value)
             for day, value in canonical.items()}

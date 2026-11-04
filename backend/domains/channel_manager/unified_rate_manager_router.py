@@ -50,13 +50,13 @@ from domains.channel_manager.calendar_inventory import (
 from domains.channel_manager.calendar_inventory import (
     build_sold_count_index as _build_sold_count_index,
 )
+from domains.channel_manager.calendar_inventory import calendar_remaining_availability, lock_adjusted_capacities
 from domains.channel_manager.calendar_inventory import (
     get_active_bookings as _calendar_active_bookings,
 )
 from domains.channel_manager.calendar_inventory import (
     get_room_counts as _calendar_room_counts,
 )
-from domains.channel_manager.calendar_inventory import lock_adjusted_capacities
 from domains.channel_manager.providers.exely.production_safety import (
     ari_write_block_reason as exely_ari_write_block_reason,
 )
@@ -717,6 +717,18 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
         cal_index[key] = entry
     sold_counts = _build_sold_count_index(room_ids_by_type, active_bookings, start_date, end_date)
 
+    # Inventory is category-wide. The availability-owner tariff is authoritative
+    # (including after a manual-to-automatic/legacy reset). Every tariff shows it
+    # without overwriting its independent rate/restriction cells.
+    availability_index = {}
+    for rt in room_types:
+        owners = [m for m in mappings if str(m.get("exely_room_code")) == rt["code"] and m.get("sync_availability", True)]
+        if len(owners) == 1:
+            owner_rate = str(owners[0].get("exely_rate_plan_code"))
+            for entry in calendar_data:
+                if str(entry.get("room_type_code")) == rt["code"] and str(entry.get("rate_plan_code")) == owner_rate:
+                    availability_index[(rt["code"], entry["date"])] = entry
+
     grid = []
     for rt in room_types:
         pms_type = None
@@ -742,6 +754,7 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
                 active_bookings,
                 sold_counts,
                 capacity_by_day,
+                availability_index,
             )
             grid.append(
                 {
@@ -890,7 +903,7 @@ def _count_sold(pms_room_type, day_str, room_ids_by_type, active_bookings):
     return sold
 
 
-def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, counts, room_ids_by_type, active_bookings, sold_counts=None, capacity_by_day=None):
+def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, counts, room_ids_by_type, active_bookings, sold_counts=None, capacity_by_day=None, availability_index=None):
     dates_data = []
     d = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -898,7 +911,8 @@ def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, co
         ds = d.strftime("%Y-%m-%d")
         key = f"{rt_code}|{rp_code}|{ds}"
         entry = cal_index.get(key, {})
-        base_avail = entry.get("availability")
+        availability_entry = (availability_index or {}).get((rt_code, ds), entry)
+        base_avail = availability_entry.get("availability")
         sold_count = (
             sold_counts.get((pms_type, ds), 0)
             if sold_counts is not None and pms_type
@@ -909,13 +923,14 @@ def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, co
         else:
             real_avail = max(counts["total"] - sold_count, 0)
         if capacity_by_day is not None:
-            real_avail = min(real_avail, capacity_by_day.get((pms_type, ds), 0))
+            real_avail = calendar_remaining_availability(availability_entry, sold_count, capacity_by_day.get((pms_type, ds), 0))
         dates_data.append(
             {
                 "date": ds,
                 "rate": entry.get("rate"),
                 "availability": real_avail,
                 "base_availability": base_avail if base_avail is not None else counts["total"],
+                "availability_mode": availability_entry.get("availability_mode") or ("legacy" if base_avail is not None else "automatic"),
                 "sold": sold_count,
                 "min_stay": entry.get("min_stay", 1),
                 "stop_sell": entry.get("stop_sell", False),
@@ -1195,13 +1210,13 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
         if unsafe:
             raise HTTPException(status_code=409, detail="Exely'ye taban fiyat gönderimi çocuk yaş kademelerini kurmaz. Önce kişi/çocuk kurallarını Exely paneliyle karşılaştırıp onaylayın: " + ", ".join(unsafe))
 
-    remaining_base_values = None
+    remaining_plan = None
     if remaining_availability:
         from domains.channel_manager.remaining_availability import prepare_exely_remaining_values
 
         if len(per_room_map) != len(request.per_room_values or []):
             raise HTTPException(422, detail="Aynı oda tipi birden fazla gönderilemez.")
-        remaining_base_values = await prepare_exely_remaining_values(
+        remaining_plan = await prepare_exely_remaining_values(
             db, tenant_id, pairs,
             {rt: per_room_map[rt].availability if rt in per_room_map else request.availability for rt, _ in pairs},
             request.start_date, request.end_date, selected_days_set,
@@ -1248,8 +1263,15 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
 
             if "rate" in update_fields and v_rate is not None:
                 set_fields["rate"] = v_rate
-            if "availability" in update_fields and v_avail is not None:
-                set_fields["availability"] = remaining_base_values[(rt_code, ds)] if remaining_base_values is not None else v_avail
+            if "availability" in update_fields:
+                if remaining_plan is not None:
+                    set_fields["availability"] = remaining_plan.base_values[(rt_code, ds)]
+                    set_fields["availability_mode"] = remaining_plan.modes[rt_code]
+                elif v_avail is not None:
+                    set_fields["availability"] = v_avail
+                    # A legacy client must not accidentally inherit a prior
+                    # operator's explicit overbooking authorization.
+                    set_fields["availability_mode"] = None
             if "min_stay" in update_fields and v_min is not None:
                 set_fields["min_stay"] = v_min
             if "min_los_arrival" in update_fields and v_min_arrival is not None:
@@ -1313,6 +1335,7 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
                     per_room_map,
                     update_fields,
                     selected_days_set,
+                    remaining_values=remaining_plan.remaining_values if remaining_plan is not None else None,
                 )
                 cnt = exely_delivery["task_count"]
                 delivery_state = exely_delivery["delivery_state"]
@@ -1367,6 +1390,7 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
     return {
         "saved": saved,
         "availability_input_mode": "remaining" if remaining_availability else "base",
+        "availability_modes": remaining_plan.modes if remaining_plan is not None else {},
         "provider": provider_type,
         "channel_push_count": channel_push_count,
         "provider_delivery": provider_delivery_results,
@@ -1533,7 +1557,7 @@ def _selected_date_ranges(start_date: str, end_date: str, selected_days_set: set
     return ranges
 
 
-async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set):
+async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set, *, remaining_values=None):
     """Queue Exely changes through the canonical durable ARI outbox.
 
     Frontend grid'i HotelRunner tabanli oda kodlari (HR:xxx) ile geliyor.
@@ -1750,13 +1774,21 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 "start_date": range_start,
                 "end_date": range_end,
             }
-            if controls.get("sync_availability", True) and "availability" in update_fields and values["availability"] is not None:
+            if remaining_values is None and controls.get("sync_availability", True) and "availability" in update_fields and values["availability"] is not None:
                 availability_messages.append({**base, "availability": values["availability"]})
             if controls.get("sync_price", True) and "rate" in update_fields and values["rate"] is not None:
                 rate_messages.append({**base, "rate_amount": values["rate"], "currency": push_currency})
             for field, operation in restriction_fields.items():
                 if controls.get("sync_restrictions", True) and field in update_fields and values[field] is not None:
                     restriction_messages.append({**base, "operation": operation, "value": values[field]})
+
+        if remaining_values is not None and controls.get("sync_availability", True) and "availability" in update_fields:
+            from domains.channel_manager.availability_auto_sync import _group_consecutive_dates_with_same_avail
+
+            daily_values = {day: value for (room, day), value in remaining_values.items() if room == rt_code}
+            for range_start, range_end, value in _group_consecutive_dates_with_same_avail(sorted(daily_values), daily_values):
+                availability_messages.append({"room_type_code": wire_room_code, "rate_plan_code": wire_rate_code,
+                                              "start_date": range_start, "end_date": range_end, "availability": value})
 
     confirmed_messages = 0
     confirmed_writes = 0
