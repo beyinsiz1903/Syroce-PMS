@@ -21,16 +21,20 @@ export default function KBSBackgroundSender({ tenantId, onOwnershipChange, allow
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const requestVersion = useRef(0);
+  const commandRunning = useRef(false);
   const reconcile = useCallback(async () => {
+    if (commandRunning.current) return;
     const gen = generation.current;
+    const version = ++requestVersion.current;
     try {
       const result = await policeAgentCommand('STATUS');
-      if (gen !== generation.current) return;
+      if (gen !== generation.current || version !== requestVersion.current) return;
       if (!result.ok) throw new Error('unknown');
       setState(result.state); setError('');
       onOwnershipChange(result.state?.enabled === true);
     } catch {
-      if (gen !== generation.current) return;
+      if (gen !== generation.current || version !== requestVersion.current) return;
       setError('Arka plan durumu doğrulanamadı. Eklentiyi 1.5.0 veya üstüne güncelleyin. Sonucu belirsiz etkinleştirmeyi tekrarlamadan önce durumu yenileyin.');
       onOwnershipChange(true); // Unknown ownership must not start a second foreground worker.
     }
@@ -44,6 +48,10 @@ export default function KBSBackgroundSender({ tenantId, onOwnershipChange, allow
   }, [tenantId, onOwnershipChange, reconcile]);
 
   const change = async (start) => {
+    if (commandRunning.current) return;
+    commandRunning.current = true;
+    requestVersion.current++;
+    onOwnershipChange(true);
     const gen = generation.current;
     setBusy(true);
     try {
@@ -59,12 +67,18 @@ export default function KBSBackgroundSender({ tenantId, onOwnershipChange, allow
       if (!result.ok) throw new Error(result.error);
       setConsent(false);
       // Always reconcile the real state; never infer activation from a click.
+      commandRunning.current = false;
       await reconcile();
     } catch {
       if (gen !== generation.current) return;
+      commandRunning.current = false;
       await reconcile();
       setError('İşlem tamamlandığı doğrulanamadı. PMS girişini ve eklenti ayarını kontrol edip durumu yenileyin.');
-    } finally { if (gen === generation.current) setBusy(false); }
+      onOwnershipChange(true);
+    } finally {
+      commandRunning.current = false;
+      if (gen === generation.current) setBusy(false);
+    }
   };
   const otherHotel = state?.enabled && tenantId && state.tenantId !== String(tenantId);
   return <div className="mt-3 space-y-2 rounded border p-3 text-sm">

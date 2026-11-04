@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { command, get } = vi.hoisted(() => ({ command: vi.fn(), get: vi.fn() }));
 vi.mock('@/lib/kbsExtensionBridge', () => ({ policeAgentCommand: command }));
@@ -56,6 +56,25 @@ describe('KBS police background control', () => {
     await screen.findByRole('alert');
     expect(ownership).toHaveBeenLastCalledWith(true);
     expect(screen.getByRole('button', { name: 'Arka plan gönderimini etkinleştir' })).toBeDisabled();
+  });
+
+  it('an older status response cannot undo a reconciled activation', async () => {
+    let count = 0, release;
+    command.mockImplementation(async type => {
+      if (type === 'START') state = { enabled: true, tenantId: 'hotel-a' };
+      if (type === 'STATUS' && ++count === 2) return new Promise(resolve => { release = resolve; });
+      return { ok: true, state };
+    });
+    const ownership = vi.fn();
+    render(<KBSBackgroundSender tenantId="hotel-a" onOwnershipChange={ownership} />);
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Gönderici durumunu yenile' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Arka plan gönderimini etkinleştir' }));
+    await screen.findByRole('button', { name: 'Arka plan gönderimini durdur' });
+    await act(async () => release({ ok: true, state: { enabled: false } }));
+    expect(screen.getByRole('button', { name: 'Arka plan gönderimini durdur' })).toBeInTheDocument();
+    expect(ownership).toHaveBeenLastCalledWith(true);
   });
   it('another hotel must be stopped, and Jandarma view cannot start a police agent', async () => {
     state = { enabled: true, tenantId: 'hotel-b' };
