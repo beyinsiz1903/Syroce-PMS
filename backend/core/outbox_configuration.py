@@ -11,6 +11,7 @@ CONFIGURATION_ERRORS = {
     "exely_inventory_range_requires_review",
     "exely_room_mapping_missing", "exely_property_mapping_missing",
     "exely_room_mapping_incomplete", "exely_multiple_availability_mappings",
+    "exely_availability_sync_disabled",
     "hotelrunner_room_mapping_missing", "hotelrunner_room_mapping_incomplete",
     "room_not_found", "room_type_missing", "invalid_date_range",
 }
@@ -75,7 +76,7 @@ async def agency_configuration_readiness(event: dict) -> dict:
     return {"ready": not issues, "issues": issues, "providers": ["agency"]}
 
 
-async def booking_configuration_readiness(event: dict) -> dict:
+async def booking_configuration_readiness(event: dict, *, include_target: bool = False) -> dict:
     """No inventory reconciliation, queue writes or provider calls are allowed here.
 
     This verifies configuration only, not actual external delivery. A corrected
@@ -84,6 +85,16 @@ async def booking_configuration_readiness(event: dict) -> dict:
     from core.outbox_dispatcher import _build_cm_payload
     from domains.channel_manager.availability_auto_sync import _exely_wire_pair
 
+    target = None
+
+    def result(ready, issues, providers):
+        response = {"ready": ready, "issues": issues, "providers": providers}
+        if include_target:
+            # Operational routing context only: never guest data, credentials,
+            # raw event payloads or an assertion that a provider accepted it.
+            response["inventory_target"] = target
+        return response
+
     if event.get("event_type") == "exely.reservation.inventory.updated.v1":
         from domains.channel_manager.providers.exely.reservation_inventory import check_mappings, checked_event
 
@@ -91,11 +102,11 @@ async def booking_configuration_readiness(event: dict) -> dict:
             with tenant_context(event["tenant_id"]):
                 targets = await checked_event(db, event)
                 await check_mappings(db, event["tenant_id"], targets)
-            return {"ready": True, "issues": [], "providers": ["exely"]}
+            return result(True, [], ["exely"])
         except (ValueError, KeyError) as exc:
             code = str(exc)
-            return {"ready": False, "issues": [code if code in CONFIGURATION_ERRORS else
-                "exely_inventory_source_invalid"], "providers": ["exely"]}
+            return result(False, [code if code in CONFIGURATION_ERRORS else
+                "exely_inventory_source_invalid"], ["exely"])
 
     tenant_id = event.get("tenant_id")
     previous_error = event.get("last_error") or ""
@@ -104,33 +115,38 @@ async def booking_configuration_readiness(event: dict) -> dict:
     issues = []
     providers = []
     if not tenant_id or not room_id:
-        return {"ready": False, "issues": ["booking_availability_payload_incomplete"], "providers": []}
+        return result(False, ["booking_availability_payload_incomplete"], [])
     try:
         check_in = date.fromisoformat((payload.get("check_in") or payload.get("date_start") or "")[:10])
         check_out = date.fromisoformat((payload.get("check_out") or payload.get("date_end") or "")[:10])
         if check_out <= check_in:
             raise ValueError("empty date range")
     except (TypeError, ValueError):
-        return {"ready": False, "issues": ["invalid_date_range"], "providers": []}
+        return result(False, ["invalid_date_range"], [])
     with tenant_context(tenant_id):
         room = await db.rooms.find_one({"tenant_id": tenant_id, "id": room_id}, {"_id": 0, "room_type": 1})
         if not room:
-            return {"ready": False, "issues": ["room_not_found"], "providers": []}
+            return result(False, ["room_not_found"], [])
         room_type = room.get("room_type")
         if not room_type:
-            return {"ready": False, "issues": ["room_type_missing"], "providers": []}
+            return result(False, ["room_type_missing"], [])
+        target = {"room_type": room_type, "start_date": check_in.isoformat(),
+                  "end_date_exclusive": check_out.isoformat()}
         conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "hotel_code": 1})
         if conn is not None:
             providers.append("exely")
             if not conn.get("hotel_code"):
                 issues.append("exely_property_mapping_missing")
             mappings = await db.exely_room_mappings.find({
-                "tenant_id": tenant_id, "pms_room_type": room_type, "sync_availability": {"$ne": False},
+                "tenant_id": tenant_id, "pms_room_type": room_type,
             }, {"_id": 0, "pms_api_room_code": 1, "pms_api_rate_plan_code": 1,
-                "exely_room_code": 1, "exely_rate_plan_code": 1}).to_list(10)
-            pairs = {_exely_wire_pair(row) for row in mappings if all(_exely_wire_pair(row))}
+                "exely_room_code": 1, "exely_rate_plan_code": 1, "sync_availability": 1}).to_list(100)
+            enabled = [row for row in mappings if row.get("sync_availability") is not False]
+            pairs = {_exely_wire_pair(row) for row in enabled if all(_exely_wire_pair(row))}
             if not mappings:
                 issues.append("exely_room_mapping_missing")
+            elif not enabled:
+                issues.append("exely_availability_sync_disabled")
             elif not pairs:
                 issues.append("exely_room_mapping_incomplete")
             elif len(pairs) > 1:
@@ -153,4 +169,4 @@ async def booking_configuration_readiness(event: dict) -> dict:
     # received this update. Keep the old event visible for operator review.
     if not providers:
         issues.append("no_active_provider_connection")
-    return {"ready": not issues, "issues": issues, "providers": providers}
+    return result(not issues, issues, providers)

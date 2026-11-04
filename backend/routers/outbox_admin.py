@@ -58,6 +58,8 @@ class ReplayResponse(BaseModel):
 
 class OutboxStatusResponse(BaseModel):
     pending: int
+    ota_pending: int | None = None
+    legacy_pending: int | None = None
     processing: int
     processed_24h: int
     retry: int
@@ -78,8 +80,8 @@ async def outbox_status():
     now = datetime.now(UTC)
     cutoff_24h = (now - __import__("datetime").timedelta(hours=24)).isoformat()
 
-    # Perf: 5 count + 2 find_one + 1 aggregate sıralı çağrıydı → Atlas RTT
-    # ~110ms × 8 = ~0.9 sn. asyncio.gather ile paralel: tek RTT kadar.
+    # Keep independent counts/finds/aggregation parallel to avoid accumulating
+    # an Atlas round trip for each global metric (including the legacy split).
     async def _agg_provider_failures():
         pipeline = [
             {"$match": {"status": "failed"}},
@@ -93,6 +95,7 @@ async def outbox_status():
 
     (
         pending,
+        legacy_pending,
         processing,
         retry,
         failed,
@@ -102,6 +105,7 @@ async def outbox_status():
         provider_failures,
     ) = await asyncio.gather(
         db.outbox_events.count_documents({"status": "pending"}),
+        db.outbox_events.count_documents({"status": "pending", "max_attempts": {"$exists": False}}),
         db.outbox_events.count_documents({"status": "processing"}),
         db.outbox_events.count_documents({"status": "retry"}),
         db.outbox_events.count_documents({"status": "failed"}),
@@ -112,7 +116,10 @@ async def outbox_status():
             }
         ),
         db.outbox_events.find_one(
-            {"status": {"$in": ["pending", "retry"]}},
+            # Match the OTA worker's schema boundary. Legacy lifecycle rows
+            # remain counted/visible separately, not falsely reported as an
+            # OTA delivery stalled for months or silently marked delivered.
+            {"status": {"$in": ["pending", "retry"]}, "max_attempts": {"$exists": True}},
             {"_id": 0, "created_at": 1},
             sort=[("created_at", 1)],
         ),
@@ -146,6 +153,8 @@ async def outbox_status():
 
     return OutboxStatusResponse(
         pending=pending,
+        ota_pending=max(0, pending - legacy_pending),
+        legacy_pending=legacy_pending,
         processing=processing,
         processed_24h=processed_24h,
         retry=retry,
@@ -206,7 +215,7 @@ async def _configuration_readiness(event: dict) -> dict:
     if is_agency_configuration_failure(event):
         return await agency_configuration_readiness(event)
     if is_configuration_failure(event):
-        return await booking_configuration_readiness(event)
+        return await booking_configuration_readiness(event, include_target=True)
     return {"ready": True, "issues": [], "providers": []}
 
 

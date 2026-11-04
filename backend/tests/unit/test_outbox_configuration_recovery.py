@@ -65,6 +65,53 @@ async def test_corrected_wire_pair_can_be_rechecked_without_dispatch(database):
 
 
 @pytest.mark.asyncio
+async def test_existing_but_disabled_availability_mapping_is_not_reported_missing(database):
+    database.rooms.find_one.return_value = {"room_type": "Suite"}
+    database.exely_room_mappings.find.return_value.to_list.return_value = [
+        {"pms_api_room_code": "suite", "pms_api_rate_plan_code": "base", "sync_availability": False},
+        {"pms_api_room_code": "suite", "pms_api_rate_plan_code": "other", "sync_availability": False},
+    ]
+    result = await module.booking_configuration_readiness(event(), include_target=True)
+    assert result == {"ready": False, "issues": ["exely_availability_sync_disabled"], "providers": ["exely"],
+                      "inventory_target": {"room_type": "Suite", "start_date": "2026-11-20", "end_date_exclusive": "2026-11-22"}}
+    query, projection = database.exely_room_mappings.find.call_args.args
+    assert query == {"tenant_id": "hotel", "pms_room_type": "Suite"}
+    assert projection["sync_availability"] == 1
+
+
+@pytest.mark.asyncio
+async def test_disabled_tariffs_do_not_create_false_availability_ambiguity(database):
+    database.exely_room_mappings.find.return_value.to_list.return_value = [
+        {"pms_api_room_code": "standard", "pms_api_rate_plan_code": "base", "sync_availability": True},
+        {"pms_api_room_code": "standard", "pms_api_rate_plan_code": "other", "sync_availability": False},
+    ]
+    assert (await module.booking_configuration_readiness(event()))["ready"] is True
+
+
+@pytest.mark.asyncio
+async def test_target_context_does_not_guess_room_type_or_expose_raw_payload(database):
+    database.rooms.find_one.return_value = {"room_type": "standard"}
+    document = event()
+    document["payload"]["guest_name"] = "private synthetic name"
+    document["payload"]["authentication"] = "never return this"
+    result = await module.booking_configuration_readiness(document, include_target=True)
+    assert result["issues"] == ["exely_room_mapping_missing"]
+    assert result["inventory_target"] == {"room_type": "standard", "start_date": "2026-11-20", "end_date_exclusive": "2026-11-22"}
+    assert "private" not in str(result) and "authentication" not in str(result)
+    assert database.exely_room_mappings.find.call_args.args[0]["pms_room_type"] == "standard"
+
+
+@pytest.mark.asyncio
+async def test_readiness_route_requests_safe_target_context_without_mutating_queue(database, monkeypatch):
+    events = SimpleNamespace(find_one=AsyncMock(return_value=event()))
+    monkeypatch.setattr(outbox_admin, "db", SimpleNamespace(outbox_events=events))
+    response = await outbox_admin.outbox_requeue_readiness("event")
+    assert response["inventory_target"]["room_type"] == "Standard"
+    assert response["can_requeue"] is False
+    assert response["issues"] == ["exely_room_mapping_missing"]
+
+
+@pytest.mark.asyncio
 async def test_disabled_connection_is_not_proof_of_delivery(database):
     database.exely_connections.find_one.return_value = None
     result = await module.booking_configuration_readiness(event())

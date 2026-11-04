@@ -419,9 +419,9 @@ const UnifiedRateManager = ({
       return next;
     });
   };
-  const isRoomTypeSelected = code => selections[code] && selections[code].size > 0;
-  const isRoomTypeFullySelected = code => selections[code] && selections[code].size === ratePlans.length;
-  const isRatePlanSelected = (roomTypeCode, ratePlanCode) => selections[roomTypeCode] && selections[roomTypeCode].has(ratePlanCode);
+  const isRoomTypeSelected = code => (selections[code]?.size ?? 0) > 0;
+  const isRoomTypeFullySelected = code => Boolean(selections[code]) && selections[code].size === ratePlans.length;
+  const isRatePlanSelected = (roomTypeCode, ratePlanCode) => Boolean(selections[roomTypeCode]?.has(ratePlanCode));
   const totalSelectedRoomTypes = Object.keys(selections).length;
   const totalSelectedPlans = Object.values(selections).reduce((sum, s) => sum + s.size, 0);
   const toggleField = key => {

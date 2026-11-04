@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import axios from "axios";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -60,8 +61,15 @@ const StatusPill = ({ status }) => (
   </StatusBadge>
 );
 
+const OUTBOX_PAGE_SIZE = 50;
+export const outboxScopeParams = ({ tenantId = '', provider = 'all' }) => ({
+  ...(tenantId.trim() ? { tenant_id: tenantId.trim() } : {}),
+  ...(provider !== 'all' ? { provider } : {}),
+});
+
 export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   const { t } = useTranslation();
+  const contextTenantId = tenant?.id || tenant?.tenant_id || user?.tenant_id || '';
   const [tab, setTab] = useState("outbox");
   const [outboxStatus, setOutboxStatus] = useState(null);
   const [webhookStatus, setWebhookStatus] = useState(null);
@@ -74,12 +82,35 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [readiness, setReadiness] = useState({});
   const [checkingEvent, setCheckingEvent] = useState(null);
+  const [outboxScope, setOutboxScope] = useState(() => ({
+    tenantId: contextTenantId, provider: 'all',
+  }));
+  const [scopeDraft, setScopeDraft] = useState(outboxScope);
+  const [outboxOffset, setOutboxOffset] = useState(0);
+  const [outboxTotal, setOutboxTotal] = useState(0);
+  const [outboxLoading, setOutboxLoading] = useState(false);
+  const [outboxError, setOutboxError] = useState(null);
+  const outboxRequestRef = useRef(0);
+  const contextTenantRef = useRef(contextTenantId);
+
+  useEffect(() => {
+    if (contextTenantRef.current === contextTenantId) return;
+    contextTenantRef.current = contextTenantId;
+    outboxRequestRef.current += 1;
+    const nextScope = { tenantId: contextTenantId, provider: 'all' };
+    setOutboxScope(nextScope);
+    setScopeDraft(nextScope);
+    setOutboxOffset(0);
+    setOutboxEvents([]);
+    setReadiness({});
+    setCheckingEvent(null);
+  }, [contextTenantId]);
 
   // Status cards her zaman gerekli, sekme/filtre bağımlılığı yok.
   // Tab listeleri ise sadece aktif sekmede + ilgili filtre değişiminde yüklenir.
   // Eski loadAll() filtre değişiminde 5 endpoint'i birden tetikliyordu —
   // 3'ü inaktif sekme için boşa gidiyordu.
-  const buildParams = (val) => (val === "all" ? { limit: 50 } : { status: val, limit: 50 });
+  const buildParams = (val) => (val === "all" ? { limit: OUTBOX_PAGE_SIZE } : { status: val, limit: OUTBOX_PAGE_SIZE });
 
   const loadStatus = useCallback(async () => {
     const results = await Promise.allSettled([
@@ -98,13 +129,45 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   }, []);
 
   const loadOutboxEvents = useCallback(async () => {
+    const requestId = ++outboxRequestRef.current;
+    setOutboxLoading(true);
+    setOutboxError(null);
+    setReadiness({});
+    setCheckingEvent(null);
     try {
-      const r = await axios.get("/outbox/events", { params: buildParams(outboxFilter) });
-      setOutboxEvents(r.data.events || []);
+      const r = await axios.get("/outbox/events", { params: {
+        ...buildParams(outboxFilter), ...outboxScopeParams(outboxScope), offset: outboxOffset,
+      } });
+      if (requestId !== outboxRequestRef.current) return;
+      if (!Array.isArray(r.data?.events) || !Number.isSafeInteger(r.data?.total) || r.data.total < 0) {
+        throw new Error('Geçersiz kuyruk yanıtı');
+      }
+      setOutboxEvents(r.data.events);
+      setOutboxTotal(r.data.total);
     } catch (e) {
+      if (requestId !== outboxRequestRef.current) return;
+      setOutboxEvents([]);
+      setOutboxTotal(0);
+      setOutboxError('Kuyruk okunamadı. Bu sonuç kuyruk boş veya teslim edildi anlamına gelmez.');
       toast.warning("Outbox olayları yüklenemedi: " + (e?.message || "bilinmeyen"));
+    } finally {
+      if (requestId === outboxRequestRef.current) setOutboxLoading(false);
     }
-  }, [outboxFilter]);
+  }, [outboxFilter, outboxScope, outboxOffset]);
+
+  const changeOutboxView = (nextFilter, nextScope = outboxScope, offset = 0) => {
+    // Invalidate old rows/checks before the next request starts, not only after
+    // it resolves. A successful readiness check must never survive a refresh
+    // or apply to a different property/provider/page.
+    outboxRequestRef.current += 1;
+    setReadiness({});
+    setCheckingEvent(null);
+    setOutboxEvents([]);
+    setOutboxLoading(true);
+    setOutboxFilter(nextFilter);
+    setOutboxScope({ ...nextScope });
+    setOutboxOffset(offset);
+  };
 
   const loadDlq = useCallback(async () => {
     try {
@@ -143,35 +206,41 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   useEffect(() => { if (tab === "deliveries") loadDeliveries(); }, [tab, loadDeliveries]);
 
   const checkReadiness = async (eventId) => {
+    const requestId = outboxRequestRef.current;
     setCheckingEvent(eventId);
     try {
       const r = await axios.get(`/outbox/${encodeURIComponent(eventId)}/readiness`);
+      if (requestId !== outboxRequestRef.current) return;
       setReadiness((previous) => ({ ...previous, [eventId]: r.data }));
     } catch {
+      if (requestId !== outboxRequestRef.current) return;
       setReadiness((previous) => ({ ...previous, [eventId]: { can_requeue: false, issues: ['Kontrol tamamlanamadı. Yeniden deneyin.'] } }));
     } finally {
-      setCheckingEvent(null);
+      if (requestId === outboxRequestRef.current) setCheckingEvent(null);
     }
   };
 
   const handleRequeue = async (eventId) => {
+    const requestId = outboxRequestRef.current;
     if (!await confirmDialog({ message: 'Bu olay kuyruğa alınacak ve worker kanala yeniden gönderim deneyebilecek. Devam edilsin mi?' })) return;
     try {
-      await axios.post(`/outbox/${eventId}/requeue`);
+      await axios.post(`/outbox/${encodeURIComponent(eventId)}/requeue`);
       toast.success("Olay tekrar kuyruğa alındı");
-      loadAll();
+      if (requestId === outboxRequestRef.current) loadAll();
     } catch (e) {
       toast.error("Requeue başarısız: " + (e?.response?.data?.detail || e?.message));
     }
   };
 
   const handleReplayAll = async () => {
-    if (!await confirmDialog({ message: "Tüm başarısız olayları tekrar kuyruğa almak istiyor musunuz?" })) return;
+    const requestId = outboxRequestRef.current;
+    const scope = outboxScopeParams(outboxScope);
+    if (!await confirmDialog({ message: `Başarısız olaylar yeniden gönderim için kuyruğa alınacak. Tesis: ${scope.tenant_id || 'TÜM TESİSLER'}. Sağlayıcı: ${scope.provider || 'TÜM SAĞLAYICILAR (fan-out dahil)'}. Yalnız görünen sayfa değil, bu kapsamdaki bütün başarısız kayıtlar etkilenir. Devam edilsin mi?` })) return;
     try {
-      const r = await axios.post("/outbox/replay");
+      const r = await axios.post("/outbox/replay", null, { params: scope });
       if (r.data.blocked_count > 0) toast.warning(r.data.message);
       else toast.success(`${r.data.requeued_count} olay tekrar kuyruğa alındı`);
-      loadAll();
+      if (requestId === outboxRequestRef.current) loadAll();
     } catch (e) {
       toast.error("Replay başarısız: " + (e?.response?.data?.detail || e?.message));
     }
@@ -199,9 +268,9 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   };
 
   // KpiCard click → tab + filter senkronizasyonu
-  const focusFailed = () => { setTab("outbox"); setOutboxFilter("failed"); };
-  const focusRetry  = () => { setTab("outbox"); setOutboxFilter("retry"); };
-  const focusPending = () => { setTab("outbox"); setOutboxFilter("pending"); };
+  const focusFailed = () => { setTab("outbox"); changeOutboxView("failed"); };
+  const focusRetry  = () => { setTab("outbox"); changeOutboxView("retry"); };
+  const focusPending = () => { setTab("outbox"); changeOutboxView("pending"); };
   const focusDlq    = () => { setTab("dlq");    setDlqFilter("pending"); };
 
   const workerRunning = outboxStatus?.worker?.running;
@@ -249,7 +318,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
           <div className="h-4 w-px bg-slate-200" aria-hidden="true" />
           <div className="flex items-center gap-2">
             <Hourglass className="w-4 h-4 text-slate-500" aria-hidden="true" />
-            <span className="text-slate-600">En eski bekleyen:</span>
+            <span className="text-slate-600">En eski OTA bekleyen:</span>
             {oldestPendingLabel ? (
               <StatusBadge intent={oldestPendingLabel.stale ? "warning" : "neutral"}>
                 {oldestPendingLabel.text}
@@ -279,6 +348,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
           icon={Clock}
           label="Outbox Pending"
           value={outboxStatus?.pending ?? "-"}
+          sub={outboxStatus?.legacy_pending != null ? `OTA: ${outboxStatus.ota_pending ?? '-'} · eski biçim: ${outboxStatus.legacy_pending}` : undefined}
           intent="info"
           active={tab === "outbox" && outboxFilter === "pending"}
           onClick={focusPending}
@@ -325,6 +395,10 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
         />
       </div>
 
+      {outboxStatus?.legacy_pending > 0 && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Platform genelinde {outboxStatus.legacy_pending} eski biçimli bekleyen olay var. Bunlar OTA worker kuyruğundan ayrı yaşam döngüsü kayıtlarıdır; gönderilmiş veya çözülmüş sayılmazlar. Pending filtresinde görünür kalır ve ayrıca incelenmelidir.
+      </p>}
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="outbox">{t('cm.pages_WebhookOutboxAdmin.outbox_olaylari')}</TabsTrigger>
@@ -334,13 +408,34 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
 
         {/* ─── OUTBOX EVENTS ───────────────────────────────── */}
         <TabsContent value="outbox" className="space-y-3">
+          <form className="rounded-lg border bg-slate-50 p-3 space-y-2" onSubmit={event => {
+            event.preventDefault();
+            changeOutboxView(outboxFilter, { ...scopeDraft, tenantId: scopeDraft.tenantId.trim() });
+          }}>
+            <p className="text-xs text-slate-600">Durum kartları platform genelidir. Aşağıdaki kapsam yalnız Outbox listesi ve toplu yeniden gönderim için geçerlidir.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex-1 min-w-48 text-xs">Tesis kimliği (tam eşleşme)
+                <Input value={scopeDraft.tenantId} maxLength={128} placeholder="Boş: tüm tesisler" onChange={event => setScopeDraft(previous => ({ ...previous, tenantId: event.target.value }))} />
+              </label>
+              <label className="text-xs">Sağlayıcı
+                <select aria-label="Outbox sağlayıcı" className="block h-10 rounded-md border bg-white px-3" value={scopeDraft.provider} onChange={event => setScopeDraft(previous => ({ ...previous, provider: event.target.value }))}>
+                  <option value="all">Tümü (fan-out dahil)</option>
+                  <option value="exely">Exely</option>
+                  <option value="hotelrunner">HotelRunner</option>
+                  <option value="agency">Acente</option>
+                </select>
+              </label>
+              <Button type="submit" variant="outline">Kapsamı uygula</Button>
+            </div>
+            <p className="text-xs text-slate-600">Etkin kapsam: tesis {outboxScope.tenantId || 'tümü'} · sağlayıcı {outboxScope.provider === 'all' ? 'tümü, fan-out dahil' : outboxScope.provider}. Sağlayıcısı boş fan-out kayıtları Exely filtresinde görünmez; tesisin tüm kayıtları için Tümü seçin.</p>
+          </form>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="w-4 h-4 text-slate-700" aria-hidden="true" /> {t('cm.pages_WebhookOutboxAdmin.outbox_olaylari_df9db')}
               </CardTitle>
               <div className="flex items-center gap-2">
-                <Select value={outboxFilter} onValueChange={setOutboxFilter}>
+                <Select value={outboxFilter} onValueChange={changeOutboxView}>
                   <SelectTrigger className="w-40 h-8 text-xs" aria-label="Outbox filtre"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{t('cm.pages_WebhookOutboxAdmin.tumu')}</SelectItem>
@@ -351,14 +446,14 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
                   </SelectContent>
                 </Select>
                 {(outboxFilter === "failed" || outboxFilter === "all") && outboxEvents.some((e) => e.status === "failed") && (
-                  <Button onClick={handleReplayAll} size="sm" variant="outline">
+                  <Button onClick={handleReplayAll} size="sm" variant="outline" disabled={outboxLoading || Boolean(outboxError)}>
                     <RotateCcw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> {t('cm.pages_WebhookOutboxAdmin.basarisizlari_replay_et')}
                   </Button>
                 )}
               </div>
             </CardHeader>
             <CardContent>
-              {outboxEvents.length === 0 ? (
+              {outboxError ? <p role="alert" className="py-6 text-sm text-rose-700">{outboxError}</p> : outboxLoading ? <p role="status" className="py-6 text-sm">Kuyruk yükleniyor…</p> : outboxEvents.length === 0 ? (
                 <div className="py-10 text-center text-sm text-slate-500">
                   <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" aria-hidden="true" />
                   {t('cm.pages_WebhookOutboxAdmin.bu_filtrede_kayit_yok')}
@@ -388,14 +483,16 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
                           )}
                           {readiness[ev.id] && <div role="status" className="mt-2 text-xs text-slate-700">
                             {readiness[ev.id].can_requeue ? 'Yapılandırma kontrolü geçti. Bu sonuç teslimat kanıtı değildir.' : `Önce düzeltin: ${(readiness[ev.id].issues || []).join(', ')}`}
+                            {readiness[ev.id].inventory_target && <p>Hedef oda türü: {readiness[ev.id].inventory_target.room_type} · {readiness[ev.id].inventory_target.start_date} – {readiness[ev.id].inventory_target.end_date_exclusive} (çıkış günü hariç)</p>}
+                            {readiness[ev.id].issues?.includes('exely_availability_sync_disabled') && <p>Bu oda türünün eşleştirmesi var, fakat müsaitlik gönderimi kapalı. Eksik eşleştirme değildir; yeniden göndermek için önce yetkili bağlantı ayarını inceleyin.</p>}
                           </div>}
                         </div>
                         {(ev.status === "failed" || ev.status === "retry") && (
                           <div className="flex flex-col gap-2">
-                            <Button onClick={() => checkReadiness(ev.id)} size="sm" variant="outline" disabled={checkingEvent !== null}>
+                            <Button onClick={() => checkReadiness(ev.id)} size="sm" variant="outline" disabled={checkingEvent !== null || outboxLoading}>
                               Yapılandırmayı kontrol et
                             </Button>
-                            <Button onClick={() => handleRequeue(ev.id)} size="sm" variant="outline" disabled={!readiness[ev.id]?.can_requeue}>
+                            <Button onClick={() => handleRequeue(ev.id)} size="sm" variant="outline" disabled={outboxLoading || !readiness[ev.id]?.can_requeue}>
                               <RotateCcw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Requeue
                             </Button>
                           </div>
@@ -405,6 +502,13 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
                   ))}
                 </div>
               )}
+              <div className="mt-3 flex items-center justify-between gap-3 text-xs" aria-label="Outbox sayfalama">
+                <span>{outboxTotal ? `${outboxOffset + 1}–${Math.min(outboxOffset + outboxEvents.length, outboxTotal)} / ${outboxTotal}` : '0 kayıt'} · sayfa boyutu {OUTBOX_PAGE_SIZE}</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={outboxLoading || outboxOffset === 0} onClick={() => changeOutboxView(outboxFilter, outboxScope, Math.max(0, outboxOffset - OUTBOX_PAGE_SIZE))}>Önceki sayfa</Button>
+                  <Button variant="outline" size="sm" disabled={outboxLoading || Boolean(outboxError) || outboxOffset + OUTBOX_PAGE_SIZE >= outboxTotal} onClick={() => changeOutboxView(outboxFilter, outboxScope, outboxOffset + OUTBOX_PAGE_SIZE)}>Sonraki sayfa</Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
