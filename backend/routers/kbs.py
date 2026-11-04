@@ -57,6 +57,98 @@ logger = logging.getLogger("routers.kbs")
 router = APIRouter(prefix="/api/kbs", tags=["KBS"])
 
 
+def _check_background_context(request: Request, user: User, *, required: bool = False) -> None:
+    """Pin cookie-authenticated background work to the explicitly enabled account.
+
+    The extension never receives a bearer token. A login/tenant switch in another
+    tab must not redirect its next claim or receipt to the newly logged-in user.
+    These headers are assertions, NOT authentication or permission grants.
+    """
+    present = any(name in request.headers for name in (
+        "x-kbs-background", "x-kbs-tenant", "x-kbs-user",
+    ))
+    if not required and not present:
+        return
+    if (
+        request.headers.get("x-kbs-background") != "1"
+        or not user.tenant_id
+        or request.headers.get("x-kbs-tenant") != str(user.tenant_id)
+        or request.headers.get("x-kbs-user") != str(user.id)
+    ):
+        raise HTTPException(403, "kbs_background_context_changed")
+
+
+async def get_kbs_worker_user(request: Request, user: User = Depends(get_current_user)) -> User:
+    _check_background_context(request, user)
+    return user
+
+
+@router.get("/background/context")
+async def kbs_background_context(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
+):
+    """Read-only authorization check; no credentials or guest data in response."""
+    _check_background_context(request, current_user, required=True)
+    await _reject_external_cloud_worker(current_user.tenant_id)
+    return {"tenant_id": current_user.tenant_id, "user_id": current_user.id}
+
+
+@router.get("/background/jobs")
+async def kbs_background_jobs(
+    request: Request,
+    after_created: str | None = Query(None, max_length=40),
+    after_id: str | None = Query(None, pattern=r"^[A-Za-z0-9_-]{1,120}$"),
+    limit: int = Query(20, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
+):
+    """Fair, metadata-only feed. Payload is rebuilt only by the atomic claim.
+
+    Advancing past a blocked checkout prevents it from starving later check-ins.
+    The client wraps to the beginning after an empty page, including backoff jobs
+    which became eligible since its previous pass.
+    """
+    _check_background_context(request, current_user, required=True)
+    await _reject_external_cloud_worker(current_user.tenant_id)
+    if bool(after_created) != bool(after_id):
+        raise HTTPException(422, "kbs_background_invalid_cursor")
+    if after_created:
+        try:
+            parsed = datetime.fromisoformat(after_created.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError("timezone required")
+        except ValueError as exc:
+            raise HTTPException(422, "kbs_background_invalid_cursor") from exc
+    now_iso = _iso(_now())
+    query = {
+        "tenant_id": current_user.tenant_id,
+        "_kind": QUEUE_KIND,
+        "delivery_uncertain": {"$ne": True},
+        "$or": [
+            {"status": "pending", "$or": [
+                {"next_retry_at": None}, {"next_retry_at": {"$exists": False}},
+                {"next_retry_at": {"$lte": now_iso}},
+            ]},
+            {"status": "in_progress", "leased_until": {"$lt": now_iso}},
+        ],
+    }
+    if after_created:
+        query["$and"] = [{"$or": [
+            {"created_at": {"$gt": after_created}},
+            {"created_at": after_created, "id": {"$gt": after_id}},
+        ]}]
+    with tenant_context(current_user.tenant_id):
+        rows = await db.kbs_reports.find(
+            query, {"_id": 0, "id": 1, "created_at": 1},
+        ).sort([("created_at", 1), ("id", 1)]).to_list(limit)
+    return {
+        "jobs": [{"id": row["id"], "created_at": row["created_at"]} for row in rows],
+        "cursor": {"created_at": rows[-1]["created_at"], "id": rows[-1]["id"]} if rows else None,
+    }
+
+
 def _kbs_test_mode() -> bool:
     """KBS_TEST_MODE=1 → reference 'TEST-' ile başlamayan complete'ler reddedilir,
     booking üzerine kbs_test=true bayrağı yazılır."""
@@ -1172,7 +1264,7 @@ class KBSQueueClaim(BaseModel):
 async def kbs_queue_claim(
     job_id: str,
     data: KBSQueueClaim,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_kbs_worker_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Atomik claim: pending → in_progress (worker_id + lease).
@@ -1376,7 +1468,7 @@ async def kbs_queue_complete(
     job_id: str,
     data: KBSQueueComplete,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_kbs_worker_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Worker başarıyla bildirdi: in_progress → done.
@@ -1586,7 +1678,7 @@ async def kbs_queue_fail(
     job_id: str,
     data: KBSQueueFail,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_kbs_worker_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Worker hata bildirdi.

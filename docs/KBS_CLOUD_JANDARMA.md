@@ -16,6 +16,46 @@ kullanıcının Chrome profilinde açtığı EGM oturumuna dayanır; sunucuya ot
 sunucu yetkilendirme sözleşmesi doğrulanmadan EGM için bilgisayarsız gönderim
 hazır olarak sunulmaz. EGM oturumunu otomatik yenileme/ikinci faktör atlama yoktur.
 
+### Polis — sayfadan bağımsız, tarayıcı oturumuna bağlı gönderim (eklenti 1.5.0)
+
+- PMS → KBS → Bağlantı ve gönderim ayarları bölümünde **Polis arka plan
+  göndericisi** ayrı ve açık bir tesis doğrulamasıyla etkinleştirilir. Önceki
+  sayfa içi otomatik gönderim ayarı yeni göndericiyi kendiliğinden açmaz.
+- Normal giriş/çıkışın oluşturduğu kuyruğu eklentinin `chrome.alarms` worker'ı
+  dakikada bir tarar. PMS sayfası gizli/kapalı olabilir; Chrome/Edge ve
+  bilgisayar çalışıyor olmalıdır. Uyku sırasında zamanında gönderim garantisi
+  yoktur. Telefon yalnız normal PMS üzerinden işi kuyruğa alır; telefonun
+  kendi tarayıcısına eklenti veya EGM oturum sırrı taşınmaz.
+- Yeni izin: yalnız `https://pms.syroce.com/*` için normal API isteği ve
+  `alarms`. `cookies`, `tabs`, oturum okuma veya parola toplama izni istenmez.
+  HTTP isteklerinde tarayıcı normal HttpOnly PMS erişim çerezini kendisi
+  ekler. Token/çerez JavaScript'e okunmaz, kopyalanmaz veya saklanmaz.
+- Yetki normal PMS erişim oturumu ve `view_reports` kontrolünden geçer.
+  Extension API isteklerinin her birinde etkinleştirilen kullanıcı/otel
+  bağlamı sunucuda doğrulanır. Oturum süresi, çıkış, kullanıcı/otel değişimi
+  veya cloud sahipliği göndericiyi durdurur; otomatik refresh/login yoktur.
+  Tarayıcı çerez politikası erişimi engellerse gönderim başarısı varsayılmaz;
+  güvenlik politikası otomatik gevşetilmez.
+- Tesis/kullanıcı bağı ve opt-in yalnız `chrome.storage.session` içindedir.
+  Worker askıya alınıp yeniden başlarsa alarm yenilenir; tarayıcı yeniden
+  başlatılırsa, eklenti güncellenir/devre dışı bırakılırsa opt-in kaybolur.
+  Kullanıcı yeniden giriş yapıp doğru EGM tesisini doğrulayarak etkinleştirir.
+  Otel değiştirmek önce mevcut göndericiyi durdurmayı gerektirir.
+- Arka plan işi aynı atomik claim/complete/fail sözleşmesini kullanır. Taze
+  payload yalnız claim anında alınır, eklenti depolamasına misafir bilgisi
+  yazılmaz. Adil tarih+id imleci, engellenen ilk 20 kaydın arkadakileri sürekli
+  bloke etmesini engeller. Test sonucu veya açık EGM kabulü olmayan 200 yanıtı
+  başarı sayılmaz. Mutasyon timeout/bozuk cevap/5xx belirsiz tutulur; yerel
+  complete kaybolursa kurum isteği tekrarlanmaz. Diğer işler ilerler.
+- Canlı kurulum bu kodun deploy edilmesiyle açılmaz. Yeni eklenti sürümü,
+  kurumun izin verdiği tesis/ağ ve yetkilinin normal EGMSEC oturumu gerekir.
+  Kurum ekranıyla ilk meşru giriş/çıkış uzlaştırılmadan resmî canlı kabul
+  tamamlanmış sayılmaz. Bu, EGM için bilgisayarsız sunucu göndericisi değildir.
+
+Teknik dayanaklar: [Chrome alarms](https://developer.chrome.com/docs/extensions/reference/api/alarms),
+[oturumluk depolama](https://developer.chrome.com/docs/extensions/reference/api/storage),
+[uzantılarda çerez davranışı](https://developer.chrome.com/docs/extensions/develop/concepts/storage-and-cookies).
+
 Kaynaklar:
 
 - [Jandarma uygulama kılavuzu, Web Servis İşlemleri (s.10)](https://www.jandarma.gov.tr/kurumlar/jandarma.gov.tr/Jandarma/Uygulamalar/KBS/KBS_Tesis_2_Uygulama_TD.pdf)
@@ -127,3 +167,12 @@ ve 24 saatlik gizleme. Tüm kurum çağrıları mock; hiçbir resmî bildirim ya
 iki görünüm, nedenler, kimlik tamamlama ve eklenti kabul/ret/belirsizlik
 davranışını kapsar. Native kimlik/izin/PII-cache sözleşmeleri
 `mobile/src/utils/__tests__/kbs.test.ts` içinde doğrulanır.
+
+`backend/tests/test_kbs_background_agent.py`: bağlam/politika kontrolü,
+HTTP claim/complete/fail korumaları, PII içermeyen adil yerel Mongo beslemesi.
+`extension/tests/police-agent.test.js` ve `egm-background.test.js`: sayfa
+bağımsızlığı, alarm/oturum yaşam döngüsü, hatalı kayıttan sonra ilerleme,
+belirsizlik, mükerrer engeli, hesap değişimi ve saklanan verinin kapsamı.
+`KBSBackgroundSender.test.jsx`: açık opt-in, hesap/otel kontrolü, belirsiz
+etkinleştirmeyi canlı durumla uzlaştırma ve ikinci worker'ın engellenmesi.
+Bu testler resmî KBS servislerine bildirim göndermez.

@@ -1,14 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { get, put, post, success, error, info, ping, send, body } = vi.hoisted(() => ({
+const { get, put, post, success, error, info, ping, send, body, agent } = vi.hoisted(() => ({
   get: vi.fn(), put: vi.fn(), post: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn(),
-  ping: vi.fn(), send: vi.fn(), body: vi.fn(),
+  ping: vi.fn(), send: vi.fn(), body: vi.fn(), agent: vi.fn(),
 }));
 vi.mock('axios', () => ({ default: { get, put, post } }));
 vi.mock('sonner', () => ({ toast: { success, error, info } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key.split('.').at(-1) }) }));
-vi.mock('@/lib/kbsExtensionBridge', () => ({ pingExtension: ping, sendViaExtension: send, buildKbsBody: body }));
+vi.mock('@/lib/kbsExtensionBridge', () => ({ pingExtension: ping, sendViaExtension: send, buildKbsBody: body, policeAgentCommand: agent }));
 import KBSNotification from '../KBSNotification';
 
 const base = { id: 'job-110', booking_id: 'booking-110', guest_id: 'guest-110',
@@ -23,6 +23,7 @@ describe('KBS two-view operational screen', () => {
     localStorage.clear();
     rows = [{ ...base }];
     hidden = 0;
+    agent.mockResolvedValue({ ok: true, state: { enabled: false } });
     ping.mockResolvedValue({ present: false, state: 'absent', states: {}, version: '', installId: '' });
     get.mockImplementation(async (url, config) => {
       if (url === '/kbs/notifications') {
@@ -120,6 +121,21 @@ describe('KBS two-view operational screen', () => {
       expect.objectContaining({ retry: false, delivery_uncertain: true, error: 'delivery_unknown_check_authority' }), expect.anything()));
     expect(post.mock.calls.some(([url]) => url.endsWith('/complete'))).toBe(false);
     expect(success).not.toHaveBeenCalled();
+  });
+
+  it('keeps an active police background worker as sole sender, including after a stale Jandarma preference', async () => {
+    localStorage.setItem('kbs_ext_authority', 'jandarma');
+    localStorage.setItem('kbs_ext_autosend', '1');
+    ping.mockResolvedValue({ present: true, states: { polis: 'configured', jandarma: 'configured' },
+      backgroundSupported: true, version: '1.5.0', installId: 'install-1' });
+    agent.mockResolvedValue({ ok: true, state: { enabled: true, tenantId: 'hotel-a' } });
+    await show();
+    await screen.findByRole('button', { name: 'Arka plan gönderimini durdur' });
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/kbs/queue', expect.anything()));
+    expect(post.mock.calls.some(([url]) => url.endsWith('/claim'))).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Jandarma' })).toBeDisabled();
   });
 
   it('does not accept extension test receipts as real delivery', async () => {

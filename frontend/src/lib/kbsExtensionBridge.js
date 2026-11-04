@@ -5,7 +5,9 @@
  * uzerinden konusur. Eklentinin content script'i yalnizca ayni origin'den,
  * bizim isaretimizi tasiyan mesajlari kabul eder.
  *
- * Eklenti = saf EGM transport'u. Sayfa = kuyruk worker'i (staff JWT'yi tutar):
+ * Jandarma legacy: sayfa = kuyruk worker'i. Polis v1.5+: explicit opt-in ile
+ * eklenti alarm tabanli worker olur; normal HttpOnly PMS oturumunu kullanir.
+ * Sayfadan token/cookie/sifre aktarilmaz. Legacy tek gonderim:
  * sayfa pending isi claim eder, payload'i eklentiye verir, eklenti otelin
  * IP'sinden EGM'ye POST eder, referansi geri dondurur, sayfa /complete (ya da
  * /fail) cagirir.
@@ -69,6 +71,7 @@ export async function pingExtension(timeoutMs = 1500) {
     state: res.state || "unknown",
     states: res.states && typeof res.states === "object" ? res.states : {},
     installId: res.installId || "",
+    backgroundSupported: res.backgroundSupported === true,
   };
 }
 
@@ -79,7 +82,7 @@ export async function pingExtension(timeoutMs = 1500) {
  */
 export async function sendViaExtension(body, authority = "polis", timeoutMs = 35000) {
   const res = await request({ type: "SEND", body, authority }, timeoutMs);
-  if (res.timedOut) return { ok: false, reference: "", error: "extension_timeout", test: false, officialReference: false, responseCode: "", responseMessage: "" };
+  if (res.timedOut) return { ok: false, reference: "", error: "extension_timeout", deliveryUncertain: true, test: false, officialReference: false, responseCode: "", responseMessage: "" };
   return {
     ok: !!res.ok,
     reference: res.reference || "",
@@ -88,7 +91,15 @@ export async function sendViaExtension(body, authority = "polis", timeoutMs = 35
     officialReference: res.officialReference !== false,
     responseCode: res.responseCode || "",
     responseMessage: res.responseMessage || "",
+    deliveryUncertain: res.deliveryUncertain === true,
   };
+}
+
+export async function policeAgentCommand(type, binding) {
+  if (!["STATUS", "START", "STOP"].includes(type)) throw new Error("invalid_agent_command");
+  const res = await request({ type: `AGENT_${type}`, ...(binding ? { binding } : {}) }, 20000);
+  if (res.timedOut) return { ok: false, error: "agent_status_unknown" };
+  return { ok: res.ok === true, state: res.state, error: res.error || "" };
 }
 
 /**

@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("jandarma-soap.js", "egm-kbs.js");
+importScripts("jandarma-soap.js", "egm-kbs.js", "police-agent.js");
 
 // Syroce KBS Gonderici - arka plan servis worker'i (Manifest V3).
 //
@@ -357,6 +357,7 @@ function egmError(error) {
 }
 
 async function egmRequest(path, payload, method = "POST") {
+  const mutation = /(?:Ekle|PasifYap)$/.test(path);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
   try {
@@ -368,17 +369,37 @@ async function egmRequest(path, payload, method = "POST") {
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(payload || {});
     }
-    const resp = await fetch(`${SyroceEgmKbs.API_BASE}/${path}`, init);
+    let resp;
+    try { resp = await fetch(`${SyroceEgmKbs.API_BASE}/${path}`, init); }
+    catch (error) { error.deliveryUncertain = mutation; throw error; }
     const contentType = resp.headers.get("content-type") || "";
     const raw = await resp.text();
     if (resp.status === 401 || resp.status === 403 || /text\/html/i.test(contentType)) {
-      throw new Error("egm_login_required");
+      const error = new Error("egm_login_required");
+      // A redirect/HTML page instead of a mutation response is not proof of
+      // rejection. Explicit 401/403 is; never blindly replay the other case.
+      error.deliveryUncertain = mutation && resp.status !== 401 && resp.status !== 403;
+      throw error;
     }
     let data;
-    try { data = raw ? JSON.parse(raw) : {}; } catch (_e) { throw new Error("egm_invalid_response"); }
-    if (!resp.ok) throw new Error(`egm_http_${resp.status}: ${egmError(data)}`);
+    try { data = raw ? JSON.parse(raw) : {}; } catch (_e) {
+      const error = new Error("egm_invalid_response"); error.deliveryUncertain = mutation; throw error;
+    }
+    if (!resp.ok) {
+      const error = new Error(`egm_http_${resp.status}: ${egmError(data)}`);
+      error.deliveryUncertain = mutation && resp.status >= 500;
+      throw error;
+    }
     if (data && data.isSuccess === false) throw new Error(egmError(data));
+    if (mutation && data?.isSuccess !== true) {
+      const error = new Error("egm_acceptance_not_confirmed"); error.deliveryUncertain = true; throw error;
+    }
     return data;
+  } catch (error) {
+    // No response to an authority write is NOT a definitive rejection.
+    if (mutation && error.deliveryUncertain === undefined &&
+        (error.name === "AbortError" || error instanceof TypeError)) error.deliveryUncertain = true;
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -415,8 +436,29 @@ async function sendToEgmSession(body) {
       officialReference: false,
     };
   } catch (e) {
-    return { ok: false, error: egmError(e) };
+    return { ok: false, error: egmError(e), ...(e?.deliveryUncertain ? { deliveryUncertain: true } : {}) };
   }
+}
+
+const policeAgent = chrome.alarms && chrome.storage.session?.set
+  ? SyrocePoliceAgent.create({ chrome, fetch: (...args) => fetch(...args),
+    send: async (body) => {
+      // A profile edit during a batch must not switch this explicitly enabled
+      // EGM-session worker to a token/cookie/custom-endpoint transport.
+      if ((await getProfile("polis")).mode !== "egm-session") return { ok: false, error: "egm_session_mode_required" };
+      const missing = payloadMissingFields(body);
+      if (missing.length) return { ok: false, error: `payload_incomplete: ${missing.join(", ")}` };
+      return sendToEgmSession(body);
+    }, profile: () => getProfile("polis"), installId: getInstallId })
+  : null;
+if (policeAgent) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === SyrocePoliceAgent.ALARM) return policeAgent.run();
+  });
+  // Restore alarms on every MV3 worker start. storage.session survives worker
+  // suspension, but NOT browser restart/extension update. Never store consent
+  // or login secrets in persistent storage to make it survive that boundary.
+  policeAgent.restore().catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -433,6 +475,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  if (["KBS_AGENT_STATUS", "KBS_AGENT_START", "KBS_AGENT_STOP"].includes(msg.type)) {
+    // Page-supplied origin, URL and credentials are never trusted/accepted.
+    let origin = "";
+    try { origin = new URL(sender.url).origin; } catch (_) { /* fail closed */ }
+    if (!sender.tab || sender.frameId !== 0 || origin !== "https://pms.syroce.com") {
+      sendResponse({ ok: false, error: "forbidden" }); return false;
+    }
+    if (!policeAgent) { sendResponse({ ok: false, error: "background_unsupported" }); return false; }
+    const task = msg.type === "KBS_AGENT_START" ? policeAgent.start(msg.binding)
+      : msg.type === "KBS_AGENT_STOP" ? policeAgent.stop()
+        : policeAgent.status().then(state => ({ ok: true, state }));
+    task.then(sendResponse).catch(() => sendResponse({ ok: false, error: "background_unavailable" }));
+    return true;
+  }
+
   if (msg.type === "KBS_STATE") {
     (async () => {
       const states = await allStates();
@@ -444,6 +501,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // Geriye uyumluluk: tekil 'state' alani Polis profiline isaret eder.
         state: states[DEFAULT_AUTHORITY],
         installId,
+        backgroundSupported: Boolean(policeAgent),
       });
     })();
     return true;
