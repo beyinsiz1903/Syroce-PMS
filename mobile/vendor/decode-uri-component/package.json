@@ -1,0 +1,16 @@
+{
+  "name": "decode-uri-component",
+  "version": "0.5.1",
+  "description": "Upstream 0.5.1 security fix with CommonJS export compatibility",
+  "license": "MIT",
+  "main": "index.cjs",
+  "files": [
+    "index.cjs",
+    "license",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": "https://github.com/SamVerschueren/decode-uri-component"
+}
