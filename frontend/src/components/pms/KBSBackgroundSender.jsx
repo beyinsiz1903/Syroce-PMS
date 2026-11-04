@@ -10,6 +10,7 @@ const reasons = {
   egm_login_required: 'EGM oturumu sona erdi. EGMSEC ile normal giriş yapıp yeniden etkinleştirin.',
   egm_session_mode_required: 'Eklentinin Polis profilinde EGM oturumu seçilmeli.',
   server_managed: 'Bu tesis sunucu göndericisi tarafından yönetiliyor; tarayıcı gönderimi durduruldu.',
+  server_test_mode: 'PMS sunucusu KBS test modunda; kuruma canlı bildirim gönderimi kapalı.',
   pms_unavailable: 'PMS bağlantısı doğrulanamadı. Kabul alınmamış kayıtlar gönderilmiş sayılmaz.',
 };
 

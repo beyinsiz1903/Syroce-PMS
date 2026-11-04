@@ -36,6 +36,8 @@ hazır olarak sunulmaz. EGM oturumunu otomatik yenileme/ikinci faktör atlama yo
   veya cloud sahipliği göndericiyi durdurur; otomatik refresh/login yoktur.
   Tarayıcı çerez politikası erişimi engellerse gönderim başarısı varsayılmaz;
   güvenlik politikası otomatik gevşetilmez.
+- `KBS_TEST_MODE=1` iken sunucu canlı Polis arka plan işini vermez; zaten
+  etkin bir gönderici de bir sonraki yetki kontrolünde durur.
 - Tesis/kullanıcı bağı ve opt-in yalnız `chrome.storage.session` içindedir.
   Worker askıya alınıp yeniden başlarsa alarm yenilenir; tarayıcı yeniden
   başlatılırsa, eklenti güncellenir/devre dışı bırakılırsa opt-in kaybolur.

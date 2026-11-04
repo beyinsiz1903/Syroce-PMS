@@ -91,6 +91,8 @@ async def kbs_background_context(
 ):
     """Read-only authorization check; no credentials or guest data in response."""
     _check_background_context(request, current_user, required=True)
+    if _kbs_test_mode():
+        raise HTTPException(423, "kbs_background_test_mode")
     await _reject_external_cloud_worker(current_user.tenant_id)
     return {"tenant_id": current_user.tenant_id, "user_id": current_user.id}
 
@@ -111,6 +113,8 @@ async def kbs_background_jobs(
     which became eligible since its previous pass.
     """
     _check_background_context(request, current_user, required=True)
+    if _kbs_test_mode():
+        raise HTTPException(423, "kbs_background_test_mode")
     await _reject_external_cloud_worker(current_user.tenant_id)
     if bool(after_created) != bool(after_id):
         raise HTTPException(422, "kbs_background_invalid_cursor")

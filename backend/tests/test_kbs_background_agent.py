@@ -101,6 +101,19 @@ async def test_managed_cloud_is_rejected_even_if_paused(context):
 
 
 @pytest.mark.asyncio
+async def test_server_test_mode_never_hands_work_to_live_police_agent(context, monkeypatch):
+    _, user = context
+    monkeypatch.setenv("KBS_TEST_MODE", "1")
+    for operation in (
+        lambda: kbs.kbs_background_context(request(user), user, None),
+        lambda: kbs.kbs_background_jobs(request(user), None, None, 20, user, None),
+    ):
+        with pytest.raises(HTTPException) as error:
+            await operation()
+        assert error.value.status_code == 423
+
+
+@pytest.mark.asyncio
 async def test_http_worker_mutations_enforce_context_before_any_queue_access():
     app = FastAPI()
     app.include_router(kbs.router)

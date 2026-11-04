@@ -156,6 +156,7 @@
         } catch (error) {
           if (state) {
             if (fatal(error)) await pause(state, "pms_login_or_context_required", rev);
+            else if (error.status === 423) await pause(state, "server_test_mode", rev);
             else if (error.status === 409) await pause(state, "server_managed", rev);
             else { state.reason = "pms_unavailable"; await persist(state, rev); }
           }

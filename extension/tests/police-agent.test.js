@@ -85,7 +85,7 @@ test('an enabled account cannot be silently retargeted even by another start com
   assert.equal((await h.agent.status()).tenantId, 'tenant-a');
 });
 
-for (const status of [401, 403, 409]) test(`PMS status ${status} stops without authority traffic`, async () => {
+for (const status of [401, 403, 409, 423]) test(`PMS status ${status} stops without authority traffic`, async () => {
   let changed = false;
   const h = harness({ api: route => changed && route === '/background/context' ? new Response('{}', { status }) : null });
   await h.agent.start(binding); changed = true; await h.agent.run();
