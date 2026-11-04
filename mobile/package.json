@@ -15,10 +15,11 @@
     "test": "npm run test:unit",
     "test:unit": "rm -rf .unit-build && tsc -p tsconfig.unit.json && node --test $(find .unit-build -name '*.test.js')",
     "test:preview-api": "node --test scripts/preview-api.test.mjs",
+    "test:dependencies": "node --test scripts/dependency-security.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "doctor": "expo-doctor",
     "validate:config": "node scripts/validate-config.mjs",
-    "check": "npm run validate:config && npm run typecheck && npm run test:unit && npm run test:preview-api && npm run doctor",
+    "check": "npm run validate:config && npm run typecheck && npm run test:unit && npm run test:preview-api && npm run test:dependencies && npm run doctor",
     "test:e2e:smoke": "playwright test --config=e2e/playwright.config.ts"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "@tanstack/query-sync-storage-persister": "^5.59.0",
     "@tanstack/react-query": "^5.59.0",
     "@tanstack/react-query-persist-client": "^5.59.0",
+    "decode-uri-component": "file:vendor/decode-uri-component",
     "expo": "~57.0.31",
     "expo-brightness": "~57.0.2",
     "expo-camera": "~57.0.6",
@@ -69,6 +71,12 @@
     "typescript": "~6.0.3"
   },
   "overrides": {
+    "decode-uri-component": "$decode-uri-component",
+    "glob@>=9 <14": "14.0.3",
+    "minimatch": "11.0.4",
+    "node-forge": "1.4.3",
+    "brace-expansion@>=5 <6": "5.0.12",
+    "zod": "4.6.6",
     "shell-quote": "1.11.0",
     "tar": ">=7.5.19"
   },
