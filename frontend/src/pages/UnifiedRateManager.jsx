@@ -15,7 +15,7 @@ import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { UPDATE_FIELDS, usesExpandedAriLayout } from './rate-manager/constants';
-import { buildRateUpdateReview, isValidExelyAvailability } from './rate-manager/updateReview';
+import { buildRateUpdateReview, exelyPriceOccupancy, isValidExelyAvailability } from './rate-manager/updateReview';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
@@ -41,6 +41,7 @@ export const RateDeliveryReceipt = ({ receipt }) => {
     <p>{feedback.message}</p>
     <p>{receipt.dateFrom} – {receipt.dateTo} · {receipt.roomCount} oda tipi · {receipt.fields.join(', ')}</p>
     <p>Teslim durumu: {receipt.data.provider_delivery_state || 'NOT_SENT'}</p>
+    {Object.entries(receipt.data.price_occupancies || {}).map(([room, count]) => <p key={room}>{room}: {count} yetişkin için oda/gece toplam fiyatı · ana yatak · NumberOfGuests={count}</p>)}
     {receipt.data.availability_input_mode === 'remaining' && <p>Gönderilen müsaitlik: manuel satış kontenjanı veya otomatik net kalan oda sayısı. Mevcut rezervasyonlar tekrar düşülmez. Boş alan otomatik hesaptır; elle girilen kontenjan fiziksel kapasiteyi aşabilir.</p>}
   </div>;
 };
@@ -496,13 +497,14 @@ const UnifiedRateManager = ({
     }
   };
   const saveOccupancyPricingRule = async (roomTypeCode, rule) => {
+    const pricingType = rule.pricing_type || 'per_person';
     await axios.put(`${UNIFIED_PREFIX}/pricing-settings`, {
-      settings: [{ room_type_code: roomTypeCode, ...rule, pricing_type: 'per_person', currency }]
+      settings: [{ room_type_code: roomTypeCode, ...rule, pricing_type: pricingType, currency }]
     }, { headers });
-    setPricingSettings(prev => ({ ...prev, [roomTypeCode]: 'per_person' }));
+    setPricingSettings(prev => ({ ...prev, [roomTypeCode]: pricingType }));
     setOccupancyPricingRules(prev => ({
       ...prev,
-      [roomTypeCode]: { ...rule, pricing_type: 'per_person', currency }
+      [roomTypeCode]: { ...rule, pricing_type: pricingType, base_occupancy_explicit: true, currency }
     }));
     toast.success('Kişi bazlı fiyatlandırma kuralı kaydedildi');
   };
@@ -596,7 +598,7 @@ const UnifiedRateManager = ({
   // Unified bulk update
   const handleBulkUpdate = async () => {
     const review = buildRateUpdateReview({ dateFrom, dateTo, allDays, selectedDays, selections, enabledFields,
-      roomValues, selectedChannelCodes, activeChannelsStale, channelProvider: provider, agenciesOnly, ratePlans });
+      roomValues, selectedChannelCodes, activeChannelsStale, channelProvider: provider, agenciesOnly, ratePlans, occupancyPricingRules });
     if (provider === 'exely' && !agenciesOnly && review.errors.length > 0) {
       toast.error(review.errors[0], { duration: 8000 });
       return;
@@ -654,6 +656,8 @@ const UnifiedRateManager = ({
           room_type_code: rtCode,
           rate_plan_codes: Array.from(selections[rtCode]),
           rate: enabledFields.has('rate') && hasValue(rv.rate) ? parseFloat(rv.rate) : null,
+          ...(provider === 'exely' && !agenciesOnly && enabledFields.has('rate')
+            ? { rate_number_of_guests: exelyPriceOccupancy(occupancyPricingRules[rtCode]) } : {}),
           availability: enabledFields.has('availability') && hasValue(rv.availability) ? Number(rv.availability) : null,
           min_stay: enabledFields.has('min_stay') && hasValue(rv.min_stay) ? parseInt(rv.min_stay) : null,
           min_los_arrival: enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) ? parseInt(rv.min_los_arrival) : null,
@@ -703,7 +707,7 @@ const UnifiedRateManager = ({
       // A missing module comes with a sentence saying which one and why.
       const entitlementText = safeCode === 'ENTITLEMENT_DENIED' && typeof detail?.detail === 'string' ? detail.detail : null;
       setDeliveryReceipt({ data: { provider_delivery_state: !e.response || e.response.status >= 500 ? 'UNKNOWN' : 'NOT_SENT',
-        provider_preflight_message: safeCode?.startsWith('EXELY_SINGLE_REQUEST_') || safeCode === 'EXELY_RATE_PLAN_PRICE_UPLOAD_DISABLED' ? netMessage : null,
+        provider_preflight_message: safeCode?.startsWith('EXELY_SINGLE_REQUEST_') || safeCode?.startsWith('EXELY_RATE_OCCUPANCY_') || safeCode === 'EXELY_RATE_PLAN_PRICE_UPLOAD_DISABLED' ? netMessage : null,
         provider_error_codes: [safeCode || detailStr || 'İstek tamamlanamadı'] }, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
       toast.error(entitlementText || (netMessage ? `${netMessage}${capacityContext}` : netAvailability && e.response?.status === 404
         ? 'Net müsaitlik servisi bu sunucuda henüz hazır değil. Gönderim yapılmadı; güncel deployu kontrol edin.'

@@ -333,9 +333,15 @@ async def test_manual_stock_is_shared_with_non_owner_tariff_without_changing_its
 
 async def test_price_only_update_keeps_manual_overbooking_and_a_legacy_inventory_write_clears_it(editor):
     await apply(request(10))
-    price_only = router.UnifiedBulkUpdateRequest(**request(rate=120, update_fields=["rate"]).model_dump())
+    editor.db.pricing_settings = SimpleNamespace(find=lambda *_args, **_kwargs: SimpleNamespace(to_list=AsyncMock(return_value=[
+        {"room_type_code": ROOM, "pricing_type": "per_room", "base_occupancy": 2},
+    ])))
+    price_only = router.UnifiedBulkUpdateRequest(**request(update_fields=["rate"], per_room_values=[{
+        "room_type_code": ROOM, "rate_plan_codes": [RATE], "rate": 120, "rate_number_of_guests": 2,
+    }]).model_dump())
     await router.unified_bulk_grid_update(price_only, SimpleNamespace(tenant_id=TENANT, id="operator"), None)
     assert [v["availability"] for v in await readback(editor)] == [10, 10, 10]
+    assert [v["rate"] for v in await readback(editor)] == [120, 120, 120]
     base_update = router.UnifiedBulkUpdateRequest(**request(5).model_dump())
     await router.unified_bulk_grid_update(base_update, SimpleNamespace(tenant_id=TENANT, id="operator"), None)
     assert [v["availability"] for v in await readback(editor)] == [4, 3, 4]

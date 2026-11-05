@@ -9,6 +9,11 @@ const parseDate = (value) => {
 
 const hasValue = (value) => value !== null && value !== undefined && value !== '';
 
+export const exelyPriceOccupancy = rule => rule?.policy_invalid !== true
+  && rule?.base_occupancy_explicit !== false
+  && Number.isInteger(rule?.base_occupancy) && rule.base_occupancy >= 1 && rule.base_occupancy <= 20
+  ? rule.base_occupancy : null;
+
 export const isExelyPricePlanWritable = (plan, roomCode) => plan?.price_upload_is_allowed !== false
   && plan?.price_sync_by_room?.[roomCode] !== false;
 
@@ -41,6 +46,7 @@ export const buildRateUpdateReview = ({
   channelProvider,
   agenciesOnly = false,
   ratePlans = [],
+  occupancyPricingRules = {},
 }) => {
   const errors = [];
   const warnings = [];
@@ -59,6 +65,11 @@ export const buildRateUpdateReview = ({
     const label = roomCode;
     if (enabledFields.has('rate') && (!hasValue(values.rate) || Number(values.rate) <= 0)) {
       errors.push(`${label} için fiyat sıfırdan büyük olmalıdır.`);
+    }
+    if (enabledFields.has('rate') && channelProvider === 'exely' && !agenciesOnly) {
+      const guests = exelyPriceOccupancy(occupancyPricingRules[roomCode]);
+      if (!guests) errors.push(`${label}: Fiyat kuralında fiyata dahil ana yatak yetişkin sayısını kaydedin; 1 veya 2 kişi varsayılmaz.`);
+      else warnings.push(`${label}: ${values.rate} — ${guests} yetişkin için oda/gece toplam fiyatı. XML NumberOfGuests=${guests}; çocuk ve ek yatak fiyatı bu işlemle gönderilmez.`);
     }
     if (enabledFields.has('availability')) {
       if (channelProvider === 'exely' && !agenciesOnly) {

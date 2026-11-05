@@ -86,7 +86,8 @@ def editor(monkeypatch):
     db = MagicMock()
     db.exely_room_mappings = collection(mappings)
     db.room_mappings = collection([])
-    db.pricing_settings = collection([])
+    db.pricing_settings = collection([{"room_type_code": room, "pricing_type": "per_room", "base_occupancy": 2}
+                                      for room in ("STD", "DLX")])
     db.hotelrunner_connections = SimpleNamespace(find_one=AsyncMock(return_value=None))
     db.__getitem__.side_effect = lambda key: cal if key == "rate_calendar" else (_ for _ in ()).throw(AssertionError(key))
     conn = {"hotel_code": "synthetic-property", "ari_write_enabled": True, "currency": "USD", "rate_plans": []}
@@ -103,7 +104,7 @@ def editor(monkeypatch):
 async def publish(plans=("BASE", "NRF", "DYNAMIC"), **overrides):
     req = rates.UnifiedBulkUpdateRequest(**{
         "per_room_values": [rates.RoomTypeValuesItem(room_type_code=f"panel-{room}",
-            rate_plan_codes=[f"panel-{p}" for p in plans], rate=amount)
+            rate_plan_codes=[f"panel-{p}" for p in plans], rate=amount, rate_number_of_guests=2)
             for room, amount in (("STD", 100), ("DLX", 110))],
         "start_date": "2026-11-05", "end_date": "2028-11-01", "update_fields": ["rate"], **overrides,
     })

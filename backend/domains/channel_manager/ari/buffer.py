@@ -21,7 +21,8 @@ def _coalescing_key(event: ARIChangeEvent) -> str:
     """Build the coalescing key for grouping events."""
     operation = str(event.payload.get("operation") or "")
     target = event.target_provider or "all"
-    return f"{event.tenant_id}|{event.property_id}|{target}|{event.room_type_code}|{event.rate_plan_code or ''}|{event.date_from}:{event.date_to}|{event.event_type}|{operation}"
+    placement = f"|adults:{event.payload['number_of_guests']}" if event.event_type == "rate" and event.payload.get("number_of_guests") is not None else ""
+    return f"{event.tenant_id}|{event.property_id}|{target}|{event.room_type_code}|{event.rate_plan_code or ''}|{event.date_from}:{event.date_to}|{event.event_type}|{operation}{placement}"
 
 
 class ARIEventBuffer:

@@ -32,6 +32,8 @@ class ExelyARIAdapter:
             "currency": delta.payload.get("currency", "TRY"),
             "operation_identity": delta.operation_identity,
         }
+        if delta.payload.get("number_of_guests") is not None:
+            update["number_of_guests"] = delta.payload["number_of_guests"]
         result = await deliver_exely_ari(
             delta.tenant_id,
             operation,

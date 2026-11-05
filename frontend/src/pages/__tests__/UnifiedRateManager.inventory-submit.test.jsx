@@ -70,6 +70,27 @@ describe('actual rate editor inventory submission', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
+  it('sends the saved and reviewed adult occupancy with the price through the real editor', async () => {
+    const implementation = axios.get.getMockImplementation();
+    axios.get.mockImplementation(async (url, ...args) => {
+      const result = await implementation(url, ...args);
+      if (url.includes('/grid?')) result.data.occupancy_pricing_rules = { STD: { base_occupancy: 3, base_occupancy_explicit: true } };
+      return result;
+    });
+    axios.post.mockResolvedValue({ data: { saved: 1, provider: 'exely', provider_verified: true,
+      provider_delivery_state: 'CONFIRMED', price_occupancies: { STD: 3 } } });
+    render(<MemoryRouter><UnifiedRateManager embedded /></MemoryRouter>);
+    fireEvent.click(await screen.findByTestId('room-type-check-STD'));
+    fireEvent.click(screen.getByTestId('field-rate'));
+    fireEvent.change(screen.getByTestId('rate-input-STD'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('bulk-update-btn'));
+    expect(screen.getByTestId('rate-publish-review')).toHaveTextContent('100 — 3 yetişkin için oda/gece toplam fiyatı');
+    fireEvent.click(screen.getByTestId('rate-confirm-publish'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0][1].per_room_values[0]).toMatchObject({ rate: 100, rate_number_of_guests: 3 });
+    expect(await screen.findByTestId('rate-delivery-receipt')).toHaveTextContent('NumberOfGuests=3');
+  });
+
   it('submits two room types and 731 nights in one existing UI request, preserving manual versus automatic stock', async () => {
     const warnings = vi.spyOn(console, 'warn');
     const errors = vi.spyOn(console, 'error');
