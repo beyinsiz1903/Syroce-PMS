@@ -11,6 +11,7 @@ const input = {
   selectedDays: new Set([0, 1, 2, 3, 4, 5, 6]), channelProvider: 'exely',
   selections: { STD: new Set(['BASE', 'NRF', 'DYNAMIC']), DLX: new Set(['BASE', 'NRF', 'DYNAMIC']) },
   enabledFields: new Set(['rate']), roomValues: { STD: { rate: '100' }, DLX: { rate: '110' } }, ratePlans: plans,
+  occupancyPricingRules: { STD: { base_occupancy: 2 }, DLX: { base_occupancy: 3 } },
 };
 
 describe('Exely single-request price review', () => {

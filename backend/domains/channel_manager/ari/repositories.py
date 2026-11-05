@@ -254,6 +254,16 @@ async def check_outbound_idempotency(
                 {"compacted_payload.operation": operation},
                 {"compacted_payload.operation": {"$exists": False}},
             ]
+        if cs["change_scope"] == "rate":
+            guests = (cs.get("compacted_payload") or {}).get("number_of_guests")
+            if guests is not None:
+                # Another adult occupancy is a separate price cell. An older
+                # unspecified/max-occupancy write remains conservatively in
+                # scope because it may have changed this cell.
+                query["$or"] = [
+                    {"compacted_payload.number_of_guests": guests},
+                    {"compacted_payload.number_of_guests": {"$exists": False}},
+                ]
         latest = await db[COLL_ARI_CHANGE_SETS].find_one(
             query, {"_id": 0}, sort=[("last_provider_ack_at", -1)],
         )

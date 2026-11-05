@@ -119,6 +119,7 @@ class RoomTypeValuesItem(BaseModel):
     room_type_code: str
     rate_plan_codes: list[str]
     rate: float | None = None
+    rate_number_of_guests: int | None = Field(None, ge=1, le=20, strict=True)
     availability: int | None = None
     min_stay: StrictInt | None = None
     min_los_arrival: StrictInt | None = None
@@ -143,6 +144,7 @@ class UnifiedBulkUpdateRequest(BaseModel):
     end_date: str
     selected_days: list[int] | None = None
     rate: float | None = None
+    rate_number_of_guests: int | None = Field(None, ge=1, le=20, strict=True)
     availability: int | None = None
     min_stay: StrictInt | None = None
     min_los_arrival: StrictInt | None = None
@@ -235,6 +237,7 @@ def _pricing_payload(docs: list[dict], *, provider: str | None = None) -> tuple[
             rule = normalize_occupancy_rule({"pricing_type": doc.get("pricing_type", "per_room")})
         settings[room_type_code] = rule["pricing_type"]
         rule["policy_invalid"] = policy_invalid
+        rule["base_occupancy_explicit"] = type(doc.get("base_occupancy")) is int and 1 <= doc["base_occupancy"] <= 20
         rule["provider_pricing_verified"] = not policy_invalid and bool(doc.get("provider_pricing_verified", False)) and (
             provider != "exely" or doc.get("provider_pricing_verification_source") == "operator"
         )
@@ -286,6 +289,34 @@ def _unsafe_exely_room_types(selected_room_types: list[str], mappings: list[dict
         ) for rule in rules):
             unsafe.append(selected)
     return unsafe
+
+
+def _exely_price_occupancy(code, mappings, pricing_docs, requested):
+    """Resolve the saved PMS base-price placement, never a default/max capacity.
+
+    Exely v1.17.1 p41 defines an omitted NumberOfGuests as maximum main
+    occupancy. The editor instead sends its reviewed, saved adult occupancy.
+    Reject stale reviews and conflicting aliases before saving any rates.
+    """
+    aliases = {str(code)}
+    for mapping in mappings:
+        candidates = {str(mapping.get(key) or "") for key in ("pms_room_type", "exely_room_code", "pms_api_room_code")}
+        if aliases & candidates:
+            aliases |= candidates - {""}
+    rules = [doc for doc in pricing_docs if str(doc.get("room_type_code")) in aliases]
+    counts = {doc.get("base_occupancy") for doc in rules if type(doc.get("base_occupancy")) is int and 1 <= doc["base_occupancy"] <= 20}
+    if not rules or len(counts) != 1 or any(type(doc.get("base_occupancy")) is not int or not 1 <= doc["base_occupancy"] <= 20 for doc in rules):
+        raise HTTPException(422, detail={
+            "error_code": "EXELY_RATE_OCCUPANCY_REQUIRED", "provider_write_count": 0,
+            "message": "Önce odanın fiyat kuralındaki fiyata dahil ana yatak yetişkin sayısını açıkça kaydedin; hiçbir kayıt değiştirilmedi.",
+        })
+    count = next(iter(counts))
+    if type(requested) is not int or requested != count:
+        raise HTTPException(422, detail={
+            "error_code": "EXELY_RATE_OCCUPANCY_REVIEW_REQUIRED", "provider_write_count": 0,
+            "message": "Fiyatın yetişkin sayısı eksik veya kayıtlı kuralla değişmiş. Ekranı yenileyip kişi sayısıyla birlikte yeniden önizleyin; hiçbir kayıt değiştirilmedi.",
+        })
+    return count
 
 
 async def _add_pms_rule_aliases(tenant_id: str, provider: str, rules: dict) -> dict:
@@ -787,6 +818,23 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
             )
 
     pricing_map, pricing_rules = _pricing_payload(pricing_docs, provider="exely")
+    # A policy may be stored under the PMS type or the SOAP API alias while
+    # the editor shows panel IDs. Use that same saved policy, not a new
+    # normalization default. Conflicts remain visible and fail server review.
+    for room in room_types:
+        code = room["code"]
+        aliases = [str(mapping.get(key) or "") for mapping in mappings
+                   if str(mapping.get("exely_room_code")) == code
+                   for key in ("exely_room_code", "pms_api_room_code", "pms_room_type")]
+        source = next((pricing_rules[alias] for alias in aliases if alias in pricing_rules), None)
+        if source is not None:
+            rule = dict(source)
+            try:
+                _exely_price_occupancy(code, mappings, pricing_docs, rule.get("base_occupancy"))
+            except HTTPException:
+                rule["base_occupancy_explicit"] = False
+            pricing_rules[code] = rule
+            pricing_map[code] = rule["pricing_type"]
 
     currency = conn.get("currency", "TRY")
 
@@ -1227,6 +1275,9 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
         unsafe = _unsafe_exely_room_types(sorted({code for code, _ in provider_pairs}), mappings, pricing_docs)
         if unsafe:
             raise HTTPException(status_code=409, detail="Exely'ye taban fiyat gönderimi çocuk yaş kademelerini kurmaz. Önce kişi/çocuk kurallarını Exely paneliyle karşılaştırıp onaylayın: " + ", ".join(unsafe))
+        for code in sorted({code for code, _ in provider_pairs}):
+            rv = per_room_map.get(code)
+            _exely_price_occupancy(code, mappings, pricing_docs, rv.rate_number_of_guests if rv else request.rate_number_of_guests)
 
     remaining_plan = None
     if remaining_availability:
@@ -1295,6 +1346,8 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
 
             if "rate" in update_fields and v_rate is not None:
                 set_fields["rate"] = v_rate
+                if exely_plan and rt_code in exely_plan.get("price_occupancies", {}):
+                    set_fields["rate_number_of_guests"] = exely_plan["price_occupancies"][rt_code]
             if "availability" in update_fields:
                 if remaining_plan is not None:
                     set_fields["availability"] = remaining_plan.base_values[(rt_code, ds)]
@@ -1422,6 +1475,7 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
 
     return {
         "saved": saved,
+        "price_occupancies": exely_plan.get("price_occupancies", {}) if exely_plan else {},
         "availability_input_mode": "remaining" if remaining_availability else "base",
         "availability_modes": remaining_plan.modes if remaining_plan is not None else {},
         "provider": provider_type,
@@ -1760,6 +1814,14 @@ async def _prepare_exely_push(tenant_id, conn, request, pairs, per_room_map, upd
     _cur_code, _ = await get_tenant_currency(tenant_id)
     push_currency = conn.get("currency") or _cur_code
     date_ranges = _selected_date_ranges(request.start_date, request.end_date, selected_days_set)
+    price_occupancies = {}
+    if "rate" in update_fields:
+        pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+        for code, _ex_code, _rp in mapped_targets:
+            rv = per_room_map.get(code)
+            price_occupancies[code] = _exely_price_occupancy(
+                code, exely_mappings, pricing_docs, rv.rate_number_of_guests if rv else request.rate_number_of_guests,
+            )
     availability_messages = []
     rate_messages = []
     restriction_messages = []
@@ -1811,7 +1873,8 @@ async def _prepare_exely_push(tenant_id, conn, request, pairs, per_room_map, upd
                 if price_upload_allowed(conn, rp, wire_rate_code) is False:
                     price_blocked_plans.append(rp)
                 else:
-                    rate_messages.append({**base, "rate_amount": values["rate"], "currency": push_currency})
+                    rate_messages.append({**base, "rate_amount": values["rate"], "currency": push_currency,
+                                          "number_of_guests": price_occupancies[rt_code]})
             for field, operation in restriction_fields.items():
                 if controls.get("sync_restrictions", True) and field in update_fields and values[field] is not None:
                     restriction_messages.append({**base, "operation": operation, "value": values[field]})
@@ -1831,6 +1894,7 @@ async def _prepare_exely_push(tenant_id, conn, request, pairs, per_room_map, upd
         ("restriction_batch", restriction_messages),
     )
     return {"tenant_id": tenant_id, "hotel_code": hotel_code, "batches": batches, "failures": failures,
+            "price_occupancies": price_occupancies,
             "price_blocked_plans": sorted(set(price_blocked_plans))}
 
 

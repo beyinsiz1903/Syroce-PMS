@@ -308,6 +308,7 @@ class ExelyProvider:
         max_stay: int | None = None,
         cta: bool | None = None,
         ctd: bool | None = None,
+        number_of_guests: int | None = None,
     ) -> ProviderResult:
         """Compatibility facade that permits exactly one ARI mutation.
 
@@ -338,6 +339,7 @@ class ExelyProvider:
             end_date=end_date,
             value=value,
             currency=currency,
+            number_of_guests=number_of_guests,
         )
 
     async def push_ari_operation(
@@ -350,6 +352,7 @@ class ExelyProvider:
         end_date: str,
         value: Any,
         currency: str = "TRY",
+        number_of_guests: int | None = None,
     ) -> ProviderResult:
         """Send one SOAP mutation once and require explicit provider success."""
         start = time.time()
@@ -402,6 +405,7 @@ class ExelyProvider:
             "room_type_code": room_type_code, "rate_plan_code": rate_plan_code,
             "start_date": start_date, "end_date": end_date,
             "value": value, "currency": currency,
+            "number_of_guests": number_of_guests,
         })
         if preview.error_code:
             raise ExelyValidationError(preview.error_code, field="operation")
@@ -462,6 +466,7 @@ class ExelyProvider:
                 end_date,
                 float(value),
                 currency,
+                number_of_guests,
             )
         elif operation == "rate_batch":
             xml = build_rate_amount_batch_rq(self._username, self._password, self._hotel_code, batch_messages)

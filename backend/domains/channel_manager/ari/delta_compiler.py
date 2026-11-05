@@ -72,6 +72,8 @@ def compile_delta_exely(change_set: dict) -> ARIDelta:
         exely_payload["operation"] = "rate"
         exely_payload["value"] = payload.get("base_rate")
         exely_payload["currency"] = payload.get("currency", "TRY")
+        if payload.get("number_of_guests") is not None:
+            exely_payload["number_of_guests"] = payload["number_of_guests"]
     elif scope == "restriction":
         operation = payload.get("operation")
         if operation not in {"stop_sell", "min_los", "min_los_arrival", "max_los", "cta", "ctd"}:

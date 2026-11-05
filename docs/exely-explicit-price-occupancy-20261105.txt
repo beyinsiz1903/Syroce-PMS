@@ -1,0 +1,51 @@
+Exely price placement fix - 2026-11-05
+
+Protocol evidence
+- Exely PMSConnect v1.17.1, p41, BaseByGuestAmt@NumberOfGuests:
+  main-bed adult occupancy whose total accommodation price is supplied.
+- Without NumberOfGuests/MinAge/MaxAge, Exely applies the price to the room
+  type's maximum main-bed adult occupancy. Omission is valid protocol, NOT
+  evidence of one adult or proof of the PMS's configured two-adult price.
+- No adult AgeQualifyingCode=10 is invented for this element. No child or
+  additional-bed amounts are silently installed by the base-rate operation.
+
+Implementation
+- Existing Fiyat & Musaitlik editor uses the saved Fiyata dahil yetiskin rule.
+  It displays the saved occupancy, room/night total, and child/extra-bed boundary.
+  The same rule editor remains accessible in per-room mode without changing
+  that pricing mode into per-person mode.
+- Preview and request carry rate_number_of_guests. Server checks the saved
+  tenant-scoped PMS/Exely/API room aliases and requires exactly one valid,
+  explicit saved base_occupancy matching the reviewed count (1-20 adults).
+  Missing, malformed, conflicting or stale reviews stop before calendar,
+  agency, outbox or provider mutation. No max capacity / default 1 / default 2.
+- Complete mapped batch writes NumberOfGuests per BaseByGuestAmt. Rooms,
+  selected plans and date periods remain in one complete price envelope.
+- Local rate cells preserve rate_number_of_guests, and the delivery receipt
+  exposes the server-prepared price_occupancies rather than a browser guess.
+- Single-rate builder/provider and canonical outbox carry optional explicit
+  occupancy. Existing low-level callers retain the documented protocol's max
+  main-bed default; new editor calls cannot use that implicit fallback.
+- Occupancy survives queue compilation, buffer keys, payload hashes and
+  current-state ACK lookup: independent occupancy prices must not overwrite
+  or deduplicate each other. Existing duplicate/retry safeguards stay intact.
+- No quota, auth, mapping, credentials or live price changes.
+
+Verification
+- 444 tests passed: exact Exely offline CI regression list with new placement
+  file, no skipped tests (synthetic fixtures; no provider network writes).
+- Additional editor/child/remaining inventory/current-ACK regressions:
+  363 tests passed, including actual rate changes retaining manual allotment.
+- Frontend: 2548 tests in 448 files passed; 93 focused editor tests passed.
+- Vite production build, focused ESLint, backend Ruff, import boundary and
+  test skip budget checks passed.
+- Native Safari used real BulkUpdatePanel with local synthetic state only:
+  two-adult preview shows NumberOfGuests=2 and enabled publish; missing saved
+  occupancy shows a clear error and disabled publish. No API/provider invoked.
+  Temporary proof harness removed; screenshots kept outside the repository.
+
+Release boundary
+- PR/merge/deploy required. Production has NOT received this fix or an
+  occupancy-qualified re-send until that release is verified.
+- Certification still requires the Exely team to check received placement,
+  amount, selected room/rate pairs and date coverage after the scoped re-send.

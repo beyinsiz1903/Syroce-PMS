@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2, Eye, ShieldCheck, Sparkles } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS, UPDATE_FIELD_PRESETS, usesExpandedAriLayout } from './constants';
 import { ChannelList } from './ChannelList';
-import { buildRateUpdateReview, isExelyPricePlanWritable } from './updateReview';
+import { buildRateUpdateReview, exelyPriceOccupancy, isExelyPricePlanWritable } from './updateReview';
 import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, normalizeOccupancyRule } from '@/utils/occupancyPricing';
 import { toast } from 'sonner';
@@ -33,8 +33,8 @@ export const BulkUpdatePanel = ({
   const review = useMemo(() => buildRateUpdateReview({
     dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues,
     selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly,
-    ratePlans,
-  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly, ratePlans]);
+    ratePlans, occupancyPricingRules,
+  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly, ratePlans, occupancyPricingRules]);
   const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
   const canContinueFromRooms = totalSelectedRoomTypes > 0;
   const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));
@@ -475,14 +475,19 @@ const RoomTypeList = ({
               )}
             </div>
 
-            {(pricingSettings[rt.code] || 'per_person') === 'per_person' && (
+            {exelyPriceSelection && <p className="border-t bg-blue-50 px-4 py-2 text-xs text-blue-950" data-testid={`exely-price-occupancy-${rt.code}`}>
+              {exelyPriceOccupancy(occupancyPricingRules?.[rt.code])
+                ? `Kanal fiyatı: ${exelyPriceOccupancy(occupancyPricingRules[rt.code])} yetişkin için oda/gece toplamı (ana yatak). Çocuk ve ek yatak fiyatı gönderilmez.`
+                : 'Kişi sayısı henüz kaydedilmedi. Kuralı düzenleyip fiyata dahil ana yatak yetişkin sayısını kaydedin; gönderim kişi sayısı olmadan başlatılmaz.'}
+            </p>}
+            {((pricingSettings[rt.code] || 'per_person') === 'per_person' || exelyPriceSelection) && (
               <OccupancyPricingEditor
                 roomType={rt}
                 open={editingRule === rt.code}
                 onToggle={() => setEditingRule(editingRule === rt.code ? null : rt.code)}
                 rule={occupancyPricingRules?.[rt.code]}
                 onSave={async rule => {
-                  await saveOccupancyPricingRule(rt.code, rule);
+                  await saveOccupancyPricingRule(rt.code, { ...rule, pricing_type: pricingSettings[rt.code] || 'per_person' });
                   setEditingRule(null);
                 }}
                 currentBaseRate={rv.rate}
@@ -606,7 +611,9 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
       {rule?.policy_invalid && <p className="mb-2 text-xs text-destructive" role="alert">Kayıtlı kişi/çocuk fiyat kuralı geçersiz; otomatik fiyat önerisi uygulanmaz. Yaş kademelerini kontrol edip yeniden kaydedin.</p>}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-gray-600">
-          {draft.base_occupancy} yetişkin dahil · Ek yetişkin {draft.extra_adult_rate_type === 'percentage' ? `%${draft.extra_adult_rate}` : `${currencySymbol}${Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}`}/gece
+          {channelProvider === 'exely' && !open
+            ? exelyPriceOccupancy(rule) ? `Kayıtlı fiyat yerleşimi: ${exelyPriceOccupancy(rule)} yetişkin · ana yatak` : 'Fiyat yerleşimi henüz kaydedilmedi'
+            : <>{draft.base_occupancy} yetişkin dahil · Ek yetişkin {draft.extra_adult_rate_type === 'percentage' ? `%${draft.extra_adult_rate}` : `${currencySymbol}${Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}`}/gece</>}
         </span>
         <button type="button" onClick={onToggle} className="font-medium text-amber-700 hover:underline">
           {open ? 'Kuralı kapat' : 'Kuralı düzenle'}
@@ -723,7 +730,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
             </div>
           )}
           <p className="mt-2 text-[11px] leading-4 text-gray-500">
-            Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. {providerName}'a taban fiyat gönderilir; kişi farkı ayarı da aynı olmalıdır. Çocuk yaş kademeleri bu işlemle kanal yöneticisine gönderilmez. Yaşlar giriş tarihindeki tamamlanmış yaş olarak girilmelidir.
+            Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. {providerName}'a taban fiyat gönderilir; kişi farkı ayarı da aynı olmalıdır. {channelProvider === 'exely' && 'Kanal fiyatı, kaydedilen fiyata dahil yetişkin sayısı için oda/gece toplamıdır; XML NumberOfGuests alanına bu sayı yazılır. '}Çocuk yaş kademeleri bu işlemle kanal yöneticisine gönderilmez. Yaşlar giriş tarihindeki tamamlanmış yaş olarak girilmelidir.
           </p>
           {['hotelrunner', 'exely'].includes(channelProvider) && (
             <div className={`mt-3 rounded-lg border p-3 ${draft.provider_pricing_verified ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>

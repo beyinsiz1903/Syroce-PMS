@@ -23,6 +23,7 @@ async def enqueue_exely_ari_update(
     source_service: str,
     availability: int | None = None,
     rate_amount: float | None = None,
+    number_of_guests: int | None = None,
     currency: str = "TRY",
     stop_sell: bool | None = None,
     min_los: int | None = None,
@@ -45,7 +46,7 @@ async def enqueue_exely_ari_update(
 
     operations = (
         ("availability", "availability", availability, {"availability": availability}),
-        ("rate", "rate", rate_amount, {"base_rate": rate_amount, "currency": currency}),
+        ("rate", "rate", rate_amount, {"base_rate": rate_amount, "currency": currency, **({"number_of_guests": number_of_guests} if number_of_guests is not None else {})}),
         ("restriction", "stop_sell", stop_sell, {"stop_sell": stop_sell}),
         ("restriction", "min_los", min_los, {"min_los": min_los}),
         ("restriction", "min_los_arrival", min_los_arrival, {"min_los_arrival": min_los_arrival}),
@@ -63,6 +64,7 @@ async def enqueue_exely_ari_update(
             "room_type_code": room_type_code, "rate_plan_code": rate_plan_code,
             "start_date": start_date, "end_date": end_date,
             "value": value, "currency": currency,
+            "number_of_guests": number_of_guests,
         })
         if preview.error_code:
             return {

@@ -187,6 +187,7 @@ async def test_suite_mapping_can_disable_availability_without_disabling_rate(mon
         hotelrunner_connections=_Collection(row=None),
         room_mappings=_Collection(rows=[]),
         exely_room_mappings=_Collection(rows=[mapping]),
+        pricing_settings=_Collection(rows=[{"room_type_code": "Junior Suite", "base_occupancy": 2}]),
     )
     monkeypatch.setattr(unified, "db", fake_db)
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
@@ -196,6 +197,7 @@ async def test_suite_mapping_can_disable_availability_without_disabling_rate(mon
         end_date="2026-11-11",
         availability=1,
         rate=125.0,
+        rate_number_of_guests=2,
         stop_sell=None,
         min_stay=None,
         min_los_arrival=None,
@@ -243,6 +245,7 @@ async def test_suite_mapping_can_disable_availability_without_disabling_rate(mon
             "end_date": "2026-11-11",
             "rate_amount": 125.0,
             "currency": "USD",
+            "number_of_guests": 2,
         }
     ]
 
@@ -262,12 +265,13 @@ async def test_explicit_mapping_rate_plan_is_usable_when_discovery_cache_is_stal
         hotelrunner_connections=_Collection(row=None),
         room_mappings=_Collection(rows=[]),
         exely_room_mappings=_Collection(rows=[mapping]),
+        pricing_settings=_Collection(rows=[{"room_type_code": "Standard", "base_occupancy": 1}]),
     )
     monkeypatch.setattr(unified, "db", fake_db)
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
     request = SimpleNamespace(
         start_date="2026-11-10", end_date="2026-11-11", availability=None,
-        rate=125.0, stop_sell=None, min_stay=None, min_los_arrival=None,
+        rate=125.0, rate_number_of_guests=1, stop_sell=None, min_stay=None, min_los_arrival=None,
         max_stay=None, cta=None, ctd=None,
     )
     connection = {
@@ -287,6 +291,7 @@ async def test_explicit_mapping_rate_plan_is_usable_when_discovery_cache_is_stal
 
     assert result["provider_verified"] is True
     assert deliver.await_args.args[2]["value"][0]["rate_plan_code"] == "10009740"
+    assert deliver.await_args.args[2]["value"][0]["number_of_guests"] == 1
 
 
 @pytest.mark.asyncio
@@ -353,6 +358,8 @@ async def test_unified_exely_writes_use_complete_pms_api_pairs_and_preserve_suit
         hotelrunner_connections=_Collection(row=None),
         room_mappings=_Collection(rows=[]),
         exely_room_mappings=_Collection(rows=mappings),
+        pricing_settings=_Collection(rows=[{"room_type_code": m["pms_room_type"], "base_occupancy": i + 2}
+                                          for i, m in enumerate(mappings)]),
     ))
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
     request = SimpleNamespace(
@@ -365,12 +372,15 @@ async def test_unified_exely_writes_use_complete_pms_api_pairs_and_preserve_suit
         "rate_plans": [{"code": "10003870"}, {"code": "10003869"}],
     }
     pairs = [(m["exely_room_code"], m["exely_rate_plan_code"]) for m in mappings]
+    per_room_values = {m["exely_room_code"]: unified.RoomTypeValuesItem(room_type_code=m["exely_room_code"],
+        rate_plan_codes=[m["exely_rate_plan_code"]], rate=125, availability=6, rate_number_of_guests=i + 2)
+        for i, m in enumerate(mappings)}
     with patch(
         "domains.channel_manager.providers.exely.ari_delivery.deliver_exely_ari",
         new=AsyncMock(return_value=SimpleNamespace(success=True, provider_write_count=1, error_code="", state="confirmed")),
     ) as deliver:
         result = await unified._push_to_exely(
-            "tenant-1", connection, request, pairs, {}, {"availability", "rate"}, None,
+            "tenant-1", connection, request, pairs, per_room_values, {"availability", "rate"}, None,
         )
 
     assert result["provider_verified"] is True
@@ -383,6 +393,7 @@ async def test_unified_exely_writes_use_complete_pms_api_pairs_and_preserve_suit
         ("5001574", "10003870"), ("5001575", "10003869"), ("5001576", "10003870"),
     ]
     assert all(row["currency"] == "USD" for row in calls["rate_batch"])
+    assert [row["number_of_guests"] for row in calls["rate_batch"]] == [2, 3, 4]
 
 
 @pytest.mark.asyncio

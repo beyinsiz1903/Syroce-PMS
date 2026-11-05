@@ -191,6 +191,16 @@ async def test_independent_restriction_operation_is_not_a_state_change(history):
     assert await check(scoped_change('restriction', False, operation='cta')) is True
 
 
+async def test_separate_adult_occupancies_keep_their_own_current_price(history):
+    def price(count, value, minute=0):
+        return change(change_scope='rate', minute=minute,
+            compacted_payload={'operation': 'rate', 'base_rate': value, 'number_of_guests': count})
+    history([price(1, 100, 5), price(2, 150, 2)])
+    assert await check(price(1, 100)) is True
+    assert await check(price(2, 150)) is True
+    assert await check(price(1, 90)) is False
+
+
 @pytest.mark.asyncio
 async def test_legacy_unspecified_restriction_cannot_prove_current_equal_state(history):
     legacy = scoped_change('restriction', True, minute=2)

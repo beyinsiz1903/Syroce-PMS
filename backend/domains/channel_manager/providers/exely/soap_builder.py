@@ -529,6 +529,7 @@ def build_rate_amount_notif_rq(
     end_date: str,
     rate_amount: float,
     currency: str = "TRY",
+    number_of_guests: int | None = None,
 ) -> str:
     """Build OTA_HotelRateAmountNotifRQ for rate-only push."""
     rq = etree.Element(
@@ -568,7 +569,7 @@ def build_rate_amount_notif_rq(
         },
     )
     base_by_guest = etree.SubElement(rate_el, f"{{{OTA_NS}}}BaseByGuestAmts")
-    etree.SubElement(
+    amount = etree.SubElement(
         base_by_guest,
         f"{{{OTA_NS}}}BaseByGuestAmt",
         attrib={
@@ -576,6 +577,7 @@ def build_rate_amount_notif_rq(
             "CurrencyCode": currency,
         },
     )
+    _set_adult_occupancy(amount, number_of_guests)
 
     return _soap_envelope(username, password, hotel_code, rq)
 
@@ -606,7 +608,7 @@ def build_rate_amount_batch_rq(
             attrib={"Start": str(item["start_date"]), "End": str(item["end_date"])},
         )
         amounts = etree.SubElement(rate, f"{{{OTA_NS}}}BaseByGuestAmts")
-        etree.SubElement(
+        amount = etree.SubElement(
             amounts,
             f"{{{OTA_NS}}}BaseByGuestAmt",
             attrib={
@@ -614,4 +616,14 @@ def build_rate_amount_batch_rq(
                 "CurrencyCode": str(item.get("currency") or "TRY"),
             },
         )
+        _set_adult_occupancy(amount, item.get("number_of_guests"))
     return _soap_envelope(username, password, hotel_code, rq)
+
+
+def _set_adult_occupancy(amount, number_of_guests):
+    # Legacy callers may deliberately use the protocol's maximum-main-bed
+    # default. The unified editor always supplies a reviewed adult count.
+    if number_of_guests is not None:
+        if type(number_of_guests) is not int or not 1 <= number_of_guests <= 20:
+            raise ValueError("Invalid Exely main-bed adult occupancy")
+        amount.set("NumberOfGuests", str(number_of_guests))

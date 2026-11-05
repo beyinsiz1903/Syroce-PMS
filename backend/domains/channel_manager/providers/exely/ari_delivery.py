@@ -154,6 +154,7 @@ async def deliver_exely_ari(
         return _result(False, STATE_BLOCKED, "EXELY_ARI_DELIVERY_STORE_UNAVAILABLE", "NOT_SENT", 0, identity)
 
     try:
+        placement = {"number_of_guests": normalized["number_of_guests"]} if normalized.get("number_of_guests") is not None else {}
         provider_result = await provider.push_ari_operation(
             operation=operation,
             room_type_code=normalized.get("room_type_code", ""),
@@ -162,6 +163,7 @@ async def deliver_exely_ari(
             end_date=normalized.get("end_date", ""),
             value=normalized["value"],
             currency=normalized.get("currency", "TRY"),
+            **placement,
         )
     except Exception as exc:
         error_code = f"EXELY_ARI_WRITE_{type(exc).__name__.upper()}"
@@ -256,6 +258,9 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
                 if isinstance(availability, bool) or not isinstance(availability, int) or not 0 <= availability <= 999:
                     return "EXELY_ARI_AVAILABILITY_INVALID"
             elif operation == "rate_batch":
+                guests = message.get("number_of_guests")
+                if guests is not None and (type(guests) is not int or not 1 <= guests <= 20):
+                    return "EXELY_ARI_OCCUPANCY_INVALID"
                 try:
                     amount = Decimal(str(message.get("rate_amount")))
                 except (InvalidOperation, TypeError, ValueError):
@@ -294,6 +299,9 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return "EXELY_ARI_AVAILABILITY_INVALID"
     elif operation == "rate":
+        guests = update.get("number_of_guests")
+        if guests is not None and (type(guests) is not int or not 1 <= guests <= 20):
+            return "EXELY_ARI_OCCUPANCY_INVALID"
         try:
             amount = Decimal(str(value))
         except (InvalidOperation, TypeError, ValueError):
@@ -330,6 +338,8 @@ def _payload_fingerprint(operation: str, update: dict[str, Any]) -> str:
         "value": update.get("value"),
         "currency": str(update.get("currency") or ""),
     }
+    if update.get("number_of_guests") is not None:
+        canonical["number_of_guests"] = update["number_of_guests"]
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
 
