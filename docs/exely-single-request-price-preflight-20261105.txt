@@ -72,3 +72,20 @@ Validation
   version without changing dependency manifests or locks. An initial fully
   parallel rerun also hit unrelated5000ms test timeouts under concurrent
   build load; the final run limits local worker parallelism, not timeouts.
+
+PR CI follow-up
+The mobile hard gate reported8 SDK57 patch mismatches after its config,
+TypeScript, unit, API-preview and dependency-security checks passed. The
+operator requested fixing the red PR. Those8 Expo-family packages and
+their generated npm lock are aligned with the SDK57 compatibility set.
+The existing dependency-security test now uses the installed CLI's moved
+devtools/MCP paths and its JSON-Schema validator plus injected Zod instance;
+the same valid/invalid cases remain mandatory. No test is removed or skipped.
+Zod4 is an explicit pinned test dependency because the updated CLI no longer
+installs it transitively (the optional MCP host supplies it at runtime).
+No SDK-major upgrade, application feature, access permission, credential,
+Doctor exclusion or gate relaxation is introduced. A clean npm-ci install
+and the full mobile check passed: config, TypeScript, all unit/API-preview/
+dependency-security tests and Expo Doctor21/21. The19 new Exely tests also
+passed after isolating their synthetic circuit-breaker identity. GitHub CI
+must still verify the follow-up head. This is not a new native IPA build.

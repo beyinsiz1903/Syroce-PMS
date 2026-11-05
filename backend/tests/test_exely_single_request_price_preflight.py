@@ -148,7 +148,8 @@ async def test_explicitly_selected_writable_plans_keep_both_rooms_and_whole_peri
 async def test_editor_to_real_quota_checked_provider_builds_one_complete_price_xml(editor, monkeypatch):
     monkeypatch.setattr("domains.channel_manager.providers.exely.provider.ari_write_block_reason", lambda: "")
     quota = SimpleNamespace(reserve=AsyncMock(return_value=QuotaDecision(True, "QUOTA_RESERVED")))
-    provider = ExelyProvider(username="synthetic", password="synthetic", hotel_code="synthetic-property", quota_guard=quota)
+    provider = ExelyProvider(username="synthetic", password="synthetic", hotel_code="synthetic-property",
+                             connection_id="offline-single-price-preflight", quota_guard=quota)
     provider._transport.send_soap = AsyncMock(return_value=(
         b'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
         b'<OTA_HotelRateAmountNotifRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/>'
