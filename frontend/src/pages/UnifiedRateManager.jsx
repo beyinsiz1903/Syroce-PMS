@@ -506,7 +506,7 @@ const UnifiedRateManager = ({
       ...prev,
       [roomTypeCode]: { ...rule, pricing_type: pricingType, base_occupancy_explicit: true, currency }
     }));
-    toast.success('Kişi bazlı fiyatlandırma kuralı kaydedildi');
+    toast.success('Fiyatlandırma ve yetişkin yerleşim kuralı kaydedildi');
   };
   const handleReset = () => {
     setSelections({});

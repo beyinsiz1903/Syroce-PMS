@@ -197,6 +197,8 @@ async def test_grid_translates_wire_capability_to_panel_codes_and_room_sync_flag
     assert plans["panel-DYNAMIC"]["price_upload_is_allowed"] is False
     assert plans["panel-DYNAMIC"]["name"] == "Derived"
     assert plans["panel-BASE"]["price_sync_by_room"] == {"panel-STD": False, "panel-DLX": True}
+    assert result["occupancy_pricing_rules"]["panel-STD"]["base_occupancy"] == 2
+    assert result["occupancy_pricing_rules"]["panel-STD"]["base_occupancy_explicit"] is True
 
 
 async def test_three_independent_plans_are_preserved_when_the_selected_period_fits(editor):

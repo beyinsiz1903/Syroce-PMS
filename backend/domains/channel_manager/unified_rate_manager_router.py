@@ -818,6 +818,23 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
             )
 
     pricing_map, pricing_rules = _pricing_payload(pricing_docs, provider="exely")
+    # A policy may be stored under the PMS type or the SOAP API alias while
+    # the editor shows panel IDs. Use that same saved policy, not a new
+    # normalization default. Conflicts remain visible and fail server review.
+    for room in room_types:
+        code = room["code"]
+        aliases = [str(mapping.get(key) or "") for mapping in mappings
+                   if str(mapping.get("exely_room_code")) == code
+                   for key in ("exely_room_code", "pms_api_room_code", "pms_room_type")]
+        source = next((pricing_rules[alias] for alias in aliases if alias in pricing_rules), None)
+        if source is not None:
+            rule = dict(source)
+            try:
+                _exely_price_occupancy(code, mappings, pricing_docs, rule.get("base_occupancy"))
+            except HTTPException:
+                rule["base_occupancy_explicit"] = False
+            pricing_rules[code] = rule
+            pricing_map[code] = rule["pricing_type"]
 
     currency = conn.get("currency", "TRY")
 
