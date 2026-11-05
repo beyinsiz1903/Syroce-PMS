@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
@@ -13,6 +13,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key, i18n: 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
 describe('actual rate editor inventory submission', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     vi.clearAllMocks();
     confirmDialog.mockResolvedValue(true);
@@ -67,5 +68,36 @@ describe('actual rate editor inventory submission', () => {
     fireEvent.click(screen.getByTestId('rate-confirm-publish'));
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('submits two room types and 731 nights in one existing UI request, preserving manual versus automatic stock', async () => {
+    const warnings = vi.spyOn(console, 'warn');
+    const errors = vi.spyOn(console, 'error');
+    const implementation = axios.get.getMockImplementation();
+    axios.get.mockImplementation(async (url, ...args) => url.includes('/grid?') ? { data: {
+      room_types: [{ code: 'STD', name: 'Standart' }, { code: 'DLX', name: 'Deluxe' }],
+      rate_plans: [{ code: 'BASE', name: 'Base' }], grid: [], currency: 'USD',
+    } } : implementation(url, ...args));
+    render(<MemoryRouter><UnifiedRateManager embedded /></MemoryRouter>);
+    fireEvent.click(await screen.findByTestId('room-type-check-STD'));
+    fireEvent.click(screen.getByTestId('room-type-check-DLX'));
+    fireEvent.click(screen.getByTestId('field-availability'));
+    fireEvent.change(screen.getByTestId('bulk-date-from'), { target: { value: '2026-11-05' } });
+    fireEvent.change(screen.getByTestId('bulk-date-to'), { target: { value: '2028-11-04' } });
+    fireEvent.change(screen.getByTestId('avail-input-STD'), { target: { value: '3' } });
+    fireEvent.click(screen.getByTestId('bulk-update-btn'));
+    expect(screen.queryByText('Yayınlamadan önce düzeltin')).not.toBeInTheDocument();
+    expect(screen.getByTestId('bulk-summary')).toHaveTextContent('731 hedef gece');
+    expect(screen.getByTestId('bulk-summary')).toHaveTextContent('1.462 fiyat-plan hücresi');
+    fireEvent.click(screen.getByTestId('rate-confirm-publish'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post).toHaveBeenCalledWith('/channel-manager/unified-rate-manager/bulk-remaining-update',
+      expect.objectContaining({ start_date: '2026-11-05', end_date: '2028-11-04',
+        update_fields: ['availability'], per_room_values: [
+          expect.objectContaining({ room_type_code: 'STD', rate_plan_codes: ['BASE'], availability: 3 }),
+          expect.objectContaining({ room_type_code: 'DLX', rate_plan_codes: ['BASE'], availability: null }),
+        ] }), expect.anything());
+    expect(await screen.findByTestId('rate-delivery-receipt')).toHaveTextContent('CONFIRMED');
+    expect([...warnings.mock.calls, ...errors.mock.calls].flat().join(' ')).not.toMatch(/uncontrolled|controlled value/);
   });
 });

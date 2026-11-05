@@ -14,7 +14,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   axios.get.mockImplementation(async (url) => ({ data:
     url === '/outbox/events' ? { events: [{ id: 'event', tenant_id: 'hotel', status: 'failed',
-      last_error: 'exely_room_mapping_missing', event_type: 'booking.cancelled.v1' }] } :
+      last_error: 'exely_room_mapping_missing', event_type: 'booking.cancelled.v1' }], total: 1 } :
     url.endsWith('/readiness') ? { can_requeue: false, issues: ['exely_room_mapping_missing'] } : {}
   }));
   axios.post.mockResolvedValue({ data: { success: true } });
