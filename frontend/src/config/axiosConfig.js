@@ -115,6 +115,9 @@ const _isRefreshableUrl = (url = "") =>
   !url.includes("/auth/register") &&
   !url.includes("/auth/forgot-password") &&
   !url.includes("/auth/reset-password");
+const _isIdentityRead = (config) =>
+  (config.method || "get").toLowerCase() === "get" &&
+  (config.url || "").split("?")[0] === "/auth/me";
 
 function _hardLogout() {
   recordSessionEvent("expired");
@@ -154,12 +157,12 @@ export async function verifyActiveSession() {
 // failure must preserve local state and let the next retry decide.
 async function _verifyActiveSessionState() {
   try {
-    await axios.get("/auth/me", {
+    const response = await axios.get("/auth/me", {
       _skipAuthRetry: true,
       _skipRetry: true,
       _noCache: true,
     });
-    return { active: true, definitive: false };
+    return { active: true, definitive: false, response };
   } catch (error) {
     return {
       active: false,
@@ -305,11 +308,18 @@ axios.interceptors.response.use(
         return Promise.reject(error);
       }
       if (result?.transient) {
+        // The original response is still 401. App bootstrap must not mistake
+        // this inconclusive refresh/network failure for a definitive logout.
+        error._sessionVerificationTransient = true;
         console.warn("Refresh transient failure (5xx/network); session preserved");
         return Promise.reject(error);
       }
       const verification = await _verifyActiveSessionState();
       if (verification.active) {
+        // Complete only a stale identity read with the actual fresh /auth/me
+        // response. App's normal identity/tenant guards still run; never turn
+        // a rejected business operation (PIN/payment/etc.) into a success.
+        if (_isIdentityRead(original)) return verification.response;
         console.warn("401 response was operation-specific; active session preserved. URL:", original.url);
         return Promise.reject(error);
       }
@@ -329,6 +339,7 @@ axios.interceptors.response.use(
       // canonical identity endpoint is allowed to decide that the user session
       // itself is invalid.
       const verification = await _verifyActiveSessionState();
+      if (verification.active && _isIdentityRead(original)) return verification.response;
       if (verification.definitive) {
         console.warn("401 Unauthorized after retry and session verification - clearing session. URL:", original.url);
         _hardLogout();

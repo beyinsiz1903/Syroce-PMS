@@ -3,6 +3,7 @@ import axios from 'axios';
 import { render, waitFor, screen } from '@testing-library/react';
 import App from '../App';
 import { keepActiveSessionAlive, shouldRefreshActiveSession, verifyActiveSession } from '@/config/axiosConfig';
+import { rememberTabAuthSubject } from '@/lib/authSessionScope';
 
 // Mock the axios module
 vi.mock('axios', () => {
@@ -34,10 +35,18 @@ vi.mock('@/utils/offlineQueueDB', () => ({
   }
 }));
 
+// Exercise the real registered auth interceptor together with App bootstrap,
+// rather than supplying a hand-labelled error that bypasses the broken seam.
+const rejectAuthResponse = axios.interceptors.response.use.mock.calls.at(-1)[1];
+
 describe('Auth Cookie Flow in App.jsx', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+    window.history.replaceState({}, '', '/app/dashboard');
     vi.clearAllMocks();
+    axios.get.mockReset();
+    axios.post.mockReset();
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation(query => ({
@@ -51,6 +60,89 @@ describe('Auth Cookie Flow in App.jsx', () => {
         dispatchEvent: vi.fn(),
       })),
     });
+  });
+
+  it.each([503, 429, undefined])('preserves App bootstrap after an initial 401 and transient refresh failure %s', async status => {
+    const user = { id: 'u1', name: 'Cached User', tenant_id: 't1', role: 'admin' };
+    localStorage.setItem('token_ts', String(Date.now()));
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', property_name: 'Test Hotel' }));
+    axios.post.mockRejectedValueOnce(status ? { response: { status } } : new Error('offline'));
+    axios.get.mockImplementation((url, config) => url === '/auth/me' && !config?._skipAuthRetry
+      ? rejectAuthResponse({ config: { url, method: 'get' }, response: { status: 401 } })
+      : Promise.resolve({ data: {} }));
+
+    render(<App />);
+
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/auth/refresh-token', {}, { _skipAuthRetry: true }));
+    await waitFor(() => expect(screen.getByTestId('nav-dashboard-button')).toBeInTheDocument());
+    expect(JSON.parse(localStorage.getItem('user'))).toEqual(user);
+    expect(localStorage.getItem('token_ts')).not.toBeNull();
+  });
+
+  it.each([false, true])('uses a fresh verified identity response when the startup 401 is stale (already retried: %s)', async retried => {
+    const cached = { id: 'u1', name: 'Cached User', tenant_id: 't1', role: 'admin' };
+    const fresh = { ...cached, name: 'Verified User' };
+    localStorage.setItem('token_ts', String(Date.now()));
+    localStorage.setItem('user', JSON.stringify(cached));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', property_name: 'Test Hotel' }));
+    axios.post.mockRejectedValueOnce({ response: { status: 400 } });
+    axios.get.mockImplementation((url, config) => url === '/auth/me'
+      ? config?._skipAuthRetry ? Promise.resolve({ data: fresh, status: 200 })
+        : rejectAuthResponse({ config: { url, method: 'get', _retried: retried }, response: { status: 401 } })
+      : Promise.resolve({ data: {} }));
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByTestId('nav-dashboard-button')).toBeInTheDocument());
+    expect(JSON.parse(localStorage.getItem('user'))).toEqual(fresh);
+    expect(axios.get).toHaveBeenCalledWith('/auth/me', { _skipAuthRetry: true, _skipRetry: true, _noCache: true });
+  });
+
+  it('still rejects a different identity in the fresh recovery response for an existing tab', async () => {
+    const cached = { id: 'u1', tenant_id: 't1', role: 'admin' };
+    localStorage.setItem('token_ts', String(Date.now()));
+    localStorage.setItem('user', JSON.stringify(cached));
+    rememberTabAuthSubject(cached);
+    axios.post.mockRejectedValueOnce({ response: { status: 400 } });
+    axios.get.mockImplementation((url, config) => url === '/auth/me'
+      ? config?._skipAuthRetry ? Promise.resolve({ data: { id: 'u2', tenant_id: 't2', role: 'admin' }, status: 200 })
+        : rejectAuthResponse({ config: { url, method: 'get' }, response: { status: 401 } })
+      : Promise.resolve({ data: {} }));
+
+    render(<App />);
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/auth/me', expect.objectContaining({ _skipAuthRetry: true })));
+    await waitFor(() => expect(screen.queryByTestId('nav-dashboard-button')).not.toBeInTheDocument());
+    expect(JSON.parse(localStorage.getItem('user'))).toEqual(cached);
+  });
+
+  it.each([
+    [false, '/pms/cashier/verify-pin'], [true, '/pms/cashier/verify-pin'],
+    [false, '/pms/payments'], [true, '/pms/payments'],
+  ])('never turns an operation 401 into a successful identity response (%s, %s)', async (retried, url) => {
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    axios.post.mockRejectedValueOnce({ response: { status: 400 } });
+    axios.get.mockResolvedValueOnce({ data: { id: 'u1' }, status: 200 });
+    const error = { config: { url, method: 'post', _retried: retried }, response: { status: 401 } };
+
+    await expect(rejectAuthResponse(error)).rejects.toBe(error);
+
+    expect(localStorage.getItem('user')).not.toBeNull();
+    if (retried) expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('still clears the session when refresh and the uncached identity endpoint definitively reject it', async () => {
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    localStorage.setItem('token_ts', String(Date.now()));
+    axios.post.mockRejectedValueOnce({ response: { status: 401 } });
+    axios.get.mockRejectedValueOnce({ response: { status: 401 } });
+    const error = { config: { url: '/auth/me', method: 'get' }, response: { status: 401 } };
+
+    await expect(rejectAuthResponse(error)).rejects.toBe(error);
+
+    expect(localStorage.getItem('user')).toBeNull();
+    expect(localStorage.getItem('token_ts')).toBeNull();
   });
 
   it('should wait for /auth/me to verify session if token_ts is present', async () => {
