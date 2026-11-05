@@ -15,7 +15,7 @@ import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { UPDATE_FIELDS, usesExpandedAriLayout } from './rate-manager/constants';
-import { isValidExelyAvailability } from './rate-manager/updateReview';
+import { buildRateUpdateReview, isValidExelyAvailability } from './rate-manager/updateReview';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
@@ -56,6 +56,9 @@ export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo, agenci
 });
 
 export const getUnifiedRateDeliveryFeedback = data => {
+  if (data?.provider_preflight_message) {
+    return { level: 'error', message: data.provider_preflight_message };
+  }
   if (data?.provider_delivery_state === 'UNKNOWN') {
     return { level: 'warning', message: 'Gönderim sonucu belirsiz. Tekrar göndermeden önce sağlayıcı kayıtlarıyla uzlaştırın.' };
   }
@@ -592,6 +595,12 @@ const UnifiedRateManager = ({
 
   // Unified bulk update
   const handleBulkUpdate = async () => {
+    const review = buildRateUpdateReview({ dateFrom, dateTo, allDays, selectedDays, selections, enabledFields,
+      roomValues, selectedChannelCodes, activeChannelsStale, channelProvider: provider, agenciesOnly, ratePlans });
+    if (provider === 'exely' && !agenciesOnly && review.errors.length > 0) {
+      toast.error(review.errors[0], { duration: 8000 });
+      return;
+    }
     if (totalSelectedRoomTypes === 0) {
       toast.error('Lutfen en az bir oda tipi seçin');
       return;
@@ -687,13 +696,15 @@ const UnifiedRateManager = ({
     } catch (e) {
       const detail = e.response?.data?.detail;
       const safeCode = typeof detail === 'object' && typeof detail?.error_code === 'string' ? detail.error_code : null;
-      const netMessage = netAvailability && typeof detail?.message === 'string' ? detail.message : null;
+      const netMessage = typeof detail?.message === 'string' ? detail.message : null;
       const capacityContext = safeCode === 'EXELY_REMAINING_EXCEEDS_CAPACITY'
         ? ` (${detail.date}: en fazla ${detail.maximum} oda)` : '';
       const detailStr = typeof detail === 'string' ? detail : null;
       // A missing module comes with a sentence saying which one and why.
       const entitlementText = safeCode === 'ENTITLEMENT_DENIED' && typeof detail?.detail === 'string' ? detail.detail : null;
-      setDeliveryReceipt({ data: { provider_delivery_state: !e.response || e.response.status >= 500 ? 'UNKNOWN' : 'NOT_SENT', provider_error_codes: [safeCode || detailStr || 'İstek tamamlanamadı'] }, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
+      setDeliveryReceipt({ data: { provider_delivery_state: !e.response || e.response.status >= 500 ? 'UNKNOWN' : 'NOT_SENT',
+        provider_preflight_message: safeCode?.startsWith('EXELY_SINGLE_REQUEST_') || safeCode === 'EXELY_RATE_PLAN_PRICE_UPLOAD_DISABLED' ? netMessage : null,
+        provider_error_codes: [safeCode || detailStr || 'İstek tamamlanamadı'] }, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
       toast.error(entitlementText || (netMessage ? `${netMessage}${capacityContext}` : netAvailability && e.response?.status === 404
         ? 'Net müsaitlik servisi bu sunucuda henüz hazır değil. Gönderim yapılmadı; güncel deployu kontrol edin.'
         : safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası'), { duration: 8000 });

@@ -1,0 +1,91 @@
+Exely price editor: complete single-request preflight (2026-11-05)
+
+Observed failure
+The operator selected two room categories, three rate plans each, and
+2026-11-05 through 2028-11-01 inclusive (728 nights). The old route saved
+4368 local calendar cells, then attempted one price envelope. Each category
+had 2184 changes, exceeding the unchanged 1460/second category quota. That
+intrinsic excess cannot recover by waiting or blindly retrying.
+
+Provider contract and implementation boundary
+The user-supplied Exely PMSConnect 1.17.1 specification pp.9-12 defines the
+category change limits and requires grouping room types/periods. Page23
+defines the optional RatePlan@PriceUploadIsAllowed flag: false can identify
+a derived/RateMix/SmartRate/SpecialOffer plan that cannot accept direct
+prices. Discovery used to discard that flag. Plan names alone do NOT prove
+derivation. Missing optional metadata remains unknown, not an invented
+provider prohibition. The real property's current derivation settings have
+not been confirmed by these offline tests.
+
+Changes
+- Preserve the provider's explicit boolean price-upload capability, including
+  safe duplicate handling and panel-to-wire aliases, through discovery/cache
+  and the unified editor. Existing per-room sync-price controls are exposed.
+- Keep selected price plans visible under selected rooms on desktop/mobile.
+  Read-only selections can be cleared; they cannot be silently substituted.
+- Build exact mapped payloads and validate their static category cost, batch
+  shape and values BEFORE any calendar or agency save. Oversized selections
+  fail with a meaningful error and zero provider calls/local writes.
+- Preserve all explicitly selected writable plans, both room types, exact
+  dates and values in ONE price SOAP envelope when the selection fits.
+  Remove the editor's implicit 200-element chunk fallback; excessive message
+  count is rejected as a whole, not split or truncated.
+- Keep server preflight explanations visible after the toast disappears.
+- Do not raise/reset Redis quotas, discount overlapping tariff costs, remove
+  tariffs/dates automatically, infer parent-rate pricing or replay delivery.
+  Availability, price and restriction messages remain distinct SOAP methods;
+  one complete envelope per operation is not a promise to mix SOAP methods.
+
+Verified examples
+- Six tariffs /728 nights: 2184/category, blocked before save/send.
+- Explicit two tariffs per category /728 nights: 1456/category; all four
+  room-plan pairs and the full period use one quota-checked SOAP call.
+- Three independent tariffs per category /365 nights: all six retained.
+- Forbidden provider tariff: whole operation blocked, not silently skipped.
+- Selected weekdays preserve gaps; no unwanted dates filled in.
+- Existing 731-night Standard/Deluxe availability regression still passes.
+
+Safety and rollout
+This change does not send to Exely, change live mappings, cancel bookings,
+edit credentials, restore the operator's already-saved 4368 cells, replay
+queues or certify the provider integration. After deployment, refresh room/
+rate discovery through the existing Exely screen to populate optional flags
+and reload the unified editor. If all three plans truly accept independent
+prices, their full728-night selection still cannot fit the documented quota.
+The operator must explicitly choose the intended plans/dates or obtain a
+provider-approved different limit; the software does not bypass it.
+
+Validation
+- 478 related backend regressions passed;4 live-Mongo tests deliberately
+  deselected. One unrelated pre-existing utcnow deprecation warning.
+- 19 new backend tests include the exact screenshot failure, real provider
+  builder/quota boundary, metadata parsing and alias-aware grid exposure.
+- Native Safari local-only fixture: the oversized preview visibly disables
+  publication; explicitly clearing one plan per room enables the unchanged
+  date range. No backend/provider exists in that fixture.
+- Production frontend build, changed-source ESLint, Ruff, YAML parse and
+  git diff whitespace check passed. Both strict Exely CI gates include the
+  new regression file. No assertion/timeout/skip gate has been weakened.
+- Complete frontend suite result is recorded in the dated external handoff.
+  The initial local install had follow-redirects1.16.1 while existing locks
+  already required1.16.2. Frozen Yarn installation restored the prescribed
+  version without changing dependency manifests or locks. An initial fully
+  parallel rerun also hit unrelated5000ms test timeouts under concurrent
+  build load; the final run limits local worker parallelism, not timeouts.
+
+PR CI follow-up
+The mobile hard gate reported8 SDK57 patch mismatches after its config,
+TypeScript, unit, API-preview and dependency-security checks passed. The
+operator requested fixing the red PR. Those8 Expo-family packages and
+their generated npm lock are aligned with the SDK57 compatibility set.
+The existing dependency-security test now uses the installed CLI's moved
+devtools/MCP paths and its JSON-Schema validator plus injected Zod instance;
+the same valid/invalid cases remain mandatory. No test is removed or skipped.
+Zod4 is an explicit pinned test dependency because the updated CLI no longer
+installs it transitively (the optional MCP host supplies it at runtime).
+No SDK-major upgrade, application feature, access permission, credential,
+Doctor exclusion or gate relaxation is introduced. A clean npm-ci install
+and the full mobile check passed: config, TypeScript, all unit/API-preview/
+dependency-security tests and Expo Doctor21/21. The19 new Exely tests also
+passed after isolating their synthetic circuit-breaker identity. GitHub CI
+must still verify the follow-up head. This is not a new native IPA build.

@@ -65,30 +65,36 @@ test('patched glob dependency preserves matching and traversal contracts', async
   await assert.rejects(glob('**/*', { ...options, signal: controller.signal }), /synthetic-abort/);
 });
 
-test('Expo devtools accepts valid schemas and rejects invalid input with Zod 4', () => {
+test('Expo devtools validates plugin/output schemas and MCP parameters with Zod 4', () => {
   const { PluginSchema, DevToolsPluginOutputSchema } = require(join(cliRoot,
-    'build/src/start/server/DevToolsPlugin.schema.js'));
+    'build/src/start/server/devtools/DevToolsPlugin.schema.js'));
   const { createMCPDevToolsExtensionSchema } = require(join(cliRoot,
-    'build/src/start/server/createMCPDevToolsExtensionSchema.js'));
+    'build/src/start/server/mcp/createMCPDevToolsExtensionSchema.js'));
+  // The SDK57 patch uses JSON Schema for plugins/output and takes the MCP
+  // host's Zod instance explicitly. Exercise the installed validators rather
+  // than relying on the previous CLI's internal Zod-schema representation.
+  const cliRequire = createRequire(join(cliRoot, 'package.json'));
+  const { validate, ValidationError } = cliRequire('@expo/schema-utils');
+  const { z } = require('zod');
   const plugin = {
     packageName: 'synthetic-devtool', packageRoot: '/synthetic',
     cliExtensions: { description: 'local compatibility check', entryPoint: 'index.js',
       commands: [{ name: 'inspect', title: 'Inspect', environments: ['cli', 'mcp'],
         parameters: [{ name: 'limit', type: 'number' }, { name: 'active', type: 'confirm' }] }] },
   };
-  assert.equal(PluginSchema.safeParse(plugin).success, true);
-  assert.equal(PluginSchema.safeParse({ ...plugin, packageName: '' }).success, false);
-  const command = createMCPDevToolsExtensionSchema(plugin);
+  assert.doesNotThrow(() => validate(PluginSchema, plugin));
+  assert.throws(() => validate(PluginSchema, { ...plugin, packageName: '' }), ValidationError);
+  const command = createMCPDevToolsExtensionSchema(plugin, z);
   assert.equal(command.safeParse({ command: 'inspect', limit: 3, active: true }).success, true);
   for (const input of [{ command: 'unknown' }, { command: 'inspect', limit: '3' },
     { command: 'inspect', extra: true }]) {
     assert.equal(command.safeParse(input).success, false);
   }
-  assert.equal(DevToolsPluginOutputSchema.safeParse([
+  assert.doesNotThrow(() => validate(DevToolsPluginOutputSchema, [
     { type: 'text', text: 'ok', level: 'info' },
-    { type: 'image', url: 'https://example.invalid/image.png' }]).success, true);
-  assert.equal(DevToolsPluginOutputSchema.safeParse([
-    { type: 'audio', url: 'not a URL' }]).success, false);
+    { type: 'image', url: 'https://example.invalid/image.png' }]));
+  assert.throws(() => validate(DevToolsPluginOutputSchema, [
+    { type: 'audio', url: 'not a URL' }]), ValidationError);
 });
 
 test('Expo fingerprint path matching remains compatible with minimatch 11', () => {

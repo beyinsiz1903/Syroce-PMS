@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2, Eye, ShieldCheck, Sparkles } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS, UPDATE_FIELD_PRESETS, usesExpandedAriLayout } from './constants';
 import { ChannelList } from './ChannelList';
-import { buildRateUpdateReview } from './updateReview';
+import { buildRateUpdateReview, isExelyPricePlanWritable } from './updateReview';
 import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, normalizeOccupancyRule } from '@/utils/occupancyPricing';
 import { toast } from 'sonner';
@@ -33,7 +33,8 @@ export const BulkUpdatePanel = ({
   const review = useMemo(() => buildRateUpdateReview({
     dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues,
     selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly,
-  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly]);
+    ratePlans,
+  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly, ratePlans]);
   const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
   const canContinueFromRooms = totalSelectedRoomTypes > 0;
   const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));
@@ -196,6 +197,7 @@ export const BulkUpdatePanel = ({
                 channelProvider={channelProvider}
                 canRemoveLos={channelProvider === 'exely' && !agenciesOnly}
                 remainingAvailability={remainingAvailability}
+                exelyPriceSelection={channelProvider === 'exely' && !agenciesOnly && enabledFields.has('rate')}
                 totalSelectedRoomTypes={Object.keys(selections).length}
                 wideFieldLayout={wideFieldLayout}
               />
@@ -355,7 +357,7 @@ const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
-  totalSelectedRoomTypes, channelProvider, wideFieldLayout, canRemoveLos, remainingAvailability,
+  totalSelectedRoomTypes, channelProvider, wideFieldLayout, canRemoveLos, remainingAvailability, exelyPriceSelection,
 }) => {
   const { t } = useTranslation();
   const [editingRule, setEditingRule] = useState(null);
@@ -382,7 +384,7 @@ const RoomTypeList = ({
       {roomTypeTree.map(rt => {
         const rv = roomValues[rt.code] || getDefaultValues();
         const isSelected = isRoomTypeSelected(rt.code);
-        const isExpanded = expandedRoomTypes.has(rt.code);
+        const isExpanded = expandedRoomTypes.has(rt.code) || exelyPriceSelection && isSelected;
         const colTemplate = gridColTemplate(enabledFields);
 
         return (
@@ -411,8 +413,8 @@ const RoomTypeList = ({
                     {getPricingLabel(rt.code)}
                   </button>
                 </div>
-                {rt.plans.length > 0 && (
-                  <button onClick={() => toggleExpanded(rt.code)} className="text-gray-400 hover:text-gray-600 p-0.5" data-testid={`expand-toggle-${rt.code}`}>
+                {rt.plans.length > 0 && !(exelyPriceSelection && isSelected) && (
+                  <button aria-label={`${rt.name} fiyat planlarını göster veya gizle`} onClick={() => toggleExpanded(rt.code)} className="text-gray-400 hover:text-gray-600 p-0.5" data-testid={`expand-toggle-${rt.code}`}>
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </button>
                 )}
@@ -497,9 +499,12 @@ const RoomTypeList = ({
                 style={{ gridTemplateColumns: colTemplate }}
                 data-testid={`rate-plan-row-${rt.code}-${rp.code}`}>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={isRatePlanSelected(rt.code, rp.code)} onCheckedChange={() => toggleRatePlan(rt.code, rp.code)} />
+                  <Checkbox checked={isRatePlanSelected(rt.code, rp.code)} onCheckedChange={() => toggleRatePlan(rt.code, rp.code)}
+                    disabled={exelyPriceSelection && !isExelyPricePlanWritable(rp, rt.code) && !isRatePlanSelected(rt.code, rp.code)}
+                    aria-label={`${rt.name} — ${rp.name} fiyat planı`} data-testid={`rate-plan-check-${rt.code}-${rp.code}`} />
                   <div className="min-w-0">
                     <div className="text-sm text-gray-700">{rt.name} - {rp.name}</div>
+                    {exelyPriceSelection && !isExelyPricePlanWritable(rp, rt.code) && <div className="text-xs text-amber-800">Exely doğrudan fiyat yüklemesi kapalı</div>}
                     <div className={`text-xs italic ${(pricingSettings[rt.code] || 'per_person') === 'per_room' ? 'text-blue-400' : 'text-gray-400'}`}>
                       {getPricingLabel(rt.code)}
                     </div>

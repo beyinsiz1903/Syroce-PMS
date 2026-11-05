@@ -9,6 +9,9 @@ const parseDate = (value) => {
 
 const hasValue = (value) => value !== null && value !== undefined && value !== '';
 
+export const isExelyPricePlanWritable = (plan, roomCode) => plan?.price_upload_is_allowed !== false
+  && plan?.price_sync_by_room?.[roomCode] !== false;
+
 // Blank explicitly selects automatic stock; 0 is an explicit manual closure.
 export const isValidExelyAvailability = value => !hasValue(value)
   || typeof value !== 'boolean' && String(value).trim() !== '' && Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= 999;
@@ -37,6 +40,7 @@ export const buildRateUpdateReview = ({
   activeChannelsStale = false,
   channelProvider,
   agenciesOnly = false,
+  ratePlans = [],
 }) => {
   const errors = [];
   const warnings = [];
@@ -94,6 +98,22 @@ export const buildRateUpdateReview = ({
       warnings.push('Elle girilen kontenjan doluluktan bağımsızdır; sonraki yeni rezervasyonlarla azalır. Boş alan otomatik net müsaitliktir; 0 manuel sıfır kontenjandır.');
       if (dateCount > 731) errors.push('Net müsaitlik için tek gönderimde en fazla 731 gece seçin.');
     }
+    const restrictionCount = ['stop_sell', 'min_stay', 'min_los_arrival', 'max_stay', 'cta', 'ctd']
+      .filter(field => enabledFields.has(field)).length;
+    roomCodes.forEach(roomCode => {
+      const selectedPlans = Array.from(selections[roomCode]);
+      if (enabledFields.has('rate')) {
+        const writable = selectedPlans.filter(code => isExelyPricePlanWritable(ratePlans.find(plan => plan.code === code), roomCode));
+        if (writable.length !== selectedPlans.length) {
+          errors.push(`${roomCode}: Exely'de doğrudan fiyat yüklemesi kapalı plan seçili. Oda altındaki fiyat planlarından bu seçimi kaldırın.`);
+        }
+        const changes = dateCount * writable.length;
+        if (changes > 1460) errors.push(`${roomCode}: ${dateCount} gece × ${writable.length} fiyat planı = ${changes} değişiklik; tek Exely isteğinde oda başına en fazla 1460. Fiyat planı seçimini veya tarih aralığını düzenleyin; gönderim otomatik parçalanmaz.`);
+      }
+      const restrictionChanges = dateCount * selectedPlans.length * restrictionCount;
+      if (restrictionChanges > 1460) errors.push(`${roomCode}: Seçili konaklama/satış kısıtları ${restrictionChanges} değişiklik içeriyor; tek Exely isteğinde oda başına en fazla 1460. Plan, alan veya tarih seçimini düzenleyin.`);
+    });
+    if (enabledFields.has('rate')) warnings.push('Seçili odalar, fiyat planları ve dönemler tek fiyat XML isteğinde birleştirilir. Plan/tarih sessizce çıkarılmaz; kota aşımında PMS kayıtları da değiştirilmez.');
   } else if ((selectedChannelCodes?.size ?? 0) === 0) {
     warnings.push('OTA kanalı seçilmedi; değişiklik yalnızca PMS ve seçili acente kapsamına uygulanır.');
   }

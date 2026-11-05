@@ -497,12 +497,9 @@ class ExelyProvider:
             # Sum all periods/rate plans/restrictions of the same category
             # before taking the maximum; splitting XML elements must not
             # discount a category's real room-night cost.
-            room_changes: dict[str, int] = {}
-            for item in batch_messages:
-                room = str(item["room_type_code"]).strip().casefold()
-                room_changes[room] = room_changes.get(room, 0) + _ari_change_count(
-                    str(item["start_date"]), str(item["end_date"]),
-                )
+            from .batch_policy import category_change_counts
+
+            room_changes = category_change_counts(batch_messages)
             change_count = max(room_changes.values()) if room_changes else _ari_change_count(start_date, end_date)
             await self._reserve_quota(
                 "ari_mutation",

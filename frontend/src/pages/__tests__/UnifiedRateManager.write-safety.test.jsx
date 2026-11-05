@@ -47,6 +47,15 @@ describe('UnifiedRateManager write safety', () => {
     expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('2026-11-02 – 2026-11-09');
   });
 
+  it('keeps a server-side single-request preflight explanation visible without implying any records were saved', () => {
+    render(<RateDeliveryReceipt receipt={{ data: {
+      provider_delivery_state: 'NOT_SENT', provider_preflight_message: '2184 değişiklik: hiçbir kayıt değiştirilmedi.',
+    }, dateFrom: '2026-11-05', dateTo: '2028-11-01', roomCount: 2, fields: ['rate'] }} />);
+    const receipt = screen.getByTestId('rate-delivery-receipt');
+    expect(receipt).toHaveTextContent('2184 değişiklik: hiçbir kayıt değiştirilmedi.');
+    expect(receipt).not.toHaveTextContent('yerel kayıt güncellendi');
+  });
+
   it('does not turn a lost response into a safe retry claim', () => {
     const feedback = getUnifiedRateDeliveryFeedback({ provider_delivery_state: 'UNKNOWN' });
     expect(feedback.level).toBe('warning');
