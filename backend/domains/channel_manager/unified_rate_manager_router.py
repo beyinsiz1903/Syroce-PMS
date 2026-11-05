@@ -57,6 +57,7 @@ from domains.channel_manager.calendar_inventory import (
 from domains.channel_manager.calendar_inventory import (
     get_room_counts as _calendar_room_counts,
 )
+from domains.channel_manager.providers.exely.batch_policy import price_upload_allowed, single_envelope_error
 from domains.channel_manager.providers.exely.production_safety import (
     ari_write_block_reason as exely_ari_write_block_reason,
 )
@@ -688,8 +689,25 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
             room_types.append({"code": room_code, "name": mapping.get("exely_room_name") or discovered_room_names.get(mapping.get("pms_api_room_code")) or room_code})
             known_room_codes.add(room_code)
         if rate_code and rate_code not in known_rate_codes:
-            rate_plans.append({"code": rate_code, "name": discovered_rate_names.get(mapping.get("pms_api_rate_plan_code")) or rate_code})
+            allowed = price_upload_allowed(conn, rate_code, mapping.get("pms_api_rate_plan_code"))
+            rate_plans.append({"code": rate_code, "name": discovered_rate_names.get(mapping.get("pms_api_rate_plan_code")) or rate_code,
+                               **({"price_upload_is_allowed": allowed} if allowed is not None else {})})
             known_rate_codes.add(rate_code)
+
+    for rate in rate_plans:
+        rate["price_sync_by_room"] = {
+            room["code"]: any(
+                str(mapping.get("exely_room_code")) == room["code"]
+                and str(mapping.get("exely_rate_plan_code")) == rate["code"]
+                and mapping.get("sync_price", True)
+                for mapping in mappings
+            ) for room in room_types
+        }
+        aliases = [str(mapping.get("pms_api_rate_plan_code") or "") for mapping in mappings
+                   if str(mapping.get("exely_rate_plan_code")) == rate["code"]]
+        allowed = price_upload_allowed(conn, rate["code"], *aliases)
+        if allowed is not None:
+            rate["price_upload_is_allowed"] = allowed
 
     calendar_task = db.rate_calendar.find(
         {"tenant_id": tenant_id, "date": {"$gte": start_date, "$lte": end_date}},
@@ -1222,6 +1240,20 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
             request.start_date, request.end_date, selected_days_set,
         )
 
+    # Build the exact mapped envelopes before any local/agency write. An
+    # intrinsically oversized request cannot recover by waiting or retrying.
+    # Keep all selected rooms and dates together; never silently drop a plan
+    # or fall back to one request per room/period.
+    exely_plan = None
+    if provider_pairs and any(target["provider"] == "exely" for target in targets):
+        exely_target = next(target for target in targets if target["provider"] == "exely")
+        exely_plan = await _prepare_exely_push(
+            tenant_id, exely_target["connection"], request, provider_pairs, per_room_map,
+            update_fields, selected_days_set,
+            remaining_values=remaining_plan.remaining_values if remaining_plan is not None else None,
+        )
+        _validate_exely_push_plan(exely_plan)
+
     # Determine which calendar collection to use
     cal_collection = "hr_rate_calendar" if provider_type == "hotelrunner" else "rate_calendar"
 
@@ -1336,6 +1368,7 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
                     update_fields,
                     selected_days_set,
                     remaining_values=remaining_plan.remaining_values if remaining_plan is not None else None,
+                    prepared_plan=exely_plan,
                 )
                 cnt = exely_delivery["task_count"]
                 delivery_state = exely_delivery["delivery_state"]
@@ -1557,8 +1590,8 @@ def _selected_date_ranges(start_date: str, end_date: str, selected_days_set: set
     return ranges
 
 
-async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set, *, remaining_values=None):
-    """Queue Exely changes through the canonical durable ARI outbox.
+async def _prepare_exely_push(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set, *, remaining_values=None):
+    """Prepare exact Exely envelopes without local or provider mutation.
 
     Frontend grid'i HotelRunner tabanli oda kodlari (HR:xxx) ile geliyor.
     Exely'nin kendi room_code + rate_plan_code'larina ceviriyoruz:
@@ -1569,8 +1602,6 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     if not hotel_code:
         logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=property")
         return {"task_count": 0, "delivery_state": "NOT_SENT", "provider_verified": False, "provider_write_count": 0}
-    from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
-
     # ── HR room code (HR:xxx / xxx) -> pms_room_type -> exely_room_code ──
     # Birincil kaynak: HotelRunner connection.cached_rooms
     hr_to_pms: dict[str, str] = {}
@@ -1726,7 +1757,6 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 mapped_seen.add(remote_key)
                 mapped_targets.append((str(rt_code), str(ex_code), rp))
 
-    resend_token = str(uuid.uuid4())
     _cur_code, _ = await get_tenant_currency(tenant_id)
     push_currency = conn.get("currency") or _cur_code
     date_ranges = _selected_date_ranges(request.start_date, request.end_date, selected_days_set)
@@ -1743,6 +1773,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         "ctd": "ctd",
     }
     invalid_mapping_targets = 0
+    price_blocked_plans = []
     for rt_code, ex_code, rp in mapped_targets:
         controls = mapping_controls[(ex_code, rp)]
         api_room_code = str(controls.get("pms_api_room_code") or "").strip()
@@ -1777,7 +1808,10 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             if remaining_values is None and controls.get("sync_availability", True) and "availability" in update_fields and values["availability"] is not None:
                 availability_messages.append({**base, "availability": values["availability"]})
             if controls.get("sync_price", True) and "rate" in update_fields and values["rate"] is not None:
-                rate_messages.append({**base, "rate_amount": values["rate"], "currency": push_currency})
+                if price_upload_allowed(conn, rp, wire_rate_code) is False:
+                    price_blocked_plans.append(rp)
+                else:
+                    rate_messages.append({**base, "rate_amount": values["rate"], "currency": push_currency})
             for field, operation in restriction_fields.items():
                 if controls.get("sync_restrictions", True) and field in update_fields and values[field] is not None:
                     restriction_messages.append({**base, "operation": operation, "value": values[field]})
@@ -1790,29 +1824,73 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 availability_messages.append({"room_type_code": wire_room_code, "rate_plan_code": wire_rate_code,
                                               "start_date": range_start, "end_date": range_end, "availability": value})
 
-    confirmed_messages = 0
-    confirmed_writes = 0
     failures = ["EXELY_PARTIAL_API_PAIR"] if invalid_mapping_targets else []
     batches = (
         ("availability_batch", availability_messages),
         ("rate_batch", rate_messages),
         ("restriction_batch", restriction_messages),
     )
+    return {"tenant_id": tenant_id, "hotel_code": hotel_code, "batches": batches, "failures": failures,
+            "price_blocked_plans": sorted(set(price_blocked_plans))}
+
+
+def _validate_exely_push_plan(plan):
+    if not plan.get("batches"):
+        return
+    if plan.get("price_blocked_plans"):
+        raise HTTPException(409, detail={
+            "error_code": "EXELY_RATE_PLAN_PRICE_UPLOAD_DISABLED",
+            "rate_plan_codes": plan["price_blocked_plans"],
+            "message": "Exely seçili fiyat planına doğrudan fiyat yüklemeye izin vermiyor. Oda satırını açıp bu planı seçimden çıkarın; hiçbir kayıt değiştirilmedi.",
+            "delivery_state": "BLOCKED", "provider_write_count": 0,
+        })
+    for operation, messages in plan["batches"]:
+        error = single_envelope_error(operation, messages)
+        if error:
+            raise HTTPException(422, detail={**error, "delivery_state": "BLOCKED", "provider_write_count": 0})
+        if messages:
+            from domains.channel_manager.providers.exely.ari_delivery import preview_exely_ari
+
+            preview = preview_exely_ari(operation, {
+                "tenant_id": plan["tenant_id"], "property_id": plan["hotel_code"], "value": messages,
+            })
+            if preview.error_code:
+                raise HTTPException(422, detail={
+                    "error_code": preview.error_code,
+                    "message": "Exely gönderim değerleri geçersiz; hiçbir kayıt değiştirilmedi.",
+                    "delivery_state": "BLOCKED", "provider_write_count": 0,
+                })
+
+
+async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set, *, remaining_values=None, prepared_plan=None):
+    from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
+
+    plan = prepared_plan if prepared_plan is not None else await _prepare_exely_push(
+        tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set, remaining_values=remaining_values,
+    )
+    if not plan.get("batches"):
+        return plan
+    _validate_exely_push_plan(plan)
+    batches = plan["batches"]
+    hotel_code = plan["hotel_code"]
+    failures = list(plan["failures"])
+    resend_token = str(uuid.uuid4())
+    confirmed_messages = 0
+    confirmed_writes = 0
     requested_messages = sum(len(messages) for _operation, messages in batches)
     for operation, messages in batches:
-        for chunk_index in range(0, len(messages), 200):
-            chunk = messages[chunk_index : chunk_index + 200]
+        if messages:
             result = await deliver_exely_ari(
                 tenant_id,
                 operation,
                 {
                     "property_id": hotel_code,
-                    "value": chunk,
-                    "operation_identity": f"unified-rate-manager:{resend_token}:{operation}:{chunk_index // 200}",
+                    "value": messages,
+                    "operation_identity": f"unified-rate-manager:{resend_token}:{operation}:0",
                 },
             )
             if result.success:
-                confirmed_messages += len(chunk)
+                confirmed_messages += len(messages)
                 confirmed_writes += result.provider_write_count
             else:
                 failures.append(result.error_code or result.state)

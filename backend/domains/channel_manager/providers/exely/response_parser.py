@@ -486,10 +486,16 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
         for rp in room_stay.iter(_ns("RatePlan")):
             desc = rp.find(_ns("RatePlanDescription"))
             name = _attr(desc, "Name", _attr(rp, "RatePlanName", ""))
+            upload_flag = _attr(rp, "PriceUploadIsAllowed").strip().lower()
+            if upload_flag and upload_flag not in {"true", "false", "1", "0"}:
+                return {"success": False, "result_class": MALFORMED,
+                        "error": "Invalid rate plan price-upload capability", "room_types": [], "rate_plans": []}
             rate_plans.append(
                 {
                     "code": _attr(rp, "RatePlanCode"),
                     "name": name,
+                    **({"price_upload_is_allowed": upload_flag in {"true", "1"}}
+                       if upload_flag in {"true", "false", "1", "0"} else {}),
                 }
             )
 
@@ -501,12 +507,18 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
             seen_rooms.add(r["code"])
             unique_rooms.append(r)
 
-    seen_rates = set()
+    seen_rates = {}
     unique_rates = []
     for r in rate_plans:
         if r["code"] not in seen_rates:
-            seen_rates.add(r["code"])
+            seen_rates[r["code"]] = r
             unique_rates.append(r)
+        elif r.get("price_upload_is_allowed") is False:
+            # Duplicate RoomStay blocks must not turn a prohibition into
+            # permission merely by changing XML ordering.
+            seen_rates[r["code"]]["price_upload_is_allowed"] = False
+        elif r.get("price_upload_is_allowed") is True and "price_upload_is_allowed" not in seen_rates[r["code"]]:
+            seen_rates[r["code"]]["price_upload_is_allowed"] = True
 
     return {**outcome, "room_types": unique_rooms, "rate_plans": unique_rates,
             "services": parse_service_inventory(body)}

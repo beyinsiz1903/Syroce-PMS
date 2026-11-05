@@ -286,6 +286,7 @@ jobs:
             tests/test_exely_ari_delivery.py \
             tests/test_exely_provider_quota_parser.py \
             tests/test_exely_batch_change_budget.py \
+            tests/test_exely_single_request_price_preflight.py \
             tests/test_exely_bulk_availability_batch.py \
             tests/test_exely_legacy_closure.py \
             tests/test_exely_legacy_duplicate_fencing.py \
@@ -330,6 +331,7 @@ jobs:
             tests/test_exely_pilot_import.py \
             tests/test_exely_provider_quota_parser.py \
             tests/test_exely_batch_change_budget.py \
+            tests/test_exely_single_request_price_preflight.py \
             tests/test_exely_bulk_availability_batch.py \
             -m exely_failure_stress --strict-markers \
             -v --tb=short -q --timeout=60 \
