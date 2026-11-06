@@ -75,7 +75,7 @@ describe('Exely explicit placements in the existing editor', () => {
       rule={{ pricing_type: 'per_person', base_occupancy: 1 }} currentBaseRate={100} currency="USD" currencySymbol="$" channelProvider="exely" />);
     const adults = screen.getByText('Fiyata dahil yetişkin').parentElement.querySelector('input');
     fireEvent.change(adults, { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Yerleşim tarifesi ekle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yetişkin fiyatı ekle' }));
     fireEvent.change(screen.getByLabelText('1. fiyat yöntemi'), { target: { value: 'fixed' } });
     fireEvent.change(screen.getByLabelText('1. yerleşim fiyatı'), { target: { value: '80' } });
     expect(screen.getByTestId('exely-placement-preview')).toHaveTextContent('1 yetişkin: 80 USD');

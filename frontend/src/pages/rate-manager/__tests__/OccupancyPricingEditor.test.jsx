@@ -77,6 +77,7 @@ describe('Exely child policy attestation', () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     editor(onSave, true);
     expect(screen.getByTestId('exely-pricing-attestation-STD')).toBeChecked();
+    fireEvent.click(screen.getByRole('tab', { name: 'PMS ek ücretleri' }));
     fireEvent.click(screen.getByRole('button', { name: /0–6 ücretsiz/ }));
     expect(screen.getByTestId('exely-pricing-attestation-STD')).not.toBeChecked();
     fireEvent.click(screen.getByTestId('save-occupancy-rule-STD'));

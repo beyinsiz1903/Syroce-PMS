@@ -1,0 +1,53 @@
+Guest / child pricing editor — 2026-11-06
+
+Scope: the existing Price & Availability screen and existing rule Save / Publish.
+No new provider, wire schema, tariff, live hotel price, reservation or payment.
+
+Experience
+- Common explicit included-adult count and optional PMS capacity.
+- Exely tariffs and PMS supplements are separate keyboard-accessible tabs;
+  switching tabs preserves the draft. The Exely tab opens first.
+- Adult main-bed amounts are room/night totals, not per-adult multipliers.
+- Child main, child extra bed, child without bed, adult extra bed use clear
+  per-child/per-person nightly units. Bed type remains an explicit choice.
+- Child tariffs support explicit free, fixed or percentage-of-base pricing;
+  free persists as fixed zero in the existing schema, never an omitted price.
+- Each row and full preview show calculated amounts and inclusive age labels.
+  UI 3-6 still compiles to the existing exclusive Exely upper bound 7.
+- Percentages have different bases: PMS child percentages use the extra-adult
+  supplement; Exely percentages use the base room price. Both are explained.
+- New adult entries avoid the base and existing adult counts. New child bands
+  suggest an uncovered interval only. Suggestions have blank prices, not free.
+- Room-based mode explicitly says extra tariffs remain saved but are not sent.
+  PMS capacity does not claim to configure Exely bed capacity.
+
+Validation / safety
+- Blank child age, amount or adult supplement is not coerced to zero on Save.
+- PMS child bands must completely cover 0-17 without gaps/overlap. Exely bands
+  may be partial, but same-bed bands cannot overlap; omitted rates are unchanged.
+- Invalid counts, limits, negative/non-finite amounts, duplicate placements and
+  stale operator review remain blocked. Backend authoritative checks unchanged.
+- A missing room price allows preparation of rules but never invents a computed
+  percentage amount. Final publishing still validates the actual selected price.
+- No PMS surcharge is silently converted into an Exely bed-specific tariff.
+  Exely bed capacity / child ages still require operator comparison; known
+  discovery limits and provider acceptance are validated by the existing server.
+- Rule Save does not send prices or change dated calendar records. Existing
+  Publish, exact payload review, quotas, grouped dispatch and receipt checks stay.
+- Removing a local tariff does not delete an existing Exely price. This remains
+  visible under the scope help. No automatic certification claim.
+
+Local checks
+- Vitest: rate editor / draft validation / actual submit integration; full suite.
+- Existing backend offline placement XML and occupancy calculation tests.
+- Production build, changed-file ESLint, theme/layout guards, diff whitespace.
+- Isolated real-component browser fixture: no API, credentials or real data.
+  npx playwright test --config=playwright.guest-pricing.config.js
+  Optional GUEST_PRICING_BROWSER points at an already-installed test binary.
+  The fixture checks 320, 390 and 1440 px, overflow, totals and saved drafts.
+
+Deployment / acceptance
+Frontend-only change. After merge/deploy, refresh the normal price screen.
+Open a room's rule editor; compare the configured real Exely child age bands,
+bed options and currencies before approving a narrow certification send.
+No live Exely write or certification approval is claimed for this code change.
