@@ -5,6 +5,7 @@ import { compileExelyGuestPrices, sameExelyGuestPrices } from '../exelyPlacement
 import { ExelyPlacementEditor } from '../ExelyPlacementEditor';
 import { RateDeliveryCard } from '../RateDeliveryCard';
 import { buildRateUpdateReview } from '../updateReview';
+import { OccupancyPricingEditor } from '../BulkUpdatePanel';
 
 const rule = { pricing_type: 'per_person', base_occupancy: 2, currency: 'USD', exely_placements_reviewed: true,
   exely_price_placements: [
@@ -52,8 +53,9 @@ describe('Exely explicit placements in the existing editor', () => {
       channelProvider: 'exely', selections: { STD: new Set(['BASE']) }, enabledFields: new Set(['rate']),
       roomValues: { STD: { rate: 100 } }, occupancyPricingRules: { STD: rule }, currency: 'USD' });
     expect(result.errors).toEqual([]);
-    expect(result.warnings.join(' ')).toContain('1 yetişkin: 90 USD');
-    expect(result.warnings.join(' ')).toContain('Çocuk · yataksız (çocuk başı) · 0–2 yaş: 0 USD');
+    expect(result.priceSummaries[0].prices).toEqual(compileExelyGuestPrices(rule, 100, 'USD'));
+    expect(result.warnings).toEqual([]);
+    expect(result.notes).toEqual([]);
   });
 
   it('invalidates placement confirmation whenever a rate changes', () => {
@@ -66,6 +68,27 @@ describe('Exely explicit placements in the existing editor', () => {
     fireEvent.change(screen.getByLabelText('1. yerleşim fiyatı'), { target: { value: '85' } });
     expect(screen.getByTestId('exely-placements-reviewed')).not.toBeChecked();
     expect(screen.getByTestId('exely-placement-preview')).toHaveTextContent('1 yetişkin: 85 USD');
+  });
+
+  it('allows changing included adults and entering a separate single-adult price without saving/reloading first', () => {
+    render(<OccupancyPricingEditor roomType={{ code: 'STD', name: 'Standart' }} open onToggle={vi.fn()} onSave={vi.fn()}
+      rule={{ pricing_type: 'per_person', base_occupancy: 1 }} currentBaseRate={100} currency="USD" currencySymbol="$" channelProvider="exely" />);
+    const adults = screen.getByText('Fiyata dahil yetişkin').parentElement.querySelector('input');
+    fireEvent.change(adults, { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Yerleşim tarifesi ekle' }));
+    fireEvent.change(screen.getByLabelText('1. fiyat yöntemi'), { target: { value: 'fixed' } });
+    fireEvent.change(screen.getByLabelText('1. yerleşim fiyatı'), { target: { value: '80' } });
+    expect(screen.getByTestId('exely-placement-preview')).toHaveTextContent('1 yetişkin: 80 USD');
+    expect(screen.getByTestId('exely-placement-preview')).toHaveTextContent('2 yetişkin: 100 USD');
+    const review = screen.getByTestId('exely-placements-reviewed');
+    expect(review).toBeEnabled();
+    expect(review).not.toBeChecked();
+    fireEvent.click(review);
+    expect(review).toBeChecked();
+    fireEvent.change(adults, { target: { value: '' } });
+    expect(review).not.toBeChecked();
+    expect(review).toBeDisabled();
+    expect(screen.getByTestId('exely-placement-editor')).toHaveTextContent('Fiyata dahil yetişkin sayısını kaydedin.');
   });
 });
 
@@ -86,6 +109,11 @@ describe('hotel-facing delivery card', () => {
   });
   it('never styles an unknown response as delivered', () => {
     render(<RateDeliveryCard receipt={{ ...receipt, data: { provider_delivery_state: 'UNKNOWN' } }} feedback={{ level: 'warning', message: 'Tekrar göndermeden önce uzlaştırın.' }} />);
+    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('Sonuç doğrulanamadı');
+    expect(screen.getByTestId('rate-delivery-receipt')).not.toHaveTextContent('Teslim edildi');
+  });
+  it('keeps a partly delivered selection with a later unknown outcome visibly unconfirmed', () => {
+    render(<RateDeliveryCard receipt={{ ...receipt, data: { provider_delivery_state: 'PARTIAL', outcome_unknown: true } }} feedback={{ level: 'warning', message: 'Tekrar göndermeden önce uzlaştırın.' }} />);
     expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('Sonuç doğrulanamadı');
     expect(screen.getByTestId('rate-delivery-receipt')).not.toHaveTextContent('Teslim edildi');
   });

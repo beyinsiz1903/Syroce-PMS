@@ -51,8 +51,7 @@ describe('Exely remaining-room editor', () => {
       dateFrom: '2026-11-10', dateTo: '2026-11-12', allDays: true,
       selections: { STD: new Set(['BASE']) }, roomValues: { STD: { availability: '0' } } });
     expect(review.errors).toEqual([]);
-    expect(review.warnings.join(' ')).toContain('Manuel satış kontenjanı 0 oda');
-    expect(review.warnings.join(' ')).toContain('overbooking');
+    expect(review.warnings).toEqual(['Oda tipi 1: Satışa sunulacak oda sayısı 0 olacak.']);
   });
 
   it.each(['', null, undefined])('allows %s as an explicit automatic reset without a new button', value => {
@@ -70,7 +69,7 @@ describe('Exely remaining-room editor', () => {
     const review = buildRateUpdateReview({ channelProvider: 'exely', enabledFields: new Set(['availability']),
       dateFrom: '2026-11-10', dateTo: '2026-11-12', allDays: true,
       selections: { STD: new Set(['BASE']) }, roomValues: { STD: { availability: value } } });
-    expect(review.errors).toContain('STD için müsaitliği boş bırakın veya 0–999 arasında tam sayı girin.');
+    expect(review.errors).toContain('Oda tipi 1 için müsaitliği boş bırakın veya 0–999 arasında tam sayı girin.');
   });
 
   it('does not allow a blank field to reset HotelRunner or agency-only inventory', () => {
@@ -78,7 +77,7 @@ describe('Exely remaining-room editor', () => {
       const review = buildRateUpdateReview({ ...scope, enabledFields: new Set(['availability']),
         dateFrom: '2026-11-10', dateTo: '2026-11-12', allDays: true,
         selections: { STD: new Set(['BASE']) }, roomValues: { STD: { availability: '' } } });
-      expect(review.errors).toContain('STD için müsaitlik sıfır veya pozitif tam sayı olmalıdır.');
+      expect(review.errors).toContain('Oda tipi 1 için müsaitlik sıfır veya pozitif tam sayı olmalıdır.');
     }
   });
 

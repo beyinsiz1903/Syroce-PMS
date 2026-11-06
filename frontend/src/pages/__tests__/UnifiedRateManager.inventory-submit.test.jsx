@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -84,7 +84,8 @@ describe('actual rate editor inventory submission', () => {
     fireEvent.click(screen.getByTestId('field-rate'));
     fireEvent.change(screen.getByTestId('rate-input-STD'), { target: { value: '100' } });
     fireEvent.click(screen.getByTestId('bulk-update-btn'));
-    expect(screen.getByTestId('rate-publish-review')).toHaveTextContent('100 — 3 yetişkin için oda/gece toplam fiyatı');
+    const priceRow = within(screen.getByTestId('rate-publish-review')).getByText('3 yetişkin · oda/gece').closest('li');
+    expect(priceRow).toHaveTextContent('100 USD');
     fireEvent.click(screen.getByTestId('rate-confirm-publish'));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
     expect(axios.post.mock.calls[0][1].per_room_values[0]).toMatchObject({ rate: 100, rate_number_of_guests: 3 });
@@ -148,8 +149,9 @@ describe('actual rate editor inventory submission', () => {
     fireEvent.click(screen.getByTestId('field-rate'));
     fireEvent.change(screen.getByTestId('rate-input-STD'), { target: { value: '100' } });
     fireEvent.click(screen.getByTestId('bulk-update-btn'));
-    expect(screen.getByTestId('rate-publish-review')).toHaveTextContent('1 yetişkin: 90 USD');
-    expect(screen.getByTestId('rate-publish-review')).toHaveTextContent('3–6 yaş: 10 USD');
+    const review = screen.getByTestId('rate-publish-review');
+    expect(within(review).getByText('1 yetişkin · oda/gece').closest('li')).toHaveTextContent('90 USD');
+    expect(within(review).getByText('Çocuk · ek yatak · 3–6 yaş · çocuk/gece').closest('li')).toHaveTextContent('10 USD');
     fireEvent.click(screen.getByTestId('rate-confirm-publish'));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
     expect(axios.post.mock.calls[0][0]).toBe('/channel-manager/unified-rate-manager/bulk-grid-update');

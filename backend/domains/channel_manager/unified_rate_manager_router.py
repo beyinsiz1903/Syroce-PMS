@@ -57,7 +57,7 @@ from domains.channel_manager.calendar_inventory import (
 from domains.channel_manager.calendar_inventory import (
     get_room_counts as _calendar_room_counts,
 )
-from domains.channel_manager.providers.exely.batch_policy import price_upload_allowed, single_envelope_error
+from domains.channel_manager.providers.exely.batch_policy import plan_rate_envelopes, price_upload_allowed, single_envelope_error
 from domains.channel_manager.providers.exely.production_safety import (
     ari_write_block_reason as exely_ari_write_block_reason,
 )
@@ -423,9 +423,10 @@ def _ari_write_block_for_targets(targets: list[dict]) -> str:
 
 
 def _provider_delivery_summary(results: list[dict]) -> dict:
-    pending = [result for result in results if result.get("task_count", 0) > 0]
+    pending = [result for result in results if result.get("task_count", 0) > 0 or result.get("delivery_state") == "UNKNOWN"]
+    errors = [code for result in results for code in result.get("error_codes", []) if code]
+    outcome_unknown = any(result.get("outcome_unknown") for result in results)
     if not pending:
-        errors = [code for result in results for code in result.get("error_codes", []) if code]
         return {
             "provider_verified": False,
             "provider_delivery_state": "NOT_SENT",
@@ -437,8 +438,10 @@ def _provider_delivery_summary(results: list[dict]) -> dict:
     verified = all(result.get("provider_verified") is True for result in pending)
     return {
         "provider_verified": verified,
-        "provider_delivery_state": states.pop() if len(states) == 1 else "PENDING",
+        "provider_delivery_state": "UNKNOWN" if "UNKNOWN" in states else states.pop() if len(states) == 1 else "PENDING",
         "provider_write_count": (sum(int(result.get("provider_write_count") or 0) for result in pending) if verified else None),
+        **({"provider_error_codes": errors} if errors else {}),
+        **({"outcome_unknown": True} if outcome_unknown else {}),
     }
 
 
@@ -1325,10 +1328,9 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
             request.start_date, request.end_date, selected_days_set,
         )
 
-    # Build the exact mapped envelopes before any local/agency write. An
-    # intrinsically oversized request cannot recover by waiting or retrying.
-    # Keep all selected rooms and dates together; never silently drop a plan
-    # or fall back to one request per room/period.
+    # Build and validate every mapped envelope before any local/agency write.
+    # Keep small selections together; larger price selections use coarse
+    # plan groups without dropping any room, period or accommodation price.
     exely_plan = None
     if provider_pairs and any(target["provider"] == "exely" for target in targets):
         exely_target = next(target for target in targets if target["provider"] == "exely")
@@ -1337,7 +1339,7 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
             update_fields, selected_days_set,
             remaining_values=remaining_plan.remaining_values if remaining_plan is not None else None,
         )
-        _validate_exely_push_plan(exely_plan)
+        exely_plan = _validate_exely_push_plan(exely_plan)
 
     # Determine which calendar collection to use
     cal_collection = "hr_rate_calendar" if provider_type == "hotelrunner" else "rate_calendar"
@@ -1950,7 +1952,7 @@ async def _prepare_exely_push(tenant_id, conn, request, pairs, per_room_map, upd
 
 def _validate_exely_push_plan(plan):
     if not plan.get("batches"):
-        return
+        return plan
     if plan.get("price_blocked_plans"):
         raise HTTPException(409, detail={
             "error_code": "EXELY_RATE_PLAN_PRICE_UPLOAD_DISABLED",
@@ -1958,15 +1960,15 @@ def _validate_exely_push_plan(plan):
             "message": "Exely seçili fiyat planına doğrudan fiyat yüklemeye izin vermiyor. Oda satırını açıp bu planı seçimden çıkarın; hiçbir kayıt değiştirilmedi.",
             "delivery_state": "BLOCKED", "provider_write_count": 0,
         })
-    for operation, messages in plan["batches"]:
-        error = single_envelope_error(operation, messages)
-        if error:
-            raise HTTPException(422, detail={**error, "delivery_state": "BLOCKED", "provider_write_count": 0})
-        if messages:
-            from domains.channel_manager.providers.exely.ari_delivery import preview_exely_ari
+    from domains.channel_manager.providers.exely.ari_delivery import preview_exely_ari
 
+    batches = []
+    for operation, messages in plan["batches"]:
+        # Validate the entire source, including a later group, before splitting
+        # or writing anything. The delivery validator accepts up to 200 rows.
+        for offset in range(0, len(messages), 200):
             preview = preview_exely_ari(operation, {
-                "tenant_id": plan["tenant_id"], "property_id": plan["hotel_code"], "value": messages,
+                "tenant_id": plan["tenant_id"], "property_id": plan["hotel_code"], "value": messages[offset:offset + 200],
             })
             if preview.error_code:
                 raise HTTPException(422, detail={
@@ -1974,6 +1976,21 @@ def _validate_exely_push_plan(plan):
                     "message": "Exely gönderim değerleri geçersiz; hiçbir kayıt değiştirilmedi.",
                     "delivery_state": "BLOCKED", "provider_write_count": 0,
                 })
+        groups = plan_rate_envelopes(messages) if operation == "rate_batch" else [messages]
+        for group in groups:
+            error = single_envelope_error(operation, group)
+            if error:
+                raise HTTPException(422, detail={**error, "delivery_state": "BLOCKED", "provider_write_count": 0})
+            if group:
+                batches.append((operation, group))
+    return {**plan, "batches": batches}
+
+
+async def _wait_exely_batch_slot():
+    # Different envelopes must not consume one category's second window
+    # together. The Redis quota still coordinates concurrent operators/workers
+    # and enforces all longer windows; this wait does not bypass a rejection.
+    await asyncio.sleep(1.05)
 
 
 async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set, *, remaining_values=None, prepared_plan=None):
@@ -1984,36 +2001,52 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     )
     if not plan.get("batches"):
         return plan
-    _validate_exely_push_plan(plan)
+    plan = _validate_exely_push_plan(plan)
     batches = plan["batches"]
     hotel_code = plan["hotel_code"]
     failures = list(plan["failures"])
     resend_token = str(uuid.uuid4())
     confirmed_messages = 0
     confirmed_writes = 0
+    confirmed_batches = 0
+    outcome_unknown = False
     requested_messages = sum(len(messages) for _operation, messages in batches)
-    for operation, messages in batches:
+    for index, (operation, messages) in enumerate(batches):
         if messages:
-            result = await deliver_exely_ari(
-                tenant_id,
-                operation,
-                {
-                    "property_id": hotel_code,
-                    "value": messages,
-                    "operation_identity": f"unified-rate-manager:{resend_token}:{operation}:0",
-                },
-            )
+            if index:
+                await _wait_exely_batch_slot()
+            try:
+                result = await deliver_exely_ari(
+                    tenant_id,
+                    operation,
+                    {
+                        "property_id": hotel_code,
+                        "value": messages,
+                        "operation_identity": f"unified-rate-manager:{resend_token}:{operation}:{index}",
+                    },
+                )
+            except Exception:
+                # Preserve earlier confirmations, never retry an unknown write
+                # or relabel the whole selection as NOT_SENT after an exception.
+                failures.append("EXELY_ARI_WRITE_OUTCOME_UNKNOWN")
+                outcome_unknown = True
+                break
             if result.success:
                 confirmed_messages += len(messages)
                 confirmed_writes += result.provider_write_count
+                confirmed_batches += 1
             else:
                 failures.append(result.error_code or result.state)
+                outcome_unknown = result.state in {"ambiguous", "reconciliation_pending", "prepared"} or result.provider_status_class == "WRITE_OUTCOME_UNKNOWN"
                 logger.error(
                     "[UNIFIED] Exely batch failed operation=%s delivery_state=%s error_code=%s",
                     operation,
                     result.state,
                     result.error_code,
                 )
+                # Do not cascade provider cooldown/quota failures or continue
+                # after an ambiguous write. An explicit later action is separate.
+                break
 
     task_count = confirmed_messages
     provider_verified = requested_messages > 0 and confirmed_messages == requested_messages and not failures
@@ -2021,6 +2054,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         delivery_state = "CONFIRMED"
     elif confirmed_messages > 0:
         delivery_state = "PARTIAL"
+    elif outcome_unknown:
+        delivery_state = "UNKNOWN"
     else:
         delivery_state = "NOT_SENT"
     return {
@@ -2029,6 +2064,9 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         "provider_verified": provider_verified,
         "provider_write_count": confirmed_writes if provider_verified else None,
         "error_codes": failures,
+        "batch_count": len(batches),
+        "confirmed_batch_count": confirmed_batches,
+        "outcome_unknown": outcome_unknown,
     }
 
 

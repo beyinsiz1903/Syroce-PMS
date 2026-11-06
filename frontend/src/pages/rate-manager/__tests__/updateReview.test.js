@@ -21,15 +21,15 @@ describe('rate update review', () => {
   });
   it('does not describe Exely broadcast as a PMS-only update when OTA selection is unavailable', () => {
     const review = buildRateUpdateReview({ channelProvider: 'exely', selectedChannelCodes: new Set() });
-    expect(review.warnings.join(' ')).toContain('Gönderim hedefi Exely kanal yöneticisidir');
-    expect(review.warnings.join(' ')).not.toContain('yalnızca PMS');
-    expect(review.warnings.join(' ')).toContain('teslim sonucu ayrıca doğrulanmalıdır');
+    expect(review.targetLabel).toBe('Exely');
+    expect(review.warnings).toEqual([]);
   });
 
   it('keeps the agency-only exclusion explicit even with a connected Exely provider', () => {
     const review = buildRateUpdateReview({ channelProvider: 'exely', agenciesOnly: true });
-    expect(review.warnings.join(' ')).toContain('kanal yöneticisine ve otel takvimine gönderilmez');
-    expect(review.warnings.join(' ')).not.toContain('Gönderim hedefi Exely');
+    expect(review.targetLabel).toBe('Seçili acenteler');
+    expect(review.notes.join(' ')).toContain('Otel takvimi ve satış kanalları değişmez');
+    expect(review.warnings).toEqual([]);
   });
   it('counts only selected weekdays in the inclusive date range', () => {
     expect(countTargetNights({
@@ -70,8 +70,8 @@ describe('rate update review', () => {
       selectedChannelCodes: new Set(),
     });
 
-    expect(review.errors).toContain('STD için fiyat sıfırdan büyük olmalıdır.');
-    expect(review.warnings).toContain('STD satışa kapatılacak.');
-    expect(review.warnings).toContain('OTA kanalı seçilmedi; değişiklik yalnızca PMS ve seçili acente kapsamına uygulanır.');
+    expect(review.errors).toContain('Oda tipi 1 için fiyat sıfırdan büyük olmalıdır.');
+    expect(review.warnings).toContain('Oda tipi 1 satışa kapatılacak.');
+    expect(review.warnings).toContain('Satış kanalı seçilmedi; değişiklik yalnız otel takvimine ve seçili acentelere uygulanacak.');
   });
 });

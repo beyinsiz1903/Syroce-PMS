@@ -1,4 +1,4 @@
-"""No provider I/O: price plans must fit one complete, authorized envelope."""
+"""No provider I/O: preserve complete selections in authorized coarse batches."""
 
 from copy import deepcopy
 from datetime import date
@@ -11,7 +11,7 @@ from lxml import etree
 
 from domains.channel_manager import unified_rate_manager_router as rates
 from domains.channel_manager.providers.exely import ari_delivery
-from domains.channel_manager.providers.exely.batch_policy import category_change_counts, price_upload_allowed, single_envelope_error
+from domains.channel_manager.providers.exely.batch_policy import category_change_counts, plan_rate_envelopes, price_upload_allowed, single_envelope_error
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.provider_quota import QuotaDecision
 from domains.channel_manager.providers.exely.response_parser import parse_hotel_avail_rs
@@ -98,7 +98,9 @@ def editor(monkeypatch):
     monkeypatch.setattr(rates, "get_tenant_currency", AsyncMock(return_value=("USD", {})))
     send = AsyncMock(return_value=ari_delivery.ExelyARIDeliveryResult(True, "confirmed", "", "SUCCESS", 1, "synthetic"))
     monkeypatch.setattr(ari_delivery, "deliver_exely_ari", send)
-    return SimpleNamespace(conn=conn, save=cal.bulk_write, send=send, mappings=mappings, db=db, collection=collection)
+    wait = AsyncMock()
+    monkeypatch.setattr(rates, "_wait_exely_batch_slot", wait)
+    return SimpleNamespace(conn=conn, save=cal.bulk_write, send=send, wait=wait, mappings=mappings, db=db, collection=collection)
 
 
 async def publish(plans=("BASE", "NRF", "DYNAMIC"), **overrides):
@@ -111,15 +113,26 @@ async def publish(plans=("BASE", "NRF", "DYNAMIC"), **overrides):
     return await rates.unified_bulk_grid_update(req, SimpleNamespace(tenant_id=TENANT, id="synthetic-operator"), None)
 
 
-async def test_screenshot_six_plan_selection_is_rejected_before_any_calendar_or_delivery_write(editor):
-    with pytest.raises(HTTPException) as error:
-        await publish()
-    assert error.value.status_code == 422
-    assert error.value.detail["error_code"] == "EXELY_SINGLE_REQUEST_CHANGE_LIMIT"
-    assert error.value.detail["category_change_count"] == 2184
-    assert error.value.detail["provider_write_count"] == 0
-    editor.save.assert_not_awaited()
-    editor.send.assert_not_awaited()
+async def test_screenshot_six_plan_selection_keeps_whole_period_and_rooms_in_three_plan_groups(editor):
+    result = await publish()
+    assert result["saved"] == 4368
+    assert result["provider_verified"]
+    editor.save.assert_awaited_once()
+    assert editor.send.await_count == 3
+    assert editor.wait.await_count == 2
+    identities = set()
+    for call, code in zip(editor.send.await_args_list, ("wire-BASE", "wire-NRF", "wire-DYNAMIC"), strict=True):
+        tenant, op, payload = call.args
+        assert tenant == TENANT and op == "rate_batch"
+        identities.add(payload["operation_identity"])
+        assert len(payload["value"]) == 2
+        assert {row["room_type_code"] for row in payload["value"]} == {"wire-STD", "wire-DLX"}
+        assert {row["rate_plan_code"] for row in payload["value"]} == {code}
+        assert {row["start_date"] for row in payload["value"]} == {"2026-11-05"}
+        assert {row["end_date"] for row in payload["value"]} == {"2028-11-01"}
+        assert max(category_change_counts(payload["value"]).values()) == 728
+    assert len(identities) == 3
+    assert result["provider_delivery"][0]["confirmed_batch_count"] == 3
 
 
 async def test_derived_tariff_is_not_silently_dropped_or_relabelled_as_success(editor):
@@ -146,7 +159,8 @@ async def test_explicitly_selected_writable_plans_keep_both_rooms_and_whole_peri
     assert {row["end_date"] for row in payload["value"]} == {"2028-11-01"}
 
 
-async def test_editor_to_real_quota_checked_provider_builds_one_complete_price_xml(editor, monkeypatch):
+@pytest.mark.parametrize("plans,expected_costs", [(('BASE', 'NRF'), [1456]), (('BASE', 'NRF', 'DYNAMIC'), [728, 728, 728])])
+async def test_editor_to_real_quota_checked_provider_builds_complete_price_xmls(editor, monkeypatch, plans, expected_costs):
     monkeypatch.setattr("domains.channel_manager.providers.exely.provider.ari_write_block_reason", lambda: "")
     quota = SimpleNamespace(reserve=AsyncMock(return_value=QuotaDecision(True, "QUOTA_RESERVED")))
     provider = ExelyProvider(username="synthetic", password="synthetic", hotel_code="synthetic-property",
@@ -160,13 +174,16 @@ async def test_editor_to_real_quota_checked_provider_builds_one_complete_price_x
             start_date="", end_date="", value=payload["value"])
         return ari_delivery.ExelyARIDeliveryResult(result.success, "confirmed", "", "SUCCESS", 1, "synthetic")
     editor.send.side_effect = deliver
-    await publish(("BASE", "NRF"))
-    quota.reserve.assert_awaited_once_with(operation="ari_mutation", change_count=1456)
-    provider._transport.send_soap.assert_awaited_once()
-    root = etree.fromstring(provider._transport.send_soap.await_args.args[0].encode())
-    assert len(root.findall('.//ota:RateAmountMessages', NS)) == 1
-    rows = root.findall('.//ota:RateAmountMessage', NS)
-    assert len(rows) == 4
+    await publish(plans)
+    assert [call.kwargs for call in quota.reserve.await_args_list] == [
+        {"operation": "ari_mutation", "change_count": cost} for cost in expected_costs]
+    assert provider._transport.send_soap.await_count == len(expected_costs)
+    rows = []
+    for call in provider._transport.send_soap.await_args_list:
+        root = etree.fromstring(call.args[0].encode())
+        assert len(root.findall('.//ota:RateAmountMessages', NS)) == 1
+        rows.extend(root.findall('.//ota:RateAmountMessage', NS))
+    assert len(rows) == 2 * len(plans)
     for row in rows:
         interval = row.find('ota:Rates/ota:Rate', NS)
         assert (date.fromisoformat(interval.get('End')) - date.fromisoformat(interval.get('Start'))).days + 1 == 728
@@ -216,3 +233,76 @@ async def test_invalid_provider_amount_is_rejected_before_local_write(editor):
     assert error.value.detail["error_code"] == "EXELY_ARI_CURRENCY_INVALID"
     editor.save.assert_not_awaited()
     editor.send.assert_not_awaited()
+
+
+def test_long_multi_placement_ranges_are_coarse_lossless_and_do_not_change_input():
+    rows = [{**message(room, plan, end="2028-11-04"), "number_of_guests": 2,
+             "guest_prices": [{"kind": "adult_main", "number_of_guests": 1, "amount": 80},
+                              {"kind": "adult_main", "number_of_guests": 2, "amount": 100}]}
+            for room in ("STD", "DLX") for plan in ("BASE", "NRF", "DYNAMIC")]
+    original = deepcopy(rows)
+    batches = plan_rate_envelopes(rows)
+    assert rows == original
+    assert len(batches) == 6  # 3 plans, 730+1 nights, both rooms together
+    assert all(single_envelope_error("rate_batch", batch) is None for batch in batches)
+    assert all(len(batch) == 2 for batch in batches)
+    assert all(len({row["rate_plan_code"] for row in batch}) == 1 for batch in batches)
+    assert [part for batch in batches for part in plan_rate_envelopes(batch)] == batches
+    for source in rows:
+        parts = sorted((row for batch in batches for row in batch
+                        if (row["room_type_code"], row["rate_plan_code"]) == (source["room_type_code"], source["rate_plan_code"])),
+                       key=lambda row: row["start_date"])
+        assert [row["guest_prices"] for row in parts] == [source["guest_prices"]] * 2
+        assert [(row["start_date"], row["end_date"]) for row in parts] == [
+            ("2026-11-05", "2028-11-03"), ("2028-11-04", "2028-11-04")]
+        assert sum(category_change_counts([row])[source["room_type_code"].casefold()] for row in parts) == 1462
+
+
+async def test_late_invalid_group_blocks_all_calendar_and_provider_writes(editor, monkeypatch):
+    prepare = rates._prepare_exely_push
+    async def invalid_last(*args, **kwargs):
+        plan = await prepare(*args, **kwargs)
+        rates_list = next(messages for operation, messages in plan["batches"] if operation == "rate_batch")
+        rates_list[-1]["guest_prices"] = []
+        return plan
+    monkeypatch.setattr(rates, "_prepare_exely_push", invalid_last)
+    with pytest.raises(HTTPException) as error:
+        await publish()
+    assert error.value.detail["error_code"] == "EXELY_ARI_PLACEMENTS_INVALID"
+    editor.save.assert_not_awaited()
+    editor.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize("first_success,state,error_code,status,expected,expected_calls", [
+    (False, "ambiguous", "EXELY_TIMEOUT", "WRITE_OUTCOME_UNKNOWN", "UNKNOWN", 1),
+    (True, "ambiguous", "EXELY_TIMEOUT", "WRITE_OUTCOME_UNKNOWN", "PARTIAL", 2),
+    (False, "blocked", "EXELY_ARI_RATE_LIMITED", "RATE_LIMITED", "NOT_SENT", 1),
+    (True, "rejected", "EXELY_ARI_RATE_LIMITED", "DEFINITIVE_REJECTION", "PARTIAL", 2),
+])
+async def test_unknown_or_failed_batch_is_never_retried_or_reported_as_full_success(editor, first_success, state, error_code, status, expected, expected_calls):
+    failure = ari_delivery.ExelyARIDeliveryResult(False, state, error_code, status, int(state != "blocked"), "synthetic")
+    editor.send.side_effect = ([editor.send.return_value] if first_success else []) + [failure]
+    result = await publish()
+    assert not result["provider_verified"]
+    assert result["provider_delivery_state"] == expected
+    assert editor.send.await_count == expected_calls
+    assert editor.wait.await_count == expected_calls - 1
+    delivery = result["provider_delivery"][0]
+    assert delivery["error_codes"] == [error_code]
+    assert delivery["confirmed_batch_count"] == int(first_success)
+
+
+async def test_exception_after_first_batch_preserves_partial_confirmation_without_resend(editor):
+    editor.send.side_effect = [editor.send.return_value, RuntimeError("synthetic loss")]
+    result = await publish()
+    assert result["provider_delivery_state"] == "PARTIAL"
+    assert not result["provider_verified"]
+    assert editor.send.await_count == 2
+    assert result["provider_delivery"][0]["outcome_unknown"]
+
+
+async def test_batch_slot_waits_longer_than_one_second(monkeypatch):
+    wait = AsyncMock()
+    monkeypatch.setattr(rates.asyncio, "sleep", wait)
+    await rates._wait_exely_batch_slot()
+    wait.assert_awaited_once_with(1.05)

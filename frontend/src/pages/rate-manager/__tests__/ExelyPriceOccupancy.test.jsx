@@ -21,8 +21,9 @@ describe('explicit Exely price occupancy', () => {
   it.each([1, 2, 3])('reviews the nightly room total for %i adults, not a per-adult charge', count => {
     const review = buildRateUpdateReview({ ...input, occupancyPricingRules: { STD: { base_occupancy: count } } });
     expect(review.errors).toEqual([]);
-    expect(review.warnings.join(' ')).toContain(`100 — ${count} yetişkin için oda/gece toplam fiyatı`);
-    expect(review.warnings.join(' ')).toContain(`NumberOfGuests=${count}`);
+    expect(review.priceSummaries[0].prices).toEqual([{ kind: 'adult_main', amount: 100, number_of_guests: count }]);
+    expect(review.warnings).toEqual([]);
+    expect(review.notes.join(' ')).toContain('Diğer kişi, çocuk ve ek yatak tarifeleri bu işlemde güncellenmez');
   });
 
   it('does not apply this Exely-only requirement to agency, HotelRunner, or availability updates', () => {

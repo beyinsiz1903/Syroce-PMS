@@ -55,7 +55,7 @@ export const getUnifiedRateDeliveryFeedback = data => {
   if (data?.provider_preflight_message) {
     return { level: 'error', message: data.provider_preflight_message };
   }
-  if (data?.provider_delivery_state === 'UNKNOWN') {
+  if (data?.provider_delivery_state === 'UNKNOWN' || data?.outcome_unknown) {
     return { level: 'warning', message: 'Gönderim sonucu belirsiz. Tekrar göndermeden önce sağlayıcı kayıtlarıyla uzlaştırın.' };
   }
   if (data?.provider === 'agency' && data?.agency_push_count > 0) {
@@ -598,7 +598,7 @@ const UnifiedRateManager = ({
   // Unified bulk update
   const handleBulkUpdate = async () => {
     const review = buildRateUpdateReview({ dateFrom, dateTo, allDays, selectedDays, selections, enabledFields,
-      roomValues, selectedChannelCodes, activeChannelsStale, channelProvider: provider, agenciesOnly, ratePlans, occupancyPricingRules, currency, exelyPlacementsSupported });
+      roomValues, selectedChannelCodes, activeChannelsStale, channelProvider: provider, agenciesOnly, ratePlans, roomTypes, occupancyPricingRules, currency, exelyPlacementsSupported });
     if (provider === 'exely' && !agenciesOnly && review.errors.length > 0) {
       toast.error(review.errors[0], { duration: 8000 });
       return;

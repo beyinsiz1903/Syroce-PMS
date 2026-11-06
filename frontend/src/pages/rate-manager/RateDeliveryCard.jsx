@@ -10,7 +10,7 @@ const dateLabel = value => {
 export const RateDeliveryCard = ({ receipt, feedback, onDismiss }) => {
   const data = receipt.data;
   const confirmed = data.provider_verified === true;
-  const unknown = data.provider_delivery_state === 'UNKNOWN';
+  const unknown = data.provider_delivery_state === 'UNKNOWN' || data.outcome_unknown === true;
   const pending = ['QUEUED', 'PENDING', 'SENDING'].includes(data.provider_delivery_state);
   const state = confirmed ? 'Teslim edildi' : unknown ? 'Sonuç doğrulanamadı' : pending ? 'İletim bekleniyor' : data.provider_delivery_state === 'PARTIAL' ? 'Kısmen teslim edildi' : 'İletim tamamlanmadı';
   const Icon = confirmed ? CheckCircle2 : pending ? Clock3 : AlertTriangle;

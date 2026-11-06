@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2, Eye, ShieldCheck, Sparkles } from 'lucide-react';
+import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2, Eye, Sparkles } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS, UPDATE_FIELD_PRESETS, usesExpandedAriLayout } from './constants';
 import { ChannelList } from './ChannelList';
 import { buildRateUpdateReview, exelyPriceOccupancy, isExelyPricePlanWritable } from './updateReview';
@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, normalizeOccupancyRule } from '@/utils/occupancyPricing';
 import { toast } from 'sonner';
 import { ExelyPlacementEditor } from './ExelyPlacementEditor';
+import { RatePublishReview } from './RatePublishReview';
 
 export const BulkUpdatePanel = ({
   roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField, applyFieldPreset,
@@ -35,8 +36,8 @@ export const BulkUpdatePanel = ({
   const review = useMemo(() => buildRateUpdateReview({
     dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues,
     selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly,
-    ratePlans, occupancyPricingRules, currency, exelyPlacementsSupported,
-  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly, ratePlans, occupancyPricingRules, currency, exelyPlacementsSupported]);
+    ratePlans, roomTypes, occupancyPricingRules, currency, exelyPlacementsSupported,
+  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly, ratePlans, roomTypes, occupancyPricingRules, currency, exelyPlacementsSupported]);
   const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
   const canContinueFromRooms = totalSelectedRoomTypes > 0;
   const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));
@@ -240,58 +241,7 @@ export const BulkUpdatePanel = ({
       </Card>
     )}
 
-    {reviewOpen && (
-      <Card className="mt-4 border-blue-200 bg-blue-50/50" role="dialog" aria-labelledby="rate-review-title" data-testid="rate-publish-review">
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <CardTitle id="rate-review-title" className="flex items-center gap-2 text-base text-slate-900">
-                <ShieldCheck className="h-5 w-5 text-blue-600" /> Yayın öncesi kontrol
-              </CardTitle>
-              <p className="mt-1 text-xs text-slate-600">Seçimin etkisini doğrulayın; ardından PMS ve seçili kanallara gönderimi başlatın.</p>
-            </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setReviewOpen(false)}>Kapat</Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {[
-              ['Gece', review.dateCount], ['Oda tipi', review.roomCount], ['Fiyat planı', review.planCount],
-              ['Kanal', review.channelCount], ['Etkilenen hücre', review.cellCount.toLocaleString('tr-TR')],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-blue-100 bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">{label}</div><div className="text-lg font-bold text-slate-900">{value}</div>
-              </div>
-            ))}
-          </div>
-          {review.errors.length > 0 && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3" role="alert">
-              <div className="text-sm font-semibold text-red-800">Yayınlamadan önce düzeltin</div>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-red-700">{review.errors.map(error => <li key={error}>{error}</li>)}</ul>
-            </div>
-          )}
-          {review.warnings.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <div className="text-sm font-semibold text-amber-900">Dikkat edilmesi gerekenler</div>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-amber-800">{review.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3">
-            <p className="max-w-2xl text-xs text-slate-600">Çocuk ve ek kişi kuralları oda tipi altında ayrı kaydedilir. OTA tarafındaki eşleşme onayı olmayan kişi bazlı kurallar kanal yayınına dahil edilmez.</p>
-            <Button
-              type="button"
-              className="bg-blue-700 text-white hover:bg-blue-800"
-              disabled={saving || review.errors.length > 0}
-              onClick={handleBulkUpdate}
-              data-testid="rate-confirm-publish"
-            >
-              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
-              Kontrol ettim, yayınla
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    )}
+    {reviewOpen && <RatePublishReview review={review} saving={saving} onClose={() => setReviewOpen(false)} onPublish={handleBulkUpdate} />}
 
     <div className="sticky bottom-0 z-20 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 pt-3 safe-bottom-padding backdrop-blur lg:hidden" data-testid="rate-mobile-wizard-actions">
       <div className="flex items-center gap-2">
@@ -632,7 +582,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
       {open && (
         <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <RuleNumber label="Fiyata dahil yetişkin" value={draft.base_occupancy} min={1} max={20} onChange={v => update('base_occupancy', v)} />
+            <RuleNumber label="Fiyata dahil yetişkin" value={draft.base_occupancy} min={1} max={20} onChange={v => update('base_occupancy', v === '' ? '' : Number(v))} />
             <div>
               <Label className="text-[11px] text-gray-600">Ek yetişkin / gece</Label>
               <div className="flex mt-1">

@@ -15,14 +15,14 @@ const input = {
 };
 
 describe('Exely single-request price review', () => {
-  it('blocks the screenshot selection without advising retries, splitting, or relaxing the quota', () => {
+  it('allows the screenshot selection for server-side coarse plan dispatch without dropping choices', () => {
     const review = buildRateUpdateReview(input);
     expect(review.dateCount).toBe(728);
     expect(review.cellCount).toBe(4368);
-    expect(review.errors).toHaveLength(2);
-    expect(review.errors[0]).toContain('728 gece × 3 fiyat planı = 2184');
-    expect(review.errors[0]).toContain('1460');
-    expect(review.warnings.join(' ')).toContain('tek fiyat XML isteğinde');
+    expect(review.errors).toEqual([]);
+    expect(review.planCount).toBe(6);
+    expect(review.warnings).toEqual([]);
+    expect(review.priceSummaries).toHaveLength(2);
   });
 
   it('keeps both rooms and the complete selected period when two explicitly chosen plans fit', () => {
@@ -79,13 +79,13 @@ describe('Exely price plan selection on the existing editor', () => {
     {...overrides}
   />);
 
-  it('shows selected price plans without requiring a hidden expand action and disables an oversized publish', () => {
+  it('shows selected price plans and allows the full screenshot selection in the existing publish flow', () => {
     panel();
     expect(screen.getByTestId('rate-plan-check-STD-BASE')).toBeInTheDocument();
     expect(screen.getByTestId('rate-plan-check-STD-DYNAMIC')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('bulk-update-btn'));
-    expect(screen.getByTestId('rate-confirm-publish')).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent('2184');
+    expect(screen.getByTestId('rate-confirm-publish')).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('allows clearing a selected forbidden plan and prevents selecting it again', () => {
