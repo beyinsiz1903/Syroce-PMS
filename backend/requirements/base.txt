@@ -38,7 +38,8 @@ MarkupSafe==3.0.3
 motor==3.7.1
 # CVE-2026-114613: strict-map-key C-extension leak and stale parser references.
 msgpack==1.2.3
-oauthlib==4.0.0
+# CVE-2026-49272: device flow must validate the device_code before issuing tokens.
+oauthlib==4.0.1
 orjson==3.11.7
 packaging==26.0
 passlib==1.7.4
