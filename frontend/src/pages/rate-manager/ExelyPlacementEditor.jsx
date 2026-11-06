@@ -21,7 +21,7 @@ export const ExelyPlacementEditor = ({ draft, update, base, currency, pricingTyp
   };
   const change = (index, field, value) => replace(rows.map((row, i) => i === index ? { ...row, [field]: value } : row));
   const nextAdult = nextAdultPlacement(rows, draft.base_occupancy);
-  const childBand = nextChildAgeBand(rows, 'child_main');
+  const childKind = ['child_main', 'child_extra', 'child_without_bed'].find(kind => nextChildAgeBand(rows, kind));
   const error = exelyDraftError(draft, currency);
   let preview = [], previewError = '';
   if (!error && base > 0) {
@@ -43,7 +43,7 @@ export const ExelyPlacementEditor = ({ draft, update, base, currency, pricingTyp
     </div>
     <div className="flex flex-wrap gap-2" aria-label="Tarife ekle">
       <Button type="button" size="sm" variant="outline" disabled={rows.length >= 100 || !nextAdult} onClick={() => add('adult_main')}><Users className="mr-1.5 h-4 w-4" />Yetişkin fiyatı ekle</Button>
-      <Button type="button" size="sm" variant="outline" disabled={rows.length >= 100 || !childBand} onClick={() => add('child_main')}><Baby className="mr-1.5 h-4 w-4" />Çocuk fiyatı ekle</Button>
+      <Button type="button" size="sm" variant="outline" disabled={rows.length >= 100 || !childKind} onClick={() => add(childKind)}><Baby className="mr-1.5 h-4 w-4" />Çocuk fiyatı ekle</Button>
       <Button type="button" size="sm" variant="outline" disabled={rows.length >= 100 || rows.some(row => row.kind === 'adult_extra')} onClick={() => add('adult_extra')}><BedDouble className="mr-1.5 h-4 w-4" />Ek yatak fiyatı ekle</Button>
     </div>
     {!rows.length && <p className="rounded-lg border border-dashed border-slate-300 p-4 text-xs leading-5 text-slate-600">Henüz ek tarife yok. Örneğin tek yetişkin fiyatını veya çocuk için yatak türüne göre bir ücret ekleyebilirsiniz. Eklenmeyen tarife ücretsiz sayılmaz.</p>}

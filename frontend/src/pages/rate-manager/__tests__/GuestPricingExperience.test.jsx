@@ -142,6 +142,19 @@ describe('guided Exely child and extra-bed tariffs', () => {
     expect(screen.getByTestId('exely-placement-preview')).toHaveTextContent('7–11 yaş çocuk · ek yatak: 60 USD');
   });
 
+  it('still offers extra-bed and without-bed children when another child bed type covers every age', () => {
+    placementEditor({ exely_price_placements: [{ kind: 'child_main', min_age: 0, max_age: 17, price_mode: 'fixed', value: 20 }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Çocuk fiyatı ekle' }));
+    expect(screen.getByLabelText('2. Exely yerleşim türü')).toHaveValue('child_extra');
+    expect(screen.getByLabelText('2. yerleşim fiyatı')).toHaveValue(null);
+    fireEvent.change(screen.getByLabelText('2. yerleşim fiyatı'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Çocuk fiyatı ekle' }));
+    expect(screen.getByLabelText('3. Exely yerleşim türü')).toHaveValue('child_without_bed');
+    expect(screen.getByLabelText('3. yerleşim fiyatı')).toHaveValue(null);
+    expect(screen.getByRole('button', { name: 'Çocuk fiyatı ekle' })).toBeDisabled();
+    expect(screen.getByTestId('exely-placements-reviewed')).not.toBeChecked();
+  });
+
   it('can prepare a valid percentage rule without inventing an amount when a base price has not been entered', () => {
     placementEditor({ exely_price_placements: [{ kind: 'child_extra', min_age: 7, max_age: 11, price_mode: 'percentage', value: 50 }] }, 0);
     expect(screen.queryByTestId('exely-placement-preview')).not.toBeInTheDocument();
