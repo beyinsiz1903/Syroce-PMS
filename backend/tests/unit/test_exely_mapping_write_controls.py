@@ -192,7 +192,9 @@ async def test_suite_mapping_can_disable_availability_without_disabling_rate(mon
     monkeypatch.setattr(unified, "db", fake_db)
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
 
-    request = SimpleNamespace(
+    # Use the API model so omitted optional placement fields have the same
+    # defaults as real pre-placement clients, rather than an incomplete stub.
+    request = unified.UnifiedBulkUpdateRequest(
         start_date="2026-11-10",
         end_date="2026-11-11",
         availability=1,
@@ -246,6 +248,7 @@ async def test_suite_mapping_can_disable_availability_without_disabling_rate(mon
             "rate_amount": 125.0,
             "currency": "USD",
             "number_of_guests": 2,
+            "guest_prices": [{"kind": "adult_main", "number_of_guests": 2, "amount": 125.0}],
         }
     ]
 
@@ -269,7 +272,7 @@ async def test_explicit_mapping_rate_plan_is_usable_when_discovery_cache_is_stal
     )
     monkeypatch.setattr(unified, "db", fake_db)
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
-    request = SimpleNamespace(
+    request = unified.UnifiedBulkUpdateRequest(
         start_date="2026-11-10", end_date="2026-11-11", availability=None,
         rate=125.0, rate_number_of_guests=1, stop_sell=None, min_stay=None, min_los_arrival=None,
         max_stay=None, cta=None, ctd=None,
@@ -292,6 +295,9 @@ async def test_explicit_mapping_rate_plan_is_usable_when_discovery_cache_is_stal
     assert result["provider_verified"] is True
     assert deliver.await_args.args[2]["value"][0]["rate_plan_code"] == "10009740"
     assert deliver.await_args.args[2]["value"][0]["number_of_guests"] == 1
+    assert deliver.await_args.args[2]["value"][0]["guest_prices"] == [
+        {"kind": "adult_main", "number_of_guests": 1, "amount": 125.0},
+    ]
 
 
 @pytest.mark.asyncio
@@ -303,7 +309,7 @@ async def test_discovered_but_unmapped_exely_pair_is_not_written(monkeypatch):
     )
     monkeypatch.setattr(unified, "db", fake_db)
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
-    request = SimpleNamespace(
+    request = unified.UnifiedBulkUpdateRequest(
         start_date="2026-11-10",
         end_date="2026-11-11",
         availability=7,
@@ -362,7 +368,7 @@ async def test_unified_exely_writes_use_complete_pms_api_pairs_and_preserve_suit
                                           for i, m in enumerate(mappings)]),
     ))
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
-    request = SimpleNamespace(
+    request = unified.UnifiedBulkUpdateRequest(
         start_date="2026-11-10", end_date="2026-11-11", availability=6, rate=125.0,
         stop_sell=None, min_stay=None, min_los_arrival=None, max_stay=None, cta=None, ctd=None,
     )
@@ -394,6 +400,10 @@ async def test_unified_exely_writes_use_complete_pms_api_pairs_and_preserve_suit
     ]
     assert all(row["currency"] == "USD" for row in calls["rate_batch"])
     assert [row["number_of_guests"] for row in calls["rate_batch"]] == [2, 3, 4]
+    assert [row["guest_prices"] for row in calls["rate_batch"]] == [
+        [{"kind": "adult_main", "number_of_guests": guests, "amount": 125.0}]
+        for guests in (2, 3, 4)
+    ]
 
 
 @pytest.mark.asyncio
@@ -407,7 +417,7 @@ async def test_unified_exely_rejects_partial_api_alias_instead_of_mixing_codes(m
         exely_room_mappings=_Collection(rows=[mapping]),
     ))
     monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
-    request = SimpleNamespace(
+    request = unified.UnifiedBulkUpdateRequest(
         start_date="2026-11-10", end_date="2026-11-10", availability=6, rate=None,
         stop_sell=None, min_stay=None, min_los_arrival=None, max_stay=None, cta=None, ctd=None,
     )

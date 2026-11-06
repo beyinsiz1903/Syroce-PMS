@@ -290,6 +290,7 @@ jobs:
             tests/test_exely_explicit_price_occupancy.py \
             tests/test_exely_placement_tariffs.py \
             tests/test_exely_bulk_availability_batch.py \
+            tests/unit/test_exely_mapping_write_controls.py \
             tests/test_exely_legacy_closure.py \
             tests/test_exely_legacy_duplicate_fencing.py \
             tests/test_exely_pilot_contract.py \
