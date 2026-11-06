@@ -43,8 +43,8 @@ describe('UnifiedRateManager write safety', () => {
 
   it('keeps the delivery result visible after the toast disappears', () => {
     render(<RateDeliveryReceipt receipt={{ data: { saved: 16, provider_verified: true, provider_delivery_state: 'CONFIRMED' }, dateFrom: '2026-11-02', dateTo: '2026-11-09', roomCount: 2, fields: ['availability'] }} />);
-    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('CONFIRMED');
-    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('2026-11-02 – 2026-11-09');
+    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('Teslim edildi');
+    expect(screen.getByTestId('rate-delivery-receipt')).toHaveTextContent('2 Kas 2026 – 9 Kas 2026');
   });
 
   it('keeps a server-side single-request preflight explanation visible without implying any records were saved', () => {

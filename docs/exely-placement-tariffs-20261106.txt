@@ -1,0 +1,65 @@
+Exely placement tariffs / hotel-facing delivery receipt
+2026-11-06
+
+Protocol reference: supplied Exely PMSConnect v1.17.1, pp35-43, 48-49 and p9
+(change cost per accommodation type/date). No live commercial tariff was
+invented or sent while implementing this change.
+
+Existing screen and existing publish action only:
+- Room-based mode preserves one explicitly saved main-bed adult placement.
+  The input is a room/night total, not a per-adult multiplier.
+- Person-based mode includes that same base placement plus the explicitly
+  configured Exely placement table in the existing room rule editor.
+- Adult main-bed entries carry room/night TOTALS for each NumberOfGuests.
+- Child main-bed entries carry the child/night amount with MinAge/MaxAge.
+- Adult/child extra-bed entries use AdditionalGuestAmounts, BedRequired=true.
+- Child without-bed entries use AdditionalGuestAmounts, BedRequired=false.
+- A fixed value or percentage of the entered base room price can be saved.
+  No adult, child or extra-bed tariff is inferred from legacy PMS surcharges.
+- Local inclusive child boundaries (e.g. 3-6) become Exely exclusive upper
+  boundaries (MinAge=3, MaxAge=7). Adult AgeQualifyingCode=10 is NOT invented.
+- An omitted tariff is not free and is not sent. Explicit zero child/extra
+  charges are preserved. Removing a row does NOT delete an old Exely rate.
+- This covers ordinary room pricing; MaxAdditionalGuests aggregate pricing
+  for special bed-in-room/resort tariffs is deliberately not offered.
+
+Safety:
+- Currency, adult occupancy, child ages, overlap, duplicates, money bounds,
+  review flag, and exact saved policy are validated server-side before any
+  calendar, agency or provider write. Conflicting aliases fail closed.
+- Operator checks Exely main/extra-bed capacity and child age boundaries.
+  Known discovered main-bed capacity/child age limits override an operator
+  attestation. Missing discovery metadata is not invented as a capacity.
+- The editor echoes every compiled placement/amount; a stale or incomplete
+  review is rejected. Legacy base-only clients cannot overwrite a newly
+  configured multi-placement tariff without reviewing it.
+- GET grid exposes exely_placement_tariffs_version=1. A new multi-placement
+  edit cannot be saved/published against an old backend. A stale POST worker
+  returning only a base-rate receipt is shown as unconfirmed, never success.
+- One rate XML carries selected rooms/plans/periods and all their placement
+  elements. There is no daily/per-placement SOAP fan-out or silent omission.
+- Existing quota limits remain enforced; each placement/date is counted.
+  Compression is not a discount on change cost. A provider-approved quota
+  exception is NOT assumed from a successful small test or UI receipt.
+- The exact guest_prices list is preserved in the durable batch payload,
+  fingerprint, local rate calendar and receipt. Unknown delivery is not retried.
+
+Hotel-facing receipt:
+- Compact neutral card, human delivery label, localized date range, room count
+  and local update count. No CONFIRMED/NumberOfGuests/raw room IDs in the card.
+- Details collapsed initially; saved room names and readable placements inside.
+- Optional dismiss affects only the current display, never provider records.
+- Uncertain/failure outcomes remain clearly visible, not green success.
+- No count is invented for an unknown response.
+
+Rollout / remaining live acceptance:
+Deploy backend and frontend from this PR; refresh the normal rate screen.
+An operator must configure actual approved placement tariffs and compare the
+Exely capacity/age bands. Then send a narrow TEST501694 update through the
+existing screen and check the receiving price table/raw XML as available.
+No certification acceptance or Exely staff XML confirmation is claimed here.
+The previous verified 2-adult test is historical and was not repeated.
+
+Local verification commands use synthetic JWT/config and mocked provider I/O.
+New coverage is added to both Exely CI hard gates. Visual QA uses synthetic
+data and actual components in Safari desktop and 390x844 responsive view.

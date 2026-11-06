@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axiosGet, axiosPost, toast } = vi.hoisted(() => ({
@@ -89,11 +89,19 @@ describe('maintenance asset and plan controls', () => {
   });
 
   it('reports scheduler output instead of failing silently', async () => {
-    axiosGet.mockResolvedValue({ data: { items: [] } });
+    let finishInitialLoad;
+    axiosGet.mockReturnValue(new Promise(resolve => { finishInitialLoad = resolve; }));
     axiosPost.mockResolvedValue({ data: { created_count: 2, skipped_count: 1 } });
 
     render(<MaintenancePlans />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Run Scheduler' }));
+    const runButton = screen.getByRole('button', { name: 'Run Scheduler' });
+    expect(runButton).toBeDisabled();
+    fireEvent.click(runButton);
+    expect(axiosPost).not.toHaveBeenCalled();
+    await act(async () => finishInitialLoad({ data: { items: [] } }));
+    await waitFor(() => expect(runButton).toBeEnabled());
+    fireEvent.click(runButton);
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/maintenance/plans/run-scheduler'));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
       '2 iş emri oluşturuldu, 1 geçersiz plan atlandı',

@@ -27,7 +27,9 @@ def category_change_counts(messages: list[dict]) -> dict[str, int]:
     counts: dict[str, int] = defaultdict(int)
     for message in messages:
         room = str(message["room_type_code"]).strip().casefold()
-        counts[room] += (date.fromisoformat(message["end_date"]) - date.fromisoformat(message["start_date"])).days + 1
+        nights = (date.fromisoformat(message["end_date"]) - date.fromisoformat(message["start_date"])).days + 1
+        # A price for EACH accommodation type/date is a change (spec p9).
+        counts[room] += nights * len(message["guest_prices"]) if "guest_prices" in message else nights
     return dict(counts)
 
 

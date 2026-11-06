@@ -607,17 +607,40 @@ def build_rate_amount_batch_rq(
             f"{{{OTA_NS}}}Rate",
             attrib={"Start": str(item["start_date"]), "End": str(item["end_date"])},
         )
-        amounts = etree.SubElement(rate, f"{{{OTA_NS}}}BaseByGuestAmts")
-        amount = etree.SubElement(
-            amounts,
-            f"{{{OTA_NS}}}BaseByGuestAmt",
-            attrib={
-                "AmountAfterTax": f"{float(item['rate_amount']):.2f}",
-                "CurrencyCode": str(item.get("currency") or "TRY"),
-            },
-        )
-        _set_adult_occupancy(amount, item.get("number_of_guests"))
+        if "guest_prices" in item:
+            _append_guest_prices(rate, item["guest_prices"], str(item.get("currency") or "TRY"))
+        else:
+            amounts = etree.SubElement(rate, f"{{{OTA_NS}}}BaseByGuestAmts")
+            amount = etree.SubElement(
+                amounts, f"{{{OTA_NS}}}BaseByGuestAmt",
+                attrib={"AmountAfterTax": f"{float(item['rate_amount']):.2f}", "CurrencyCode": str(item.get("currency") or "TRY")},
+            )
+            _set_adult_occupancy(amount, item.get("number_of_guests"))
     return _soap_envelope(username, password, hotel_code, rq)
+
+
+def _append_guest_prices(rate, prices, currency):
+    from .rate_placements import money, validate_guest_prices
+
+    validate_guest_prices(prices)
+    containers = {}
+    # OTA ordering: all main-bed rows before additional-bed rows.
+    for additional in (False, True):
+        for price in prices:
+            kind = price["kind"]
+            if (kind not in {"adult_main", "child_main"}) != additional:
+                continue
+            container_name = "AdditionalGuestAmounts" if additional else "BaseByGuestAmts"
+            if container_name not in containers:
+                containers[container_name] = etree.SubElement(rate, f"{{{OTA_NS}}}{container_name}")
+            attrs = {"AmountAfterTax": str(money(price["amount"])), "CurrencyCode": currency}
+            if kind == "adult_main":
+                attrs["NumberOfGuests"] = str(price["number_of_guests"])
+            elif kind.startswith("child_"):
+                attrs.update(MinAge=str(price["min_age"]), MaxAge=str(price["max_age"]))
+            if additional:
+                attrs["BedRequired"] = "false" if kind == "child_without_bed" else "true"
+            etree.SubElement(containers[container_name], f"{{{OTA_NS}}}{'AdditionalGuestAmount' if additional else 'BaseByGuestAmt'}", attrib=attrs)
 
 
 def _set_adult_occupancy(amount, number_of_guests):

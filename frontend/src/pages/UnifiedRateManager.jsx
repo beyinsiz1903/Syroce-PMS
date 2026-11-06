@@ -18,6 +18,8 @@ import { UPDATE_FIELDS, usesExpandedAriLayout } from './rate-manager/constants';
 import { buildRateUpdateReview, exelyPriceOccupancy, isValidExelyAvailability } from './rate-manager/updateReview';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { compileExelyGuestPrices, sameExelyGuestPrices } from './rate-manager/exelyPlacements';
+import { RateDeliveryCard } from './rate-manager/RateDeliveryCard';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
 export const unifiedBulkUpdatePath = ({ provider, agenciesOnly, enabledFields }) =>
@@ -33,17 +35,10 @@ export const providerWriteNotice = providers => providers
   .map(item => `${item.name || 'Kanal'}: gönderim kapalı${item.block_reason ? ` (${item.block_reason})` : ''}.`)
   .join(' ');
 
-export const RateDeliveryReceipt = ({ receipt }) => {
+export const RateDeliveryReceipt = ({ receipt, onDismiss }) => {
   if (!receipt) return null;
   const feedback = getUnifiedRateDeliveryFeedback(receipt.data);
-  return <div role="status" data-testid="rate-delivery-receipt" className={`rounded-lg border p-3 text-sm ${feedback.level === 'success' ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-    <p className="font-semibold">Son gönderim sonucu</p>
-    <p>{feedback.message}</p>
-    <p>{receipt.dateFrom} – {receipt.dateTo} · {receipt.roomCount} oda tipi · {receipt.fields.join(', ')}</p>
-    <p>Teslim durumu: {receipt.data.provider_delivery_state || 'NOT_SENT'}</p>
-    {Object.entries(receipt.data.price_occupancies || {}).map(([room, count]) => <p key={room}>{room}: {count} yetişkin için oda/gece toplam fiyatı · ana yatak · NumberOfGuests={count}</p>)}
-    {receipt.data.availability_input_mode === 'remaining' && <p>Gönderilen müsaitlik: manuel satış kontenjanı veya otomatik net kalan oda sayısı. Mevcut rezervasyonlar tekrar düşülmez. Boş alan otomatik hesaptır; elle girilen kontenjan fiziksel kapasiteyi aşabilir.</p>}
-  </div>;
+  return <RateDeliveryCard receipt={receipt} feedback={feedback} onDismiss={onDismiss} />;
 };
 
 export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo, agenciesOnly = false, currency }) => confirmDialog({
@@ -106,6 +101,7 @@ const UnifiedRateManager = ({
   const [grid, setGrid] = useState([]);
   const [pricingSettings, setPricingSettings] = useState({});
   const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
+  const [exelyPlacementsSupported, setExelyPlacementsSupported] = useState(false);
   const [currency, setCurrency] = useState('TRY');
   const [pushProviders, setPushProviders] = useState([]);
   const [activeChannels, setActiveChannels] = useState([]);
@@ -239,6 +235,7 @@ const UnifiedRateManager = ({
       });
       if (requestId !== gridRequestRef.current) return;
       setGrid(data.grid || []);
+      setExelyPlacementsSupported(data.exely_placement_tariffs_version === 1);
       if (!agenciesOnlyRef.current || provider === 'agency') {
         setRoomTypes(data.room_types || []);
         setRatePlans(data.rate_plans || []);
@@ -468,6 +465,8 @@ const UnifiedRateManager = ({
     const current = pricingSettings[roomTypeCode] || 'per_person';
     const newType = current === 'per_person' ? 'per_room' : 'per_person';
     const currentRule = occupancyPricingRules[roomTypeCode] || {};
+    const nextRule = { ...currentRule, pricing_type: newType, currency,
+      exely_placements_reviewed: currentRule.currency === currency && currentRule.exely_placements_reviewed === true };
     setPricingSettings(prev => ({
       ...prev,
       [roomTypeCode]: newType
@@ -476,9 +475,7 @@ const UnifiedRateManager = ({
       await axios.put(`${UNIFIED_PREFIX}/pricing-settings`, {
         settings: [{
           room_type_code: roomTypeCode,
-          ...currentRule,
-          pricing_type: newType,
-          currency
+          ...nextRule,
         }]
       }, {
         headers
@@ -486,7 +483,7 @@ const UnifiedRateManager = ({
       toast.success(`${newType === 'per_room' ? 'Oda bazlı' : 'Kişi bazlı'} fiyatlandırma ayarlandı`);
       setOccupancyPricingRules(prev => ({
         ...prev,
-        [roomTypeCode]: { ...currentRule, pricing_type: newType }
+        [roomTypeCode]: nextRule
       }));
     } catch {
       setPricingSettings(prev => ({
@@ -497,6 +494,9 @@ const UnifiedRateManager = ({
     }
   };
   const saveOccupancyPricingRule = async (roomTypeCode, rule) => {
+    if (provider === 'exely' && rule.exely_price_placements?.length && !exelyPlacementsSupported) {
+      throw new Error('Exely yerleşim tarife servisi bu sunucuda henüz hazır değil; backend deployunu tamamlayıp ekranı yenileyin.');
+    }
     const pricingType = rule.pricing_type || 'per_person';
     await axios.put(`${UNIFIED_PREFIX}/pricing-settings`, {
       settings: [{ room_type_code: roomTypeCode, ...rule, pricing_type: pricingType, currency }]
@@ -598,7 +598,7 @@ const UnifiedRateManager = ({
   // Unified bulk update
   const handleBulkUpdate = async () => {
     const review = buildRateUpdateReview({ dateFrom, dateTo, allDays, selectedDays, selections, enabledFields,
-      roomValues, selectedChannelCodes, activeChannelsStale, channelProvider: provider, agenciesOnly, ratePlans, occupancyPricingRules });
+      roomValues, selectedChannelCodes, activeChannelsStale, channelProvider: provider, agenciesOnly, ratePlans, occupancyPricingRules, currency, exelyPlacementsSupported });
     if (provider === 'exely' && !agenciesOnly && review.errors.length > 0) {
       toast.error(review.errors[0], { duration: 8000 });
       return;
@@ -657,7 +657,8 @@ const UnifiedRateManager = ({
           rate_plan_codes: Array.from(selections[rtCode]),
           rate: enabledFields.has('rate') && hasValue(rv.rate) ? parseFloat(rv.rate) : null,
           ...(provider === 'exely' && !agenciesOnly && enabledFields.has('rate')
-            ? { rate_number_of_guests: exelyPriceOccupancy(occupancyPricingRules[rtCode]) } : {}),
+            ? { rate_number_of_guests: exelyPriceOccupancy(occupancyPricingRules[rtCode]),
+              rate_guest_prices: compileExelyGuestPrices(occupancyPricingRules[rtCode], rv.rate, currency) } : {}),
           availability: enabledFields.has('availability') && hasValue(rv.availability) ? Number(rv.availability) : null,
           min_stay: enabledFields.has('min_stay') && hasValue(rv.min_stay) ? parseInt(rv.min_stay) : null,
           min_los_arrival: enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) ? parseInt(rv.min_los_arrival) : null,
@@ -673,9 +674,7 @@ const UnifiedRateManager = ({
         setSaving(false);
         return;
       }
-      const {
-        data
-      } = await axios.post(unifiedBulkUpdatePath({ provider, agenciesOnly, enabledFields }), {
+      const response = await axios.post(unifiedBulkUpdatePath({ provider, agenciesOnly, enabledFields }), {
         per_room_values: perRoomValues,
         start_date: dateFrom,
         end_date: dateTo,
@@ -687,8 +686,16 @@ const UnifiedRateManager = ({
       }, {
         headers
       });
+      let data = response.data;
+      if (provider === 'exely' && !agenciesOnly && perRoomValues.some(row => row.rate_guest_prices?.length > 1
+        && !sameExelyGuestPrices(row.rate_guest_prices, data.price_guest_prices?.[row.room_type_code]))) {
+        // A stale worker can accept the old request model but drop the new
+        // placement list. Never show a base-only receipt as full delivery.
+        data = { ...data, provider_verified: false, provider_delivery_state: 'UNKNOWN' };
+      }
       const feedback = getUnifiedRateDeliveryFeedback(data);
-      setDeliveryReceipt({ data, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
+      setDeliveryReceipt({ data, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields), currency,
+        roomNames: Object.fromEntries(roomTypes.map(room => [room.code, room.name])) });
       toast[feedback.level](feedback.message, { duration: 8000 });
       if (data.agency_push_count > 0) {
         toast.success(`${data.agency_push_count} acente için acente fiyatı kaydedildi`, {
@@ -707,7 +714,7 @@ const UnifiedRateManager = ({
       // A missing module comes with a sentence saying which one and why.
       const entitlementText = safeCode === 'ENTITLEMENT_DENIED' && typeof detail?.detail === 'string' ? detail.detail : null;
       setDeliveryReceipt({ data: { provider_delivery_state: !e.response || e.response.status >= 500 ? 'UNKNOWN' : 'NOT_SENT',
-        provider_preflight_message: safeCode?.startsWith('EXELY_SINGLE_REQUEST_') || safeCode?.startsWith('EXELY_RATE_OCCUPANCY_') || safeCode === 'EXELY_RATE_PLAN_PRICE_UPLOAD_DISABLED' ? netMessage : null,
+        provider_preflight_message: safeCode?.startsWith('EXELY_SINGLE_REQUEST_') || safeCode?.startsWith('EXELY_RATE_OCCUPANCY_') || safeCode?.startsWith('EXELY_RATE_PLACEMENT') || safeCode === 'EXELY_RATE_PLAN_PRICE_UPLOAD_DISABLED' ? netMessage : null,
         provider_error_codes: [safeCode || detailStr || 'İstek tamamlanamadı'] }, dateFrom, dateTo, roomCount: selectedRoomCodes.length, fields: Array.from(enabledFields) });
       toast.error(entitlementText || (netMessage ? `${netMessage}${capacityContext}` : netAvailability && e.response?.status === 404
         ? 'Net müsaitlik servisi bu sunucuda henüz hazır değil. Gönderim yapılmadı; güncel deployu kontrol edin.'
@@ -873,7 +880,7 @@ const UnifiedRateManager = ({
             </div>
           </div>}
 
-        <RateDeliveryReceipt receipt={deliveryReceipt} />
+        <RateDeliveryReceipt receipt={deliveryReceipt} onDismiss={() => setDeliveryReceipt(null)} />
 
         {/* Circuit breaker status pills (CM-Hardening Stop-Sale, May 2026) */}
         {breakers.some(b => b.state !== 'closed') && <div className="flex flex-wrap items-center gap-2" data-testid="circuit-breaker-pills">
@@ -903,7 +910,7 @@ const UnifiedRateManager = ({
               </TabsList>
 
               <TabsContent value="bulk" className="mt-4">
-                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} applyFieldPreset={applyFieldPreset} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} selectedChannelCodes={selectedChannelCodes} toggleChannel={toggleChannel} toggleAllChannels={toggleAllChannels} channelProvider={provider} agenciesOnly={agenciesOnly} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
+                <BulkUpdatePanel exelyPlacementsSupported={exelyPlacementsSupported} roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} applyFieldPreset={applyFieldPreset} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} selectedChannelCodes={selectedChannelCodes} toggleChannel={toggleChannel} toggleAllChannels={toggleAllChannels} channelProvider={provider} agenciesOnly={agenciesOnly} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
               </TabsContent>
 
               <TabsContent value="grid" className="mt-4">

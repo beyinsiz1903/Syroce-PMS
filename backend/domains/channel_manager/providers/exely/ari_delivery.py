@@ -258,6 +258,13 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
                 if isinstance(availability, bool) or not isinstance(availability, int) or not 0 <= availability <= 999:
                     return "EXELY_ARI_AVAILABILITY_INVALID"
             elif operation == "rate_batch":
+                if "guest_prices" in message:
+                    from .rate_placements import validate_guest_prices
+
+                    try:
+                        validate_guest_prices(message["guest_prices"])
+                    except ValueError:
+                        return "EXELY_ARI_PLACEMENTS_INVALID"
                 guests = message.get("number_of_guests")
                 if guests is not None and (type(guests) is not int or not 1 <= guests <= 20):
                     return "EXELY_ARI_OCCUPANCY_INVALID"
