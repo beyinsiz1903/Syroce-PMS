@@ -288,6 +288,7 @@ jobs:
             tests/test_exely_batch_change_budget.py \
             tests/test_exely_single_request_price_preflight.py \
             tests/test_exely_explicit_price_occupancy.py \
+            tests/test_exely_placement_tariffs.py \
             tests/test_exely_bulk_availability_batch.py \
             tests/test_exely_legacy_closure.py \
             tests/test_exely_legacy_duplicate_fencing.py \
@@ -334,6 +335,7 @@ jobs:
             tests/test_exely_batch_change_budget.py \
             tests/test_exely_single_request_price_preflight.py \
             tests/test_exely_explicit_price_occupancy.py \
+            tests/test_exely_placement_tariffs.py \
             tests/test_exely_bulk_availability_batch.py \
             -m exely_failure_stress --strict-markers \
             -v --tb=short -q --timeout=60 \

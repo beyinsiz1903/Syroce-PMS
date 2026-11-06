@@ -1,4 +1,5 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
+import { compileExelyGuestPrices, placementDescription } from './exelyPlacements';
 
 const parseDate = (value) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
@@ -47,6 +48,8 @@ export const buildRateUpdateReview = ({
   agenciesOnly = false,
   ratePlans = [],
   occupancyPricingRules = {},
+  currency,
+  exelyPlacementsSupported = true,
 }) => {
   const errors = [];
   const warnings = [];
@@ -68,8 +71,18 @@ export const buildRateUpdateReview = ({
     }
     if (enabledFields.has('rate') && channelProvider === 'exely' && !agenciesOnly) {
       const guests = exelyPriceOccupancy(occupancyPricingRules[roomCode]);
+      if (!exelyPlacementsSupported && occupancyPricingRules[roomCode]?.pricing_type === 'per_person' && occupancyPricingRules[roomCode]?.exely_price_placements?.length) {
+        errors.push('Exely yerleşim tarife servisi bu sunucuda henüz hazır değil; deployu tamamlayıp ekranı yenileyin.');
+      }
       if (!guests) errors.push(`${label}: Fiyat kuralında fiyata dahil ana yatak yetişkin sayısını kaydedin; 1 veya 2 kişi varsayılmaz.`);
-      else warnings.push(`${label}: ${values.rate} — ${guests} yetişkin için oda/gece toplam fiyatı. XML NumberOfGuests=${guests}; çocuk ve ek yatak fiyatı bu işlemle gönderilmez.`);
+      else {
+        warnings.push(`${label}: ${values.rate} — ${guests} yetişkin için oda/gece toplam fiyatı. XML NumberOfGuests=${guests}.`);
+        try {
+          const prices = compileExelyGuestPrices(occupancyPricingRules[roomCode], values.rate, currency);
+          prices.forEach(price => warnings.push(`${label}: ${placementDescription(price)} ${currency || ''}.`));
+          if (prices.length === 1) warnings.push(`${label}: Yalnız taban yetişkin yerleşimi gönderilir; diğer kişi/çocuk/ek yatak tarifeleri gönderilmez.`);
+        } catch (error) { errors.push(`${label}: ${error.message}`); }
+      }
     }
     if (enabledFields.has('availability')) {
       if (channelProvider === 'exely' && !agenciesOnly) {
@@ -118,8 +131,10 @@ export const buildRateUpdateReview = ({
         if (writable.length !== selectedPlans.length) {
           errors.push(`${roomCode}: Exely'de doğrudan fiyat yüklemesi kapalı plan seçili. Oda altındaki fiyat planlarından bu seçimi kaldırın.`);
         }
-        const changes = dateCount * writable.length;
-        if (changes > 1460) errors.push(`${roomCode}: ${dateCount} gece × ${writable.length} fiyat planı = ${changes} değişiklik; tek Exely isteğinde oda başına en fazla 1460. Fiyat planı seçimini veya tarih aralığını düzenleyin; gönderim otomatik parçalanmaz.`);
+        let placements = 1;
+        try { placements = compileExelyGuestPrices(occupancyPricingRules[roomCode], roomValues[roomCode]?.rate, currency).length; } catch { /* Reported above. */ }
+        const changes = dateCount * writable.length * placements;
+        if (changes > 1460) errors.push(`${roomCode}: ${dateCount} gece × ${writable.length} fiyat planı${placements > 1 ? ` × ${placements} yerleşim` : ''} = ${changes} değişiklik; tek Exely isteğinde oda başına en fazla 1460. Fiyat planı seçimini veya tarih aralığını düzenleyin; gönderim otomatik parçalanmaz.`);
       }
       const restrictionChanges = dateCount * selectedPlans.length * restrictionCount;
       if (restrictionChanges > 1460) errors.push(`${roomCode}: Seçili konaklama/satış kısıtları ${restrictionChanges} değişiklik içeriyor; tek Exely isteğinde oda başına en fazla 1460. Plan, alan veya tarih seçimini düzenleyin.`);

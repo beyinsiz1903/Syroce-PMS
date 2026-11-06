@@ -64,7 +64,7 @@ describe('Exely child policy attestation', () => {
   it('does not claim to send child age bands and requires explicit operator confirmation', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     editor(onSave);
-    expect(screen.getByText(/Çocuk yaş kademeleri bu işlemle kanal yöneticisine gönderilmez/)).toBeInTheDocument();
+    expect(screen.getByText(/PMS çocuk ek ücretleri otomatik kopyalanmaz/)).toBeInTheDocument();
     const attestation = screen.getByTestId('exely-pricing-attestation-STD');
     expect(attestation).not.toBeChecked();
     fireEvent.click(attestation);

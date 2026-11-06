@@ -476,11 +476,31 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
             # HopenAPI uses RoomDescription with Name attribute
             desc = rt.find(_ns("RoomDescription"))
             name = _attr(desc, "Name", _attr(rt, "RoomDescription", _attr(rt, "RoomTypeCode")))
+            placement_inventory = {}
+            age_ranges = []
+            for occupancy in rt.findall(_ns("Occupancy")):
+                try:
+                    if occupancy.get("MaxOccupancy") is not None:
+                        maximum = int(occupancy.get("MaxOccupancy"))
+                        minimum = int(occupancy.get("MinOccupancy", "1"))
+                        if not 1 <= minimum <= maximum <= 20:
+                            raise ValueError("Invalid adult capacity")
+                        placement_inventory.update(main_occupancy_min=minimum, main_occupancy_max=maximum)
+                    if occupancy.get("MinAge") is not None or occupancy.get("MaxAge") is not None:
+                        low, high = int(occupancy.get("MinAge")), int(occupancy.get("MaxAge"))
+                        if not 0 <= low < high <= 18:
+                            raise ValueError("Invalid child ages")
+                        age_ranges.append({"min_age": low, "max_age": high})
+                except (TypeError, ValueError):
+                    return {"success": False, "result_class": MALFORMED, "error": "Invalid room placement inventory", "room_types": [], "rate_plans": []}
+            if age_ranges:
+                placement_inventory["child_age_ranges"] = age_ranges
             room_types.append(
                 {
                     "code": _attr(rt, "RoomTypeCode"),
                     "name": name,
                     "quantity": int(_attr(rt, "NumberOfUnits", "0")),
+                    **placement_inventory,
                 }
             )
         for rp in room_stay.iter(_ns("RatePlan")):

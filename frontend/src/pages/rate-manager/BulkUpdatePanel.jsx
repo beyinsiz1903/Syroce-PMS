@@ -12,6 +12,7 @@ import { buildRateUpdateReview, exelyPriceOccupancy, isExelyPricePlanWritable } 
 import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, normalizeOccupancyRule } from '@/utils/occupancyPricing';
 import { toast } from 'sonner';
+import { ExelyPlacementEditor } from './ExelyPlacementEditor';
 
 export const BulkUpdatePanel = ({
   roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField, applyFieldPreset,
@@ -26,6 +27,7 @@ export const BulkUpdatePanel = ({
   saving, handleBulkUpdate, handleReset, loading,
   activeChannels, activeChannelsStale, selectedChannelCodes, toggleChannel, toggleAllChannels, channelProvider,
   agenciesOnly = false,
+  exelyPlacementsSupported = true,
   mobileStep = 1, setMobileStep,
 }) => {
   const { t } = useTranslation();
@@ -33,8 +35,8 @@ export const BulkUpdatePanel = ({
   const review = useMemo(() => buildRateUpdateReview({
     dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues,
     selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly,
-    ratePlans, occupancyPricingRules,
-  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly, ratePlans, occupancyPricingRules]);
+    ratePlans, occupancyPricingRules, currency, exelyPlacementsSupported,
+  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly, ratePlans, occupancyPricingRules, currency, exelyPlacementsSupported]);
   const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
   const canContinueFromRooms = totalSelectedRoomTypes > 0;
   const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));
@@ -477,7 +479,7 @@ const RoomTypeList = ({
 
             {exelyPriceSelection && <p className="border-t bg-blue-50 px-4 py-2 text-xs text-blue-950" data-testid={`exely-price-occupancy-${rt.code}`}>
               {exelyPriceOccupancy(occupancyPricingRules?.[rt.code])
-                ? `Kanal fiyatı: ${exelyPriceOccupancy(occupancyPricingRules[rt.code])} yetişkin için oda/gece toplamı (ana yatak). Çocuk ve ek yatak fiyatı gönderilmez.`
+                ? `Kanal fiyatı: ${exelyPriceOccupancy(occupancyPricingRules[rt.code])} yetişkin için oda/gece toplamı (ana yatak). ${(pricingSettings[rt.code] || 'per_person') === 'per_person' && occupancyPricingRules[rt.code]?.exely_price_placements?.length ? 'Kayıtlı Exely yerleşim tarifeleri de aynı XML’e eklenir.' : 'Yalnız taban yerleşimi gönderilir.'}`
                 : 'Kişi sayısı henüz kaydedilmedi. Kuralı düzenleyip fiyata dahil ana yatak yetişkin sayısını kaydedin; gönderim kişi sayısı olmadan başlatılmaz.'}
             </p>}
             {((pricingSettings[rt.code] || 'per_person') === 'per_person' || exelyPriceSelection) && (
@@ -544,6 +546,8 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
     max_occupancy: normalizedRule.max_occupancy ?? '',
     provider_pricing_verified: Boolean(rule?.provider_pricing_verified),
     provider_pricing_note: rule?.provider_pricing_note || '',
+    exely_price_placements: rule?.exely_price_placements || [],
+    exely_placements_reviewed: rule?.exely_placements_reviewed === true && rule?.currency === currency,
   };
   const [draft, setDraft] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
@@ -553,6 +557,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
     ...(field !== 'provider_pricing_verified' && field !== 'provider_pricing_note'
       ? { provider_pricing_verified: false }
       : {}),
+    ...(field === 'base_occupancy' ? { exely_placements_reviewed: false } : {}),
   }));
   const updateBand = (index, field, value) => setDraft(prev => ({
     ...prev,
@@ -705,6 +710,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
             </div>
             {!bandsValid && <div className="mt-2 text-xs font-medium text-red-600" role="alert">Yaş kademeleri 0–17 aralığını kesintisiz kapsamalıdır.</div>}
           </div>
+          {channelProvider === 'exely' && <ExelyPlacementEditor draft={draft} update={update} base={base} currency={currency} />}
           {base > 0 && (
             <div className="mt-3 overflow-hidden rounded-lg border border-blue-200 bg-blue-50" data-testid={`occupancy-preview-${roomType.code}`}>
               <div className="border-b border-blue-200 px-3 py-2 text-xs font-semibold text-blue-950">Kişi bazlı fiyat simülasyonu</div>
@@ -730,9 +736,9 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
             </div>
           )}
           <p className="mt-2 text-[11px] leading-4 text-gray-500">
-            Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. {providerName}'a taban fiyat gönderilir; kişi farkı ayarı da aynı olmalıdır. {channelProvider === 'exely' && 'Kanal fiyatı, kaydedilen fiyata dahil yetişkin sayısı için oda/gece toplamıdır; XML NumberOfGuests alanına bu sayı yazılır. '}Çocuk yaş kademeleri bu işlemle kanal yöneticisine gönderilmez. Yaşlar giriş tarihindeki tamamlanmış yaş olarak girilmelidir.
+            Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. {channelProvider === 'exely' ? 'Exely için ayrı yerleşim tablosu yukarıdadır: kişi bazlı modda yalnız o tabloda tanımlanan çocuk/ek yatak tarifeleri XML’e eklenir; PMS çocuk ek ücretleri otomatik kopyalanmaz.' : `${providerName}'a taban fiyat gönderilir; kişi farkı ayarı da aynı olmalıdır. Çocuk yaş kademeleri bu işlemle kanal yöneticisine gönderilmez.`} Yaşlar giriş tarihindeki tamamlanmış yaş olarak girilmelidir.
           </p>
-          {['hotelrunner', 'exely'].includes(channelProvider) && (
+          {(['hotelrunner', 'exely'].includes(channelProvider)) && !(channelProvider === 'exely' && draft.exely_price_placements.length > 0) && (
             <div className={`mt-3 rounded-lg border p-3 ${draft.provider_pricing_verified ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
               <label className="flex cursor-pointer items-start gap-2 text-xs font-medium text-slate-800">
                 <Checkbox
@@ -782,7 +788,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
                   toast.success('Kural başarıyla kaydedildi');
                   onToggle();
                 } catch (err) {
-                  toast.error(err?.response?.data?.detail || 'Kural kaydedilirken bir hata oluştu');
+                  toast.error(err?.response?.data?.detail || err?.message || 'Kural kaydedilirken bir hata oluştu');
                 } finally {
                   setSubmitting(false);
                 }
