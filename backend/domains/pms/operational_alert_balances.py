@@ -4,6 +4,7 @@ import asyncio
 
 from domains.pms.frontdesk_financials import calculate_departure_balance
 from modules.pms_core.report_money import currency_code
+from modules.pms_core.reporting_financials import is_valid_payment
 
 
 async def load_operational_balances(database, tenant_id: str, bookings: list[dict], *, default_currency: str) -> dict[str, float]:
@@ -35,9 +36,11 @@ async def load_operational_balances(database, tenant_id: str, bookings: list[dic
         read_rows(database.folio_charges), read_rows(database.payments), read_rows(database.extra_charges),
     )
     grouped = []
-    for rows in (charges, payments, extras):
+    for index, rows in enumerate((charges, payments, extras)):
         by_booking = {booking_id: [] for booking_id in booking_ids}
         for row in rows:
+            if row.get("voided") or (index == 1 and not is_valid_payment(row)):
+                continue
             booking_id = row.get("booking_id")
             folio_booking_id = folio_owners.get(row.get("folio_id"))
             if booking_id and folio_booking_id and booking_id != folio_booking_id:

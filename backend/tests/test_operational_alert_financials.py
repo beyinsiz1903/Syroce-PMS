@@ -202,6 +202,14 @@ async def test_foreign_ledger_amount_is_not_silently_relabeled_as_booking_curren
 
 
 @pytest.mark.asyncio
+async def test_voided_rows_and_unsettled_attempts_cannot_block_valid_balances(dashboard):
+    dashboard([booking()],
+        charges=[{"tenant_id": "hotel-a", "booking_id": "b1", "currency": "TRY", "total": 150, "voided": True}],
+        payments=[{"tenant_id": "hotel-a", "booking_id": "b1", "currency": "EUR", "amount": 100, "status": "pending"}])
+    assert alert(await alerts(), "pending_payments")["items"][0]["balance"] == 560
+
+
+@pytest.mark.asyncio
 async def test_empty_inhouse_has_zero_totals_and_does_not_query_unscoped_ledgers(dashboard):
     database = dashboard([])
     result = await alerts()
