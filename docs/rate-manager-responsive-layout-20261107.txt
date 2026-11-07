@@ -1,0 +1,40 @@
+Rate & availability: responsive bulk editor (7 November 2026)
+
+Problem
+Selecting price and availability left the editor between fixed-width filters,
+channels and agency panels. Expanded layout only started at four fields. The
+nested fixed-column grid overflowed horizontally, hiding availability and other
+selected inputs. Before the fix, the actual-page fixture reproduced a 354px
+room list with 398px scroll width at a 1324px viewport.
+
+Change
+- Switch to the expanded workspace with two or more selected ARI fields.
+- Give each room its own header and labelled adaptive field grid. Inputs wrap
+  to another row based on the available container width, without hiding them
+  with overflow clipping or requiring a horizontal scrollbar.
+- Wrap price-plan summaries too; preserve explicit zero values.
+- Keep mobile wizard, selections, rule editor, blank automatic availability,
+  manual zero, remove-restriction controls and apply-to-all behavior.
+- No changes to publishing, XML, provider limits, prices or occupancy rules.
+  Normal vertical page scrolling remains available.
+
+Regression checks
+- Unit coverage for 1/2/3/8 fields, expanded layout threshold, numeric/string
+  callbacks, zero values, boolean toggles and apply-to-all.
+- Actual UnifiedRateManager page (embedded, including channel and agency
+  panels) in an isolated synthetic GET-only fixture. All non-GET requests
+  throw and are asserted absent. Non-loopback browser traffic is blocked.
+- Desktop widths: 1024, 1280, 1324 and 1440px; add all eight fields one at a
+  time, assert input geometry and no page/nested horizontal scroller, open
+  plans and occupancy editor, edit values, apply all and toggle fields.
+- Mobile wizard widths: 320, 390 and 820px; all eight fields and rule editor.
+- CI hard gate in Frontend Quality Gates after the existing smoke suite;
+  screenshots retained as the rate-manager-layout artifact.
+
+Run
+cd frontend
+yarn vitest run src/pages/rate-manager/__tests__
+yarn playwright test --config=playwright.rate-layout.config.js
+
+These are local synthetic checks, not proof of a production deployment or an
+Exely delivery. This change must be merged and deployed before live use.
