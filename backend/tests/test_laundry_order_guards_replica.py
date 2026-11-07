@@ -1,5 +1,7 @@
 """Mounted, production-first laundry routes; disposable LOCAL replica only."""
 import asyncio
+import hashlib
+import json
 
 import pytest
 
@@ -172,3 +174,103 @@ async def test_explicit_multi_folio_target_is_preserved_and_wrong_currency_rejec
     rejected = await create(a, payload(folio_id="wrong-currency"))
     assert rejected.status_code == 409
     assert await a.db.tenant_settings.find_one({"tenant_id": "qa"}) == before
+
+
+async def test_explicit_fx_snapshot_posts_only_converted_folio_money_once(acceptance):
+    a = acceptance
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$set": {"laundry_items.0.currency": "TRY"}})
+    body = payload(input_currency="TRY", exchange_rate=0.025)
+    response = await create(a, body, "fx-snapshot")
+    assert response.status_code == 200, response.text
+    order = response.json()
+    assert (order["total"], order["currency"], order["folio_total"], order["folio_currency"]) == (90, "TRY", 2.25, "USD")
+    assert order["exchange_rate"] == 0.025
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$set": {"laundry_items.0.price": 500}})
+    assert (await create(a, body, "fx-snapshot")).json() == order
+    assert (await create(a, payload(input_currency="TRY", exchange_rate=0.03), "fx-snapshot")).status_code == 409
+    url = "/api/laundry/orders/" + order["id"]
+    results = await asyncio.gather(*(a.api.patch(url, json={"status": "delivered"}) for _ in range(2)))
+    assert all(result.status_code == 200 for result in results), [result.text for result in results]
+    charge = await a.db.folio_charges.find_one({"source_laundry_order_id": order["id"]})
+    assert (charge["total"], charge["currency"], charge["entered_total"], charge["entered_currency"], charge["exchange_rate"]) == (2.25, "USD", 90, "TRY", 0.025)
+    ledger = await a.db.folio_ledger.find_one({"idempotency_key": "laundry:" + order["id"]})
+    assert (ledger["amount"], ledger["currency"]) == (2.25, "USD")
+    assert ledger["metadata"]["entered_total"] == 90
+    assert await a.db.folio_charges.count_documents({"source_laundry_order_id": order["id"]}) == 1
+    assert (await a.api.get("/api/frontdesk/folio/synthetic-stay")).json()["balance"] == 562.25
+    from common.context import OperationContext
+    from domains.pms.night_audit.financial_service import FinancialService
+    reports = FinancialService()
+    reports._db = a.db
+    summary = (await reports.get_daily_financial_summary(
+        OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin"), "2026-10-26"
+    )).data
+    assert summary["revenue"]["by_category"]["laundry"]["total_by_currency"] == {"USD": 2.25}
+
+
+@pytest.mark.parametrize("rate", [None, True, False, 0, -1, "NaN", "Infinity", "wrong", 1e10])
+async def test_foreign_currency_needs_finite_explicit_positive_rate_without_source_write(acceptance, rate):
+    a = acceptance
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$set": {"laundry_items.0.currency": "TRY"}})
+    response = await create(a, payload(input_currency="TRY", exchange_rate=rate))
+    assert response.status_code in {400, 409, 422}, response.text
+    assert len((await a.db.tenant_settings.find_one({"tenant_id": "qa"}))["laundry_orders"]) == 1
+
+
+async def test_fx_target_currency_change_before_delivery_is_not_reinterpreted(acceptance):
+    a = acceptance
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$set": {"laundry_items.0.currency": "TRY"}})
+    response = await create(a, payload(input_currency="TRY", exchange_rate=0.025))
+    assert response.status_code == 200, response.text
+    order = response.json()
+    await a.db.folios.update_one({"id": "synthetic-folio"}, {"$set": {"currency": "EUR"}})
+    assert (await a.api.patch("/api/laundry/orders/" + order["id"], json={"status": "delivered"})).status_code == 409
+    assert await a.db.folio_ledger.count_documents({}) == 0
+
+
+async def test_catalog_currency_is_explicit_and_lookup_exposes_target_currency(acceptance):
+    a = acceptance
+    created = await a.api.post("/api/laundry/items", json={"code": "usd-shirt", "name": "Gömlek USD", "price": 5, "currency": "USD"})
+    assert created.status_code == 200 and created.json()["currency"] == "USD"
+    item_id = created.json()["id"]
+    assert (await a.api.put("/api/laundry/items/" + item_id, json={"currency": "TL"})).json()["currency"] == "TRY"
+    assert (await a.api.post("/api/laundry/items", json={"code": "bad-currency", "name": "Geçersiz", "price": 1, "currency": True})).status_code == 400
+    lookup = (await a.api.get("/api/bookings/active-by-room/QA104")).json()
+    assert lookup["folio_currency"] == lookup["booking_currency"] == "USD"
+
+
+async def test_quote_currency_change_rejects_creation_without_reinterpreting_rate(acceptance):
+    a = acceptance
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$set": {"laundry_items.0.currency": "TRY"}})
+    response = await create(a, payload(input_currency="TRY", folio_currency="EUR", exchange_rate=0.025))
+    assert response.status_code == 409, response.text
+    assert len((await a.db.tenant_settings.find_one({"tenant_id": "qa"}))["laundry_orders"]) == 1
+
+
+async def test_pre_fx_request_fingerprint_remains_replayable(acceptance):
+    a = acceptance
+    legacy_input = {"room_number": "QA104", "service_type": "dry_clean", "priority": "normal",
+                    "items": [{"code": "shirt", "quantity": 2}], "notes": "",
+                    "booking_id": "synthetic-stay", "folio_id": "synthetic-folio"}
+    digest = hashlib.sha256(json.dumps(legacy_input, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$push": {"laundry_orders": {
+        "id": "legacy-retry", "request_key": "pre-fx-key", "request_hash": digest, "total": 90, "currency": "USD"}}})
+    replay = await create(a, payload(), "pre-fx-key")
+    assert replay.status_code == 200 and replay.json()["id"] == "legacy-retry"
+    assert len((await a.db.tenant_settings.find_one({"tenant_id": "qa"}))["laundry_orders"]) == 2
+
+
+async def test_catalog_legacy_currency_is_explicit_in_response_without_rewriting_source(acceptance):
+    a = acceptance
+    result = (await a.api.get("/api/laundry/items")).json()["items"]
+    assert all(item["currency"] == "USD" for item in result)
+    original = (await a.db.tenant_settings.find_one({"tenant_id": "qa"}))["laundry_items"]
+    assert all("currency" not in item for item in original)
+
+
+async def test_missing_folio_currency_is_not_assumed_from_hotel_or_service(acceptance):
+    a = acceptance
+    await a.db.folios.update_one({"id": "synthetic-folio"}, {"$unset": {"currency": ""}})
+    assert (await create(a)).status_code == 409
+    assert (await a.api.patch("/api/laundry/orders/wash", json={"status": "delivered"})).status_code == 409
+    assert await a.db.folio_ledger.count_documents({}) == 0

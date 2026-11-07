@@ -8,7 +8,7 @@ vi.mock('@/lib/currency', () => ({ cachedTenantCurrency: () => 'TRY', formatCurr
 import LaundryTab from '@/components/pms/LaundryTab';
 const originalScrollIntoView = Element.prototype.scrollIntoView;
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
-const found = (name, booking, folio) => ({ data: { found: true, guest_name: name, booking_id: booking, folio_id: folio } });
+const found = (name, booking, folio, currency = 'TRY') => ({ data: { found: true, guest_name: name, booking_id: booking, folio_id: folio, folio_currency: currency, booking_currency: currency } });
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   get.mockReset(); post.mockReset(); patch.mockReset(); toast.error.mockReset();
@@ -17,7 +17,7 @@ beforeEach(() => {
 
 it('requires an explicit open same-currency target when the stay has multiple folios', async () => {
   await open();
-  get.mockImplementation(url => Promise.resolve({ data: url.startsWith('/bookings/active-by-room/') ? { found: true, guest_name: 'Elif', booking_id: 'b105', folio_id: null, folio_selection_required: true } : [
+  get.mockImplementation(url => Promise.resolve({ data: url.startsWith('/bookings/active-by-room/') ? { found: true, guest_name: 'Elif', booking_id: 'b105', booking_currency: 'TRY', folio_id: null, folio_selection_required: true } : [
     { folio_id: 'guest', folio_number: 'F-1', status: 'open', folio_type: 'guest', currency: 'TRY' },
     { folio_id: 'agency', folio_number: 'F-2', status: 'open', folio_type: 'agency', currency: 'TRY' },
     { folio_id: 'closed', folio_number: 'F-CLOSED', status: 'closed', currency: 'TRY' },
@@ -37,6 +37,85 @@ it('requires an explicit open same-currency target when the stay has multiple fo
   fireEvent.click(submit());
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(post.mock.calls[0][1]).toEqual(expect.objectContaining({ booking_id: 'b105', folio_id: 'agency' }));
+});
+
+it('requires an explicit FX rate and previews the folio amount without relabelling catalogue prices', async () => {
+  await open(); get.mockResolvedValue(found('Emre', 'b104', 'usd-folio', 'USD')); await lookup('104');
+  fireEvent.change(screen.getByLabelText('Ürün miktarı'), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(submit()).toBeDisabled();
+  expect(screen.getByRole('alert')).toHaveTextContent('geçerli kuru');
+  fireEvent.change(screen.getByLabelText('Folyo dönüşüm kuru'), { target: { value: '0.025' } });
+  expect(screen.getByRole('status')).toHaveTextContent('Folyoya yazılacak: 1.5');
+  expect(submit()).toHaveTextContent('60');
+  post.mockResolvedValue({ data: {} }); fireEvent.click(submit());
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(post.mock.calls[0][1]).toMatchObject({ input_currency: 'TRY', exchange_rate: 0.025,
+    folio_id: 'usd-folio', items: [{ price: 30, currency: 'TRY', quantity: 2, total: 60 }] });
+});
+
+it('shows backend rejection persistently inside the form instead of only in a disappearing toast', async () => {
+  await open(); get.mockResolvedValue(found('Elif', 'b105', 'f105')); await lookup('105');
+  fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  post.mockRejectedValue({ response: { status: 409, data: { detail: 'Folyo para birimi değişmiş; yenileyin.' } } });
+  fireEvent.click(submit());
+  expect(await screen.findByRole('alert')).toHaveTextContent('Folyo para birimi değişmiş; yenileyin.');
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(post).toHaveBeenCalledTimes(1);
+});
+
+it('selects a separately priced foreign-currency catalogue product, never the same numeric TRY price', async () => {
+  get.mockImplementation(url => Promise.resolve({ data: url === '/laundry/items' ? { items: [
+    { id: 'try-shirt', code: 'try-shirt', name: 'Gömlek TL', price: 30, currency: 'TRY' },
+    { id: 'usd-shirt', code: 'usd-shirt', name: 'Gömlek USD', price: 5, currency: 'USD' },
+  ] } : { orders: [] } }));
+  await open(); get.mockResolvedValue(found('Emre', 'b104', 'usd-folio', 'USD')); await lookup('104');
+  fireEvent.change(screen.getByLabelText('Hizmet para birimi'), { target: { value: 'USD' } });
+  fireEvent.change(screen.getByLabelText('Ürün miktarı'), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(submit()).toHaveTextContent('10');
+  expect(screen.getByLabelText('Hizmet para birimi')).toBeDisabled();
+  expect(screen.queryByLabelText('Folyo dönüşüm kuru')).not.toBeInTheDocument();
+  post.mockResolvedValue({ data: {} }); fireEvent.click(submit());
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(post.mock.calls[0][1]).toMatchObject({ input_currency: 'USD', exchange_rate: 1,
+    items: [{ code: 'usd-shirt', currency: 'USD', price: 5, quantity: 2, total: 10 }] });
+});
+
+it('does not enable submission when the target currency could not be verified', async () => {
+  await open(); get.mockResolvedValue({ data: { found: true, guest_name: 'Emre', booking_id: 'b104', folio_id: 'f104' } });
+  await lookup('104'); fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(submit()).toBeDisabled();
+  expect(screen.getAllByRole('alert').some(node => node.textContent.includes('para birimi doğrulanamadı'))).toBe(true);
+});
+
+it('lets an operator price a catalogue item in USD explicitly', async () => {
+  render(<LaundryTab />); await waitFor(() => expect(get).toHaveBeenCalledWith('/laundry/items'));
+  fireEvent.mouseDown(screen.getByRole('tab', { name: /Ayarlar/ }), { button: 0, ctrlKey: false });
+  fireEvent.click(screen.getByRole('tab', { name: /Ayarlar/ }));
+  fireEvent.change(await screen.findByPlaceholderText('Kod (orn: shirt)'), { target: { value: 'shirt-usd' } });
+  fireEvent.change(screen.getByPlaceholderText('Ad (örn. Gömlek)'), { target: { value: 'Gömlek USD' } });
+  fireEvent.change(screen.getByLabelText('Yeni ürün para birimi'), { target: { value: 'USD' } });
+  fireEvent.change(screen.getByPlaceholderText('Fiyat (USD)'), { target: { value: '5' } });
+  post.mockResolvedValue({ data: {} });
+  fireEvent.click(screen.getByRole('button', { name: 'ekle', exact: true }));
+  await waitFor(() => expect(post).toHaveBeenCalledWith('/laundry/items', { code: 'shirt-usd', name: 'Gömlek USD', price: 5, currency: 'USD' }));
+});
+
+it('allows an explicit USD target for a TRY service when the booking is USD and several folios exist', async () => {
+  await open();
+  get.mockImplementation(url => Promise.resolve({ data: url.startsWith('/bookings/active-by-room/') ? {
+    found: true, guest_name: 'Emre', booking_id: 'b104', booking_currency: 'USD', folio_selection_required: true,
+  } : [{ folio_id: 'usd', folio_number: 'F-USD', status: 'open', currency: 'USD' },
+    { folio_id: 'try', folio_number: 'F-TRY', status: 'open', currency: 'TRY' }] }));
+  await lookup('104');
+  const target = await screen.findByLabelText('Ücretin işleneceği folyo');
+  expect(screen.queryByRole('option', { name: /F-TRY/ })).not.toBeInTheDocument();
+  fireEvent.change(target, { target: { value: 'usd' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(submit()).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Folyo dönüşüm kuru'), { target: { value: '0.025' } });
+  expect(submit()).toBeEnabled();
 });
 
 it('does not overwrite a new room with a late multi-folio read and shows cancellation truthfully', async () => {

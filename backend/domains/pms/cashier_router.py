@@ -13,6 +13,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
+from core.laundry_money import laundry_currency, laundry_money_snapshot
 from core.security import get_current_user
 from core.tenant_db import get_current_tenant_id, get_system_db
 from models.schemas import User
@@ -1160,8 +1161,21 @@ def _laundry_input(body):
         if quantity != int(quantity) or quantity > 1000:
             raise HTTPException(400, "Miktar 1–1000 arasında tam sayı olmalıdır")
         lines.append({"code": line["code"].strip().lower(), "quantity": int(quantity)})
-    return {"room_number": room, "service_type": service, "priority": priority, "items": lines,
+    data = {"room_number": room, "service_type": service, "priority": priority, "items": lines,
             "notes": str(body.get("notes") or "").strip(), "booking_id": body.get("booking_id") or "", "folio_id": body.get("folio_id") or ""}
+    # Keep the exact old fingerprint when legacy clients omit the new fields.
+    if "input_currency" in body:
+        if body["input_currency"] is None:
+            raise HTTPException(400, "Hizmet para birimi gereklidir")
+        data["input_currency"] = laundry_currency(body["input_currency"])
+    if "folio_currency" in body:
+        if body["folio_currency"] is None:
+            raise HTTPException(400, "Hedef folyo para birimi gereklidir")
+        data["folio_currency"] = laundry_currency(body["folio_currency"])
+    if "exchange_rate" in body:
+        rate = body["exchange_rate"]
+        data["exchange_rate"] = None if rate is None else _cashier_number(rate, "Kur", positive=True, money=False)
+    return data
 
 
 @router.get("/laundry/orders")
@@ -1197,19 +1211,27 @@ async def create_laundry_order(
     booking_id, folio, guest_name = await _laundry_binding(current_user.tenant_id, data["room_number"], data)
     catalog = {item["code"]: item for item in await _get_laundry_items_array(current_user.tenant_id) if item.get("active") is not False}
     hotel = await db.hotel_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "currency": 1}) or {}
-    currency = str(hotel.get("currency") or "TRY").upper()
-    if folio.get("currency") != currency:
-        raise HTTPException(409, "Hizmet para biriminde açık folyo seçilmelidir; otomatik kur dönüşümü yapılmaz")
+    hotel_currency = laundry_currency(hotel.get("currency") or None)
+    currency = laundry_currency(data.get("input_currency"), hotel_currency)
+    if not folio.get("currency"):
+        raise HTTPException(409, "Hedef folyo para birimi doğrulanamadı")
+    folio_currency = laundry_currency(folio.get("currency"))
+    if data.get("folio_currency") and data["folio_currency"] != folio_currency:
+        raise HTTPException(409, "Hedef folyo para birimi değişmiş; kur ve tutarı yeniden kontrol edin")
+    booking = await db.bookings.find_one({"tenant_id": current_user.tenant_id, "id": booking_id}, {"_id": 0, "currency": 1}) or {}
+    if folio_currency != laundry_currency(booking.get("currency") or None, folio_currency):
+        raise HTTPException(409, "Hedef folyo konaklamanın para biriminde olmalıdır")
     folio_id = folio["id"]
     lines = []
     for line in data["items"]:
         item = catalog.get(line["code"])
-        if not item or (item.get("currency") and item["currency"] != currency):
+        if not item or laundry_currency(item.get("currency") or None, hotel_currency) != currency:
             raise HTTPException(400, "Ürün aktif katalogda veya aynı para biriminde değil")
         price = Decimal(str(_cashier_number(item.get("price"), "Katalog fiyatı")))
         total = (price * line["quantity"] * _LAUNDRY_MULTIPLIERS[data["service_type"]]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         lines.append({**line, "name": item["name"], "price": float(price), "total": float(total), "currency": currency})
     total = _cashier_number(sum(Decimal(str(line["total"])) for line in lines), "Toplam", positive=True)
+    snapshot = laundry_money_snapshot(total, currency, folio_currency, data.get("exchange_rate"))
     now = datetime.utcnow()
 
     doc = {
@@ -1220,6 +1242,7 @@ async def create_laundry_order(
         "items": lines,
         "total": total,
         "currency": currency,
+        **snapshot,
         "request_key": key,
         "request_hash": fingerprint,
         "notes": data["notes"],
@@ -1370,8 +1393,10 @@ async def _get_laundry_items_array(tenant_id: str) -> list[dict]:
 async def get_laundry_items(current_user: User = Depends(get_current_user)):
     """Tenant'a ait çamaşırhane fiyat listesi (tenant_settings.laundry_items)."""
     items = await _get_laundry_items_array(current_user.tenant_id)
+    hotel = await db.hotel_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "currency": 1}) or {}
+    default_currency = laundry_currency(hotel.get("currency") or None)
     items_sorted = sorted(items, key=lambda x: (x.get("name") or "").lower())
-    return {"items": items_sorted}
+    return {"items": [{**item, "currency": laundry_currency(item.get("currency") or None, default_currency)} for item in items_sorted]}
 
 
 @router.post("/laundry/items")
@@ -1385,6 +1410,8 @@ async def create_laundry_item(
     code = body["code"].strip().lower()
     name = body["name"].strip()
     price = _cashier_number(body.get("price"), "Fiyat")
+    hotel = await db.hotel_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "currency": 1}) or {}
+    item_currency = laundry_currency(body.get("currency"), laundry_currency(hotel.get("currency") or None))
     if not code or len(code) > 40 or not name or len(name) > 120:
         raise HTTPException(status_code=400, detail="Kod ve ad zorunludur")
     if "active" in body and not isinstance(body["active"], bool):
@@ -1401,6 +1428,7 @@ async def create_laundry_item(
         "code": code,
         "name": name,
         "price": price,
+        "currency": item_currency,
         "active": bool(body.get("active", True)),
         "created_at": datetime.utcnow().isoformat(),
         "created_by": current_user.email,
@@ -1436,6 +1464,8 @@ async def update_laundry_item(
         if not isinstance(body["active"], bool):
             raise HTTPException(400, "Aktif bilgisi boolean olmalıdır")
         set_fields["active"] = body["active"]
+    if "currency" in body:
+        set_fields["currency"] = laundry_currency(body["currency"])
     if not set_fields:
         raise HTTPException(status_code=400, detail="Guncellenecek alan yok")
     set_fields["updated_at"] = datetime.utcnow().isoformat()
@@ -1489,5 +1519,7 @@ async def get_active_booking_by_room(room_number: str, current_user: User = Depe
         "check_out": booking.get("check_out"),
         "status": booking.get("status"),
         "folio_id": (folio or {}).get("id") or "",
+        "folio_currency": laundry_currency(folio["currency"]) if folio and folio.get("currency") else None,
+        "booking_currency": laundry_currency(booking["currency"]) if booking.get("currency") else None,
         "folio_selection_required": len(windows) > 1,
     }
