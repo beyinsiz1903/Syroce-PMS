@@ -39,4 +39,14 @@ describe('calendar quick panel detail', () => {
       status: 'confirmed',
     }));
   });
+
+  it('keeps unposted accommodation in total due without deducting refundable security', () => {
+    const detail = {
+      booking: { id: 'advance-booking', total_amount: 4500, currency: 'TRY', status: 'pending' },
+      summary: { reservation_total_due: 3000, folio_balance: -1500, unposted_room_amount: 4500 },
+      folios: [{ id: 'advance-folio', balance: -1500, currency: 'TRY' }],
+      security_funds: [{ received_amount: 500, remaining_amount: 500 }],
+    };
+    expect(mergeQuickPanelDetail({}, detail).remaining_balance).toBe(3000);
+  });
 });
