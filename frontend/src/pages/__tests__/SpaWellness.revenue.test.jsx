@@ -1,11 +1,20 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { SpaRevenueSummary, revenueText } from '@/pages/SpaWellness';
+import { SpaRevenueSummary, canDeleteSpaAppointment, revenueText } from '@/pages/SpaWellness';
 
 const money = (value, code = 'TRY') => `${value} ${code}`;
 
 describe('SPA posted revenue', () => {
+  it.each(['completed', 'in_progress', 'unknown', undefined])('preserves %s appointment sources in the UI', (status) => {
+    expect(canDeleteSpaAppointment({ status })).toBe(false);
+  });
+
+  it.each(['scheduled', 'cancelled', 'no_show'])('only offers deletion of unposted %s appointments', (status) => {
+    expect(canDeleteSpaAppointment({ status })).toBe(true);
+    expect(canDeleteSpaAppointment({ status, folio_charge_id: 'historic-charge' })).toBe(false);
+  });
+
   it('shows full-comp original value separately from actual zero income', () => {
     render(<SpaRevenueSummary summary={{ revenue_by_currency: { TRY: 0 }, complimentary_value_by_currency: { TRY: 1500 }, revenue_complete: true }} money={money} />);
     expect(screen.getByText('Folyoya işlenen SPA geliri')).toBeInTheDocument();

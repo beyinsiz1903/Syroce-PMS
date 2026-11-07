@@ -131,3 +131,75 @@ async def test_reservation_projection_failure_rolls_back_charge_and_completion(w
     assert not await wired.folio_charges.count_documents({}) and not await wired.folio_postings.count_documents({})
     assert (await wired.folios.find_one({}))['balance'] == 0
     assert (await wired.spa_appointments.find_one({}))['status'] == 'scheduled'
+
+
+async def test_completed_appointment_cannot_be_deleted_and_disappear_from_revenue(wired):
+    await wired.spa_appointments.update_one({'id': 'a'}, {'$set': {'starts_at': '2026-10-25T10:00:00Z'}})
+    await complete()
+    before = await spa.daily_summary('2026-10-25', user())
+    assert before['revenue_by_currency'] == {'TRY': 1500}
+    with pytest.raises(HTTPException) as error:
+        await spa.delete_appointment('a', current_user=user())
+    assert error.value.status_code == 409
+    assert (await wired.spa_appointments.find_one({'id': 'a'}))['status'] == 'completed'
+    assert await wired.folio_charges.count_documents({'source_spa_appointment_id': 'a'}) == 1
+    assert await spa.daily_summary('2026-10-25', user()) == before
+
+
+@pytest.mark.parametrize('collection,source', [
+    ('folio_charges', {'source_spa_appointment_id': 'a', 'voided': True}),
+    ('folio_postings', {'source': 'spa_module', 'reference': 'a'}),
+])
+async def test_legacy_source_reference_prevents_deletion_even_with_stale_status(wired, collection, source):
+    await wired[collection].insert_one({'id': 'legacy', 'tenant_id': 't', **source})
+    with pytest.raises(HTTPException) as error:
+        await spa.delete_appointment('a', current_user=user())
+    assert error.value.status_code == 409
+    assert await wired.spa_appointments.count_documents({'id': 'a'}) == 1
+
+
+@pytest.mark.parametrize('status', ['in_progress', 'completed'])
+async def test_started_or_completed_unposted_service_is_preserved(wired, status):
+    await wired.spa_appointments.update_one({'id': 'a'}, {'$set': {'status': status, 'charge_to_room': False}})
+    with pytest.raises(HTTPException) as error:
+        await spa.delete_appointment('a', current_user=user())
+    assert error.value.status_code == 409
+
+
+@pytest.mark.parametrize('status', ['scheduled', 'cancelled', 'no_show'])
+async def test_unposted_unstarted_appointment_can_be_deleted_with_audit(wired, status):
+    await wired.spa_appointments.update_one({'id': 'a'}, {'$set': {'status': status}})
+    assert await spa.delete_appointment('a', current_user=user()) == {'ok': True}
+    assert await wired.spa_appointments.count_documents({'id': 'a'}) == 0
+    audit = await wired.audit_logs.find_one({'action': 'spa_appointment_deleted'})
+    assert audit['actor_id'] == 'manager' and audit['entity_id'] == 'a' and audit['record_hash']
+    assert audit['metadata']['from_status'] == status
+
+
+async def test_appointment_deletion_remains_tenant_and_role_scoped(wired):
+    foreign = SimpleNamespace(**{**vars(user()), 'tenant_id': 'other'})
+    with pytest.raises(HTTPException) as error:
+        await spa.delete_appointment('a', current_user=foreign)
+    assert error.value.status_code == 404
+    denied = SimpleNamespace(**{**vars(user()), 'role': 'housekeeping'})
+    with pytest.raises(HTTPException) as error:
+        await spa.delete_appointment('a', current_user=denied)
+    assert error.value.status_code == 403
+    assert await wired.spa_appointments.count_documents({'id': 'a'}) == 1
+
+
+async def test_delete_audit_failure_rolls_back_the_source(wired, monkeypatch):
+    monkeypatch.setattr(audit_helper, 'audit_log', AsyncMock(side_effect=RuntimeError('delete audit unavailable')))
+    with pytest.raises(RuntimeError, match='delete audit unavailable'):
+        await spa.delete_appointment('a', current_user=user())
+    assert await wired.spa_appointments.count_documents({'id': 'a'}) == 1
+
+
+async def test_concurrent_completion_and_delete_cannot_leave_an_orphan_charge(wired):
+    results = await asyncio.gather(complete(), spa.delete_appointment('a', current_user=user()), return_exceptions=True)
+    assert sum(isinstance(result, dict) for result in results) == 1
+    assert all(isinstance(result, dict) or isinstance(result, HTTPException) and result.status_code in {404, 409}
+               for result in results)
+    appt = await wired.spa_appointments.find_one({'id': 'a'})
+    charges = await wired.folio_charges.count_documents({'source_spa_appointment_id': 'a'})
+    assert (appt is not None and appt['status'] == 'completed' and charges == 1) or (appt is None and charges == 0)
