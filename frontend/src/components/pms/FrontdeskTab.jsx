@@ -1,7 +1,7 @@
 import React, { memo, useRef, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -61,6 +61,15 @@ const FrontdeskTab = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const requestedView = new URLSearchParams(location.search).get('frontdesk_view');
+  const selectedView = ['arrivals', 'departures', 'inhouse'].includes(requestedView) ? requestedView : 'arrivals';
+  const selectView = (view) => {
+    if (!['arrivals', 'departures', 'inhouse'].includes(view)) return;
+    const params = new URLSearchParams(location.search);
+    params.set('frontdesk_view', view);
+    navigate({ pathname: location.pathname, search: `?${params}`, hash: location.hash }, { replace: true });
+  };
   const tenantCurrency = currencyOf(tenant, cachedTenantCurrency());
   const tf = useCallback((k, opts) => t(`pmsComponents.frontdesk.${k}`, opts), [t]);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
@@ -798,7 +807,7 @@ const FrontdeskTab = ({
         </div>
       )}
 
-      <Tabs defaultValue="arrivals">
+      <Tabs value={selectedView} onValueChange={selectView}>
         <TabsList>
           <TabsTrigger value="arrivals">{t('pms.arrivals')}</TabsTrigger>
           <TabsTrigger value="departures">{t('pms.departures')}</TabsTrigger>
