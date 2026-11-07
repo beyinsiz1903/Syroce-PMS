@@ -10,6 +10,7 @@ from datetime import date as calendar_date
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.accommodation_charges import is_base_room_charge
 from core.channel_room_charge_pricing import calculate_room_charge
 
 logger = logging.getLogger(__name__)
@@ -389,7 +390,7 @@ class FinancialService:
                 )
 
         # Check for rate discrepancy (room charges vs booking rate)
-        room_charges = [c for c in charges if c.get("charge_category") == "room"]
+        room_charges = [c for c in charges if is_base_room_charge(c)]
         for rc in room_charges:
             bid = rc.get("booking_id")
             if not bid:
