@@ -235,6 +235,15 @@ jobs:
                   done
             - name: Run e2e smoke
               run: cd frontend && yarn e2e
+            - name: Rate manager responsive field layout (hard gate)
+              run: cd frontend && yarn playwright test --config=playwright.rate-layout.config.js
+            - name: Upload rate manager layout evidence
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: rate-manager-layout
+                  path: frontend/test-results/rate-layout/
+                  retention-days: 14
             - name: Upload Playwright report
               uses: actions/upload-artifact@v6
               if: always()

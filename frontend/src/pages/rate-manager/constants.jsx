@@ -26,4 +26,4 @@ export const UPDATE_FIELD_PRESETS = [
   { key: 'all_ari', label: 'Tüm ARI alanları', fields: UPDATE_FIELDS.map(field => field.key) },
 ];
 
-export const usesExpandedAriLayout = enabledFieldCount => enabledFieldCount >= 4;
+export const usesExpandedAriLayout = enabledFieldCount => enabledFieldCount >= 2;
