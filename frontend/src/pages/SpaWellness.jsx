@@ -54,6 +54,10 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', {
   hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
 }) : '—';
 
+// The server also checks historical financial references inside a transaction.
+export const canDeleteSpaAppointment = (appointment) =>
+  ['scheduled', 'cancelled', 'no_show'].includes(appointment.status) && !appointment.folio_charge_id;
+
 const SpaWellness = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const tenantCurrency = tenant?.currency || cachedTenantCurrency();
@@ -324,9 +328,9 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                               <XCircle className="w-4 h-4 text-red-500" />
                             </Button>
                           )}
-                          <Button size="sm" variant="ghost" onClick={() => remove(a.id)}>
+                          {canDeleteSpaAppointment(a) && <Button size="sm" variant="ghost" title="Randevuyu sil" onClick={() => remove(a.id)}>
                             <Trash2 className="w-4 h-4" />
-                          </Button>
+                          </Button>}
                         </td>
                       </tr>
                     );

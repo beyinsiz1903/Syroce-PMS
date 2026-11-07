@@ -723,10 +723,33 @@ async def delete_appointment(
 ) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()
-    res = await db.spa_appointments.delete_one({"id": appt_id, "tenant_id": current_user.tenant_id})
-    if not res.deleted_count:
-        raise HTTPException(404, "Randevu bulunamadı")
-    return {"ok": True}
+    tid = current_user.tenant_id
+    from shared_kernel.audit_helper import audit_log
+
+    async def remove(session):
+        query = {'id': appt_id, 'tenant_id': tid}
+        appt = await db.spa_appointments.find_one(query, session=session)
+        if not appt:
+            raise HTTPException(404, 'Randevu bulunamadı')
+        # Completion and deletion share the same lock/transaction: neither a
+        # concurrent checkout nor a stale terminal may orphan the revenue source.
+        if appt.get('status') not in {'scheduled', 'cancelled', 'no_show'} or appt.get('folio_charge_id'):
+            raise HTTPException(409, 'Başlatılmış veya tamamlanmış SPA hizmeti silinemez. İşlem geçmişi korunur.')
+        charge = await db.folio_charges.find_one({'tenant_id': tid, 'source_spa_appointment_id': appt_id}, {'_id': 1}, session=session)
+        posting = await db.folio_postings.find_one({'tenant_id': tid, 'source': 'spa_module', 'reference': appt_id}, {'_id': 1}, session=session)
+        # A voided/transferred legacy charge still has a historical source.
+        if charge or posting:
+            raise HTTPException(409, 'Mali hareketi bulunan SPA randevusu silinemez. İşlem geçmişi korunur.')
+        deleted = await db.spa_appointments.delete_one(query, session=session)
+        if deleted.deleted_count != 1:
+            raise HTTPException(409, 'SPA randevusu değişti; listeyi yenileyin.')
+        await audit_log(actor_id=current_user.id, tenant_id=tid, entity_type='spa_appointment',
+            entity_id=appt_id, action='spa_appointment_deleted',
+            metadata={'from_status': appt['status'], 'actor_name': current_user.name}, session=session, require_chain=True)
+        return {'ok': True}
+
+    return await with_resource_locks(client=db.client, db=db, tenant_id=tid, locks_collection='spa_locks',
+        resources=[('appointment', appt_id)], callback=remove)
 
 
 # ── Guest history ───────────────────────────────────────────────
