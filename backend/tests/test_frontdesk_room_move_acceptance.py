@@ -98,6 +98,39 @@ async def test_success_moves_all_nights_and_preserves_fee_currency_and_sealed_au
     assert audit["record_hash"] and audit["metadata"]["reason"] == "Yerel QA oda değişimi"
 
 
+async def test_paid_upgrade_remains_additive_through_payment_and_checkout(acceptance):
+    a = acceptance
+    await target(a, room_type="Suite")
+    await a.db.bookings.update_one({"id": "synthetic-stay"}, {"$set": {
+        "total_amount": 6600, "currency": "TRY", "check_in": "2026-10-23", "check_out": "2026-10-26"}})
+    await a.db.folios.update_one({"id": "synthetic-folio"}, {"$set": {"currency": "TRY", "balance": 0}})
+    await a.db.folio_charges.delete_many({"booking_id": "synthetic-stay"})
+    response = await move(a, extra_charge=2400)
+    assert response.status_code == 200, response.text
+    detail = await a.api.get("/api/pms/reservations/synthetic-stay/full-detail")
+    assert detail.status_code == 200, detail.text
+    summary = detail.json()["summary"]
+    assert summary["gross_total"] == summary["reservation_total_due"] == 9000
+    assert summary["unposted_room_amount"] == 6600
+    assert summary["additional_charge_total"] == 2400
+    assert summary["pricing_reconciliation_required"] is False
+    rejected = await a.api.post("/api/frontdesk/checkout/synthetic-stay")
+    assert rejected.status_code == 402, rejected.text
+    assert await a.db.folio_charges.count_documents({"charge_type": "room_charge"}) == 0
+    payment = await a.api.post("/api/frontdesk/folio/synthetic-stay/payment", json={
+        "amount": 9000, "currency": "TRY", "method": "card", "payment_type": "final",
+        "reference": "LOCAL-UPGRADE-NO-PSP"}, headers={"Idempotency-Key": "upgrade-final"})
+    assert payment.status_code == 200, payment.text
+    checkout = await a.api.post("/api/frontdesk/checkout/synthetic-stay")
+    assert checkout.status_code == 200, checkout.text
+    assert checkout.json()["total_balance"] == 0
+    charges = await a.db.folio_charges.find({"booking_id": "synthetic-stay", "voided": False}).to_list(None)
+    assert sum(row["total"] for row in charges) == 9000
+    assert sum(row["total"] for row in charges if row["charge_type"] == "room_charge") == 6600
+    assert sum(row["total"] for row in charges if row["charge_type"] == "room_upgrade") == 2400
+    assert (await a.db.bookings.find_one({"id": "synthetic-stay"}))["total_amount"] == 6600
+
+
 async def test_two_guests_cannot_concurrently_claim_same_target(acceptance):
     a = acceptance
     await target(a)

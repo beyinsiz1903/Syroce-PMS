@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
+from core.accommodation_charges import is_base_room_charge
 from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.channel_room_charge_pricing import (
     analyze_legacy_double_tax_charge,
@@ -240,7 +241,7 @@ def _room_charge_rate_mismatches(
     for charge in charges:
         if charge.get("voided"):
             continue
-        if charge.get("charge_category") != "room" and charge.get("charge_type") != "room_charge":
+        if not is_base_room_charge(charge):
             continue
         charge_date = _reservation_calendar_date(charge.get("date"))
         if charge_date is None:
@@ -332,11 +333,12 @@ async def _posted_accommodation_charge_total(tenant_id: str, booking_id: str) ->
                     {"konaklama_vergisi": True},
                 ],
             },
-            {"_id": 0, "amount": 1, "total": 1},
+            {"_id": 0, "amount": 1, "total": 1, "charge_type": 1},
         )
     ]
     return round(
-        sum(float(charge.get("total", charge.get("amount", 0)) or 0) for charge in charges),
+        sum(float(charge.get("total", charge.get("amount", 0)) or 0) for charge in charges
+            if charge.get("charge_type") != "room_upgrade"),
         2,
     )
 
@@ -364,7 +366,7 @@ def _redundant_automatic_accommodation_taxes(booking: dict, charges: list[dict])
     because that row did not carry a tax breakdown.  That row is neither a
     new debt nor a tax that should be collected twice.
     """
-    active_room_charges = [charge for charge in charges if not charge.get("voided") and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")]
+    active_room_charges = [charge for charge in charges if not charge.get("voided") and is_base_room_charge(charge)]
     if not active_room_charges or not all(charge.get("tax_inclusive") is True for charge in active_room_charges):
         return []
 
@@ -432,7 +434,7 @@ def _build_financial_summary(
         if deposit.get("status") != "refunded"
     )
 
-    room_charge_total = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")
+    room_charge_total = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges if is_base_room_charge(charge))
     # Accommodation taxes are generated together with the nightly room
     # charge.  They are not a receptionist-entered extra service, so they
     # must participate in the same agreed-price reconciliation.  Otherwise a
@@ -487,7 +489,7 @@ def _build_financial_summary(
     posted_room_dates = {
         parsed.isoformat()
         for charge in active_charges
-        if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
+        if is_base_room_charge(charge)
         for parsed in [_reservation_calendar_date(charge.get("business_date") or charge.get("night_audit_date"))]
         if parsed is not None
     }
@@ -4037,7 +4039,7 @@ async def apply_posted_stay_rate_correction(
     room_charges = [row async for row in db.folio_charges.find(
         {"$and": [financial_scope, {"voided": {"$ne": True}}, {"$or": [{"charge_type": "room_charge"}, {"charge_category": "room"}]}]},
         {"_id": 0},
-    )]
+    ) if is_base_room_charge(row)]
     charges_by_date: dict[str, float] = {}
     for charge in room_charges:
         charge_date = _room_charge_business_date(charge)
@@ -4153,6 +4155,7 @@ async def reconcile_posted_stay_total(
             },
             {"_id": 0},
         )
+        if is_base_room_charge(row)
     ]
     rates_by_date: dict[str, float] = {}
     for charge in room_charges:
