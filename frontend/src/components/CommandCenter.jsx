@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,16 +40,18 @@ export const CommandCenter = ({
   const {
     t
   } = useTranslation();
-  const {
-    format: fmtMoney
-  } = useCurrency();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await axios.get('/pms/operational-alerts');
       setData(res.data);
+      setLoadError(false);
     } catch (e) {
+      setData(null);
+      setLoadError(true);
       console.error('operational-alerts fail:', e);
     } finally {
       setLoading(false);
@@ -67,6 +68,12 @@ export const CommandCenter = ({
         </CardContent>
       </Card>;
   }
+  if (loadError) return <Card className={className} role="alert">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-5">
+        <p className="text-sm text-amber-800">{t('commandCenter.loadError', { defaultValue: 'Güncel operasyon bilgileri alınamadı. Bakiyeleri kontrol etmek için yeniden deneyin.' })}</p>
+        <Button variant="outline" size="sm" onClick={load}>{t('commandCenter.retry', { defaultValue: 'Yeniden dene' })}</Button>
+      </CardContent>
+    </Card>;
   if (!data) return null;
   const {
     alerts,
@@ -87,13 +94,13 @@ export const CommandCenter = ({
     const currencyTotals = Object.entries(alert.totals_by_currency || {});
     const formattedTotal = currencyTotals.length
       ? currencyTotals.map(([currency, amount]) => formatCurrency(amount, currency, { decimals: 2 })).join(' · ')
-      : alert.total_amount ? fmtMoney(alert.total_amount) : '';
+      : alert.total_amount != null && alert.currency ? formatCurrency(alert.total_amount, alert.currency, { decimals: 2 }) : '';
     const key = `commandCenter.alerts.${alert.type}.description`;
     const translated = t(key, {
       amount: formattedTotal
     });
     if (translated !== key) return translated;
-    if (alert.type === 'pending_payments' && alert.total_amount) {
+    if (alert.type === 'pending_payments' && formattedTotal) {
       return `Toplam ${formattedTotal} tahsil edilmedi`;
     }
     return alert.description;
@@ -202,7 +209,7 @@ export const CommandCenter = ({
                               {alert.items.slice(0, 3).map((item, j) => <span key={j} className="inline-flex items-center text-[11px] bg-white/70 border border-slate-200 rounded-md px-2 py-0.5 text-slate-600">
                                   {item.room_number && <span className="font-semibold mr-1">{t('commandCenter.room')} {item.room_number}</span>}
                                   {item.guest_name}
-                                  {item.balance > 0 && <span className="ml-1 font-semibold text-red-600">{fmtMoney(item.balance)}</span>}
+                                  {item.balance > 0 && <span className="ml-1 font-semibold text-red-600">{item.currency ? formatCurrency(item.balance, item.currency, { decimals: 2 }) : t('commandCenter.currencyUnknown', { defaultValue: 'Para birimi doğrulanamadı' })}</span>}
                                 </span>)}
                               {alert.items.length > 3 && <span className="text-[11px] text-muted-foreground">+{alert.items.length - 3} {t('commandCenter.more')}</span>}
                             </div>}
