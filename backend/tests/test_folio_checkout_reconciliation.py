@@ -45,6 +45,30 @@ def database(charges=(), payments=(), folios=()):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("posted_room", [0, 2200, 6600])
+async def test_upgrade_does_not_consume_checkout_room_reconciliation(posted_room):
+    charges = [{"id": "upgrade", "charge_type": "room_upgrade", "charge_category": "room",
+                "total": 2400, "tax_amount": 0}]
+    if posted_room:
+        charges.append({"id": "night", "charge_type": "room_charge", "charge_category": "room",
+                        "total": posted_room, "tax_amount": 0})
+    db = database(charges=charges, payments=[{"amount": 9000}],
+                  folios=[{"id": "folio-1", "tenant_id": "tenant-1", "booking_id": "booking-1", "status": "open"}])
+    booking = {"id": "booking-1", "total_amount": 6600, "check_out": "2026-11-23"}
+    result = await reconcile_unposted_room_charge(db, tenant_id="tenant-1", booking=booking, posted_by="checkout")
+    if posted_room < 6600:
+        assert result["amount"] == 6600 - posted_room
+    else:
+        assert result["posted"] is False
+    assert sum(row["total"] for row in db.folio_charges.rows) == 9000
+    if posted_room < 6600:
+        assert db.folios.updates[-1][1] == {"$set": {"balance": 0.0}}
+        replay = await reconcile_unposted_room_charge(db, tenant_id="tenant-1", booking=booking, posted_by="checkout")
+        assert replay["idempotent"] is True
+        assert len(db.folio_charges.inserted) == 1
+
+
+@pytest.mark.asyncio
 async def test_checkout_reconciliation_posts_only_the_unposted_room_remainder():
     db = database(
         charges=[

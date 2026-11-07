@@ -1,6 +1,13 @@
 from domains.pms.frontdesk_financials import calculate_departure_balance
 
 
+def test_upgrade_remains_due_in_departure_queue_before_room_nights_post():
+    upgrade = {"charge_type": "room_upgrade", "charge_category": "room", "total": 2400}
+    assert calculate_departure_balance([upgrade], [], [], booking_total=6600) == 9000
+    assert calculate_departure_balance([upgrade], [{"amount": 6600, "method": "card"}], [], booking_total=6600) == 2400
+    assert calculate_departure_balance([upgrade], [{"amount": 9000, "method": "card"}], [], booking_total=6600) == 0
+
+
 def test_refund_reopens_debt_instead_of_looking_like_a_second_payment():
     for refund_amount in [20, -20]:
         assert calculate_departure_balance(
