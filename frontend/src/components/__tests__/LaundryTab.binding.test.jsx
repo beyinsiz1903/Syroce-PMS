@@ -135,13 +135,36 @@ afterEach(() => { cleanup(); if (originalScrollIntoView) Element.prototype.scrol
 const open = async () => {
   render(<LaundryTab />);
   await waitFor(() => expect(get).toHaveBeenCalledWith('/laundry/items'));
+  // A request starting does not mean its response or Radix selection rendered.
+  // Await the actual catalogue promise, including deliberately delayed fixtures.
+  const requestIndex = get.mock.calls.findIndex(([url]) => url === '/laundry/items');
+  const catalogue = (await get.mock.results[requestIndex].value).data.items;
+  await screen.findByText(`Ürün Fiyat Listesi (${catalogue.length})`);
   fireEvent.click(screen.getByRole('button', { name: 'yeni_siparis', exact: true }));
-  return screen.getByRole('dialog');
+  const dialog = screen.getByRole('dialog');
+  const firstProduct = catalogue.find(item => item.active !== false && (item.currency || 'TRY') === 'TRY');
+  if (firstProduct) await waitFor(() => expect(within(dialog).getAllByRole('combobox').at(-1)).toHaveTextContent(firstProduct.name));
+  return dialog;
 };
 const room = () => screen.getByPlaceholderText('101');
 const guest = () => within(screen.getByRole('dialog')).getAllByRole('textbox')[1];
 const submit = () => screen.getByRole('button', { name: /siparis_olustur/ });
 const lookup = async value => { fireEvent.change(room(), { target: { value } }); fireEvent.blur(room()); await act(async () => {}); };
+
+it('waits for the catalogue response and rendered product selection before using the order fixture', async () => {
+  const catalogue = deferred();
+  const original = get.getMockImplementation();
+  get.mockImplementation(url => url === '/laundry/items' ? catalogue.promise : original(url));
+  const opening = open();
+  await waitFor(() => expect(get).toHaveBeenCalledWith('/laundry/items'));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await act(async () => catalogue.resolve({ data: { items: [{ id: 'shirt', code: 'shirt', name: 'Gömlek', price: 30 }] } }));
+  const dialog = await opening;
+  expect(within(dialog).getAllByRole('combobox').at(-1)).toHaveTextContent('Gömlek (30)');
+  fireEvent.change(screen.getByLabelText('Ürün miktarı'), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(submit()).toHaveTextContent('60');
+});
 
 it('clears guest binding immediately on room change and blocks a missing active stay', async () => {
   await open(); get.mockResolvedValue(found('Elif', 'b105', 'f105')); await lookup('105');

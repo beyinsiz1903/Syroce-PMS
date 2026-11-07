@@ -81,7 +81,10 @@ export const CommandCenter = ({
   } = data;
   const hasAlerts = alerts && alerts.length > 0;
   const handleAction = alert => {
-    if (alert.action === 'housekeeping') navigate('/housekeeping');else if (alert.action === 'payments') navigate('/pms');else if (alert.action === 'frontdesk') navigate('/pms');
+    if (alert.action === 'housekeeping') navigate('/housekeeping');
+    else if (alert.type === 'departures_with_balance') navigate('/app/pms?frontdesk_view=departures#frontdesk');
+    else if (alert.action === 'payments') navigate('/app/pms?frontdesk_view=inhouse#frontdesk');
+    else if (alert.action === 'frontdesk') navigate('/app/pms?frontdesk_view=arrivals#frontdesk');
   };
   const getAlertTitle = alert => {
     const key = `commandCenter.alerts.${alert.type}.title`;
