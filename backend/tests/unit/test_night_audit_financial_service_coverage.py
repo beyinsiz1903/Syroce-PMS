@@ -219,6 +219,31 @@ async def test_payment_reconciliation_detects_duplicate_orphan_rate_and_high_bal
 
 
 @pytest.mark.asyncio
+async def test_paid_upgrade_is_revenue_but_not_a_nightly_rate_discrepancy():
+    charges = [
+        {"id": "night", "booking_id": "booking-1", "charge_category": "room",
+         "charge_type": "room_charge", "amount": 2200, "total": 2200, "currency": "TRY"},
+        {"id": "upgrade", "booking_id": "booking-1", "charge_category": "room",
+         "charge_type": "room_upgrade", "amount": 2400, "total": 2400, "currency": "TRY"},
+    ]
+    service = _service(SimpleNamespace(
+        folio_charges=_find_collection(AsyncCursor(charges)),
+        payments=_find_collection(AsyncCursor([])),
+        folios=_find_collection(AsyncCursor([])),
+        bookings=_find_collection(AsyncCursor([{"id": "booking-1", "room_rate": 2200}])),
+    ))
+    service._enrich_with_guest_room = AsyncMock(side_effect=lambda _tenant, rows: rows)
+
+    result = await service.get_payment_reconciliation(_ctx(), "2026-11-07")
+
+    assert result.ok is True
+    assert result.data["charges_total"] == 4600
+    assert result.data["charges_count"] == 2
+    assert result.data["discrepancies"] == []
+    assert result.data["degraded"] is False
+
+
+@pytest.mark.asyncio
 async def test_payment_reconciliation_reports_initial_query_degradation():
     failure = RuntimeError("query timeout")
     database = SimpleNamespace(

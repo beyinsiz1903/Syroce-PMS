@@ -10,6 +10,58 @@ import routers.finance.folio as finance_folio
 import routers.reservation_detail as reservation_detail
 
 
+@pytest.mark.parametrize("posted_nights", [0, 1, 3])
+def test_room_upgrade_surcharge_does_not_replace_agreed_room_nights(posted_nights):
+    charges = [
+        {"charge_type": "room_charge", "charge_category": "room", "total": 2200,
+         "business_date": f"2026-11-{day}", "tax_inclusive": True}
+        for day in range(20, 20 + posted_nights)
+    ] + [{"charge_type": "room_upgrade", "charge_category": "room", "total": 2400,
+          "business_date": "2026-10-26"}]
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 6600, "check_in": "2026-11-20", "check_out": "2026-11-23"},
+        charges, [], [], [],
+    )
+    assert summary["accommodation_total"] == 6600
+    assert summary["additional_charge_total"] == 2400
+    assert summary["gross_total"] == summary["reservation_total_due"] == 9000
+    assert summary["folio_balance"] == posted_nights * 2200 + 2400
+    assert summary["unposted_room_amount"] == (3 - posted_nights) * 2200
+    assert summary["room_plan_fully_posted"] is (posted_nights == 3)
+    assert summary["pricing_reconciliation_required"] is False
+
+
+def test_voided_upgrade_is_excluded_without_losing_legacy_room_category_rows():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 6600},
+        [{"charge_category": "room", "total": 6600},
+         {"charge_type": "room_upgrade", "charge_category": "room", "total": 2400, "voided": True}],
+        [{"method": "cash", "amount": 6600}], [], [],
+    )
+    assert summary["reservation_total_due"] == summary["folio_balance"] == 0
+    assert summary["additional_charge_total"] == 0
+    assert summary["unposted_room_amount"] == 0
+
+
+def test_upgrade_on_a_stay_night_is_not_a_daily_rate_mismatch():
+    assert reservation_detail._room_charge_rate_mismatches(
+        [{"id": "upgrade", "charge_type": "room_upgrade", "charge_category": "room",
+          "date": "2026-11-20", "total": 2400}],
+        {"2026-11-20": 2200},
+    ) == []
+
+
+@pytest.mark.asyncio
+async def test_posted_accommodation_total_does_not_include_upgrade(monkeypatch):
+    async def rows():
+        for row in [{"charge_type": "room_charge", "charge_category": "room", "total": 6600},
+                    {"charge_type": "room_upgrade", "charge_category": "room", "total": 2400}]:
+            yield row
+    monkeypatch.setattr(reservation_detail, "db", SimpleNamespace(
+        folio_charges=SimpleNamespace(find=lambda *_args, **_kwargs: rows())))
+    assert await reservation_detail._posted_accommodation_charge_total("tenant-a", "booking-a") == 6600
+
+
 def test_completed_four_night_folio_flags_stale_higher_booking_total():
     summary = reservation_detail._build_financial_summary(
         {"total_amount": 12500, "check_in": "2026-09-21", "check_out": "2026-09-25"},

@@ -10,6 +10,36 @@ pytest_plugins = ("tests.test_report_ledger_mongo_acceptance",)
 pytestmark = pytest.mark.asyncio
 
 
+async def test_upgrade_keeps_room_revenue_without_false_nightly_rate_warning(ledger_db):
+    db = ledger_db
+    day = "2026-11-07"
+    await db.hotel_settings.insert_one({"tenant_id": "qa", "currency": "TRY"})
+    await db.bookings.insert_one({"tenant_id": "qa", "id": "b", "room_rate": 2200,
+                                  "total_amount": 6600, "currency": "TRY", "status": "checked_in"})
+    await db.folio_charges.insert_many([
+        {"tenant_id": "qa", "id": charge_type, "booking_id": "b", "charge_category": "room",
+         "charge_type": charge_type, "amount": amount, "total": amount, "currency": "TRY",
+         "business_date": day, "tax_rate": 0, "tax_amount": 0}
+        for charge_type, amount in (("room_charge", 2200), ("room_upgrade", 2400))
+    ])
+    await db.payments.insert_one({"tenant_id": "qa", "id": "receipt", "booking_id": "b",
+                                  "amount": 4600, "currency": "TRY", "method": "cash",
+                                  "status": "paid", "business_date": day})
+    service = FinancialService()
+    service._db = db
+    ctx = OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin")
+
+    reconciliation = (await service.get_payment_reconciliation(ctx, day)).data
+    summary = (await service.get_daily_financial_summary(ctx, day)).data
+
+    assert reconciliation["charges_total"] == reconciliation["payments_total"] == 4600
+    assert reconciliation["is_balanced"] is True
+    assert reconciliation["discrepancies"] == []
+    assert summary["revenue"]["by_category"]["room"]["total"] == 4600
+    assert summary["revenue"]["charges_count"] == 2
+    assert not reconciliation["degraded"] and not summary["degraded"]
+
+
 async def test_daily_summary_uses_latest_tenant_day_audit_not_superseded_dry_run(ledger_db):
     db = ledger_db
     await db.night_audit_runs.insert_many([

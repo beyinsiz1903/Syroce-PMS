@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from core.accommodation_charges import is_base_room_charge
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_folio_payment
 
 
@@ -40,7 +41,7 @@ def calculate_departure_balance(
         start=Decimal("0"),
     )
     room_charge_total = sum(
-        (_amount(charge.get("total", charge.get("amount"))) for charge in active_charges if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"),
+        (_amount(charge.get("total", charge.get("amount"))) for charge in active_charges if is_base_room_charge(charge)),
         start=Decimal("0"),
     )
     # A partly posted stay still owes the portion of its confirmed total that

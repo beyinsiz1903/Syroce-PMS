@@ -13,6 +13,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import uuid4
 
+from core.accommodation_charges import is_base_room_charge
+
 _CENT = Decimal("0.01")
 
 
@@ -72,7 +74,7 @@ async def reconcile_unposted_room_charge(
             "amount": float(_money(existing.get("total", existing.get("amount")))),
         }
 
-    active_room_charges = [charge for charge in charges if not charge.get("voided") and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")]
+    active_room_charges = [charge for charge in charges if not charge.get("voided") and is_base_room_charge(charge)]
     posted_room_total = sum(
         (_money(charge.get("total", charge.get("amount"))) for charge in active_room_charges),
         start=Decimal("0"),
