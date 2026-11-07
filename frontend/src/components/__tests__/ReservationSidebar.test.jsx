@@ -60,6 +60,34 @@ describe('ReservationSidebar quick panel', () => {
     });
   });
 
+  it('uses the reservation total due instead of a pre-arrival folio credit', () => {
+    const upcoming = { ...booking, total_amount: 4500, remaining_balance: 3000, currency: 'TRY', status: 'pending' };
+    const folio = { balance: -1500, currency: 'TRY' };
+    expect(reservationQuickPanelSummary(upcoming, folio).balance).toBe(3000);
+    render(<ReservationSidebar booking={upcoming} folio={folio} onClose={() => {}} getStatusLabel={() => 'Beklemede'} />);
+    expect(screen.getByTestId('quick-payment-btn')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('quick-payment-btn'));
+    expect(screen.getByTestId('quick-payment-form').querySelector('input[type="number"]')).toHaveValue(3000);
+  });
+
+  it('preserves canonical zero and credit balances over one folio balance', () => {
+    expect(reservationQuickPanelSummary({ ...booking, remaining_balance: 0 }, { balance: 120 }).balance).toBe(0);
+    expect(reservationQuickPanelSummary({ ...booking, remaining_balance: -25 }, { balance: 120 }).balance).toBe(-25);
+    expect(reservationQuickPanelSummary({ ...booking, remaining_balance: 75 }, { balance: 0 }).balance).toBe(75);
+  });
+
+  it('does not turn missing or invalid financial values into a paid zero', () => {
+    expect(reservationQuickPanelSummary({ ...booking, remaining_balance: null, balance: '' }, { balance: null }).balance).toBeNull();
+    expect(reservationQuickPanelSummary({ ...booking, remaining_balance: 'invalid', balance: 75 }, { balance: '' }).balance).toBe(75);
+  });
+
+  it('uses the currency belonging to the selected balance source', () => {
+    expect(reservationQuickPanelSummary({ ...booking, remaining_balance: 3000, currency: 'TRY' }, { balance: 50, currency: 'EUR' }))
+      .toEqual(expect.objectContaining({ balance: 3000, currency: 'TRY' }));
+    expect(reservationQuickPanelSummary(booking, { balance: 50, currency: 'USD' }))
+      .toEqual(expect.objectContaining({ balance: null, currency: 'EUR' }));
+  });
+
   it('falls back to the tenant currency when legacy booking data has no currency', () => {
     localStorage.setItem('user', JSON.stringify({ tenant_id: 'tenant-eur' }));
     localStorage.setItem('tenant_currency:tenant-eur', JSON.stringify({ code: 'EUR' }));

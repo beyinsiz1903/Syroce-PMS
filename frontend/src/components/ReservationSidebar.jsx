@@ -19,6 +19,15 @@ import { classifyGuestPayment } from '@/utils/paymentClassification';
 import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
 
+const optionalAmount = (...values) => {
+  for (const value of values) {
+    if (value == null || (typeof value === 'string' && !value.trim()) || typeof value === 'boolean') continue;
+    const amount = Number(value);
+    if (Number.isFinite(amount)) return amount;
+  }
+  return null;
+};
+
 export const reservationQuickPanelSummary = (booking, folio) => {
   const checkIn = new Date(booking?.check_in);
   const checkOut = new Date(booking?.check_out);
@@ -26,14 +35,18 @@ export const reservationQuickPanelSummary = (booking, folio) => {
     ? Math.max(1, Math.round((checkOut - checkIn) / 86400000))
     : 1;
   const total = Number(booking?.total_amount || 0);
-  const folioBalance = Number(folio?.balance ?? folio?.total_balance);
-  const bookingBalance = Number(booking?.remaining_balance ?? booking?.balance);
+  const currency = String(booking?.currency || folio?.currency || cachedTenantCurrency()).toUpperCase().replace(/^TL$/, 'TRY');
+  const folioCurrency = String(folio?.currency || currency).toUpperCase().replace(/^TL$/, 'TRY');
+  const folioBalance = folioCurrency === currency ? optionalAmount(folio?.balance, folio?.total_balance) : null;
+  // The full-detail merge supplies reservation_total_due, including unposted
+  // accommodation and all folios. One folio's advance credit is not stay debt.
+  const bookingBalance = optionalAmount(booking?.remaining_balance, booking?.balance);
   return {
     nights,
     total,
-    balance: Number.isFinite(folioBalance) ? folioBalance : Number.isFinite(bookingBalance) ? bookingBalance : null,
+    balance: bookingBalance ?? folioBalance,
     guestCount: Number(booking?.adults || 0) + Number(booking?.children || 0) || Number(booking?.guests_count || 0) || 1,
-    currency: String(folio?.currency || booking?.currency || cachedTenantCurrency()).toUpperCase(),
+    currency,
   };
 };
 

@@ -16,7 +16,15 @@ import {
   getRoomBlockForDate,
   normalizeRoomBlocksResponse,
   getRoomTypeCapacityForDate,
+  getStatusLabel,
 } from '../calendarHelpers';
+
+describe('reservation status labels', () => {
+  it('labels a pending reservation without exposing a raw backend enum', () => {
+    expect(getStatusLabel('pending')).toBe('Beklemede');
+    expect(getStatusLabel('confirmed')).toBe('Onaylandı');
+  });
+});
 
 describe('normalizeRoomBlocksResponse', () => {
   it('endpointin ham dizi yanıtını korur', () => {
