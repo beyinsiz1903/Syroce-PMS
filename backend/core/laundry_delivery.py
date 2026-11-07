@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import HTTPException
 
 from core.audit_chain import append_audit_log
+from core.laundry_money import laundry_currency, laundry_delivery_money
 from core.tenant_db import tenant_context
 
 
@@ -36,11 +37,18 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
                 raise ValueError
         except (InvalidOperation, TypeError, ValueError) as exc:
             raise HTTPException(422, "Çamaşırhane tutarı geçersiz") from exc
-        currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
-        hotel = await db.hotel_settings.find_one({"tenant_id": tenant_id}, **kw) or {}
-        order_currency = str(order.get("currency") or hotel.get("currency") or "TRY").upper()
-        if order_currency != currency:
-            raise HTTPException(409, "Çamaşırhane ve folyo para birimleri farklı; kur uydurularak teslim yapılamaz")
+        if not folio.get("currency"):
+            raise HTTPException(409, "Hedef folyo para birimi doğrulanamadı")
+        currency = laundry_currency(folio["currency"])
+        if currency != laundry_currency(booking.get("currency") or None, currency):
+            raise HTTPException(409, "Folyo ve konaklama para birimleri değişmiş; kaynak incelemesi gerekir")
+        pricing_order = order
+        if not order.get("currency"):
+            hotel = await db.hotel_settings.find_one({"tenant_id": tenant_id}, **kw) or {}
+            pricing_order = {**order, "currency": laundry_currency(hotel.get("currency") or None)}
+        snapshot = laundry_delivery_money(pricing_order, currency)
+        amount = Decimal(str(snapshot["folio_total"]))
+        entered = {key: snapshot[key] for key in ("entered_total", "entered_currency", "exchange_rate")}
         day = (settings or {}).get("business_date")
         if not day:
             raise HTTPException(409, "Açık iş günü doğrulanamadı")
@@ -62,13 +70,14 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
                 "sequence_number": (last or {}).get("sequence_number", 0) + 1, "entry_type": "charge", "amount": float(amount),
                 "currency": currency, "description": description, "charge_code": "LAUNDRY", "tax_amount": 0,
                 "idempotency_key": key, "posted_at": now, "posted_by": actor.email, "business_date": day, "is_voided": False,
-                "metadata": {"laundry_order_id": order_id}}
+                "metadata": {"laundry_order_id": order_id, **entered}}
             await db.folio_ledger.insert_one({**ledger}, **kw)
         charge = {"id": charge_id, "tenant_id": tenant_id, "folio_id": folio_id, "booking_id": booking_id,
             "source_ledger_entry_id": ledger["id"], "source_laundry_order_id": order_id,
             "description": ledger["description"], "charge_type": "laundry", "charge_category": "laundry",
             "quantity": 1, "amount": float(amount), "unit_price": float(amount), "total": float(amount),
             "currency": currency, "business_date": day, "posted_at": ledger["posted_at"], "posted_by": ledger["posted_by"], "voided": False}
+        charge.update(entered)
         await db.folio_charges.update_one({"id": charge_id, "tenant_id": tenant_id}, {"$setOnInsert": charge}, upsert=True, **kw)
         await db.tenant_settings.update_one({"tenant_id": tenant_id, "laundry_orders.id": order_id}, {"$set": {
             "laundry_orders.$.status": "delivered", "laundry_orders.$.folio_charged": True,
@@ -77,7 +86,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         if not previous:
             await append_audit_log(db, {"id": str(uuid.uuid4()), "tenant_id": tenant_id, "user_id": actor.id,
                 "action": "laundry_delivered", "entity_type": "laundry_order", "entity_id": order_id,
-                "timestamp": now, "metadata": {"folio_id": folio_id, "charge_id": charge_id, "amount": float(amount), "currency": currency}}, session=session, require_chain=True)
+                "timestamp": now, "metadata": {"folio_id": folio_id, "charge_id": charge_id, "amount": float(amount), "currency": currency, **entered}}, session=session, require_chain=True)
         return {"id": order_id, "status": "delivered", "folio_charge": {"charged": True, "amount": float(amount), "entry_id": ledger["id"], "replayed": False}}
 
     with tenant_context(tenant_id):

@@ -30,7 +30,8 @@ const SERVICE_TYPES = [{
   name: 'Express (3 Saat)',
   multiplier: 2
 }];
-const emptyOrder = () => ({ room_number: '', guest_name: '', booking_id: '', folio_id: '', service_type: 'wash_iron', items: [], notes: '', priority: 'normal' });
+const emptyOrder = (currency = 'TRY') => ({ room_number: '', guest_name: '', booking_id: '', folio_id: '', service_type: 'wash_iron', items: [], notes: '', priority: 'normal', input_currency: currency, exchange_rate: '' });
+const errorMessage = (error, fallback) => typeof error?.response?.data?.detail === 'string' ? error.response.data.detail : fallback;
 const money = raw => {
   const value = Number(raw);
   return String(raw).trim() !== '' && Number.isFinite(value) && value >= 0 && value <= 1e9 && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6 ? value : null;
@@ -47,7 +48,10 @@ const LaundryTab = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [orderForm, setOrderForm] = useState(emptyOrder);
+  const [orderForm, setOrderForm] = useState(() => emptyOrder(currency));
+  const [folioCurrency, setFolioCurrency] = useState('');
+  const [orderError, setOrderError] = useState('');
+  const [statusError, setStatusError] = useState('');
   const [itemToAdd, setItemToAdd] = useState({
     code: '',
     quantity: 1
@@ -68,28 +72,30 @@ const LaundryTab = () => {
   const changeDialog = open => {
     lookupVersion.current += 1;
     setRoomLookupBusy(false);
-    if (!request.current) { setOrderForm(emptyOrder()); setRoomError(''); setFolioOptions([]); setItemToAdd(p => ({ ...p, quantity: 1 })); }
+    if (!request.current) { setOrderForm(emptyOrder(currency)); setRoomError(''); setOrderError(''); setFolioCurrency(''); setFolioOptions([]); setItemToAdd({ code: items.find(item => item.active !== false && (item.currency || currency) === currency)?.code || '', quantity: 1 }); }
     setShowNewOrder(open);
   };
   const changeRoom = value => {
     lookupVersion.current += 1;
     setRoomLookupBusy(false); setRoomError('Oda bilgisini doğrulayın');
     setFolioOptions([]);
-    setOrderForm(p => ({ ...p, room_number: value, guest_name: '', booking_id: '', folio_id: '' }));
+    setFolioCurrency(''); setOrderError('');
+    setOrderForm(p => ({ ...p, room_number: value, guest_name: '', booking_id: '', folio_id: '', exchange_rate: '' }));
   };
 
   // Ayarlar sekmesi state
   const [newItem, setNewItem] = useState({
     code: '',
     name: '',
-    price: ''
+    price: '', currency
   });
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({
     name: '',
-    price: ''
+    price: '', currency
   });
-  const activeItems = items.filter(i => i.active !== false);
+  const activeItems = items.filter(i => i.active !== false && (i.currency || currency) === orderForm.input_currency);
+  const currencies = [...new Set([currency, 'TRY', 'USD', 'EUR', 'GBP', ...items.map(i => i.currency).filter(Boolean)])];
   const loadOrders = useCallback(async () => {
     const version = ++ordersVersion.current;
     setOrdersStale(true);
@@ -115,13 +121,13 @@ const LaundryTab = () => {
       const list = res.data.items;
       setItems(list);
       setItemsError(false);
-      setItemToAdd(p => ({ ...p, code: p.code || list[0]?.code || '' }));
+      setItemToAdd(p => ({ ...p, code: p.code || list.find(item => item.active !== false && (item.currency || currency) === currency)?.code || '' }));
     } catch {
       if (version !== itemsVersion.current) return;
       toast.error('Ürün listesi yüklenemedi');
       setItemsError(true);
     }
-  }, []);
+  }, [currency]);
   useEffect(() => {
     loadOrders();
     loadItems();
@@ -133,6 +139,7 @@ const LaundryTab = () => {
     const version = ++lookupVersion.current;
     const number = roomNumber.trim();
     setOrderForm(p => ({ ...p, guest_name: '', booking_id: '', folio_id: '' }));
+    setFolioCurrency('');
     setFolioOptions([]);
     if (!number) return;
     setRoomLookupBusy(true);
@@ -147,16 +154,18 @@ const LaundryTab = () => {
           booking_id: res.data.booking_id || '',
           folio_id: res.data.folio_id || ''
         }));
+        setFolioCurrency(res.data.folio_currency || '');
         if (res.data.folio_selection_required) {
           const windows = await axios.get(`/folio-windows/booking/${encodeURIComponent(res.data.booking_id)}`);
           if (version !== lookupVersion.current) return;
           if (!Array.isArray(windows.data)) throw new Error('Invalid folio list');
-          const open = windows.data.filter(row => row.status === 'open' && row.currency === currency && typeof row.folio_id === 'string' && row.folio_id);
+          const open = windows.data.filter(row => row.status === 'open' && row.currency === res.data.booking_currency && typeof row.folio_id === 'string' && row.folio_id);
           if (new Set(open.map(row => row.folio_id)).size !== open.length) throw new Error('Ambiguous folio list');
           setFolioOptions(open);
           setOrderForm(p => ({ ...p, folio_id: '' }));
-          setRoomError(open.length ? 'Ücretin işleneceği açık folyoyu seçin.' : 'Hizmet para biriminde açık folyo bulunamadı.');
+          setRoomError(open.length ? 'Ücretin işleneceği açık folyoyu seçin.' : 'Konaklamanın para biriminde açık folyo bulunamadı.');
         } else if (!res.data.folio_id) setRoomError('Bu konaklamaya ait açık folyo bulunamadı.');
+        else if (!res.data.folio_currency) setRoomError('Folyo para birimi doğrulanamadı; oda bilgisini yenileyin.');
       } else {
         setRoomError(`Oda ${number} için aktif konaklama bulunamadı`);
       }
@@ -180,6 +189,7 @@ const LaundryTab = () => {
         code: item.code,
         name: item.name,
         price: item.price,
+        currency: orderForm.input_currency,
         quantity,
         total: lineTotal(item.price, quantity, p.service_type)
       }]
@@ -197,12 +207,13 @@ const LaundryTab = () => {
   };
   const submitOrder = async () => {
     if (submitting.current) return;
-    if (!request.current && (itemsError || roomLookupBusy || roomError || !orderForm.booking_id || !orderForm.folio_id || orderForm.items.length === 0)) {
+    if (!request.current && (itemsError || roomLookupBusy || roomError || conversionError || !orderForm.booking_id || !orderForm.folio_id || orderForm.items.length === 0)) {
       toast.error('Aktif konaklama, açık folyo ve en az bir ürün gereklidir');
       return;
     }
     submitting.current = true;
-    request.current ||= { key: crypto.randomUUID(), payload: structuredClone(orderForm) };
+    setOrderError('');
+    request.current ||= { key: crypto.randomUUID(), payload: { ...structuredClone(orderForm), folio_currency: folioCurrency, exchange_rate: orderForm.input_currency === folioCurrency ? 1 : Number(orderForm.exchange_rate) } };
     setLoading(true);
     try {
       await axios.post('/laundry/orders', request.current.payload, { headers: { 'Idempotency-Key': request.current.key } });
@@ -213,9 +224,11 @@ const LaundryTab = () => {
     } catch (error) {
       if (error?.response?.status >= 400 && error.response.status < 500) {
         request.current = null;
-        toast.error(error.response.data?.detail || 'Sipariş reddedildi; bilgileri kontrol edin.');
+        const message = errorMessage(error, 'Sipariş reddedildi; bilgileri kontrol edin.');
+        setOrderError(message); toast.error(message);
       } else {
-        toast.error('Sipariş sonucu doğrulanamadı. Aynı istek anahtarıyla yeniden kontrol edebilirsiniz; yeni sipariş oluşturmayın.');
+        const message = 'Sipariş sonucu doğrulanamadı. Aynı istek anahtarıyla yeniden kontrol edebilirsiniz; yeni sipariş oluşturmayın.';
+        setOrderError(message); toast.error(message);
       }
     }
     setLoading(false);
@@ -223,6 +236,7 @@ const LaundryTab = () => {
   };
   const updateStatus = async (orderId, newStatus) => {
     if (ordersStale) return;
+    setStatusError('');
     try {
       const res = await axios.patch(`/laundry/orders/${orderId}`, {
         status: newStatus
@@ -246,8 +260,9 @@ const LaundryTab = () => {
         toast.success('Sipariş durumu guncellendi');
       }
       loadOrders();
-    } catch {
-      toast.error('Sipariş durumu guncellenemedi');
+    } catch (error) {
+      const message = errorMessage(error, 'Sipariş durumu güncellenemedi; kaydı yenileyin.');
+      setStatusError(message); toast.error(message);
     }
   };
 
@@ -264,13 +279,13 @@ const LaundryTab = () => {
       await axios.post('/laundry/items', {
         code,
         name,
-        price
+        price, currency: newItem.currency
       });
       toast.success('Ürün eklendi');
       setNewItem({
         code: '',
         name: '',
-        price: ''
+        price: '', currency
       });
       loadItems();
     } catch (e) {
@@ -281,7 +296,7 @@ const LaundryTab = () => {
     setEditingId(it.id);
     setEditDraft({
       name: it.name,
-      price: String(it.price)
+      price: String(it.price), currency: it.currency || currency
     });
   };
   const saveEdit = async id => {
@@ -293,7 +308,7 @@ const LaundryTab = () => {
     try {
       await axios.put(`/laundry/items/${id}`, {
         name: editDraft.name.trim(),
-        price
+        price, currency: editDraft.currency
       });
       toast.success('Guncellendi');
       setEditingId(null);
@@ -356,7 +371,12 @@ const LaundryTab = () => {
     }
   };
   const orderTotal = orderForm.items.reduce((s, i) => s + (i.total || 0), 0);
+  const needsExchange = Boolean(folioCurrency && orderForm.input_currency !== folioCurrency);
+  const rate = needsExchange ? Number(orderForm.exchange_rate) : 1;
+  const folioTotal = Math.round((orderTotal * rate + Number.EPSILON) * 100) / 100;
+  const conversionError = orderForm.folio_id && (!folioCurrency ? 'Folyo para birimi doğrulanamadı.' : needsExchange && (!Number.isFinite(rate) || rate <= 0 || rate > 1e9) ? 'Farklı para birimi için geçerli kuru girin.' : orderTotal > 0 && (!Number.isFinite(folioTotal) || folioTotal <= 0 || folioTotal > 1e9) ? 'Folyoya yazılacak tutar geçersiz.' : '');
   return <div className="space-y-6">
+      {statusError && <div role="alert" className="rounded border border-amber-300 p-3 text-sm">{statusError}</div>}
       {ordersError && <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Siparişlerin güncelliği doğrulanamadı. Son bilinen kayıtlar gösteriliyor; işlem yapmadan önce Yenile ile yeniden deneyin.</div>}
       {itemsError && <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Ürün fiyatlarının güncelliği doğrulanamadı. Yeni sipariş için fiyat listesini yeniden yükleyin. <Button variant="outline" onClick={loadItems}>Fiyat listesini yenile</Button></div>}
       <div className="flex justify-between items-center">
@@ -447,6 +467,7 @@ const LaundryTab = () => {
                           <p className="text-xs text-gray-400">
                             {order.items?.map(i => `${i.name} x${i.quantity}`).join(', ')}
                           </p>
+                          {order.folio_currency && order.folio_currency !== order.currency && <p className="text-xs text-muted-foreground">Folyoya: {formatCurrency(order.folio_total, order.folio_currency)} · 1 {order.currency} = {order.exchange_rate} {order.folio_currency}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -475,7 +496,7 @@ const LaundryTab = () => {
                 <Plus className="w-4 h-4" /> {t('cm.components_pms_LaundryTab.yeni_urun_ekle')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <Input placeholder="Kod (orn: shirt)" value={newItem.code} onChange={e => setNewItem(p => ({
               ...p,
               code: e.target.value
@@ -484,10 +505,11 @@ const LaundryTab = () => {
               ...p,
               name: e.target.value
             }))} />
-              <Input type="number" min="0" step="0.01" placeholder={`Fiyat (${currency})`} value={newItem.price} onChange={e => setNewItem(p => ({
+              <Input type="number" min="0" step="0.01" placeholder={`Fiyat (${newItem.currency})`} value={newItem.price} onChange={e => setNewItem(p => ({
               ...p,
               price: e.target.value
             }))} />
+              <select aria-label="Yeni ürün para birimi" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={newItem.currency} onChange={e => setNewItem(p => ({ ...p, currency: e.target.value }))}>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select>
               <Button onClick={createItem}><Plus className="w-4 h-4 mr-1" /> {t('cm.components_pms_LaundryTab.ekle')}</Button>
             </CardContent>
           </Card>
@@ -510,6 +532,7 @@ const LaundryTab = () => {
                       ...p,
                       price: e.target.value
                     }))} />
+                          <select aria-label="Ürün para birimi" className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={editDraft.currency} onChange={e => setEditDraft(p => ({ ...p, currency: e.target.value }))}>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select>
                         </div>
                         <div className="flex gap-1 ml-2">
                           <Button size="sm" variant="outline" className="h-8" onClick={() => saveEdit(it.id)}><Check className="w-4 h-4" /></Button>
@@ -537,7 +560,7 @@ const LaundryTab = () => {
       </Tabs>
 
       <Dialog open={showNewOrder} onOpenChange={changeDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> {t('cm.components_pms_LaundryTab.yeni_camasir_siparisi')}</DialogTitle>
           </DialogHeader>
@@ -561,7 +584,9 @@ const LaundryTab = () => {
               <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" id="laundry-folio" aria-label="Ücretin işleneceği folyo" disabled={locked || roomLookupBusy} value={orderForm.folio_id} onChange={event => {
                 const value = event.target.value;
                 if (!folioOptions.some(row => row.folio_id === value)) return;
-                setOrderForm(p => ({ ...p, folio_id: value })); setRoomError('');
+                const selected = folioOptions.find(row => row.folio_id === value);
+                setFolioCurrency(selected.currency);
+                setOrderForm(p => ({ ...p, folio_id: value, exchange_rate: '' })); setRoomError(''); setOrderError('');
               }}>
                 <option value="" disabled>Hedef folyoyu seçin</option>
                 {folioOptions.map(row => <option key={row.folio_id} value={row.folio_id}>
@@ -570,6 +595,7 @@ const LaundryTab = () => {
               </select>
             </div>}
             {roomError && <p role="alert" className="text-sm text-amber-700">{roomError}</p>}
+            {orderError && <p role="alert" className="rounded border border-amber-300 p-3 text-sm">{orderError}</p>}
             {request.current && !loading && <p role="status" className="text-sm text-amber-700">Önceki isteğin sonucu belirsiz. Aynı siparişi ve istek anahtarını koruyarak yeniden deneyin.</p>}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -600,6 +626,20 @@ const LaundryTab = () => {
                 </Select>
               </div>
             </div>
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label htmlFor="laundry-input-currency">Hizmet para birimi</Label><select id="laundry-input-currency" aria-label="Hizmet para birimi" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" disabled={locked || orderForm.items.length > 0} value={orderForm.input_currency} onChange={e => {
+                  const code = e.target.value;
+                  setOrderForm(p => ({ ...p, input_currency: code, exchange_rate: '' })); setOrderError('');
+                  setItemToAdd({ code: items.find(item => item.active !== false && (item.currency || currency) === code)?.code || '', quantity: 1 });
+                }}>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select></div>
+                <div><Label>Folyo para birimi</Label><p className="py-2 text-sm font-medium">{folioCurrency || 'Önce oda ve folyoyu seçin'}</p></div>
+              </div>
+              {orderForm.items.length > 0 && <p className="text-xs text-muted-foreground">Para birimini değiştirmek için eklediğiniz ürünleri kaldırın; mevcut fiyatlar başka para birimi olarak etiketlenmez.</p>}
+              {needsExchange && <div><Label htmlFor="laundry-exchange-rate">Kur: 1 {orderForm.input_currency} = kaç {folioCurrency}?</Label><Input id="laundry-exchange-rate" aria-label="Folyo dönüşüm kuru" disabled={locked} type="number" min="0.000000001" step="any" value={orderForm.exchange_rate} onChange={e => { setOrderForm(p => ({ ...p, exchange_rate: e.target.value })); setOrderError(''); }} /><p className="mt-1 text-xs text-muted-foreground">PMS ek ücretlerinde olduğu gibi onayladığınız kuru girin. Kaynak tutar ve bu kur siparişte saklanır; teslimde yeni kur uygulanmaz.</p></div>}
+              {conversionError && <p role="alert" className="text-sm text-amber-700">{conversionError}</p>}
+              {orderTotal > 0 && folioCurrency && !conversionError && <p role="status" className="text-sm font-medium">Folyoya yazılacak: {formatCurrency(folioTotal, folioCurrency)}</p>}
+            </div>
             <div className="border rounded-lg p-3 space-y-2">
               <Label>{t('cm.components_pms_LaundryTab.urun_ekle')}</Label>
               <div className="flex gap-2">
@@ -618,6 +658,7 @@ const LaundryTab = () => {
               }))} />
                 <Button aria-label="Ürün ekle" disabled={locked} size="sm" onClick={addItem}><Plus className="w-4 h-4" /></Button>
               </div>
+              {activeItems.length === 0 && <p className="text-sm text-muted-foreground">Bu para biriminde ürün yok. Ayarlar’dan bu para birimine ait fiyatlı bir ürün ekleyin; katalog fiyatı otomatik çevrilmez.</p>}
               {orderForm.items.length > 0 && <div className="space-y-1 mt-2">
                   {orderForm.items.map((item, i) => <div key={item.id || i} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1">
                       <span>{item.name} x{item.quantity}</span>
@@ -628,7 +669,7 @@ const LaundryTab = () => {
                     </div>)}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
                     <span>{t('cm.components_pms_LaundryTab.toplam')}</span>
-                    <span>{formatCurrency(orderTotal, currency)}</span>
+                    <span>{formatCurrency(orderTotal, orderForm.input_currency)}</span>
                   </div>
                 </div>}
             </div>
@@ -636,9 +677,9 @@ const LaundryTab = () => {
               ...p,
               notes: e.target.value
             }))} placeholder={t('cm.components_pms_LaundryTab.ozel_talimatlar')} /></div>
-            <Button onClick={submitOrder} disabled={loading || (!request.current && (roomLookupBusy || Boolean(roomError) || !orderForm.booking_id || !orderForm.folio_id || !orderForm.items.length))} className="w-full">
+            <Button onClick={submitOrder} disabled={loading || (!request.current && (roomLookupBusy || Boolean(roomError) || Boolean(conversionError) || !orderForm.booking_id || !orderForm.folio_id || !orderForm.items.length))} className="w-full">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              {t('cm.components_pms_LaundryTab.siparis_olustur')} ({formatCurrency(orderTotal, currency)})
+              {t('cm.components_pms_LaundryTab.siparis_olustur')} ({formatCurrency(orderTotal, orderForm.input_currency)})
             </Button>
           </div>
         </DialogContent>
