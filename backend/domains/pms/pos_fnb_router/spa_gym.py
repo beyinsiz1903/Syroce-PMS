@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
+from core.spa_mice_authz import require_finance
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module_role
 
@@ -197,19 +198,20 @@ async def charge_spa_reservation(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),
 ):
+    """Retire the old simulated charge; never acknowledge an unwritten debt.
+
+    These legacy POS reservations are not canonical SPA appointments and have
+    no validated service/VAT/folio snapshot. They cannot be safely converted by
+    guessing that mapping. Keep their history untouched and use the actual SPA
+    appointment flow, which posts the folio charge atomically on completion.
     """
-    Charges a completed SPA reservation to a folio, simulating POS Folio transfer.
-    """
+    require_finance(current_user)
     reservation = await db.pos_spa_reservations.find_one({"tenant_id": current_user.tenant_id, "id": reservation_id})
 
     if not reservation:
         raise HTTPException(status_code=404, detail="SPA rezervasyonu bulunamadı")
 
-    if reservation.get("status") != "completed":
-        # Automatically complete it before charging
-        await db.pos_spa_reservations.update_one({"id": reservation_id}, {"$set": {"status": "completed", "charged": True}})
-
-    # In a real system, we'd look up the `service_item_id` in `pos_menu_items`
-    # and call `postOrderToFolio` or directly write a transaction.
-    # For now, mark it charged.
-    return {"success": True, "message": "SPA hizmet bedeli yansıtıldı.", "folio_id": folio_id}
+    raise HTTPException(
+        status_code=410,
+        detail="Eski SPA/POS bağlantısı folyo ücreti oluşturmaz. Hiçbir ücret veya durum değişikliği kaydedilmedi. Oda hesabına aktarım için /spa-wellness ekranında PMS rezervasyonu ve açık folyosu seçilmiş SPA randevusunu kullanın. Dış misafir tahsilatı bu eski işlemle kaydedilemez.",
+    )
