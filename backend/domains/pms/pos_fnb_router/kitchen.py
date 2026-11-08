@@ -24,6 +24,7 @@ from core.security import (
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module_role  # v99 DW
 
+from .kitchen_locations import with_kitchen_room_labels
 from .kitchen_numbering import next_kitchen_order_number as _shared_next_kitchen_order_number
 
 try:
@@ -469,6 +470,7 @@ async def get_kitchen_orders(
 ):
     statuses = status.split(",") if status else None
     orders = await _get_active_kitchen_orders(current_user.tenant_id, statuses=statuses)
+    orders = await with_kitchen_room_labels(db, current_user.tenant_id, orders)
     return {"orders": orders, "total": len(orders)}
 
 

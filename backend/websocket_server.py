@@ -362,9 +362,8 @@ async def join_room(sid, data):
     room is treated as off-limits to prevent cross-tenant leakage of
     reservation / room-status updates (Task #43).
 
-    Other shared rooms (dashboard, notifications, kitchen, system-health,
-    cockpit) remain freely joinable for backward compatibility — those
-    streams are not user-private.
+    Legacy shared rooms remain joinable for backward compatibility. Kitchen
+    changes go only to the authenticated tenant room.
     """
     room = (data or {}).get("room", "general") if isinstance(data, dict) else "general"
 
@@ -514,11 +513,13 @@ async def broadcast_room_status_update(
         logger.error(f"Failed to broadcast room status update: {e}")
 
 
-async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
-    """Broadcast kitchen display orders"""
+async def broadcast_kitchen_orders(tenant_id: str, _orders: Any):
+    """Signal a queue change; ticket data stays behind the POS HTTP permission."""
     try:
-        await sio.emit("kitchen_orders", {"tenant_id": tenant_id, "orders": orders, "timestamp": datetime.now(UTC).isoformat()}, room="kitchen")
-        logger.debug("Kitchen orders broadcasted")
+        from infra.ws_redis_adapter import ws_redis_adapter
+
+        await ws_redis_adapter.publish(_pms_tenant_room(tenant_id), "kitchen_orders_changed", {})
+        logger.debug("Kitchen queue change broadcasted")
     except Exception as e:
         logger.error(f"Failed to broadcast kitchen orders: {e}")
 

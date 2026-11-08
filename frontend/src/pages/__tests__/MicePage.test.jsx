@@ -112,6 +112,20 @@ describe('MicePage entitlement usage contract', () => {
     expect(axiosGet).toHaveBeenCalledWith('/mice/accounts');
   });
 
+  it('shows no matches for a filtered populated catalogue without offering the first event action', async () => {
+    axiosGet.mockImplementation(url => Promise.resolve({ data: url === '/mice/events'
+      ? { events: [{ id: 'existing', name: 'Existing event', client_name: 'Synthetic client', status: 'lead' }] }
+      : url === '/mice/spaces' ? { spaces: [] } : { accounts: [] } }));
+    render(<MemoryRouter><MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} /></MemoryRouter>);
+    expect(await screen.findByText('Existing event')).toBeVisible();
+    const search = screen.getByRole('textbox', { name: 'Etkinlik veya müşteri ara' });
+    fireEvent.change(search, { target: { value: 'missing event' } });
+    expect(screen.getByText('common.noResults')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'emptyStates.mice.eventsAction' })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(screen.getByText('Existing event')).toBeVisible();
+  });
+
   it('updates an already visited diary without clearing its selected day when a hall hold is created', async () => {
     const now = new Date();
     const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-11`;

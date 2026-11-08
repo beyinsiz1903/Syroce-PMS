@@ -725,7 +725,9 @@ const MicePage = ({
   }, {});
   const totalPipeline = Object.values(totalPipelineByCurrency).reduce((sum, amount) => sum + amount, 0);
   const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);
-  const visibleEvents = events.filter(event => `${event.name} ${event.client_name}`.toLocaleLowerCase('tr').includes(search.toLocaleLowerCase('tr')));
+  const searchTerm = search.trim().toLocaleLowerCase('tr');
+  const visibleEvents = events.filter(event => `${event.name} ${event.client_name}`.toLocaleLowerCase('tr').includes(searchTerm));
+  const eventsFiltered = Boolean(searchTerm || eventFilters.status || eventFilters.date_from || eventFilters.date_to);
   return <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-3">
@@ -841,7 +843,11 @@ const MicePage = ({
             <Button type="submit" variant="outline" disabled={eventsBusy}>Filtrele</Button>
           </form>
           <p className="mb-3 text-xs text-muted-foreground">Kartlar uygulanan tarih / durum filtresini kapsar. Pipeline, iptal ve tamamlanan işleri içermez. Metin araması yalnız bu sayfada uygulanır.</p>
-          {visibleEvents.length === 0 ? <EmptyState icon={CalendarDays} title={t('emptyStates.mice.eventsTitle')} description={t('emptyStates.mice.eventsDesc')} actionText={t('emptyStates.mice.eventsAction')} onAction={canMice && !eventsLimitReached ? openNew : undefined} /> : <Card><CardContent className="p-0 overflow-x-auto">
+          {visibleEvents.length === 0 ? (
+            eventsFiltered
+              ? <EmptyState icon={CalendarDays} title={t('common.noResults')} />
+              : <EmptyState icon={CalendarDays} title={t('emptyStates.mice.eventsTitle')} description={t('emptyStates.mice.eventsDesc')} actionText={t('emptyStates.mice.eventsAction')} onAction={canMice && !eventsLimitReached ? openNew : undefined} />
+          ) : <Card><CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-left">
                 <tr>

@@ -903,8 +903,7 @@ async def _validate_preconditions(
         warnings.append(f"{len(future_stays)} checked-in rezervasyonun giris tarihi is gununden sonra; bu rezervasyonlar oda masrafi adaylarina dahil edilmedi.")
 
     # 5. BLOCKING: pending arrivals (confirmed/guaranteed but never checked in by audit time)
-    # Otomatik no-show yerine personel karari bekleyelim. 'Dogrulamalari Atla'
-    # bayragi ile bilerek bypass edilirse mevcut akis no-show yazar.
+    # Staff resolve outstanding arrivals before the normal close.
     arrival_candidates = await _load_bookings_for_date_check(
         tenant_id,
         ["confirmed", "guaranteed"],
@@ -917,9 +916,9 @@ async def _validate_preconditions(
     pending_with_room, pending_without_room = _split_pending_arrivals(pending_arrivals)
     if pending_with_room:
         blocking.append(
-            f"{len(pending_with_room)} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. "
-            f"Misafirleri check-in edin, manuel no-show isaretleyin veya rezervasyonu iptal edin. "
-            f"Otomatik no-show istenirse 'Dogrulamalari Atla' ile devam edin."
+            f"{len(pending_with_room)} rezervasyonun giriş tarihi geçtiği halde check-in yapılmadı. "
+            "Hazırlık sekmesindeki Bekleyen geliş listesinden rezervasyonları açın ve "
+            "doğrulanan duruma göre check-in, no-show veya iptal işlemini uygulayın."
         )
     if pending_without_room:
         blocking.append(f"{len(pending_without_room)} bekleyen geliste oda atamasi yok. Check-in veya no-show kararindan once oda atayin, rezervasyonu iptal edin ya da manuel no-show isaretleyin.")

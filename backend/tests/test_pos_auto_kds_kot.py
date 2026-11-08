@@ -133,6 +133,31 @@ async def test_auto_kds_and_kot_created(_patch_db):
 
 
 @pytest.mark.asyncio
+async def test_room_service_ticket_and_kot_use_physical_room_number(_patch_db, monkeypatch):
+    kitchen, enqueued = _patch_db
+    booking = {"id": "booking-1", "room_id": "room-1", "room_number": "stale-label", "status": "checked_in"}
+    order = _Order([_OrderItem("Kofte", 1, "food")])
+    order.table_number = None
+    order.booking_id = booking["id"]
+
+    class RoomQuery:
+        async def to_list(self, _length):
+            return [{"id": "room-1", "room_number": "131"}]
+
+    class Rooms:
+        def find(self, query, _projection):
+            assert query == {"tenant_id": "t1", "id": {"$in": ["room-1"]}}
+            return RoomQuery()
+
+    monkeypatch.setattr(pos_core.db, "rooms", Rooms(), raising=False)
+    await pos_core._auto_kds_and_kot(order, "t1", "Waiter", booking=booking)
+
+    assert kitchen.docs[0]["table_number"] is None
+    assert kitchen.docs[0]["room_number"] == "131"
+    assert enqueued[0]["payload"]["table"] == "Oda 131"
+
+
+@pytest.mark.asyncio
 async def test_replay_does_not_duplicate_kds(_patch_db):
     kitchen, enqueued = _patch_db
     order = _Order([_OrderItem("Kofte", 1, "food")])
