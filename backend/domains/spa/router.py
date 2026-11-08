@@ -12,9 +12,11 @@ Goes well beyond the original 6-treatment template:
 
 from __future__ import annotations
 
+import re
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -33,6 +35,7 @@ from core.spa_mice_authz import require_catalog, require_finance, require_spa_op
 from core.tenant_db import get_system_db
 from domains.spa.finance import router as finance_router
 from models.schemas import User
+from modules.pms_core.report_period import day_bounds, hotel_zone, instant_value, parse_day
 from shared_kernel.idempotency import (
     claim_idempotency,
     complete_idempotency,
@@ -436,13 +439,31 @@ def _overlap(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datet
     return start_a < end_b and start_b < end_a
 
 
+def _appointment_overlap(start: datetime, end: datetime) -> dict:
+    start_value = {"$convert": {"input": "$starts_at", "to": "date", "onError": None, "onNull": None}}
+    end_value = {"$convert": {"input": "$ends_at", "to": "date", "onError": None, "onNull": None}}
+    # Keep the indexable upper bound broad enough for stored ISO offsets.
+    latest_text = (end.astimezone(UTC) + timedelta(hours=14)).strftime("%Y-%m-%dT%H:%M:%S")
+    return {"$and": [
+        {"$or": [{"starts_at": {"$lt": end}}, {"starts_at": {"$lt": latest_text}}]},
+        {"$expr": {"$and": [
+            {"$ne": [start_value, None]}, {"$lt": [start_value, end]}, {"$gt": [end_value, start]},
+        ]}},
+    ]}
+
+
 async def _check_conflict(tenant_id: str, *, therapist_id: str | None, room_id: str | None, start: datetime, end: datetime, exclude_id: str | None = None, session=None) -> str | None:
+    resources = [{"therapist_id": therapist_id}] if therapist_id else []
+    if room_id:
+        resources.append({"room_id": room_id})
+    if not resources:
+        return None
     db = get_system_db()
     q: dict[str, Any] = {
         "tenant_id": tenant_id,
         "status": {"$in": ["scheduled", "in_progress"]},
-        "starts_at": {"$lt": end.isoformat()},
-        "ends_at": {"$gt": start.isoformat()},
+        "$or": resources,
+        **_appointment_overlap(start, end),
     }
     if exclude_id:
         q["id"] = {"$ne": exclude_id}
@@ -772,28 +793,60 @@ async def delete_appointment(
 
 
 # ── Guest history ───────────────────────────────────────────────
+_HISTORY_FIELDS = {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1, "starts_at": 1,
+                   "service_name": 1, "service_category": 1, "status": 1, "price": 1, "currency": 1}
+
+
+@router.get("/guests/history/search")
+async def search_guest_history(
+    q: str = Query(..., min_length=2, max_length=100),
+    current_user: User = Depends(get_current_user),
+    _feat=Depends(require_feature("spa", "guest_history")),
+) -> dict:
+    require_spa_ops(current_user)
+    name = q.strip()
+    if len(name) < 2 or "\x00" in name:
+        return {"appointments": []}
+    # Legacy and external appointments may have no PMS guest ID. Return the
+    # matching appointments individually so a shared name never joins guests.
+    rows = get_system_db().spa_appointments.find(
+        {"tenant_id": current_user.tenant_id,
+         "guest_name": {"$regex": "^" + re.escape(name), "$options": "i"}},
+        _HISTORY_FIELDS,
+    ).sort("starts_at", -1).limit(50)
+    return {"appointments": [row async for row in rows]}
+
+
 @router.get("/guests/{guest_id}/history")
 async def guest_history(
     guest_id: str,
     current_user: User = Depends(get_current_user),
     _feat=Depends(require_feature("spa", "guest_history")),
 ) -> dict:
+    require_spa_ops(current_user)
+    from modules.pms_core.report_money import add_amount, rounded_totals, single_amount
+
     db = get_system_db()
     cur = (
         db.spa_appointments.find(
             {"tenant_id": current_user.tenant_id, "guest_id": guest_id},
-            {"_id": 0},
+            _HISTORY_FIELDS,
         )
         .sort("starts_at", -1)
         .limit(50)
     )
     items = [doc async for doc in cur]
-    total_spend = sum(float(a.get("price", 0)) for a in items if a.get("status") == "completed")
+    completed = [a for a in items if a.get("status") == "completed"]
+    values: dict = {}
+    for a in completed:
+        if a.get("currency"):
+            add_amount(values, a["currency"], a.get("price") or 0)
     return {
         "appointments": items,
-        "total_visits": sum(1 for a in items if a.get("status") == "completed"),
-        "total_spend": round(total_spend, 2),
-        "favorite_category": _most_common([a.get("service_category") for a in items if a.get("status") == "completed"]),
+        "total_visits": len(completed),
+        "total_spend": single_amount(values) if all(a.get("currency") for a in completed) else None,
+        "service_value_by_currency": rounded_totals(values),
+        "favorite_category": _most_common([a.get("service_category") for a in completed]),
     }
 
 
@@ -813,7 +866,7 @@ async def daily_summary(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     from modules.pms_core.report_money import add_amount, rounded_totals, single_amount
-    from modules.pms_core.report_period import day_bounds, hotel_zone, instant_between, local_today, parse_day
+    from modules.pms_core.report_period import instant_between, local_today
 
     db = get_system_db()
     # The hotel's local calendar day; ISO-text and BSON start times both count.
@@ -881,6 +934,25 @@ async def daily_summary(
 # 2) Slot dolu ise misafiri kuyruğa al, slot açıldıkça öneri ver
 
 
+def _therapist_shifts(therapist: dict, day: date, zone: ZoneInfo) -> list[tuple[datetime, datetime]]:
+    try:
+        start = time.fromisoformat(therapist.get("work_start") or "09:00")
+        end = time.fromisoformat(therapist.get("work_end") or "21:00")
+    except (TypeError, ValueError):
+        return []
+    if start == end or start.tzinfo or end.tzinfo:
+        return []
+    working_days = therapist.get("working_days")
+    shifts = []
+    for shift_day in (day - timedelta(days=1), day):
+        if working_days is not None and shift_day.isoweekday() not in working_days:
+            continue
+        end_day = shift_day + timedelta(days=1) if end < start else shift_day
+        shifts.append((datetime.combine(shift_day, start, zone).astimezone(UTC),
+                       datetime.combine(end_day, end, zone).astimezone(UTC)))
+    return shifts
+
+
 @router.get("/availability")
 async def availability_grid(
     date: str = Query(..., description="YYYY-MM-DD"),
@@ -889,92 +961,60 @@ async def availability_grid(
     current_user: User = Depends(get_current_user),
     _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
-    """Terapist x zaman dilimi şeklinde müsaitlik tablosu döndürür.
-
-    Bir slot 'available' ise ilgili terapist o pencerede başka bir
-    randevuya atanmamış demektir. service_id verilirse o servisin
-    süresi kadar (slot_minutes yerine) blok kontrol edilir.
-    """
+    """Find shifts and compatible rooms that can cover the full service."""
     db = get_system_db()
     tenant_id = current_user.tenant_id
-
-    try:
-        day = datetime.fromisoformat(date).date()
-    except ValueError:
-        raise HTTPException(400, "Geçersiz tarih (YYYY-MM-DD bekleniyor)")
-
-    # Aktif terapistler
-    therapists = [t async for t in db.spa_therapists.find({"tenant_id": tenant_id, "active": True}, {"_id": 0})]
-    if not therapists:
-        return {
-            "date": date,
-            "slots": [],
-            "therapists": [],
-            "stats": {
-                "total_slots": 0,
-                "available_slots": 0,
-                "utilization_pct": 0,
-            },
-        }
-
-    duration = slot_minutes
+    day = parse_day(date)
+    zone = await hotel_zone(db, tenant_id)
+    lower, upper = day_bounds(day, day, zone)
+    scope = {"tenant_id": tenant_id, "active": True}
+    service = {}
     if service_id:
-        svc = await db.spa_services.find_one({"id": service_id, "tenant_id": tenant_id})
-        if svc:
-            duration = int(svc.get("duration_minutes") or slot_minutes)
+        service = await db.spa_services.find_one({"id": service_id, "tenant_id": tenant_id, "active": {"$ne": False}})
+        if not service:
+            raise HTTPException(404, "Aktif SPA hizmeti bulunamadı")
 
-    # Çalışma penceresi: terapist working_hours min/max'i
-    work_start_h = min(int((t.get("work_start") or "09:00").split(":")[0]) for t in therapists)
-    work_end_h = max(int((t.get("work_end") or "21:00").split(":")[0]) for t in therapists)
-    if work_end_h <= work_start_h:
-        work_end_h = work_start_h + 1
-
-    base = datetime.combine(day, datetime.min.time()).replace(hour=work_start_h, tzinfo=UTC)
-    end_of_day = datetime.combine(day, datetime.min.time()).replace(hour=work_end_h, tzinfo=UTC)
-
-    # Günün tüm randevularını tek seferde çek
-    appts = [
-        a
-        async for a in db.spa_appointments.find(
-            {
-                "tenant_id": tenant_id,
-                "starts_at": {"$gte": base.isoformat(), "$lt": end_of_day.isoformat()},
-                "status": {"$in": ["scheduled", "in_progress", "completed"]},
-            },
-            {"_id": 0, "therapist_id": 1, "starts_at": 1, "ends_at": 1},
-        )
+    duration = int(service.get("duration_minutes") or slot_minutes)
+    category = service.get("category")
+    therapists = [
+        row async for row in db.spa_therapists.find(scope, {"_id": 0})
+        if not category or not row.get("specialties") or category in row["specialties"]
     ]
+    room_type = service.get("requires_room_type")
+    room_scope = {**scope, **({"room_type": room_type} if room_type else {})}
+    rooms = [row async for row in db.spa_rooms.find(room_scope, {"_id": 0, "id": 1, "name": 1})]
+    shifts = {row["id"]: _therapist_shifts(row, day, zone) for row in therapists}
+    windows = [(start, end) for spans in shifts.values() for start, end in spans if start < upper and end > lower]
+    busy: dict[tuple[str, str], list[tuple[datetime, datetime]]] = {}
+    if windows:
+        appointments = db.spa_appointments.find(
+            {"tenant_id": tenant_id, "status": {"$in": ["scheduled", "in_progress", "completed"]},
+             **_appointment_overlap(lower, max(end for _, end in windows))},
+            {"_id": 0, "room_id": 1, "therapist_id": 1, "starts_at": 1, "ends_at": 1},
+        )
+        async for appointment in appointments:
+            start = instant_value(appointment.get("starts_at"))
+            end = instant_value(appointment.get("ends_at"))
+            if start and end:
+                for field in ("therapist_id", "room_id"):
+                    if appointment.get(field):
+                        busy.setdefault((field, appointment[field]), []).append((start, end))
 
-    # Therapist-bazında randevu pencerelerini çıkar
-    busy: dict[str, list[tuple[datetime, datetime]]] = {}
-    for a in appts:
-        tid = a.get("therapist_id")
-        if not tid:
-            continue
-        try:
-            s = datetime.fromisoformat(a["starts_at"])
-            e = datetime.fromisoformat(a["ends_at"])
-        except (KeyError, ValueError):
-            continue
-        if s.tzinfo is None:
-            s = s.replace(tzinfo=UTC)
-        if e.tzinfo is None:
-            e = e.replace(tzinfo=UTC)
-        busy.setdefault(tid, []).append((s, e))
+    def is_free(field, resource_id, start, end):
+        return not any(_overlap(start, end, busy_start, busy_end)
+                       for busy_start, busy_end in busy.get((field, resource_id), ()))
 
-    # Slot grid'i kur
     slots: list[dict[str, Any]] = []
-    cur_t = base
-    while cur_t < end_of_day:
+    cur_t = max(lower, min((start for start, _ in windows), default=upper))
+    last_start = min(upper, max((end for _, end in windows), default=upper))
+    while cur_t < last_start:
         slot_end = cur_t + timedelta(minutes=duration)
+        free_rooms = [room for room in rooms if is_free("room_id", room["id"], cur_t, slot_end)]
         therapist_slots: list[dict[str, Any]] = []
         for t in therapists:
             tid = t["id"]
-            available = True
-            for bs, be in busy.get(tid, []):
-                if cur_t < be and bs < slot_end:
-                    available = False
-                    break
+            on_shift = any(start <= cur_t and slot_end <= end for start, end in shifts[tid])
+            available = bool(free_rooms) and on_shift and is_free("therapist_id", tid, cur_t, slot_end)
             therapist_slots.append(
                 {
                     "therapist_id": tid,
@@ -988,6 +1028,7 @@ async def availability_grid(
                 "starts_at": cur_t.isoformat(),
                 "ends_at": slot_end.isoformat(),
                 "therapists": therapist_slots,
+                "rooms": free_rooms,
                 "any_available": any(s["available"] for s in therapist_slots),
             }
         )
@@ -995,14 +1036,17 @@ async def availability_grid(
 
     total_cells = len(slots) * len(therapists)
     avail_cells = sum(1 for s in slots for ts in s["therapists"] if ts["available"])
+    available_slots = sum(1 for slot in slots if slot["any_available"])
     return {
-        "date": date,
+        "date": day.isoformat(),
+        "timezone": str(zone),
         "duration_minutes": duration,
         "therapists": [{"id": t["id"], "name": t.get("name"), "color": t.get("color")} for t in therapists],
         "slots": slots,
         "stats": {
             "total_slots": len(slots),
-            "any_available_slots": sum(1 for s in slots if s["any_available"]),
+            "any_available_slots": available_slots,
+            "available_slots": available_slots,
             "total_cells": total_cells,
             "available_cells": avail_cells,
             "utilization_pct": round((1 - avail_cells / total_cells) * 100, 1) if total_cells else 0,

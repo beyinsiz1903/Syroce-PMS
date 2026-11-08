@@ -159,6 +159,26 @@ describe('MicePage entitlement usage contract', () => {
     expect(within(row).queryByRole('button', { name: 'Finished event sil' })).not.toBeInTheDocument();
   });
 
+  it('keeps a rejected salon booking open and shows its conflict inside the form', async () => {
+    axiosPost.mockRejectedValue({ response: { status: 409, data: { detail: 'Mekan çakışması: Anadolu Hizmet Atölyesi' } } });
+    render(<MemoryRouter><MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /yeni_etkinlik/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Yeni Etkinlik' });
+    expect(within(dialog).getByText('Başlangıç tarihi seçilmedi.')).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Oluştur' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('başlangıç ile bitiş tarihlerini tamamlayın');
+    expect(axiosPost).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText('Etkinlik Adı'), { target: { value: 'Salon Çakışma Kontrolü' } });
+    fireEvent.change(within(dialog).getByLabelText('Müşteri Adı'), { target: { value: 'Deren Özkan' } });
+    for (const dateInput of dialog.querySelectorAll('input[type="date"]')) {
+      fireEvent.change(dateInput, { target: { value: '2026-11-11' } });
+    }
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Oluştur' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Mekan çakışması: Anadolu Hizmet Atölyesi');
+    expect(within(dialog).getByLabelText('Etkinlik Adı')).toHaveValue('Salon Çakışma Kontrolü');
+  });
+
   it('keeps the new event action disabled when entitlement usage reaches the limit', async () => {
     mockEntitlements.mockReturnValue({
       entitlements: {

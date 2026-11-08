@@ -23,6 +23,7 @@ import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatSpaTime, spaDateTimeInput, spaTimeZone, spaWallTimeToUtc } from '@/lib/spaTime';
 import AppointmentSettlements from '@/components/spa/AppointmentSettlements';
+import { SpaAvailability, SpaGuestHistory } from '@/components/spa/SpaOperationsPanels';
 
 // Revenue per currency as the server keeps it (never added across currencies).
 export const revenueText = (summary, format) => {
@@ -68,6 +69,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const [therapists, setTherapists] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [activeTab, setActiveTab] = useState('appointments');
   const [summary, setSummary] = useState(null);
   const [clockPending, setClockPending] = useState(true);
   const timeZone = spaTimeZone(summary?.timezone);
@@ -268,8 +270,8 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
         </div>
       )}
 
-      <Tabs defaultValue="appointments">
-        <TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="appointments">Randevular</TabsTrigger>
           <TabsTrigger value="services">Hizmetler ({services.length})</TabsTrigger>
           <TabsTrigger value="therapists">Terapistler ({therapists.length})</TabsTrigger>
@@ -444,6 +446,12 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             ))}
           </div>
         </TabsContent>
+        {hasGuestHistory && <TabsContent value="guest_history">
+          {activeTab === 'guest_history' && <SpaGuestHistory timeZone={timeZone} statuses={STATUS} money={money} />}
+        </TabsContent>}
+        {hasAdvancedAvailability && <TabsContent value="availability">
+          {activeTab === 'availability' && <SpaAvailability services={services} timeZone={timeZone} />}
+        </TabsContent>}
         {hasCrossDepartmentPackages && <TabsContent value="packages">
           <Card>
             <CardHeader>

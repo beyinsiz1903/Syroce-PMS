@@ -184,7 +184,8 @@ const MicePage = ({
     }
   };
   const [form, setForm] = useState(blankEvent);
-  useEffect(() => { setQuotePreview(null); }, [form]);
+  const [formError, setFormError] = useState('');
+  useEffect(() => { setQuotePreview(null); setFormError(''); }, [form]);
   const blankMenu = {
     name: '',
     type: 'fb',
@@ -361,9 +362,16 @@ const MicePage = ({
     if (savingEvent) return;
     if (!form.name.trim() || !form.client_name.trim() || !form.start_date || !form.end_date) {
       setEventTab('basics');
-      toast.error('Etkinlik adı, müşteri adı ve tarihleri zorunludur');
+      setFormError('Etkinlik adını, müşteri adını ve başlangıç ile bitiş tarihlerini tamamlayın.');
       return;
     }
+    const spaceBookings = omitEmptySpaceBookings(form.space_bookings);
+    if (spaceBookings.some(booking => !booking.space_id || !booking.starts_at || !booking.ends_at)) {
+      setEventTab('spaces');
+      setFormError('Eklenen her salon için mekânı, başlangıç ve bitiş tarih ve saatlerini tamamlayın.');
+      return;
+    }
+    setFormError('');
     setSavingEvent(true);
     try {
       // Normalize: empty datetime strings → null; entertainment.type==='none'
@@ -374,7 +382,7 @@ const MicePage = ({
       // The form starts with one convenience row. Do not send that untouched
       // row as a real booking because its required datetimes are intentionally
       // empty until the user selects a space.
-      payload.space_bookings = omitEmptySpaceBookings(payload.space_bookings);
+      payload.space_bookings = spaceBookings;
       const ent = payload.entertainment || {};
       if (!ent.type || ent.type === 'none') {
         payload.entertainment = null;
@@ -402,9 +410,9 @@ const MicePage = ({
       await axios[method](url, payload);
       toast.success(editing ? 'Etkinlik güncellendi' : 'Etkinlik oluşturuldu');
       setShowEventForm(false);
-      await refreshEventSchedule();
+      await refreshEventSchedule().catch(() => toast.error('Etkinlik kaydedildi. Liste yenilenemedi.'));
     } catch (err) {
-      toast.error(apiErrorText(err, 'Kaydedilemedi; tarih, saat ve zorunlu alanları kontrol edin'));
+      setFormError(apiErrorText(err, 'Etkinlik kaydedilemedi. Tarih, saat ve zorunlu alanları kontrol edin.'));
     } finally { setSavingEvent(false); }
   };
   const changeStatus = async (id, status) => {
@@ -1002,7 +1010,7 @@ const MicePage = ({
       </Tabs>
 
       {/* Event create/edit */}
-      {showEventForm && <EventFormModal editing={editing} form={form} setForm={value => { setQuotePreview(null); setForm(value); }} eventTab={eventTab} setEventTab={setEventTab} accounts={accounts} groupBlocks={groupBlocks} accountById={accountById} spaces={spaces} menus={menus} resources={resources} psTotal={psTotal} addSb={addSb} setSb={setSb} rmSb={rmSb} addRes={addRes} setRes={setRes} rmRes={rmRes} addAg={addAg} setAg={setAg} rmAg={rmAg} addPs={addPs} setPs={setPs} rmPs={rmPs} submit={submit} saving={savingEvent} quotePreview={quotePreview?.source === JSON.stringify(form) ? quotePreview : null} previewQuote={previewQuote} onClose={() => { if (!savingEvent) setShowEventForm(false); }} />}
+      {showEventForm && <EventFormModal editing={editing} form={form} setForm={value => { setQuotePreview(null); setForm(value); }} eventTab={eventTab} setEventTab={setEventTab} accounts={accounts} groupBlocks={groupBlocks} accountById={accountById} spaces={spaces} menus={menus} resources={resources} psTotal={psTotal} addSb={addSb} setSb={setSb} rmSb={rmSb} addRes={addRes} setRes={setRes} rmRes={rmRes} addAg={addAg} setAg={setAg} rmAg={rmAg} addPs={addPs} setPs={setPs} rmPs={rmPs} submit={submit} saving={savingEvent} formError={formError} quotePreview={quotePreview?.source === JSON.stringify(form) ? quotePreview : null} previewQuote={previewQuote} onClose={() => { if (!savingEvent) setShowEventForm(false); }} />}
 
       {/* Menu / Package create-edit */}
       {showMenuForm && <MenuFormModal editingMenu={editingMenu} menuForm={menuForm} setMenuForm={setMenuForm} toggleTag={toggleTag} submitMenu={submitMenu} onClose={() => setShowMenuForm(false)} />}

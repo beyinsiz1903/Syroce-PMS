@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { MemoryRouter } from 'react-router-dom';
@@ -38,6 +38,47 @@ async function openBooking() {
 }
 
 describe('SPA hotel wall clock, independent of browser UTC', () => {
+  it('opens the availability tab and shows only slots with a therapist and room', async () => {
+    axios.get.mockImplementation(async (url) => ({ data: url === '/spa/availability' ? {
+      timezone: 'Europe/Istanbul',
+      slots: [
+        { starts_at: '2026-11-08T07:00:00Z', any_available: false },
+        { starts_at: '2026-11-08T07:30:00Z', ends_at: '2026-11-08T08:30:00Z', any_available: true,
+          therapists: [{ available: true, therapist_name: 'Ayşe' }], rooms: [{ id: 'room', name: 'Islak Oda' }] },
+      ],
+    } : dataFor(url) }));
+    renderSpa();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Randevu' })).toBeEnabled());
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Gelişmiş Müsaitlik' }), { button: 0 });
+    const panel = screen.getByRole('tabpanel', { name: 'Gelişmiş Müsaitlik' });
+    fireEvent.change(within(panel).getByLabelText('Hizmet'), { target: { value: 's' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Müsait saatleri göster' }));
+    expect(await within(panel).findByText('08.11 10:30 – 08.11 11:30')).toBeVisible();
+    expect(within(panel).getByText('Odalar · Islak Oda')).toBeVisible();
+    expect(axios.get).toHaveBeenCalledWith('/spa/availability', { params: { date: '2026-11-08', service_id: 's' } });
+  });
+
+  it('finds historical appointments without guessing the identity of same-name guests', async () => {
+    const first = { id: 'legacy', guest_name: 'Selin Kaya', starts_at: '2026-11-08T09:00:00Z',
+      status: 'completed', service_name: 'Masaj', price: 100, currency: 'TRY' };
+    const linked = { ...first, id: 'linked', guest_id: 'g', service_name: 'Hamam', currency: 'EUR' };
+    axios.get.mockImplementation(async (url) => ({ data: {
+      '/spa/guests/history/search': { appointments: [first, linked] },
+      '/spa/guests/g/history': { appointments: [linked] },
+    }[url] ?? dataFor(url) }));
+    renderSpa();
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Misafir Geçmişi' }), { button: 0 });
+    const panel = screen.getByRole('tabpanel', { name: 'Misafir Geçmişi' });
+    fireEvent.change(within(panel).getByLabelText('Misafir adı'), { target: { value: 'Selin Kaya' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Geçmişi ara' }));
+    expect(await within(panel).findByText(/Masaj ·/)).toBeVisible();
+    expect(within(panel).getAllByRole('button', { name: 'Selin Kaya profil geçmişi' })).toHaveLength(1);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Selin Kaya profil geçmişi' }));
+    expect(await within(panel).findByText('Selin Kaya · Profil geçmişi')).toBeVisible();
+    expect(within(panel).queryByText(/Masaj ·/)).not.toBeInTheDocument();
+    expect(within(panel).getByText(/Hizmet bedeli.*€/)).toBeVisible();
+  });
+
   it('blocks new unbillable service snapshots until VAT is explicitly configured', async () => {
     axios.get.mockImplementation(async (url) => ({ data: url === '/spa/services'
       ? { services: [{ id: 's', name: 'Bakım', duration_minutes: 60, price: 100, currency: 'TRY' }] }
