@@ -76,6 +76,10 @@ def mock_db():
         db.mice_events.delete_one = AsyncMock()
         db.mice_events.find = MagicMock(return_value=FakeCursor([]))
         db.mice_fnb_orders.find_one = AsyncMock(return_value=None)
+        for name in ("folio_charges", "folio_postings", "payments", "gl_journal_entries"):
+            collection = getattr(db, name)
+            collection.find_one = AsyncMock(return_value=None)
+        db.__getitem__.side_effect = lambda key: getattr(db, key)
         db.tenant_settings.find_one = AsyncMock(return_value={"timezone": "Europe/Istanbul"})
 
         db.audit_logs.insert_one = AsyncMock()
@@ -354,7 +358,7 @@ def test_delete_event_active_status_releases_quota(override_auth_basic, mock_db,
 
 
 def test_delete_event_inactive_status_no_release(override_auth_basic, mock_db, mock_quota, client):
-    """Cancelled/completed event silinince release_quota ÇAĞRILMAMALI (zaten status geçişinde bırakıldı)."""
+    """Cancelled draft may be deleted; completed source must remain. Neither releases twice."""
     m_res, m_rel = mock_quota
 
     class FakeDeleteResult:
@@ -369,7 +373,9 @@ def test_delete_event_inactive_status_no_release(override_auth_basic, mock_db, m
 
         res = client.delete("/api/mice/events/ev2")
 
-        assert res.status_code == 200, f"status={inactive_status} için 200 beklendi"
+        assert res.status_code == (409 if inactive_status == "completed" else 200)
+        if inactive_status == "completed":
+            mock_db.mice_events.delete_one.assert_not_awaited()
         m_rel.assert_not_called()
 
 

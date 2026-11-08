@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,9 +26,24 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-import MicePage, { omitEmptySpaceBookings } from '@/pages/MicePage';
+import MicePage, { canDeleteMiceEvent, omitEmptySpaceBookings } from '@/pages/MicePage';
 
 describe('MicePage event payload normalization', () => {
+  it.each([
+    { status: 'completed' }, { status: 'unknown' }, { status: 'lead', folio_charge_id: 'charge' },
+    { status: 'confirmed', settlement_count: 1 }, { status: 'definite', finance_pending: { payment_id: 'pending' } },
+    { status: 'cancelled', signature: { id: 'signed' } }, { status: 'lead', gl_posting_state: 'pending' },
+    { status: 'lead', document_history: [{ id: 'frozen' }] }, { status: 'confirmed', group_block_id: 'group' },
+    { status: 'confirmed', sales_opportunity_id: 'opportunity' }, { status: 'lead', operations_tasks: [{ id: 'task' }] },
+    { status: 'confirmed', last_kitchen_dispatch_at: '2026-11-08' }, { status: 'lead', payment_schedule: [{ paid: true }] },
+  ])('preserves terminal, financial and operational source history: %j', event => {
+    expect(canDeleteMiceEvent(event)).toBe(false);
+  });
+
+  it.each(['lead', 'tentative', 'definite', 'confirmed', 'cancelled'])('allows a clean unposted %s draft', status => {
+    expect(canDeleteMiceEvent({ status, settlement_count: 0, payment_schedule: [{ paid: false }] })).toBe(true);
+  });
+
   it('omits the untouched convenience space row', () => {
     expect(omitEmptySpaceBookings([
       {
@@ -92,6 +107,16 @@ describe('MicePage entitlement usage contract', () => {
     expect(axiosGet).toHaveBeenCalledWith('/mice/events');
     expect(axiosGet).toHaveBeenCalledWith('/mice/spaces');
     expect(axiosGet).toHaveBeenCalledWith('/mice/accounts');
+  });
+
+  it('does not offer deletion for completed source history', async () => {
+    axiosGet.mockImplementation(url => Promise.resolve({ data: url === '/mice/events'
+      ? { events: [{ id: 'completed', name: 'Finished event', status: 'completed', client_name: 'Synthetic client', totals: { grand_total: 100 } }], summary: {}, counts: {} }
+      : url === '/mice/spaces' ? { spaces: [] } : { accounts: [] } }));
+    render(<MemoryRouter><MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} /></MemoryRouter>);
+    const row = (await screen.findByText('Finished event')).closest('tr');
+    expect(within(row).queryByRole('button', { name: '' })).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Finished event sil' })).not.toBeInTheDocument();
   });
 
   it('keeps the new event action disabled when entitlement usage reaches the limit', async () => {

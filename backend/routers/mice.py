@@ -2125,44 +2125,55 @@ async def delete_event(
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
-    before = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if before and (before.get("finance_pending") or before.get("settlement_count")):
-        raise HTTPException(409, "Tahsilat/iade geçmişi bulunan etkinlik silinemez")
-    if before and (before.get("sales_opportunity_id") or before.get("group_block_id")):
-        raise HTTPException(409, "Satış veya grup bağlantısı bulunan etkinlik silinemez; iptal akışını kullanın")
-    if before and (before.get("operations_tasks") or await db.mice_fnb_orders.find_one({"tenant_id": current_user.tenant_id, "event_id": event_id})):
-        raise HTTPException(409, "Görev veya mutfak üretim geçmişi olan etkinlik silinemez; iptal akışını kullanın")
-    if before and (before.get("gl_posting_state") == "pending" or before.get("document_history") or before.get("gl_journal_entry_id") or before.get("signature") or any(p.get("paid") for p in before.get("payment_schedule", []))
-                   or (before.get("status") == "completed" and before.get("reservation_id") and (before.get("totals") or {}).get("grand_total", 0) > 0)):
-        raise HTTPException(409, "Belge sürümü bulunan, imzalı, ödemeli veya muhasebeleşmiş etkinlik silinemez; iptal akışını kullanın")
+    tid = current_user.tenant_id
 
-    # Capture quota-relevant state BEFORE deletion so we know whether a
-    # release is needed.  Events in ACTIVE_QUOTA_STATUSES hold a ledger
-    # reservation; deleting them without releasing leaks that slot forever.
-    was_active = (before or {}).get("status") in ACTIVE_QUOTA_STATUSES
+    async def remove(session):
+        scope = {"id": event_id, "tenant_id": tid}
+        before = await db.mice_events.find_one(scope, {"_id": 0}, session=session)
+        if not before:
+            raise HTTPException(404, "Etkinlik bulunamadı")
+        if before.get("status") not in {"lead", "tentative", "definite", "confirmed", "cancelled"}:
+            raise HTTPException(409, "Tamamlanmış veya durumu belirsiz etkinlik silinemez; işlem geçmişi korunur")
+        if before.get("finance_pending") or before.get("settlement_count") or before.get("folio_charge_id"):
+            raise HTTPException(409, "Tahsilat/iade veya folyo geçmişi bulunan etkinlik silinemez")
+        if before.get("sales_opportunity_id") or before.get("group_block_id"):
+            raise HTTPException(409, "Satış veya grup bağlantısı bulunan etkinlik silinemez; iptal akışını kullanın")
+        if before.get("operations_tasks") or before.get("last_kitchen_dispatch_at") or await db.mice_fnb_orders.find_one({"tenant_id": tid, "event_id": event_id}, session=session):
+            raise HTTPException(409, "Görev veya mutfak üretim geçmişi olan etkinlik silinemez; iptal akışını kullanın")
+        if (before.get("gl_posting_state") or before.get("document_history") or before.get("gl_journal_entry_id") or before.get("signature")
+                or any(p.get("paid") for p in before.get("payment_schedule", []))):
+            raise HTTPException(409, "Belge sürümü bulunan, imzalı, ödemeli veya muhasebeleşmiş etkinlik silinemez; iptal akışını kullanın")
+        # Legacy header flags are not evidence that no money ever existed.
+        # Reversed/voided/transferred sources still require their event history.
+        references = [
+            ("folio_charges", {"$or": [{"source_mice_event_id": event_id}, {"mice_event_id": event_id}]}),
+            ("folio_postings", {"source": "mice_module", "reference": event_id}),
+            ("payments", {"mice_event_id": event_id}),
+            ("gl_journal_entries", {"source": {"$in": ["mice", "mice_settlement"]}, "source_ref": event_id}),
+        ]
+        for collection, reference in references:
+            if await db[collection].find_one({"tenant_id": tid, **reference}, {"_id": 1}, session=session):
+                raise HTTPException(409, "Mali hareketi bulunan etkinlik silinemez; işlem geçmişi korunur")
+        res = await db.mice_events.delete_one({**scope, "updated_at": before.get("updated_at"), "status": before["status"]}, session=session)
+        if res.deleted_count != 1:
+            raise HTTPException(409, "Etkinlik değişti; yenileyin")
+        # Audit failure must roll back deletion, not leave a vanished source.
+        await log_audit_event(tenant_id=tid, user_id=current_user.username, action="delete", entity_type="mice_event",
+            entity_id=event_id, details=f"Etkinlik silindi: {before.get('name')}", before_value=before, after_value=None, db=db, session=session)
+        return before
 
-    res = await db.mice_events.delete_one({"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": (before or {}).get("updated_at"), "status": (before or {}).get("status"), "last_kitchen_dispatch_at": (before or {}).get("last_kitchen_dispatch_at"), "finance_pending": None, "settlement_count": {"$in": [None, 0]}})
-    if not res.deleted_count:
-        raise HTTPException(409 if before else 404, "Etkinlik değişti; yenileyin" if before else "Etkinlik bulunamadı")
-
-    # Release the quota slot only when the event was actively counted in the
-    # ledger at deletion time.  Cancelled / completed events were already
-    # released during the status transition, so we must not double-release.
-    if was_active:
-        await release_quota(current_user.tenant_id, "mice", "concurrent_events", (before or {}).get("client_request_id") or event_id)
-
-    await log_audit_event(
-        tenant_id=current_user.tenant_id,
-        user_id=current_user.username,
-        action="delete",
-        entity_type="mice_event",
-        entity_id=event_id,
-        details=f"Etkinlik silindi: {(before or {}).get('name')}",
-        before_value=before,
-        after_value=None,
-        db=db,
-    )
-    _invalidate_mice_events_cache(current_user.tenant_id)
+    try:
+        before = await with_resource_locks(client=db.client, db=db, tenant_id=tid, locks_collection="mice_locks",
+            resources=[("event", event_id), ("finance", event_id)], callback=remove)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Etkinlik silme için işlem destekleyen veritabanı gereklidir") from exc
+        raise
+    # Release only after committed deletion; a completed/cancelled event's
+    # quota was already released by its transition and must not be released twice.
+    if before.get("status") in ACTIVE_QUOTA_STATUSES:
+        await release_quota(tid, "mice", "concurrent_events", before.get("client_request_id") or event_id)
+    _invalidate_mice_events_cache(tid)
     return {"ok": True}
 
 
