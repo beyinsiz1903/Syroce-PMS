@@ -75,7 +75,7 @@ const MobileFnB = ({ user }) => {
       }
       const [summaryRes, transactionsRes, outletsRes, menuRes] = await Promise.allSettled([
         axios.get('/pos/daily-summary', { params: summaryParams }),
-        axios.get('/pos/transactions', { params: { limit: 10, ...outletParams } }),
+        axios.get('/pos/transactions', { params: { limit: 10, date: businessDate, ...outletParams } }),
         axios.get('/pos/outlets'),
         axios.get('/pos/menu-items', { params: outletParams })
       ]);
@@ -93,7 +93,13 @@ const MobileFnB = ({ user }) => {
       } else setRecentTransactions([]);
       if (outletsRes.status === 'fulfilled') {
         const outletData = outletsRes.value.data;
-        const outletList = Array.isArray(outletData) ? outletData : (outletData?.outlets || []);
+        const rows = Array.isArray(outletData) ? outletData : (outletData?.outlets || []);
+        const outletList = rows.map(row => ({
+          ...row,
+          name: row.outlet_name || row.name || 'Satış noktası',
+          type: row.outlet_type || row.type,
+          operating_hours: row.opening_hours || row.operating_hours,
+        }));
         setOutlets(outletList);
         if (!activeOutlet && outletList.length > 0) {
           setActiveOutlet(outletList.find(o => o.status === 'active') || outletList[0]);
@@ -235,6 +241,8 @@ const MobileFnB = ({ user }) => {
   };
 
   const formatCurrency = (amount, currency = cachedTenantCurrency()) => formatMoney(amount, currency);
+  const transactionOutletName = transaction =>
+    outlets.find(outlet => outlet.id === transaction.outlet_id)?.name || transaction.outlet_name || 'Satış noktası';
 
   const loadZReport = async () => {
     try {
@@ -449,7 +457,7 @@ const MobileFnB = ({ user }) => {
                 <div key={transaction.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <div className="flex-1">
                     <p className="font-bold text-gray-900">
-                      {transaction.outlet_name || 'Satış noktası'}
+                      {transactionOutletName(transaction)}
                     </p>
                     <p className="text-sm text-gray-600">
                       {transaction.table_number ? `Masa ${transaction.table_number}` : 'Masa belirtilmedi'}
@@ -828,7 +836,7 @@ const MobileFnB = ({ user }) => {
                             İşlem #{transaction.transaction_id || transaction.id}
                           </p>
                           <p className="text-sm text-gray-600 mt-1">
-                            Satış Noktası: {transaction.outlet_name || 'Belirtilmedi'}
+                            Satış Noktası: {transactionOutletName(transaction)}
                           </p>
                           <p className="text-sm text-gray-600">
                             Masa: {transaction.table_number || 'Belirtilmedi'}

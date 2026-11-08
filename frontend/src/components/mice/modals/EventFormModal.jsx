@@ -35,6 +35,7 @@ const EventFormModal = ({
   rmPs,
   submit,
   saving = false,
+  formError,
   previewQuote,
   quotePreview,
   onClose
@@ -123,11 +124,11 @@ const EventFormModal = ({
             <Field label="Başlangıç Tarihi"><Input type="date" required value={form.start_date} onChange={e => setForm({
               ...form,
               start_date: e.target.value
-            })} /></Field>
+            })} />{!form.start_date && <span className="text-xs text-muted-foreground">Başlangıç tarihi seçilmedi.</span>}</Field>
             <Field label="Bitiş Tarihi"><Input type="date" min={form.start_date} required value={form.end_date} onChange={e => setForm({
               ...form,
               end_date: e.target.value
-            })} /></Field>
+            })} />{!form.end_date && <span className="text-xs text-muted-foreground">Bitiş tarihi seçilmedi.</span>}</Field>
           </div>
           <Field label="Notlar">
             <textarea className="w-full border rounded px-2 py-1.5 text-sm min-h-[60px]" value={form.notes} onChange={e => setForm({
@@ -153,10 +154,10 @@ const EventFormModal = ({
                   <option value="">Mekan…</option>
                   {spaces.filter(s => s.active !== false || s.id === sb.space_id).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
-                <Input className="col-span-3 text-xs" type="datetime-local" value={sb.starts_at?.slice(0, 16) || ''} onChange={e => setSb(i, {
+                <Input className="col-span-3 text-xs" aria-label={`Salon ${i + 1} başlangıç tarihi ve saati`} type="datetime-local" value={sb.starts_at?.slice(0, 16) || ''} onChange={e => setSb(i, {
               starts_at: e.target.value
             })} />
-                <Input className="col-span-2 text-xs" type="datetime-local" min={sb.starts_at?.slice(0, 16)} value={sb.ends_at?.slice(0, 16) || ''} onChange={e => setSb(i, {
+                <Input className="col-span-2 text-xs" aria-label={`Salon ${i + 1} bitiş tarihi ve saati`} type="datetime-local" min={sb.starts_at?.slice(0, 16)} value={sb.ends_at?.slice(0, 16) || ''} onChange={e => setSb(i, {
               ends_at: e.target.value
             })} />
                 <select className="col-span-2 border rounded px-1 py-1 text-xs" value={sb.setup_style} onChange={e => setSb(i, {
@@ -166,6 +167,7 @@ const EventFormModal = ({
                 </select>
                 <Input className="col-span-1 text-xs" aria-label={`Salon ${i + 1} kişi sayısı`} type="number" min="0" value={sb.expected_pax ?? form.expected_pax} onChange={e => setSb(i, { expected_pax: Number(e.target.value) })} />
                 <Button type="button" size="sm" variant="ghost" className="col-span-1" onClick={() => rmSb(i)}><Trash2 className="w-3 h-3" /></Button>
+                {sb.space_id && (!sb.starts_at || !sb.ends_at) && <p className="col-span-12 text-xs text-muted-foreground">Salonun başlangıç ve bitiş tarih ve saatlerini tamamlayın.</p>}
                 {[['setup_minutes', 'Kurulum (dk)'], ['teardown_minutes', 'Söküm (dk)']].map(([key, label]) => <label key={key} className="col-span-6 text-xs">{label}<Input type="number" min="0" max="1440" step="1" value={sb[key] || 0} onChange={e => setSb(i, { [key]: Number(e.target.value) })} /></label>)}
               </div>)}
           </div>
@@ -299,6 +301,7 @@ const EventFormModal = ({
         </TabsContent>
       </Tabs>
 
+      {formError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">{formError}</p>}
       {quotePreview && <div role="status" className="rounded-lg border bg-muted p-3 text-sm">
         <QuoteTotals totals={quotePreview.totals} currency={quotePreview.currency} />
         <strong>Hesaplanan satış bedeli: {formatCurrency(quotePreview.totals.grand_total, quotePreview.currency)}</strong>

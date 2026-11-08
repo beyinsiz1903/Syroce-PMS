@@ -22,7 +22,9 @@ describe('MobileFnB report scope', () => {
     axiosGet.mockReset();
     axiosGet.mockImplementation((url) => {
       if (url === '/pos/outlets') {
-        return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Ana Restoran', status: 'active' }] } });
+        return Promise.resolve({ data: { outlets: [{
+          id: 'outlet-1', outlet_name: 'Ana Restoran', name: 'Eski Ad', status: 'active',
+        }] } });
       }
       if (url === '/pos/daily-summary') {
         return Promise.resolve({ data: {
@@ -32,7 +34,9 @@ describe('MobileFnB report scope', () => {
           top_items: [{ name: 'Türk Kahvesi', quantity: 3, revenue: 90 }],
         } });
       }
-      if (url === '/pos/transactions') return Promise.resolve({ data: { transactions: [] } });
+      if (url === '/pos/transactions') return Promise.resolve({ data: { transactions: [{
+        id: 'tx', outlet_id: 'outlet-1', total_amount: 150, status: 'completed', created_at: '2026-09-30T09:00:00Z',
+      }] } });
       if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
       if (url === '/pos/z-report') return Promise.resolve({ data: { report_date: '2026-09-30' } });
       if (url === '/pos/void-transactions') return Promise.resolve({ data: { void_transactions: [] } });
@@ -46,6 +50,11 @@ describe('MobileFnB report scope', () => {
     await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/pos/daily-summary', {
       params: { date: '2026-09-30', outlet_id: 'outlet-1' },
     }));
+    expect(axiosGet).toHaveBeenCalledWith('/pos/transactions', {
+      params: { limit: 10, date: '2026-09-30', outlet_id: 'outlet-1' },
+    });
+    expect(screen.getAllByText('Ana Restoran')).toHaveLength(3);
+    expect(screen.queryByText('Eski Ad')).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByText('Z Raporu'));
     await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/pos/z-report', {
