@@ -14,7 +14,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.business_date_service import ensure_business_date_initialized
+from core.channel_mapping_issues import is_mapping_hold
 from core.database import db
+from modules.pms_core.stay_night_metrics import as_date
 
 ACTIVE_STAY_STATUSES = {"confirmed", "guaranteed", "checked_in"}
 
@@ -39,6 +41,7 @@ async def build_operational_snapshot(
     tenant_id: str,
     *,
     business_date: str | None = None,
+    include_frontdesk_movements: bool = False,
     database=None,
 ) -> dict[str, Any]:
     """Build the authoritative operational snapshot for a tenant and PMS day."""
@@ -67,9 +70,16 @@ async def build_operational_snapshot(
     }
     total_rooms = sum(room_status.values())
 
+    projection = {"_id": 0, "id": 1, "room_id": 1, "status": 1, "check_in": 1, "check_out": 1}
+    if include_frontdesk_movements:
+        projection.update(dict.fromkeys((
+            "guest_id", "guest_name", "room_number", "booking_number", "confirmation_code",
+            "guests_count", "total_amount", "currency", "source",
+            "booking_source", "allocation_source", "is_inventory_hold",
+        ), 1))
     bookings = await database.bookings.find(
         {"tenant_id": tenant_id, "status": {"$in": sorted(ACTIVE_STAY_STATUSES)}},
-        {"_id": 0, "id": 1, "room_id": 1, "status": 1, "check_in": 1, "check_out": 1},
+        projection,
     ).to_list(10_000)
 
     occupied_stays = []
@@ -118,7 +128,7 @@ async def build_operational_snapshot(
     }
     snapshot_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
 
-    return {
+    snapshot = {
         "snapshot_id": snapshot_id,
         "as_of": as_of,
         "business_date": business_date,
@@ -136,3 +146,17 @@ async def build_operational_snapshot(
         "out_of_scope_assigned_stays": out_of_scope_assigned_stays,
         "room_status": room_status,
     }
+    if include_frontdesk_movements:
+        day = datetime.fromisoformat(business_date).date()
+        pending_arrivals = []
+        pending_departures = []
+        for booking in bookings:
+            if not booking.get("id") or is_mapping_hold(booking):
+                continue
+            is_departure = booking["status"] == "checked_in"
+            transition_day = as_date(booking.get("check_out" if is_departure else "check_in"))
+            if transition_day and transition_day <= day:
+                pending = pending_departures if is_departure else pending_arrivals
+                pending.append(booking)
+        snapshot.update(frontdesk_arrivals=pending_arrivals, frontdesk_departures=pending_departures)
+    return snapshot

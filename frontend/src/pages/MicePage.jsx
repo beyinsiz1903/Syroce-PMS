@@ -105,6 +105,7 @@ const MicePage = ({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [activeTab, setActiveTab] = useState('events');
+  const [diaryRevision, setDiaryRevision] = useState(0);
   // Tur 5: TabsContent global forceMount yaptığı için lazy chunk'lar
   // panel mount olur olmaz indiriliyordu. visitedMiceTabs koşulu ile
   // pipeline/packages componentleri ancak kullanıcı sekmeye geçince
@@ -229,6 +230,10 @@ const MicePage = ({
     const s = await axios.get('/mice/spaces');
     setSpaces(s.data.spaces);
     markLoaded('spaces');
+  };
+  const refreshEventSchedule = () => {
+    setDiaryRevision(revision => revision + 1);
+    return loadEvents();
   };
   const loadMenus = async () => {
     const m = await axios.get('/mice/menus');
@@ -397,7 +402,7 @@ const MicePage = ({
       await axios[method](url, payload);
       toast.success(editing ? 'Etkinlik güncellendi' : 'Etkinlik oluşturuldu');
       setShowEventForm(false);
-      await loadEvents();
+      await refreshEventSchedule();
     } catch (err) {
       toast.error(apiErrorText(err, 'Kaydedilemedi; tarih, saat ve zorunlu alanları kontrol edin'));
     } finally { setSavingEvent(false); }
@@ -421,7 +426,7 @@ const MicePage = ({
     try {
       await axios.post(`/mice/events/${id}/status`, body);
       toast.success('Durum güncellendi');
-      await loadEvents();
+      await refreshEventSchedule();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Hata');
     }
@@ -433,7 +438,7 @@ const MicePage = ({
     }))) return;
     try {
       await axios.delete(`/mice/events/${id}`);
-      await loadEvents();
+      await refreshEventSchedule();
     } catch {
       toast.error('Silinemedi');
     }
@@ -902,7 +907,7 @@ const MicePage = ({
         </TabsContent>
 
         <TabsContent value="diary">
-          {visitedMiceTabs.has('diary') && <DiaryView spaceById={spaceById} spaces={spaces} />}
+          {visitedMiceTabs.has('diary') && <DiaryView spaceById={spaceById} spaces={spaces} revision={diaryRevision} />}
         </TabsContent>
 
         <TabsContent value="accounts">

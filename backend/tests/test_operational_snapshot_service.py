@@ -1,3 +1,7 @@
+from datetime import datetime
+from types import SimpleNamespace
+
+from domains.pms.frontdesk_service import FrontdeskService
 from modules.pms_core.operational_snapshot_service import build_operational_snapshot
 
 
@@ -7,6 +11,10 @@ class _Cursor:
 
     async def to_list(self, _limit):
         return list(self.rows)
+
+    async def __aiter__(self):
+        for row in self.rows:
+            yield row
 
 
 class _Rooms:
@@ -58,3 +66,40 @@ async def test_snapshot_uses_business_day_active_inventory_and_distinct_rooms():
     assert snapshot["today_checkouts"] == 1
     assert snapshot["inventory_scope"] == "active_non_virtual_rooms"
     assert snapshot["snapshot_id"]
+    assert "frontdesk_arrivals" not in snapshot
+
+
+async def test_frontdesk_uses_open_day_for_counts_and_late_movements():
+    class TenantSettings:
+        async def find_one(self, query, _projection):
+            assert query == {"tenant_id": "tenant-a"}
+            return {"business_date": "2026-10-03"}
+
+    class Bookings(_Bookings):
+        def find(self, query, projection):
+            rows = super().find(query, projection).rows
+            rows[2]["check_in"] = datetime(2026, 10, 3)
+            return _Cursor(rows + [
+                {"id": "late", "status": "checked_in", "check_out": "2026-10-02T11:00:00Z"},
+                {"id": "future", "status": "confirmed", "check_in": "2026-10-04", "check_out": "2026-10-06"},
+                {"id": "hold", "status": "confirmed", "check_in": "2026-10-02", "source": {"kind": "ota_unmatched_hold"}},
+                {"id": "invalid", "status": "confirmed", "check_in": "invalid"},
+            ])
+
+    class Rooms(_Rooms):
+        def find(self, query, _projection):
+            assert query["tenant_id"] == "tenant-a"
+            return _Cursor([{"id": "r2", "room_number": "202"}])
+
+    service = FrontdeskService()
+    service._db = SimpleNamespace(rooms=Rooms(), bookings=Bookings(), tenant_settings=TenantSettings())
+    result = await service.get_business_day_movements(SimpleNamespace(tenant_id="tenant-a"))
+
+    assert result.data["business_date"] == "2026-10-03"
+    assert result.data["today_checkins"] == 3
+    assert result.data["today_checkouts"] == 1
+    assert result.data["in_house_stays"] == 1
+    assert result.data["available_rooms"] == 0
+    assert [row["id"] for row in result.data["arrivals"]] == ["b2", "b3", "b5"]
+    assert result.data["arrivals"][0]["room_number"] == "202"
+    assert [row["id"] for row in result.data["departures"]] == ["late"]

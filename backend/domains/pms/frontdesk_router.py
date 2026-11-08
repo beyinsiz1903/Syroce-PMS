@@ -1373,6 +1373,16 @@ async def get_booking_keycards(booking_id: str, current_user: User = Depends(get
 # ============================================================================
 
 
+@router.get("/frontdesk/business-day")
+async def get_frontdesk_business_day(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_role("frontdesk")),
+):
+    ctx = OperationContext.from_user(current_user)
+    result = await frontdesk_service.get_business_day_movements(ctx)
+    return result.data
+
+
 @router.get("/unified/today-arrivals")
 async def get_today_arrivals_unified(current_user: User = Depends(get_current_user)):
     """Unified endpoint for today's arrivals"""
