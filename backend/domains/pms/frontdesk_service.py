@@ -18,6 +18,7 @@ from core.channel_mapping_issues import is_mapping_hold
 from core.kbs_auto_enqueue import auto_enqueue_kbs
 from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
+from modules.pms_core.operational_snapshot_service import build_operational_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -671,6 +672,34 @@ class FrontdeskService:
     # ------------------------------------------------------------------
     # Unified Arrivals / Departures / In-House
     # ------------------------------------------------------------------
+    async def get_business_day_movements(self, ctx: OperationContext) -> ServiceResult:
+        snapshot = await build_operational_snapshot(
+            ctx.tenant_id, include_frontdesk_movements=True, database=self._db,
+        )
+        arrivals = snapshot["frontdesk_arrivals"]
+        bookings = await self._enrich_bookings(
+            arrivals + snapshot["frontdesk_departures"], ctx.tenant_id, include_contact=False,
+        )
+        fields = (
+            "id", "guest_name", "room_number", "booking_number", "confirmation_code", "status",
+            "check_in", "check_out", "guests_count", "total_amount", "currency",
+        )
+        rows = []
+        for booking in bookings:
+            row = {field: booking[field] for field in fields if field in booking}
+            if isinstance(booking.get("source"), str):
+                row["source"] = booking["source"]
+            rows.append(row)
+        return ServiceResult.success({
+            "business_date": snapshot["business_date"],
+            "today_checkins": snapshot["today_checkins"],
+            "today_checkouts": snapshot["today_checkouts"],
+            "in_house_stays": snapshot["in_house_stays"],
+            "available_rooms": snapshot["available_rooms"],
+            "arrivals": rows[:len(arrivals)],
+            "departures": rows[len(arrivals):],
+        })
+
     async def get_unified_arrivals(self, ctx: OperationContext) -> ServiceResult:
         today = datetime.now(UTC).date().isoformat()
         bookings = await self._db.bookings.find(
@@ -1001,7 +1030,7 @@ class FrontdeskService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    async def _enrich_bookings(self, bookings: list, tenant_id: str) -> list:
+    async def _enrich_bookings(self, bookings: list, tenant_id: str, *, include_contact: bool = True) -> list:
         if not bookings:
             return []
         guest_ids = list({b["guest_id"] for b in bookings if b.get("guest_id")})
@@ -1010,9 +1039,12 @@ class FrontdeskService:
         if guest_ids:
             from security.encrypted_lookup import decrypt_guest_doc
 
+            projection = {"_id": 0, "id": 1, "name": 1}
+            if include_contact:
+                projection.update(phone=1, email=1)
             async for g in self._db.guests.find(
                 {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
-                {"_id": 0, "id": 1, "name": 1, "phone": 1, "email": 1},
+                projection,
             ):
                 g = decrypt_guest_doc(g)
                 guest_map[g["id"]] = g
@@ -1029,8 +1061,9 @@ class FrontdeskService:
             guest = guest_map.get(b.get("guest_id"))
             if guest:
                 b["guest_name"] = display_guest_name(guest.get("name"), b.get("guest_id"))
-                b["guest_phone"] = guest.get("phone")
-                b["guest_email"] = guest.get("email")
+                if include_contact:
+                    b["guest_phone"] = guest.get("phone")
+                    b["guest_email"] = guest.get("email")
             room = room_map.get(b.get("room_id"))
             if room:
                 b["room_number"] = room.get("room_number")

@@ -62,7 +62,7 @@ const hhmm = (iso) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-const DiaryView = ({ spaceById, spaces }) => {
+const DiaryView = ({ spaceById, spaces, revision }) => {
   const { t } = useTranslation();
   const today = new Date();
   const [view, setView] = useState('calendar');
@@ -83,12 +83,15 @@ const DiaryView = ({ spaceById, spaces }) => {
   }, [calMonth]);
 
   useEffect(() => {
+    let current = true;
     axios.get('/mice/diary', { params: { date_from: monthRange.from, date_to: monthRange.to } })
       .then((r) => {
+        if (!current) return;
         setItems(r.data.events || []);
         setLoadError(null);
       })
       .catch((e) => {
+        if (!current) return;
         if (e.response && e.response.status === 403) {
           console.warn('Takvim görüntüleme yetkisi yok (403) - Sessizce yoksayılıyor.');
           setLoadError(e);
@@ -97,7 +100,8 @@ const DiaryView = ({ spaceById, spaces }) => {
         setLoadError(e);
         toast.error('Takvim şu anda yüklenemedi');
       });
-  }, [monthRange.from, monthRange.to, reloadKey]);
+    return () => { current = false; };
+  }, [monthRange.from, monthRange.to, reloadKey, revision]);
 
   const eventsByDate = useMemo(() => {
     const map = {};

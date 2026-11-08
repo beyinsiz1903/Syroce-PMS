@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -443,6 +444,17 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             ))}
           </div>
         </TabsContent>
+        {hasCrossDepartmentPackages && <TabsContent value="packages">
+          <Card>
+            <CardHeader>
+              <CardTitle>SPA ve restoran paketleri</CardTitle>
+              <CardDescription>Paket seçin, rezervasyon oluşturun ve yaklaşan paket rezervasyonlarını görün.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild><Link to="/spa-dining-packages">Paket yönetimini aç</Link></Button>
+            </CardContent>
+          </Card>
+        </TabsContent>}
       </Tabs>
 
       {/* ── Booking modal ── */}

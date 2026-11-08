@@ -1,13 +1,15 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const axiosGet = vi.fn();
+const axiosPost = vi.fn();
 const mockEntitlements = vi.fn();
 
 vi.mock('axios', () => ({
   default: {
     get: (...args) => axiosGet(...args),
+    post: (...args) => axiosPost(...args),
   },
 }));
 
@@ -71,6 +73,7 @@ describe('MicePage event payload normalization', () => {
 describe('MicePage entitlement usage contract', () => {
   beforeEach(() => {
     axiosGet.mockReset();
+    axiosPost.mockReset();
     mockEntitlements.mockReset();
     mockEntitlements.mockReturnValue({
       entitlements: {
@@ -107,6 +110,43 @@ describe('MicePage entitlement usage contract', () => {
     expect(axiosGet).toHaveBeenCalledWith('/mice/events');
     expect(axiosGet).toHaveBeenCalledWith('/mice/spaces');
     expect(axiosGet).toHaveBeenCalledWith('/mice/accounts');
+  });
+
+  it('updates an already visited diary without clearing its selected day when a hall hold is created', async () => {
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-11`;
+    const space = { id: 'boardroom', name: 'Boardroom' };
+    let event = {
+      id: 'atelier', name: 'Anadolu Hizmet Atölyesi', client_name: 'Zeynep Aksoy', status: 'lead',
+      start_date: date, end_date: date, currency: 'TRY', expected_pax: 4,
+      space_bookings: [{ space_id: space.id, starts_at: `${date}T10:00`, ends_at: `${date}T11:00` }],
+    };
+    axiosGet.mockImplementation(async (url) => {
+      if (url === '/mice/events') return { data: { events: [event] } };
+      if (url === '/mice/diary') return { data: { events: event.status === 'lead' ? [] : [event] } };
+      if (url === '/mice/spaces') return { data: { spaces: [space] } };
+      if (url === '/mice/accounts') return { data: { accounts: [] } };
+      throw new Error(`Unexpected GET: ${url}`);
+    });
+    axiosPost.mockImplementation(async () => {
+      event = { ...event, status: 'tentative' };
+      return { data: event };
+    });
+    render(<MemoryRouter><MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} /></MemoryRouter>);
+
+    const diary = await screen.findByRole('tab', { name: 'Function Diary' });
+    fireEvent.mouseDown(diary, { button: 0 });
+    fireEvent.click(await screen.findByRole('button', { name: /^11 1\/1/ }));
+    expect(within(screen.getByRole('tabpanel', { name: 'Function Diary' })).getByText(date)).toBeVisible();
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Etkinlikler' }), { button: 0 });
+    fireEvent.change(screen.getByRole('combobox', { name: /Anadolu Hizmet Atölyesi durum değiştir/ }), { target: { value: 'tentative' } });
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/mice/events/atelier/status', { status: 'tentative' }));
+    fireEvent.mouseDown(diary, { button: 0 });
+    const panel = screen.getByRole('tabpanel', { name: 'Function Diary' });
+    expect(await within(panel).findByRole('button', { name: /^11 1 0\/1/ })).toBeVisible();
+    expect(within(panel).getByText(date)).toBeVisible();
+    expect(within(panel).getByText('Anadolu Hizmet Atölyesi')).toBeVisible();
   });
 
   it('does not offer deletion for completed source history', async () => {

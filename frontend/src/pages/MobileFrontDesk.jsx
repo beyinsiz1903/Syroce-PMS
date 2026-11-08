@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { performCheckin } from '@/utils/offlineCheckin';
 import { performCheckout } from '@/utils/offlineCheckout';
 import { 
@@ -42,14 +42,13 @@ const MobileFrontDesk = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [todayArrivals, setTodayArrivals] = useState([]);
-  const [todayDepartures, setTodayDepartures] = useState([]);
+  const [businessDay, setBusinessDay] = useState(null);
   const [inHouse, setInHouse] = useState([]);
-  const [roomAvailability, setRoomAvailability] = useState(null);
+  const [bookingPicker, setBookingPicker] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reservationsModalOpen, setReservationsModalOpen] = useState(false);
   const [roomStatusModalOpen, setRoomStatusModalOpen] = useState(false);
-  const [allBookings, setAllBookings] = useState([]);
+  const [allBookings, setAllBookings] = useState(null);
   const [allRooms, setAllRooms] = useState([]);
   const [guestAlertsModalOpen, setGuestAlertsModalOpen] = useState(false);
   const [feeCalculatorModalOpen, setFeeCalculatorModalOpen] = useState(false);
@@ -67,6 +66,7 @@ const MobileFrontDesk = ({ user }) => {
   const [roomAssignModalOpen, setRoomAssignModalOpen] = useState(false);
   const [selectedBookingForRoom, setSelectedBookingForRoom] = useState(null);
   const [availableRooms, setAvailableRooms] = useState([]);
+  const [assigningRoom, setAssigningRoom] = useState(false);
   const [passportScanModalOpen, setPassportScanModalOpen] = useState(false);
   const [selectedBookingForPassport, setSelectedBookingForPassport] = useState(null);
   const [passportPreview, setPassportPreview] = useState(null);
@@ -82,6 +82,8 @@ const MobileFrontDesk = ({ user }) => {
   // COLLAPSIBLE STATE
   const [arrivalsExpanded, setArrivalsExpanded] = useState(false);
   const [departuresExpanded, setDeparturesExpanded] = useState(false);
+  const todayArrivals = businessDay?.arrivals ?? [];
+  const todayDepartures = businessDay?.departures ?? [];
 
   useEffect(() => {
     loadData();
@@ -91,23 +93,22 @@ const MobileFrontDesk = ({ user }) => {
     try {
       setLoading(true);
       
-      const [arrivalsRes, departuresRes, inHouseRes, roomsRes, bookingsRes] = await Promise.all([
-        axios.get('/unified/today-arrivals'),
-        axios.get('/unified/today-departures'),
-        axios.get('/unified/in-house'),
-        axios.get('/housekeeping/room-status'),
-        axios.get('/pms/bookings').catch(() => ({ data: { bookings: [] } }))
+      const [businessDayRes, inHouseRes, roomsRes, bookingsRes] = await Promise.all([
+        axios.get('/frontdesk/business-day').catch(() => null),
+        axios.get('/unified/in-house').catch(() => null),
+        axios.get('/housekeeping/room-status').catch(() => null),
+        axios.get('/pms/bookings').catch(() => null)
       ]);
 
-      const allBookings = bookingsRes.data.bookings || [];
-      setAllBookings(allBookings);
+      const bookings = bookingsRes?.data;
+      const rows = Array.isArray(bookings) ? bookings : bookings?.bookings;
+      setAllBookings(Array.isArray(rows) ? rows : null);
       
-      // Use unified endpoints
-      setTodayArrivals(arrivalsRes.data.arrivals || []);
-      setTodayDepartures(departuresRes.data.departures || []);
-      setInHouse(inHouseRes.data.in_house || []);
-      setRoomAvailability(roomsRes.data);
-      setAllRooms(roomsRes.data.rooms || []);
+      const snapshot = businessDayRes?.data;
+      setBusinessDay(snapshot?.business_date ? snapshot : null);
+      setInHouse(inHouseRes?.data?.in_house ?? null);
+      setAllRooms(roomsRes?.data?.rooms ?? []);
+      if (!roomsRes) toast.error('Oda durumları yüklenemedi');
     } catch (error) {
       console.error('Failed to load front desk data:', error);
       toast.error('Yükleme');
@@ -120,6 +121,10 @@ const MobileFrontDesk = ({ user }) => {
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
+  };
+
+  const chooseBooking = (title, bookings, onSelect) => {
+    setBookingPicker({ title, bookings, onSelect });
   };
 
   const handleCheckIn = async (bookingId) => {
@@ -162,6 +167,21 @@ const MobileFrontDesk = ({ user }) => {
       } else {
         toast.error(msg || 'Check-out başarısız');
       }
+    }
+  };
+
+  const handleNoShow = async (booking) => {
+    const guestLabel = booking.guest_name || `Rezervasyon ${booking.id.slice(0, 8)}`;
+    if (!await confirmDialog({ message: `"${guestLabel}" no-show olarak işaretlensin mi?`, variant: 'danger' })) return;
+    try {
+      const { data } = await axios.post('/frontdesk/mobile/process-no-show', { booking_id: booking.id });
+      const fee = data?.no_show_fee;
+      toast.success(fee > 0
+        ? `No-show işlendi • ücret: ${formatCurrency(fee, booking.currency || cachedTenantCurrency())}`
+        : 'No-show işlendi');
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'No-show işlenemedi');
     }
   };
 
@@ -219,22 +239,21 @@ const MobileFrontDesk = ({ user }) => {
   // NEW FEATURE 2: ROOM ASSIGNMENT
   const openRoomAssignment = async (booking) => {
     try {
+      const { data } = await axios.get(`/bookings/${booking.id}/available-rooms`);
       setSelectedBookingForRoom(booking);
-      // Load available rooms
-      const res = await axios.get(`/frontdesk/available-rooms-for-assignment?check_in=${booking.check_in}&check_out=${booking.check_out}`);
-      setAvailableRooms(res.data.rooms || []);
+      setAvailableRooms((data.available_rooms ?? []).filter(room => room.is_same_type));
       setRoomAssignModalOpen(true);
     } catch (error) {
       toast.error('Müsait odalar yüklenemedi');
     }
   };
 
-  const assignRoom = async (roomId) => {
+  const assignRoom = async (room) => {
+    setAssigningRoom(true);
     try {
-      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `mobile-room-${selectedBookingForRoom.id}-${roomId}-${Date.now()}`;
-      await axios.post('/frontdesk/assign-room', {
-        booking_id: selectedBookingForRoom.id,
-        room_id: roomId
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `mobile-room-${selectedBookingForRoom.id}-${room.id}-${Date.now()}`;
+      await axios.put(`/pms/bookings/${selectedBookingForRoom.id}`, {
+        room_id: room.id,
       }, {
         headers: { 'Idempotency-Key': idempotencyKey }
       });
@@ -242,7 +261,10 @@ const MobileFrontDesk = ({ user }) => {
       setRoomAssignModalOpen(false);
       loadData();
     } catch (error) {
-      toast.error('Oda atanamadı');
+      const detail = error.response?.data?.detail;
+      toast.error((typeof detail === 'object' && detail?.message) || (typeof detail === 'string' ? detail : 'Oda atanamadı'));
+    } finally {
+      setAssigningRoom(false);
     }
   };
 
@@ -418,19 +440,18 @@ const MobileFrontDesk = ({ user }) => {
       </div>
 
       <div className="p-4 space-y-4">
+        {businessDay ? (
+          <p className="text-sm text-gray-600">PMS iş günü · {businessDay.business_date.split('-').reverse().join('.')}</p>
+        ) : (
+          <p role="alert" className="text-sm text-amber-800">İş günü bilgileri yüklenemedi. Yenileyip tekrar deneyin.</p>
+        )}
         {/* Quick Action Buttons - Row 1 */}
         <div className="grid grid-cols-4 gap-2">
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-green-600 hover:bg-green-700 text-white p-1"
-            onClick={() => {
-              const arrivals = todayArrivals.filter(b => b.status === 'confirmed');
-              if (arrivals.length > 0) {
-                handleCheckIn(arrivals[0].id);
-              } else {
-                toast.error('Giriş yapacak rezervasyon yok');
-              }
-            }}
+            disabled={!businessDay}
+            onClick={() => chooseBooking('Giriş yapılacak rezervasyonu seçin', todayArrivals, booking => handleCheckIn(booking.id))}
           >
             <CheckCircle className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Check-In</span>
@@ -439,14 +460,8 @@ const MobileFrontDesk = ({ user }) => {
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700 text-white p-1"
-            onClick={() => {
-              const departures = todayDepartures.filter(b => b.status === 'checked_in');
-              if (departures.length > 0) {
-                handleCheckOut(departures[0].id);
-              } else {
-                toast.error('Çıkış yapacak rezervasyon yok');
-              }
-            }}
+            disabled={!businessDay}
+            onClick={() => chooseBooking('Çıkış yapılacak rezervasyonu seçin', todayDepartures, booking => handleCheckOut(booking.id))}
           >
             <XCircle className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Check-Out</span>
@@ -455,7 +470,7 @@ const MobileFrontDesk = ({ user }) => {
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-1"
-            onClick={() => navigate('/reservation-calendar')}
+            onClick={() => navigate('/walkin')}
           >
             <UserPlus className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Walk-In</span>
@@ -464,30 +479,9 @@ const MobileFrontDesk = ({ user }) => {
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-red-600 hover:bg-red-700 text-white p-1"
-            onClick={async () => {
-              const candidates = todayArrivals.filter(b => b.status === 'confirmed');
-              if (candidates.length === 0) {
-                toast.error('İşaretlenecek rezervasyon yok');
-                return;
-              }
-              const target = candidates[0];
-              const guestLabel = target.guest_name || `Rezervasyon ${target.id.slice(0, 8)}`;
-              if (!await confirmDialog({ message: `"${guestLabel}" no-show olarak işaretlensin mi?`, variant: 'danger' })) return;
-              try {
-                const res = await axios.post('/frontdesk/mobile/process-no-show', {
-                  booking_id: target.id
-                });
-                const fee = res.data?.no_show_fee;
-                toast.success(
-                  fee > 0
-                    ? `No-show işlendi • ücret: ${formatCurrency(fee, target.currency || cachedTenantCurrency())}`
-                    : 'No-show işlendi'
-                );
-                loadData?.();
-              } catch (err) {
-                toast.error(err?.response?.data?.detail || 'No-show işlenemedi');
-              }
-            }}
+            disabled={!businessDay}
+            onClick={() => chooseBooking('No-show işaretlenecek rezervasyonu seçin',
+              todayArrivals.filter(booking => booking.status === 'confirmed'), handleNoShow)}
           >
             <AlertCircle className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">No-Show</span>
@@ -508,11 +502,8 @@ const MobileFrontDesk = ({ user }) => {
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white p-1"
-            onClick={() => {
-              const confirmed = todayArrivals.filter(b => b.status === 'confirmed')[0];
-              if (confirmed) openRoomAssignment(confirmed);
-              else toast.error('Oda atanacak rezervasyon yok');
-            }}
+            disabled={!businessDay}
+            onClick={() => chooseBooking('Oda atanacak rezervasyonu seçin', todayArrivals, openRoomAssignment)}
           >
             <Home className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Oda Ata</span>
@@ -521,11 +512,8 @@ const MobileFrontDesk = ({ user }) => {
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-teal-600 hover:bg-teal-700 text-white p-1"
-            onClick={() => {
-              const confirmed = todayArrivals.filter(b => b.status === 'confirmed')[0];
-              if (confirmed) openPassportScan(confirmed);
-              else toast.error('Kimlik okunacak rezervasyon yok');
-            }}
+            disabled={!businessDay}
+            onClick={() => chooseBooking('Kimliği alınacak rezervasyonu seçin', todayArrivals, openPassportScan)}
           >
             <Camera className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Kimlik</span>
@@ -535,9 +523,8 @@ const MobileFrontDesk = ({ user }) => {
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-cyan-600 hover:bg-cyan-700 text-white p-1"
             onClick={() => {
-              const checkedIn = inHouse[0];
-              if (checkedIn) openKeycardModal(checkedIn);
-              else toast.error('Kart basılacak rezervasyon yok');
+              if (inHouse) chooseBooking('Kart basılacak rezervasyonu seçin', inHouse, openKeycardModal);
+              else toast.error('Konaklayan misafirler yüklenemedi. Yenileyip tekrar deneyin.');
             }}
           >
             <Key className="w-5 h-5 mb-1" />
@@ -551,8 +538,8 @@ const MobileFrontDesk = ({ user }) => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-blue-600 font-medium">BUGÜN GELİŞ</p>
-                  <p className="text-3xl font-bold text-blue-700">{todayArrivals.length}</p>
+                  <p className="text-xs text-blue-600 font-medium">İŞ GÜNÜ GELİŞ</p>
+                  <p className="text-3xl font-bold text-blue-700">{businessDay?.today_checkins ?? '—'}</p>
                 </div>
                 <UserPlus className="w-10 h-10 text-blue-300" />
               </div>
@@ -563,8 +550,8 @@ const MobileFrontDesk = ({ user }) => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-amber-600 font-medium">BUGÜN ÇIKIŞ</p>
-                  <p className="text-3xl font-bold text-amber-700">{todayDepartures.length}</p>
+                  <p className="text-xs text-amber-600 font-medium">İŞ GÜNÜ ÇIKIŞ</p>
+                  <p className="text-3xl font-bold text-amber-700">{businessDay?.today_checkouts ?? '—'}</p>
                 </div>
                 <XCircle className="w-10 h-10 text-amber-300" />
               </div>
@@ -576,7 +563,7 @@ const MobileFrontDesk = ({ user }) => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-green-600 font-medium">KONAKLAYANLAR</p>
-                  <p className="text-3xl font-bold text-green-700">{inHouse.length}</p>
+                  <p className="text-3xl font-bold text-green-700">{businessDay?.in_house_stays ?? '—'}</p>
                 </div>
                 <Users className="w-10 h-10 text-green-300" />
               </div>
@@ -588,7 +575,7 @@ const MobileFrontDesk = ({ user }) => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-indigo-600 font-medium">BOŞ ODALAR</p>
-                  <p className="text-3xl font-bold text-indigo-700">{roomAvailability?.status_counts?.available || 0}</p>
+                  <p className="text-3xl font-bold text-indigo-700">{businessDay?.available_rooms ?? '—'}</p>
                 </div>
                 <Bed className="w-10 h-10 text-indigo-300" />
               </div>
@@ -605,7 +592,7 @@ const MobileFrontDesk = ({ user }) => {
             <CardTitle className="text-lg flex items-center justify-between">
               <div className="flex items-center">
                 <UserPlus className="w-5 h-5 mr-2 text-blue-600" />
-                Bugün Geliş Yapacaklar ({todayArrivals.length})
+                Giriş Bekleyenler {businessDay && `(${todayArrivals.length})`}
               </div>
               {arrivalsExpanded ? (
                 <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -617,7 +604,7 @@ const MobileFrontDesk = ({ user }) => {
           {arrivalsExpanded && (
             <CardContent className="space-y-2">
               {todayArrivals.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">Bugün geliş yok</p>
+                <p className="text-gray-500 text-center py-4">{businessDay ? 'Giriş bekleyen rezervasyon yok' : 'Giriş listesi yüklenemedi'}</p>
               ) : (
                 todayArrivals.map((booking) => (
                   <div key={booking.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -629,7 +616,7 @@ const MobileFrontDesk = ({ user }) => {
                       </p>
                     </div>
                     <div className="flex flex-col items-end space-y-2">
-                      <Badge className="bg-blue-500 text-xs">{booking.source}</Badge>
+                      {booking.source && <Badge className="bg-blue-500 text-xs">{booking.source}</Badge>}
                       <Button
                         size="sm"
                         onClick={() => handleCheckIn(booking.id)}
@@ -655,7 +642,7 @@ const MobileFrontDesk = ({ user }) => {
             <CardTitle className="text-lg flex items-center justify-between">
               <div className="flex items-center">
                 <XCircle className="w-5 h-5 mr-2 text-amber-600" />
-                Bugün Çıkış Yapacaklar ({todayDepartures.length})
+                Çıkış Bekleyenler {businessDay && `(${todayDepartures.length})`}
               </div>
               {departuresExpanded ? (
                 <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -667,7 +654,7 @@ const MobileFrontDesk = ({ user }) => {
           {departuresExpanded && (
             <CardContent className="space-y-2">
               {todayDepartures.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">Bugün çıkış yok</p>
+                <p className="text-gray-500 text-center py-4">{businessDay ? 'Çıkış bekleyen rezervasyon yok' : 'Çıkış listesi yüklenemedi'}</p>
               ) : (
                 todayDepartures.map((booking) => (
                   <div key={booking.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
@@ -745,16 +732,44 @@ const MobileFrontDesk = ({ user }) => {
       </div>
 
       {/* Reservations Modal */}
+      <Dialog open={Boolean(bookingPicker)} onOpenChange={(open) => !open && setBookingPicker(null)}>
+        <DialogContent className="w-[95vw] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{bookingPicker?.title}</DialogTitle>
+            <DialogDescription>Misafir adını, oda numarasını ve rezervasyon numarasını kontrol edin.</DialogDescription>
+          </DialogHeader>
+          {bookingPicker?.bookings.length === 0 && <p className="text-sm text-gray-600">Bu işlem için uygun rezervasyon yok.</p>}
+          {bookingPicker?.bookings.map(booking => (
+            <Button
+              key={booking.id}
+              variant="outline"
+              className="h-auto min-w-0 flex-col items-start gap-1 whitespace-normal py-2 text-left"
+              onClick={() => {
+                setBookingPicker(null);
+                bookingPicker.onSelect(booking);
+              }}
+            >
+              <span>{booking.guest_name || 'Misafir'}</span>
+              <span className="text-xs text-gray-600">
+                {booking.room_number ? `Oda ${booking.room_number}` : 'Oda atanmamış'} · {booking.booking_number || booking.confirmation_code || booking.id.slice(0, 8)}
+              </span>
+            </Button>
+          ))}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={reservationsModalOpen} onOpenChange={setReservationsModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center">
               <Calendar className="w-5 h-5 mr-2" />
-              Tüm Rezervasyonlar ({allBookings.length})
+              Rezervasyonlar{allBookings && ` (${allBookings.length})`}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            {allBookings.map((booking) => (
+            {!allBookings && <p role="alert" className="text-sm text-amber-800">Rezervasyonlar yüklenemedi. Ana ekrandan yenileyip tekrar deneyin.</p>}
+            {allBookings?.length === 0 && <p className="text-sm text-slate-600">Rezervasyon bulunamadı.</p>}
+            {allBookings?.map((booking) => (
               <div key={booking.id} className="p-3 bg-gray-50 rounded-lg border">
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-bold text-gray-900">{booking.guest_name}</p>
@@ -1084,6 +1099,7 @@ const MobileFrontDesk = ({ user }) => {
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Oda Atama</DialogTitle>
+            <DialogDescription>Rezervasyonun fiyatı korunur. Aynı oda tipinden bir oda seçin.</DialogDescription>
           </DialogHeader>
           {selectedBookingForRoom && (
             <div className="space-y-4">
@@ -1099,24 +1115,14 @@ const MobileFrontDesk = ({ user }) => {
               <div className="space-y-2">
                 <p className="font-semibold">Müsait Odalar:</p>
                 {availableRooms.length === 0 ? (
-                  <p className="text-center text-gray-500 py-4">Müsait oda bulunamadı</p>
+                  <p className="text-center text-gray-500 py-4">Rezervasyonun oda tipinde müsait oda bulunamadı.</p>
                 ) : (
                   availableRooms.map(room => (
-                    <Card key={room.id} className="border hover:border-indigo-500 cursor-pointer" onClick={() => assignRoom(room.id)}>
-                      <CardContent className="p-3">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="font-bold text-lg">{room.room_number}</p>
-                            <p className="text-sm text-gray-600">{room.room_type}</p>
-                            <p className="text-xs text-gray-500">{room.bed_type} • {room.floor}. Kat</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xl font-bold text-green-600">{formatCurrency(room.base_rate, room.currency || cachedTenantCurrency())}</p>
-                            <Badge className="bg-green-500">{t("housekeeping.available")}</Badge>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <Button key={room.id} variant="outline" className="w-full h-auto justify-between gap-2 py-3 text-left"
+                      disabled={assigningRoom} onClick={() => assignRoom(room)}>
+                      <span className="font-bold">Oda {room.room_number}</span>
+                      <span className="text-sm text-gray-600">{room.room_type} · {room.floor}. Kat</span>
+                    </Button>
                   ))
                 )}
               </div>

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
+import { MemoryRouter } from 'react-router-dom';
 import SpaWellness from '@/pages/SpaWellness';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
@@ -26,8 +27,10 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
+const renderSpa = (props) => render(<MemoryRouter><SpaWellness {...props} /></MemoryRouter>);
+
 async function openBooking() {
-  const result = render(<SpaWellness tenant={{ currency: 'TRY' }} />);
+  const result = renderSpa({ tenant: { currency: 'TRY' } });
   await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url === '/spa/daily-summary')).toBe(true));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Randevu' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Randevu' }));
@@ -65,7 +68,7 @@ describe('SPA hotel wall clock, independent of browser UTC', () => {
   });
 
   it('renders existing appointment instants in the same verified hotel timezone', async () => {
-    render(<SpaWellness />);
+    renderSpa();
     expect(await screen.findByText('08.11 12:00')).toBeInTheDocument();
   });
 
@@ -81,7 +84,7 @@ describe('SPA hotel wall clock, independent of browser UTC', () => {
       if (url === '/spa/daily-summary') throw new Error('summary unavailable');
       return { data: dataFor(url) };
     });
-    render(<SpaWellness />);
+    renderSpa();
     await screen.findByRole('button', { name: 'Randevu' });
     expect(screen.getByRole('button', { name: 'Randevu' })).toBeDisabled();
     expect(await screen.findByRole('status')).toHaveTextContent('Tesis saat dilimi doğrulanamadı');
