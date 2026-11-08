@@ -68,6 +68,8 @@ async def void_payment(
         raise HTTPException(409, "Kurumsal mahsubu kendi bağlı ters kayıt akışından düzeltin")
     if payment.get("mice_event_id"):
         raise HTTPException(409, "Banket tahsilatını etkinliğin iade akışından düzeltin")
+    if payment.get('source_spa_appointment_id'):
+        raise HTTPException(409, 'SPA tahsilatını randevunun bağlı iade akışından düzeltin; makbuz silinemez')
     if payment.get("security_fund_id") or payment.get("concession_id") or payment.get("provider_ref"):
         raise HTTPException(409, "Bağlı güvence/ikram/ödeme kuruluşu düzeltme akışı gerekli")
 

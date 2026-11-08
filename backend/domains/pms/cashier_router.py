@@ -197,8 +197,8 @@ async def close_shift(
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
-    if shift.get("mice_pending_ids"):
-        raise HTTPException(409, "Bekleyen banket finans işlemi var; önce tamamlayıp yenileyin")
+    if shift.get("mice_pending_ids") or shift.get("spa_pending_ids"):
+        raise HTTPException(409, "Bekleyen banket veya SPA finans işlemi var; önce tamamlayıp yenileyin")
     now = datetime.utcnow()
     counted_amount = _cashier_number(body.get("counted_amount", 0), "Sayılan tutar")
     expected = (
@@ -217,7 +217,10 @@ async def close_shift(
         raise HTTPException(400, "50 TL ve üzeri kasa farkında açıklama zorunludur.")
     close_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     closed = await db.cashier_shifts.update_one(
-        {"_id": shift["_id"], "tenant_id": current_user.tenant_id, "status": "open", "cash_in": shift.get("cash_in"), "cash_out": shift.get("cash_out"), "$or": [{"mice_pending_ids": {"$exists": False}}, {"mice_pending_ids": {"$size": 0}}]},
+        {"_id": shift["_id"], "tenant_id": current_user.tenant_id, "status": "open", "cash_in": shift.get("cash_in"), "cash_out": shift.get("cash_out"), "$and": [
+            {"$or": [{"mice_pending_ids": {"$exists": False}}, {"mice_pending_ids": {"$size": 0}}]},
+            {"$or": [{"spa_pending_ids": {"$exists": False}}, {"spa_pending_ids": {"$size": 0}}]},
+        ]},
         {
             "$set": {
                 "status": "closed",
@@ -326,6 +329,8 @@ async def handover_shift(
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=409, detail="Vardiya doğrulama sırasında kapandı/devredildi")
+    if shift.get("mice_pending_ids") or shift.get("spa_pending_ids"):
+        raise HTTPException(409, "Bekleyen banket veya SPA finans işlemi var; devir yapılmadı")
 
     target_name = target_user.get("name") or target_user.get("full_name") or target_email
     now = datetime.utcnow()
@@ -337,7 +342,10 @@ async def handover_shift(
     handover_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
 
     handed_over = await db.cashier_shifts.update_one(
-        {"_id": shift["_id"], "tenant_id": current_user.tenant_id, "status": "open", "cash_in": shift.get("cash_in"), "cash_out": shift.get("cash_out"), "$or": [{"mice_pending_ids": {"$exists": False}}, {"mice_pending_ids": {"$size": 0}}]},
+        {"_id": shift["_id"], "tenant_id": current_user.tenant_id, "status": "open", "cash_in": shift.get("cash_in"), "cash_out": shift.get("cash_out"), "$and": [
+            {"$or": [{"mice_pending_ids": {"$exists": False}}, {"mice_pending_ids": {"$size": 0}}]},
+            {"$or": [{"spa_pending_ids": {"$exists": False}}, {"spa_pending_ids": {"$size": 0}}]},
+        ]},
         {
             "$set": {
                 "status": "handed_over",

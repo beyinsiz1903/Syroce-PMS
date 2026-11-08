@@ -341,7 +341,7 @@ async def test_committed_correction_response_failure_recovers_link_without_doubl
     await seed(db)
     p = await v.preview_daily_valuation(db, "hotel", "run", RATES)
     collection = db.night_audit_runs
-    wrapped = SimpleNamespace(**{name: db[name] for name in ("gl_operational_mappings", "gl_accounts", "gl_periods", "folio_charges", "payments", "security_fund_operations", "security_funds", "gl_journal_entries", "gl_counters", "gl_sequence_reservations")},
+    wrapped = SimpleNamespace(**{name: db[name] for name in ("gl_operational_mappings", "gl_accounts", "gl_periods", "folio_charges", "extra_charges", "payments", "security_fund_operations", "security_funds", "gl_journal_entries", "gl_counters", "gl_sequence_reservations")},
         night_audit_runs=SimpleNamespace(find_one=collection.find_one, update_one=AsyncMock(side_effect=RuntimeError("response failure"))))
     with pytest.raises(RuntimeError):
         await v.post_daily_valuation(wrapped, "hotel", "run", RATES, p["preview_hash"], "operator")
