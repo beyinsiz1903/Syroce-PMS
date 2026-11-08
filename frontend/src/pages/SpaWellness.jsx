@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatSpaTime, spaDateTimeInput, spaTimeZone, spaWallTimeToUtc } from '@/lib/spaTime';
 
 // Revenue per currency as the server keeps it (never added across currencies).
 export const revenueText = (summary, format) => {
@@ -50,10 +51,6 @@ const STATUS = {
   cancelled: { label: 'İptal', cls: 'bg-red-100 text-red-800' },
 };
 
-const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', {
-  hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
-}) : '—';
-
 // The server also checks historical financial references inside a transaction.
 export const canDeleteSpaAppointment = (appointment) =>
   ['scheduled', 'cancelled', 'no_show'].includes(appointment.status) && !appointment.folio_charge_id;
@@ -69,6 +66,8 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const [rooms, setRooms] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [clockPending, setClockPending] = useState(true);
+  const timeZone = spaTimeZone(summary?.timezone);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [showBook, setShowBook] = useState(false);
@@ -79,7 +78,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
   const [bookForm, setBookForm] = useState({
     service_id: '', therapist_id: '', room_id: '',
-    starts_at: new Date().toISOString().slice(0, 16),
+    starts_at: '',
     guest_name: '', guest_phone: '', reservation_id: '', folio_id: '', charge_to_room: false,
   });
   const [serviceForm, setServiceForm] = useState({
@@ -95,6 +94,8 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const load = async () => {
     setLoading(true);
     setLoadError(null);
+    setSummary(null);
+    setClockPending(true);
     try {
       // Birincil veriler (4 endpoint): randevu listesi ve katalog (hizmet,
       // terapist, oda) — sayfa render'ı için kritik. Günlük özet (KPI rozeti)
@@ -125,10 +126,11 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
       // Günlük özet — idle'da arka plandan yükle.
       runIdle(async () => {
         try {
-          const today = new Date().toISOString().slice(0, 10);
-          const sum = await axios.get('/spa/daily-summary', { params: { date: today } });
+          // The server resolves both the configured hotel timezone and its day.
+          const sum = await axios.get('/spa/daily-summary');
           setSummary(sum.data);
         } catch { setSummary(null); }
+        finally { setClockPending(false); }
       });
     } finally { setLoading(false); }
   };
@@ -141,13 +143,14 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const book = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/spa/appointments', { ...bookForm, folio_id: bookForm.folio_id || null });
+      const startsAt = spaWallTimeToUtc(bookForm.starts_at, timeZone);
+      await axios.post('/spa/appointments', { ...bookForm, starts_at: startsAt, folio_id: bookForm.folio_id || null });
       toast.success('Randevu oluşturuldu');
       setShowBook(false);
       setBookForm({ ...bookForm, guest_name: '', guest_phone: '' });
       await load();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Oluşturulamadı');
+      toast.error(err.response?.data?.detail || err.message || 'Oluşturulamadı');
     }
   };
 
@@ -238,11 +241,18 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
           <Button variant="outline" onClick={load}>
             <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.yenile')}
           </Button>
-          <Button onClick={() => setShowBook(true)}>
+          <Button disabled={!timeZone} onClick={() => {
+            setBookForm({ ...bookForm, starts_at: spaDateTimeInput(new Date(), timeZone) });
+            setShowBook(true);
+          }}>
             <Plus className="w-4 h-4 mr-1" /> Randevu
           </Button>
         </div>
       </div>
+
+      {!timeZone && <p role="status" className="text-sm text-amber-700">
+        {clockPending ? 'Tesis saat dilimi doğrulanıyor…' : 'Tesis saat dilimi doğrulanamadı. Randevu oluşturmadan önce Yenile düğmesine basın.'}
+      </p>}
 
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -296,7 +306,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                     const st = STATUS[a.status] || STATUS.scheduled;
                     return (
                       <tr key={a.id} className="border-b hover:bg-slate-50">
-                        <td className="p-2 font-mono text-xs">{fmtTime(a.starts_at)}</td>
+                        <td className="p-2 font-mono text-xs">{formatSpaTime(a.starts_at, timeZone)}</td>
                         <td className="p-2">
                           <div>{a.guest_name}</div>
                           {a.guest_phone && <div className="text-xs text-gray-500">{a.guest_phone}</div>}
@@ -461,6 +471,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             <Field label={t('cm.pages_SpaWellness.baslangic')}>
               <Input type="datetime-local" required value={bookForm.starts_at}
                      onChange={(e) => setBookForm({ ...bookForm, starts_at: e.target.value })} />
+              <p className="text-xs text-muted-foreground">Tesis saati · {timeZone}</p>
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label={t('cm.pages_SpaWellness.misafir_adi')}>
