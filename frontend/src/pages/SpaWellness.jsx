@@ -21,6 +21,7 @@ import { useEntitlements } from '@/context/EntitlementContext';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatSpaTime, spaDateTimeInput, spaTimeZone, spaWallTimeToUtc } from '@/lib/spaTime';
+import AppointmentSettlements from '@/components/spa/AppointmentSettlements';
 
 // Revenue per currency as the server keeps it (never added across currencies).
 export const revenueText = (summary, format) => {
@@ -32,13 +33,13 @@ export const revenueText = (summary, format) => {
 
 export const SpaRevenueSummary = ({ summary, money }) => (
   <div>
-    <Stat label="Folyoya işlenen SPA geliri" value={revenueText(summary, money)} cls="text-indigo-600" />
-    <p className="text-xs text-gray-500 mt-1">Tamamlanan randevuların aktif folyo ücretleri; ikram gelir değildir, tahsilat ayrı izlenir.</p>
+    <Stat label="Kaydedilen SPA geliri" value={revenueText(summary, money)} cls="text-indigo-600" />
+    <p className="text-xs text-gray-500 mt-1">Tamamlanan hizmetlerin oda hesabı ve dış misafir satış kayıtları. İkram gelir değildir; tahsilat ayrı izlenir.</p>
     {Object.keys(summary.complimentary_value_by_currency || {}).length > 0 && (
       <p className="text-xs text-gray-500 mt-1">İkram edilen hizmet değeri: {revenueText({ revenue_by_currency: summary.complimentary_value_by_currency }, money)}</p>
     )}
     {summary.revenue_complete === false && (
-      <p role="status" className="text-xs text-amber-700 mt-1">{summary.unposted_appointments} tamamlanan randevunun folyo kaydı yok. Hizmet değeri gelire eklenmedi: {revenueText({ revenue_by_currency: summary.unposted_value_by_currency }, money)}</p>
+      <p role="status" className="text-xs text-amber-700 mt-1">{summary.unposted_appointments} tamamlanan randevunun satış kaydı yok. Hizmet değeri gelire eklenmedi: {revenueText({ revenue_by_currency: summary.unposted_value_by_currency }, money)}</p>
     )}
   </div>
 );
@@ -53,13 +54,14 @@ const STATUS = {
 
 // The server also checks historical financial references inside a transaction.
 export const canDeleteSpaAppointment = (appointment) =>
-  ['scheduled', 'cancelled', 'no_show'].includes(appointment.status) && !appointment.folio_charge_id;
+  ['scheduled', 'cancelled', 'no_show'].includes(appointment.status) && !appointment.folio_charge_id && !appointment.external_charge_id && !appointment.finance_pending && !appointment.settlement_count;
 
 const SpaWellness = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const tenantCurrency = tenant?.currency || cachedTenantCurrency();
   const money = (amount, currency = tenantCurrency) => formatCurrency(amount, currency);
   const { getLimit, hasFeature, hasModule, loading: entLoading, isSuperAdmin } = useEntitlements();
+  const canSettle = isSuperAdmin || ['super_admin', 'admin', 'supervisor', 'front_desk', 'finance'].includes(user?.role);
 
   const [services, setServices] = useState([]);
   const [therapists, setTherapists] = useState([]);
@@ -71,6 +73,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [showBook, setShowBook] = useState(false);
+  const [settlementAppointment, setSettlementAppointment] = useState(null);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showTherapistForm, setShowTherapistForm] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
@@ -139,6 +142,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
   const therapistById = useMemo(() => Object.fromEntries(therapists.map((t) => [t.id, t])), [therapists]);
   const roomById = useMemo(() => Object.fromEntries(rooms.map((r) => [r.id, r])), [rooms]);
+  const bookingTaxMissing = Boolean(bookForm.service_id) && services.find(s => s.id === bookForm.service_id)?.tax_rate == null;
 
   const book = async (e) => {
     e.preventDefault();
@@ -320,6 +324,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                         </td>
                         <td className="p-2"><Badge className={`${st.cls} border-0`}>{st.label}</Badge></td>
                         <td className="p-2 text-right space-x-1">
+                          {canSettle && a.status === 'completed' && a.external_charge_id && !a.charge_to_room && <Button size="sm" variant="outline" onClick={() => setSettlementAppointment(a)}>Ödeme / makbuz</Button>}
                           {a.status === 'scheduled' && (
                             <Button size="sm" variant="ghost" title={t('cm.pages_SpaWellness.baslat')}
                                     onClick={() => updateStatus(a.id, 'in_progress')}>
@@ -349,6 +354,10 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
               </table>
             </CardContent>
           </Card>
+          {settlementAppointment && <div className="space-y-2">
+            <Button variant="ghost" onClick={() => setSettlementAppointment(null)}>Ödeme alanını kapat</Button>
+            <AppointmentSettlements key={settlementAppointment.id} appointmentId={settlementAppointment.id} onRecorded={load} />
+          </div>}
         </TabsContent>
 
         <TabsContent value="services" className="space-y-3">
@@ -450,6 +459,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                 </option>)}
               </select>
             </Field>
+            {bookingTaxMissing && <p role="alert" className="rounded border border-amber-300 p-2 text-sm">Bu hizmetin KDV oranı tanımlanmamış. Satışın doğru kaydedilmesi için önce Hizmetler bölümünden KDV oranı tanımlı bir hizmet seçin veya oluşturun.</p>}
             <div className="grid grid-cols-2 gap-2">
               <Field label={t('cm.pages_SpaWellness.terapist_otomatik_icin_bos')}>
                 <select className="w-full border rounded px-2 py-1.5"
@@ -497,7 +507,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             </label>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setShowBook(false)}>{t('cm.pages_SpaWellness.iptal_25174')}</Button>
-              <Button type="submit">{t('cm.pages_SpaWellness.randevu_olustur')}</Button>
+              <Button type="submit" disabled={bookingTaxMissing}>{t('cm.pages_SpaWellness.randevu_olustur')}</Button>
             </div>
           </form>
         </Modal>

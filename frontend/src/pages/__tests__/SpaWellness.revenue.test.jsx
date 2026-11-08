@@ -13,11 +13,13 @@ describe('SPA posted revenue', () => {
   it.each(['scheduled', 'cancelled', 'no_show'])('only offers deletion of unposted %s appointments', (status) => {
     expect(canDeleteSpaAppointment({ status })).toBe(true);
     expect(canDeleteSpaAppointment({ status, folio_charge_id: 'historic-charge' })).toBe(false);
+    expect(canDeleteSpaAppointment({ status, external_charge_id: 'external-sale' })).toBe(false);
+    expect(canDeleteSpaAppointment({ status, settlement_count: 1 })).toBe(false);
   });
 
   it('shows full-comp original value separately from actual zero income', () => {
     render(<SpaRevenueSummary summary={{ revenue_by_currency: { TRY: 0 }, complimentary_value_by_currency: { TRY: 1500 }, revenue_complete: true }} money={money} />);
-    expect(screen.getByText('Folyoya işlenen SPA geliri')).toBeInTheDocument();
+    expect(screen.getByText('Kaydedilen SPA geliri')).toBeInTheDocument();
     expect(screen.getByText('0 TRY')).toBeInTheDocument();
     expect(screen.getByText('İkram edilen hizmet değeri: 1500 TRY')).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -26,7 +28,7 @@ describe('SPA posted revenue', () => {
   it('labels missing source postings instead of presenting catalog price as income', () => {
     render(<SpaRevenueSummary summary={{ revenue: 0, revenue_by_currency: {}, unposted_appointments: 1, unposted_value_by_currency: { TRY: 1900 }, revenue_complete: false }} money={money} />);
     expect(screen.getByText('0 TRY')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('1 tamamlanan randevunun folyo kaydı yok');
+    expect(screen.getByRole('status')).toHaveTextContent('1 tamamlanan randevunun satış kaydı yok');
     expect(screen.getByRole('status')).toHaveTextContent('1900 TRY');
   });
 

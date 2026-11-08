@@ -117,6 +117,8 @@ def normalized_valuation(business_date, valuation):
 async def daily_sources(db, tenant_id, business_date):
     charges = await db.folio_charges.find({"tenant_id": tenant_id, "voided": {"$ne": True},
         **report_payment_period_match(business_date, business_date, date_fields=("date", "charge_date", "posted_at", "created_at"))}, {"_id": 0}).to_list(None)
+    charges.extend(await db.extra_charges.find({'tenant_id': tenant_id, 'source': 'spa_external', 'voided': {'$ne': True},
+        **report_payment_period_match(business_date, business_date, date_fields=('date', 'posted_at'))}, {'_id': 0}).to_list(None))
     payments = await db.payments.find({"tenant_id": tenant_id, "voided": {"$ne": True},
         **report_payment_period_match(business_date, business_date)}, {"_id": 0}).to_list(None)
     from modules.pms_core.settlement_instruments import exclude_direct_cheques
@@ -126,7 +128,7 @@ async def daily_sources(db, tenant_id, business_date):
         and str(r.get("charge_category") or r.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}
         and (minor(r.get("total", r.get("amount"))) or minor(r.get("tax_amount")))]
     payments = [r for r in deduplicate_report_payments(payments) if (effective_collection(r) or (is_non_cash_adjustment(r) and effective_folio_payment(r)))
-        and not (r.get("mice_event_id") and r.get("gl_journal_entry_id"))]
+        and not ((r.get("mice_event_id") or r.get('source_spa_appointment_id')) and r.get("gl_journal_entry_id"))]
     security = await db.security_fund_operations.find({"tenant_id": tenant_id, "business_date": business_date}).to_list(None)
     fund_ids = sorted({r["fund_id"] for r in security})
     funds = await db.security_funds.find({"tenant_id": tenant_id, "id": {"$in": fund_ids}}, {"_id": 0}).to_list(None) if fund_ids else []

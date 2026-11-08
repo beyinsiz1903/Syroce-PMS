@@ -118,6 +118,14 @@ async def post_night_audit_daily_to_gl(
         },
         {"_id": 0},
     ).to_list(None)
+    # Standalone SPA sales are real receivables, but are deliberately not
+    # attached to an arbitrary guest-room folio. Recognize them once in the
+    # same day-end accrual batch; receipts are posted separately below.
+    if hasattr(db, 'extra_charges'):
+        charges.extend(await db.extra_charges.find({
+            'tenant_id': tenant_id, 'source': 'spa_external', 'voided': {'$ne': True},
+            **report_payment_period_match(business_date, business_date, date_fields=('date', 'posted_at')),
+        }, {'_id': 0}).to_list(None))
     from modules.pms_core.settlement_instruments import exclude_direct_cheques
 
     payments = await exclude_direct_cheques(db, tenant_id, payments)
@@ -132,7 +140,7 @@ async def post_night_audit_daily_to_gl(
            and not (row.get("mice_event_id") and row.get("gl_journal_entry_id")) for row in payments):
         raise SourceValuationRequired("Non-cash folio adjustments require the explicit source-valuation workflow")
     payments = [row for row in deduplicate_report_payments(payments)
-                if effective_collection(row) and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
+                if effective_collection(row) and not ((row.get("mice_event_id") or row.get('source_spa_appointment_id')) and row.get("gl_journal_entry_id"))]
     if hasattr(db, "security_fund_operations") and await db.security_fund_operations.find_one({"tenant_id": tenant_id, "business_date": business_date}):
         raise OperationalGLBridgeError("Security liability movements require the explicit source-valuation workflow")
     charges = await _require_try_source_rows(db, tenant_id, charges)
@@ -166,7 +174,7 @@ async def post_night_audit_daily_to_gl(
         # Banquet settlements are already posted individually (including FX)
         # before their canonical payment row becomes visible. Never post them
         # a second time as part of the daily folio collection batch.
-        if payment.get("mice_event_id") and payment.get("gl_journal_entry_id"):
+        if (payment.get("mice_event_id") or payment.get('source_spa_appointment_id')) and payment.get("gl_journal_entry_id"):
             continue
         method = str(payment.get("method") or payment.get("payment_method") or "").lower()
         if method not in {"cash", "nakit", "card", "credit_card", "debit_card", "kredi_karti", "pos", "bank", "bank_transfer", "transfer", "online", "eft", "wire", "havale"}:

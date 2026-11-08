@@ -2167,12 +2167,12 @@ async def operational_reconciliation(
         )
 
     adjustments = [row for row in deduplicate_report_payments(payments) if is_non_cash_adjustment(row) and effective_folio_payment(row)
-                   and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
+                   and not ((row.get("mice_event_id") or row.get('source_spa_appointment_id')) and row.get("gl_journal_entry_id"))]
     adjustment_by_currency: dict[str, int] = {}
     for row in await resolve_ledger_currencies(adjustments, tenant_id, database=db, fallback_currency="UNKNOWN"):
         adjustment_by_currency[row["currency"]] = adjustment_by_currency.get(row["currency"], 0) + _reconciliation_minor(effective_folio_payment(row))
     payments = [row for row in deduplicate_report_payments(payments) if effective_collection(row)
-                and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
+                and not ((row.get("mice_event_id") or row.get('source_spa_appointment_id')) and row.get("gl_journal_entry_id"))]
     payments = await resolve_ledger_currencies(payments, tenant_id, database=db, fallback_currency="UNKNOWN")
     payment_by_currency: dict[str, int] = {}
     for payment in payments:

@@ -31,6 +31,7 @@ from core.entitlements.quota import QuotaExceededException, release_quota, reser
 from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
 from core.tenant_db import get_system_db
+from domains.spa.finance import router as finance_router
 from models.schemas import User
 from shared_kernel.idempotency import (
     claim_idempotency,
@@ -43,6 +44,9 @@ router = APIRouter(prefix="/api/spa", tags=["spa"])
 
 # ── One-time index bootstrap ────────────────────────────────────
 _indexes_ready = False
+
+# The parent router retains the canonical /api/spa prefix and authentication.
+router.include_router(finance_router)
 
 
 async def _ensure_indexes() -> None:
@@ -471,7 +475,7 @@ async def list_appointments(
         if date_to:
             rng["$lte"] = date_to
         q["starts_at"] = rng
-    cur = db.spa_appointments.find(q, {"_id": 0}).sort("starts_at", 1).limit(500)
+    cur = db.spa_appointments.find(q, {"_id": 0, "finance_pending": 0}).sort("starts_at", 1).limit(500)
     return {"appointments": [doc async for doc in cur]}
 
 
@@ -489,6 +493,8 @@ async def create_appointment(
     service = await db.spa_services.find_one({"id": body.service_id, "tenant_id": tenant_id})
     if not service:
         raise HTTPException(404, "Hizmet bulunamadı")
+    if service.get('tax_rate') is None:
+        raise HTTPException(409, 'Randevu oluşturmadan önce hizmetin KDV oranını tanımlayın; geçmiş randevuların vergisi tahmin edilmez')
     if body.charge_to_room:
         if not body.reservation_id:
             raise HTTPException(422, 'Odaya aktarım için otel rezervasyonu gerekli')
@@ -499,8 +505,6 @@ async def create_appointment(
             raise HTTPException(409, 'Bu konaklamaya SPA randevusu bağlanamaz')
         if str(service.get('currency') or 'TRY').upper() != str(booking.get('currency') or 'TRY').upper():
             raise HTTPException(409, 'SPA hizmeti ve rezervasyon para birimi farklı')
-        if service.get('tax_rate') is None:
-            raise HTTPException(409, 'Odaya aktarım öncesi SPA hizmetinin KDV oranını tanımlayın')
 
     starts = body.starts_at if body.starts_at.tzinfo else body.starts_at.replace(tzinfo=UTC)
     ends = starts + timedelta(minutes=service["duration_minutes"])
@@ -621,6 +625,9 @@ async def change_status(
     appt = await db.spa_appointments.find_one({"id": appt_id, "tenant_id": current_user.tenant_id})
     if not appt:
         raise HTTPException(404, "Randevu bulunamadı")
+    if body.status == 'completed' and not appt.get('charge_to_room'):
+        # Mongo must have this collection before the completion transaction.
+        await db.extra_charges.create_index([('tenant_id', 1), ('source_spa_appointment_id', 1)])
     from shared_kernel.audit_helper import audit_log
 
     tid = current_user.tenant_id
@@ -630,6 +637,8 @@ async def change_status(
         if not current:
             raise HTTPException(404, 'Randevu bulunamadı')
         old = current.get('status', 'scheduled')
+        if current.get('finance_pending'):
+            raise HTTPException(409, 'Bekleyen SPA finans işlemini aynı istekle tamamlayın')
         if body.status not in _SPA_TRANSITIONS.get(old, set()):
             raise HTTPException(409, f'Geçersiz geçiş: {old} → {body.status}')
         update = {'status': body.status, 'updated_at': datetime.now(UTC).isoformat()}
@@ -641,12 +650,18 @@ async def change_status(
                     actor_id=current_user.id, actor_name=current_user.name)
                 update['folio_charge_id'] = posted['charge']['id']
                 update['folio_id'] = posted['charge']['folio_id']
+            else:
+                from domains.spa.external_charge import post_external_charge
+
+                update['external_charge_id'] = await post_external_charge(db, tid, {**current, **update},
+                    session=session, actor=current_user.name)
         changed = await db.spa_appointments.update_one({'id': appt_id, 'tenant_id': tid, 'status': old}, {'$set': update}, session=session)
         if changed.modified_count != 1:
             raise HTTPException(409, 'SPA durumu eşzamanlı değişti; folyo aktarımı geri alındı')
         await audit_log(actor_id=current_user.id, tenant_id=tid, entity_type='reservation' if current.get('reservation_id') else 'spa_appointment',
             entity_id=current.get('reservation_id') or appt_id, action='spa_status_changed',
             metadata={'source_spa_appointment_id': appt_id, 'from_status': old, 'to_status': body.status,
+                'external_charge_id': update.get('external_charge_id'),
                 'reason': current.get('notes'), 'actor_name': current_user.name}, session=session, require_chain=True)
         return {'ok': True, 'status': body.status, 'posted': posted}
 
@@ -740,6 +755,10 @@ async def delete_appointment(
         # A voided/transferred legacy charge still has a historical source.
         if charge or posting:
             raise HTTPException(409, 'Mali hareketi bulunan SPA randevusu silinemez. İşlem geçmişi korunur.')
+        external = await db.extra_charges.find_one({'tenant_id': tid, 'source_spa_appointment_id': appt_id}, session=session)
+        payment = await db.payments.find_one({'tenant_id': tid, 'source_spa_appointment_id': appt_id}, session=session)
+        if external or payment or appt.get('finance_pending'):
+            raise HTTPException(409, 'Dış misafir SPA satış/tahsilat geçmişi silinemez')
         deleted = await db.spa_appointments.delete_one(query, session=session)
         if deleted.deleted_count != 1:
             raise HTTPException(409, 'SPA randevusu değişti; listeyi yenileyin.')
@@ -815,6 +834,9 @@ async def daily_summary(
     unposted_count = 0
     charges = await db.folio_charges.find({'tenant_id': current_user.tenant_id,
         'source_spa_appointment_id': {'$in': list(completed)}}, {'_id': 0}).to_list(None) if completed else []
+    external_charges = await db.extra_charges.find({'tenant_id': current_user.tenant_id,
+        'source': 'spa_external', 'source_spa_appointment_id': {'$in': list(completed)}}, {'_id': 0}).to_list(None) if completed else []
+    charges.extend(external_charges)
     known_sources = {row['source_spa_appointment_id'] for row in charges}
     # Include transferred parts (same source appointment, other room), but
     # never count a voided charge or substitute its original catalog price.
@@ -844,7 +866,7 @@ async def daily_summary(
         # every completed appointment is in one currency (else null).
         "revenue_by_currency": by_currency,
         "revenue": single_amount(revenue),
-        'revenue_basis': 'active_folio_charges_for_completed_appointments',
+        'revenue_basis': 'active_folio_and_external_spa_charges_for_completed_appointments',
         'catalog_value_by_currency': rounded_totals(catalog_value),
         'complimentary_value_by_currency': rounded_totals(complimentary),
         'unposted_value_by_currency': rounded_totals(unposted_value),

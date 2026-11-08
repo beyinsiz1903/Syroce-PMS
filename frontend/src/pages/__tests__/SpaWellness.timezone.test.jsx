@@ -12,7 +12,7 @@ vi.mock('@/context/EntitlementContext', () => ({ useEntitlements: () => ({
 }) }));
 
 function dataFor(url, timezone = 'Europe/Istanbul') {
-  if (url === '/spa/services') return { services: [{ id: 's', name: 'Bakım', duration_minutes: 60, price: 100, currency: 'TRY' }] };
+  if (url === '/spa/services') return { services: [{ id: 's', name: 'Bakım', duration_minutes: 60, price: 100, currency: 'TRY', tax_rate: .2 }] };
   if (url === '/spa/appointments') return { appointments: [{ id: 'existing', starts_at: '2026-11-08T09:00:00Z', guest_name: 'Selin Kaya', status: 'completed', price: 100, currency: 'TRY' }] };
   if (url === '/spa/daily-summary') return { total: 1, timezone, by_status: { completed: 1 } };
   return {};
@@ -35,6 +35,16 @@ async function openBooking() {
 }
 
 describe('SPA hotel wall clock, independent of browser UTC', () => {
+  it('blocks new unbillable service snapshots until VAT is explicitly configured', async () => {
+    axios.get.mockImplementation(async (url) => ({ data: url === '/spa/services'
+      ? { services: [{ id: 's', name: 'Bakım', duration_minutes: 60, price: 100, currency: 'TRY' }] }
+      : dataFor(url) }));
+    const { container } = await openBooking();
+    fireEvent.change(container.querySelector('form select'), { target: { value: 's' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('KDV oranı tanımlanmamış');
+    expect(screen.getByRole('button', { name: 'cm.pages_SpaWellness.randevu_olustur' })).toBeDisabled();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
   it('opens with the current HOTEL time instead of the UTC clock', async () => {
     const { container } = await openBooking();
     expect(container.querySelector('input[type="datetime-local"]')).toHaveValue('2026-11-08T12:23');
