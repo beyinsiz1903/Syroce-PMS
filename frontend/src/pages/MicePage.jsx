@@ -44,6 +44,15 @@ import { useEntitlements } from '@/context/EntitlementContext';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 import apiErrorText from '@/utils/apiErrorText';
 import { isSuperAdmin } from '@/utils/authRoles';
+export const canDeleteMiceEvent = event => Boolean(event
+  && ['lead', 'tentative', 'definite', 'confirmed', 'cancelled'].includes(event.status)
+  && !event.signature && !event.gl_journal_entry_id && !event.gl_posting_state
+  && !event.folio_charge_id && !event.finance_pending && !event.settlement_count
+  && !event.sales_opportunity_id && !event.group_block_id
+  && !event.document_history?.length && !event.operations_tasks?.length
+  && !event.last_kitchen_dispatch_at
+  && !event.payment_schedule?.some(payment => payment.paid));
+
 const MicePage = ({
   user,
   tenant,
@@ -873,9 +882,9 @@ const MicePage = ({
                         {ev.status !== 'completed' && <select disabled={!canMice} aria-label={`${ev.name} durum değiştir`} className="text-xs border rounded px-1" value={ev.status} onChange={e => changeStatus(ev.id, e.target.value)}>
                             {[ev.status, ...({ lead: ['tentative', 'cancelled'], tentative: ['definite', 'cancelled', 'lead'], definite: ['confirmed', 'tentative', 'cancelled'], confirmed: [...(canFinance ? ['completed'] : []), 'cancelled'], cancelled: ['lead'] }[ev.status] || [])].map(k => <option key={k} value={k}>→ {STATUS[k]?.label || k}</option>)}
                           </select>}
-                        <Button disabled={!canMice || Boolean(ev.signature || ev.gl_journal_entry_id) || ev.payment_schedule?.some(p => p.paid)} size="sm" variant="ghost" onClick={() => remove(ev.id)}>
+                        {canMice && canDeleteMiceEvent(ev) && <Button aria-label={`${ev.name} sil`} size="sm" variant="ghost" onClick={() => remove(ev.id)}>
                           <Trash2 className="w-4 h-4" />
-                        </Button>
+                        </Button>}
                       </td>
                     </tr>;
                   })}
