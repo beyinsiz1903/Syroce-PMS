@@ -53,7 +53,7 @@ describe('MobileFnB report scope', () => {
     expect(axiosGet).toHaveBeenCalledWith('/pos/transactions', {
       params: { limit: 10, date: '2026-09-30', outlet_id: 'outlet-1' },
     });
-    expect(screen.getAllByText('Ana Restoran')).toHaveLength(3);
+    await waitFor(() => expect(screen.getAllByText('Ana Restoran')).toHaveLength(3));
     expect(screen.queryByText('Eski Ad')).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByText('Z Raporu'));
