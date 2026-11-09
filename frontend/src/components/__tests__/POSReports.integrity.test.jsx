@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 
@@ -55,5 +55,33 @@ describe('POSReports financial integrity', () => {
       'İptal ayrıntıları yüklenemedi. Bu durum, iptal olmadığı anlamına gelmez.',
     );
     expect(screen.queryByText(/iptal edilmiş işlem yok/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps unpaid voids and sale refunds separate on the report business date', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/pos/v2/receipts') return Promise.resolve({ data: { receipts: [] } });
+      if (url === '/pos/z-report') return Promise.resolve({ data: {
+        report_date: '2026-09-03', gross_sales: 836, net_sales: 792,
+        void_count: 1, void_amount: 100, refunds: 44, currency: 'TRY',
+      } });
+      if (url === '/pos/void-transactions') return Promise.resolve({ data: { void_transactions: [{
+        id: 'voided-check', business_date: '2026-09-03', voided_at: '2026-09-03T22:30:00Z',
+        grand_total: 100, total_amount: 90, currency: 'TRY',
+      }] } });
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+
+    render(<POSReports outletId="outlet-a" />);
+    const voids = (await screen.findByText('İptal edilen adisyonlar')).parentElement;
+    expect(within(voids).getByText('1')).toBeInTheDocument();
+    expect(within(voids).getByText('₺100,00')).toBeInTheDocument();
+    expect(within(voids).queryByText('₺44,00')).not.toBeInTheDocument();
+    expect(within(screen.getByText('Satış iadeleri').parentElement).getByText('₺44,00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /İptaller \(1\)/i }));
+    const details = within(await screen.findByRole('tabpanel', { name: /İptaller \(1\)/i }));
+    expect(details.getByText('₺100,00')).toBeInTheDocument();
+    expect(details.getByText('İş günü · 3 Eylül 2026')).toBeInTheDocument();
+    expect(details.getByText('İptal tarihi · 4 Eylül 2026')).toBeInTheDocument();
   });
 });
