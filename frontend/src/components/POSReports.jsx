@@ -29,6 +29,13 @@ const PAYMENT_LABEL = {
 };
 
 const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency());
+const voidDateFormatter = new Intl.DateTimeFormat('tr-TR', { dateStyle: 'long', timeZone: 'Europe/Istanbul' });
+const formatVoidDate = (row) => {
+  const timestamp = row.voided_at || row.cancelled_at || row.void_date;
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : voidDateFormatter.format(date);
+};
 const CATEGORY_LABELS = {
   food: 'Ana Yemek', appetizer: 'Başlangıç', dessert: 'Tatlı',
   beverage: 'İçecek', alcohol: 'Alkollü', unknown: 'Diğer',
@@ -153,7 +160,7 @@ const POSReports = ({ outletId }) => {
                     </Badge>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                   <Card>
                     <CardContent className="p-4 text-center">
                       <DollarSign className="w-6 h-6 mx-auto text-green-600 mb-1" />
@@ -184,13 +191,20 @@ const POSReports = ({ outletId }) => {
                   <Card>
                     <CardContent className="p-4 text-center">
                       <AlertCircle className="w-6 h-6 mx-auto text-red-600 mb-1" />
-                      <p className="text-xs text-gray-600">İptaller</p>
+                      <p className="text-xs text-gray-600">İptal edilen adisyonlar</p>
                       <p className="text-2xl font-bold text-red-600">
                         {report.void_count || 0}
                       </p>
-                      {(report.refunds || 0) > 0 && (
-                        <p className="text-xs text-red-500">{money(report.refunds, report.currency)}</p>
+                      {report.void_amount != null && report.void_count > 0 && (
+                        <p className="text-xs text-red-500">{money(report.void_amount, report.currency)}</p>
                       )}
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <CreditCard className="w-6 h-6 mx-auto text-red-600 mb-1" />
+                      <p className="text-xs text-gray-600">Satış iadeleri</p>
+                      <p className="text-2xl font-bold text-red-600">{money(report.refunds ?? 0, report.currency)}</p>
                     </CardContent>
                   </Card>
                 </div>
@@ -280,26 +294,34 @@ const POSReports = ({ outletId }) => {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {voids.map((v, idx) => (
-                      <Card key={v.id || idx}>
-                        <CardContent className="p-3 flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{v.id?.slice(0, 8) || `İşlem ${idx + 1}`}</p>
-                            <p className="text-xs text-gray-500">
-                              {v.void_reason || v.reason || 'Sebep belirtilmemiş'}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-red-600">
-                              {money(v.total_amount || v.amount, v.currency || report.currency)}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {v.void_date || v.created_at?.slice(0, 10) || ''}
-                            </p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                    {voids.map((v, idx) => {
+                      const voidDate = formatVoidDate(v);
+                      return (
+                        <Card key={v.id || idx}>
+                          <CardContent className="p-3 flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">{v.id?.slice(0, 8) || `İşlem ${idx + 1}`}</p>
+                              <p className="text-xs text-gray-500">
+                                {v.void_reason || v.reason || 'Sebep belirtilmemiş'}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-red-600">
+                                {money(v.grand_total ?? v.total_amount ?? v.amount, v.currency || report.currency)}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                İş günü · {formatBusinessDateForDisplay(v.business_date || v.transaction_date || report.report_date)}
+                              </p>
+                              {voidDate && (
+                                <p className="text-xs text-gray-500">
+                                  İptal tarihi · {voidDate}
+                                </p>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>
