@@ -79,6 +79,19 @@ def test_websocket_server_delegates_to_shared_helpers():
 
 
 @pytest.mark.asyncio
+async def test_kitchen_broadcast_only_invalidates_own_tenant(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from infra.ws_redis_adapter import ws_redis_adapter
+    from websocket_server import broadcast_kitchen_orders
+
+    publish = AsyncMock()
+    monkeypatch.setattr(ws_redis_adapter, "publish", publish)
+    await broadcast_kitchen_orders("tenantA", [{"room_number": "131", "notes": "private ticket"}])
+    publish.assert_awaited_once_with("pms:tenantA", "kitchen_orders_changed", {})
+
+
+@pytest.mark.asyncio
 async def test_room_qr_emits_to_connect_enrollment_room():
     """room_request:new / :update must reach the tenant broadcast room that
     authenticated sockets auto-join at connect — not a dead `tenant:{id}`."""

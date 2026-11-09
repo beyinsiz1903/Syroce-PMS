@@ -31,6 +31,7 @@ from core.security import (
     security,
 )
 from domains.pms.pos_extensions._idem import ensure_compound_unique, ensure_idem_index
+from domains.pms.pos_fnb_router.kitchen_locations import IN_HOUSE_STATUSES, booking_room_numbers
 from domains.pms.pos_fnb_router.kitchen_numbering import next_kitchen_order_number
 from models.enums import ChargeCategory, FolioStatus
 from models.schemas import CreatePOSTransactionRequest, FolioCharge, User
@@ -150,7 +151,9 @@ async def _next_adisyon_number(tenant_id: str, outlet_id: str | None, business_d
     return int(doc["seq"]) if doc else 1
 
 
-async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) -> None:
+async def _auto_kds_and_kot(
+    order: "POSOrder", tenant_id: str, ordered_by: str, *, booking: dict | None = None,
+) -> None:
     """On a freshly-created POS order, auto-create the KDS ticket and enqueue the
     kitchen KOT print job(s). Best-effort: a failure here must never roll back the
     already-durable order — but the gap stays visible (KDS broadcast / print_jobs
@@ -168,7 +171,13 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
     if not items:
         return
 
-    table_label = order.table_number or (f"Oda {order.booking_id}" if order.booking_id else None)
+    room_number = None
+    if not order.table_number and booking and booking.get("status") in IN_HOUSE_STATUSES:
+        numbers = await booking_room_numbers(db, tenant_id, [booking])
+        room_number = numbers.get(booking.get("id"))
+    room_service = not order.table_number and bool(booking or order.booking_id)
+    fallback_label = "Oda servisi" if room_service and not room_number else None
+    table_label = order.table_number or (f"Oda {room_number}" if room_number else fallback_label)
 
     # 1. KDS ticket (idempotent on the order id).
     try:
@@ -182,8 +191,9 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
                 "adisyon_number": order.adisyon_number,
                 "business_date": order.business_date,
                 "outlet_id": order.outlet_id,
-                "table_number": table_label,
-                "room_number": None,
+                "table_number": order.table_number,
+                "table_name": fallback_label,
+                "room_number": room_number,
                 "priority": "normal",
                 "status": "pending",
                 "station": items[0]["station"] if len(items) == 1 else "mixed",
@@ -1650,7 +1660,7 @@ async def create_pos_order(
     # Auto-create the kitchen display ticket + enqueue the KOT print job(s) only
     # for a genuinely new order (never on an idempotent replay).
     if not replay:
-        await _auto_kds_and_kot(order, tenant_id, current_user.name)
+        await _auto_kds_and_kot(order, tenant_id, current_user.name, booking=booking)
 
     return {
         "success": True,

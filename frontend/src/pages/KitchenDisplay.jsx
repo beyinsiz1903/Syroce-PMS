@@ -219,22 +219,12 @@ const KitchenDisplay = () => {
   const [loadError, setLoadError]         = useState(false);
   const [updating, setUpdating]           = useState(() => new Set());
   const notifiedRef = useRef(new Set());
-  const { isConnected } = useWebSocket('kitchen');
+  const { isConnected } = useWebSocket();
 
   /* clock tick */
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(t);
-  }, []);
-
-  /* WebSocket live push */
-  useEffect(() => {
-    const unsub = websocket.on('kitchen_orders', (payload) => {
-      if (!payload) return;
-      setOrders(normalizeKitchenOrders(payload.orders || []));
-      setLastUpdate(payload.timestamp || new Date().toISOString());
-    });
-    return () => { if (unsub) unsub(); };
   }, []);
 
   /* HTTP polling */
@@ -251,6 +241,10 @@ const KitchenDisplay = () => {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    return websocket.on('kitchen_orders_changed', () => { void loadOrders(); });
+  }, [loadOrders]);
 
   useEffect(() => {
     loadOrders();

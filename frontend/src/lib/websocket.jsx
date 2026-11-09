@@ -173,6 +173,10 @@ export class WebSocketManager {
       this.emit('guest_requests:updated', data);
     });
 
+    this.socket.on('kitchen_orders_changed', () => {
+      this.emit('kitchen_orders_changed');
+    });
+
     // Contact center incoming calls
     this.socket.on('contact_center:incoming_call', (data) => {
       this.emit('contact_center:incoming_call', data);
