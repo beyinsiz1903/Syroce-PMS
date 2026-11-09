@@ -87,6 +87,11 @@ async def phase_g_channels_and_audit(app):
             [("tenant_id", 1), ("state", 1), ("created_at", 1)],
             name="ix_exely_ari_reconciliation",
         )
+        await _raw_db["exely_ari_deliveries"].create_index(
+            [("tenant_id", 1), ("property_id", 1), ("created_at", -1), ("_id", -1)],
+            partialFilterExpression={"rate_periods": {"$exists": True}},
+            name="ix_exely_rate_receipts",
+        )
         await _raw_db["exely_scheduler_leases"].create_index(
             [("tenant_id", 1)],
             unique=True,

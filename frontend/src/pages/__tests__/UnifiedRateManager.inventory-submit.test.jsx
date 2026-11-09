@@ -10,7 +10,7 @@ vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('@/lib/dialogs', () => ({ confirmDialog }));
 vi.mock('@/components/MaybeLayout', () => ({ default: ({ children }) => children }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key, i18n: { language: 'tr' } }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 
 describe('actual rate editor inventory submission', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -70,15 +70,15 @@ describe('actual rate editor inventory submission', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('sends the saved and reviewed adult occupancy with the price through the real editor', async () => {
+  it.each([true, false])('sends the reviewed adult occupancy and shows delivery or no change (delivered=%s)', async delivered => {
     const implementation = axios.get.getMockImplementation();
     axios.get.mockImplementation(async (url, ...args) => {
       const result = await implementation(url, ...args);
       if (url.includes('/grid?')) result.data.occupancy_pricing_rules = { STD: { base_occupancy: 3, base_occupancy_explicit: true } };
       return result;
     });
-    axios.post.mockResolvedValue({ data: { saved: 1, provider: 'exely', provider_verified: true,
-      provider_delivery_state: 'CONFIRMED', price_occupancies: { STD: 3 } } });
+    axios.post.mockResolvedValue({ data: { saved: 1, provider: 'exely', provider_verified: delivered,
+      provider_delivery_state: delivered ? 'CONFIRMED' : 'UNCHANGED', price_occupancies: { STD: 3 } } });
     render(<MemoryRouter><UnifiedRateManager embedded /></MemoryRouter>);
     fireEvent.click(await screen.findByTestId('room-type-check-STD'));
     fireEvent.click(screen.getByTestId('field-rate'));
@@ -89,7 +89,10 @@ describe('actual rate editor inventory submission', () => {
     fireEvent.click(screen.getByTestId('rate-confirm-publish'));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
     expect(axios.post.mock.calls[0][1].per_room_values[0]).toMatchObject({ rate: 100, rate_number_of_guests: 3 });
-    expect(await screen.findByTestId('rate-delivery-receipt')).toHaveTextContent('3 yetişkin · ana yatak');
+    const receipt = await screen.findByTestId('rate-delivery-receipt');
+    expect(receipt).toHaveTextContent('3 yetişkin · ana yatak');
+    expect(receipt).toHaveTextContent(delivered ? 'Teslim edildi' : 'Fiyatlar güncel');
+    if (!delivered) expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('Yeni gönderim gerekmedi'), expect.anything());
   });
 
   it('submits two room types and 731 nights in one existing UI request, preserving manual versus automatic stock', async () => {

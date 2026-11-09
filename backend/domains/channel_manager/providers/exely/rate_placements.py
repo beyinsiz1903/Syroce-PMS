@@ -86,7 +86,7 @@ def compile_guest_prices(rule, base_rate, currency):
     return sorted(result, key=lambda item: (item["kind"], item.get("number_of_guests", 0), item.get("min_age", -1)))
 
 
-def validate_guest_prices(prices):
+def validate_guest_prices(prices, *, require_adult=True):
     """Strict wire payload validation, also used before acquiring/send of ARI."""
     if not isinstance(prices, list) or not 1 <= len(prices) <= 101:
         raise ValueError("Exely yerleşim fiyat listesi geçersiz")
@@ -118,7 +118,7 @@ def validate_guest_prices(prices):
         if set(price) != allowed or key in seen:
             raise ValueError("Exely yerleşim fiyatında beklenmeyen veya yinelenen alan")
         seen.add(key)
-    if not adult_main:
+    if require_adult and not adult_main:
         raise ValueError("Exely yetişkin ana yatak fiyatı gerekli")
 
 

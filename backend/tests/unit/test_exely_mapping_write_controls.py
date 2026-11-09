@@ -5,6 +5,7 @@ import pytest
 
 from domains.channel_manager import unified_rate_manager_router as unified
 from domains.channel_manager.ari import outbound_service
+from domains.channel_manager.providers.exely.ari_delivery import ExelyARIDeliveryResult
 from domains.channel_manager.providers.exely.exely_router import (
     ExelyConnectionSetup,
     ExelyRoomMapping,
@@ -216,14 +217,7 @@ async def test_suite_mapping_can_disable_availability_without_disabling_rate(mon
 
     with patch(
         "domains.channel_manager.providers.exely.ari_delivery.deliver_exely_ari",
-        new=AsyncMock(
-            return_value=SimpleNamespace(
-                success=True,
-                provider_write_count=1,
-                error_code="",
-                state="confirmed",
-            )
-        ),
+        new=AsyncMock(return_value=ExelyARIDeliveryResult(True, "confirmed", "", "SUCCESS", 1, "synthetic")),
     ) as deliver:
         result = await unified._push_to_exely(
             "tenant-1",
@@ -286,7 +280,7 @@ async def test_explicit_mapping_rate_plan_is_usable_when_discovery_cache_is_stal
     }
     with patch(
         "domains.channel_manager.providers.exely.ari_delivery.deliver_exely_ari",
-        new=AsyncMock(return_value=SimpleNamespace(success=True, provider_write_count=1, error_code="", state="confirmed")),
+        new=AsyncMock(return_value=ExelyARIDeliveryResult(True, "confirmed", "", "SUCCESS", 1, "synthetic")),
     ) as deliver:
         result = await unified._push_to_exely(
             "tenant-1", connection, request, [("5003299", "10009740")], {}, {"rate"}, None
@@ -383,7 +377,7 @@ async def test_unified_exely_writes_use_complete_pms_api_pairs_and_preserve_suit
         for i, m in enumerate(mappings)}
     with patch(
         "domains.channel_manager.providers.exely.ari_delivery.deliver_exely_ari",
-        new=AsyncMock(return_value=SimpleNamespace(success=True, provider_write_count=1, error_code="", state="confirmed")),
+        new=AsyncMock(return_value=ExelyARIDeliveryResult(True, "confirmed", "", "SUCCESS", 1, "synthetic")),
     ) as deliver:
         result = await unified._push_to_exely(
             "tenant-1", connection, request, pairs, per_room_values, {"availability", "rate"}, None,

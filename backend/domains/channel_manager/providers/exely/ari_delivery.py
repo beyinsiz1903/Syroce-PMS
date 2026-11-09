@@ -15,8 +15,10 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
+from shared_kernel.idempotency import claim_idempotency, release_idempotency
 
 from .production_safety import ari_write_block_reason
+from .rate_delta import UnconfirmedRateDelivery, changed_rate_messages, rate_periods
 
 logger = logging.getLogger("exely.ari_delivery")
 
@@ -57,6 +59,7 @@ class ExelyARIDeliveryResult:
     provider_write_count: int
     operation_identity: str
     warning_codes: tuple[str, ...] = ()
+    message_count: int | None = None
 
     def safe_metadata(self) -> dict[str, Any]:
         result = {
@@ -95,6 +98,7 @@ async def deliver_exely_ari(
     provider=None,
     write_enabled: bool | None = None,
     dry_run: bool = False,
+    changed_prices_only: bool = False,
 ) -> ExelyARIDeliveryResult:
     """Persist one operation and send it at most once without mutation retry."""
     normalized = {**update, "tenant_id": tenant_id}
@@ -121,6 +125,63 @@ async def deliver_exely_ari(
     if not write_enabled:
         return _result(False, STATE_BLOCKED, "EXELY_ARI_WRITE_DISABLED", "NOT_SENT", 0, identity)
 
+    if operation not in {"rate", "rate_batch"}:
+        return await _deliver(operation, normalized, identity, provider)
+
+    # Serialize price comparison and write across workers for this property.
+    # The Mongo claim is recovered by TTL after a crash. A durable sending
+    # receipt still prevents a delta over any unresolved placement.
+    try:
+        claim = await claim_idempotency(
+            db, tenant_id=tenant_id, scope="exely-ari-rate-write", idempotency_key=normalized["property_id"],
+        )
+    except Exception:
+        return _result(False, STATE_BLOCKED, "EXELY_ARI_DELIVERY_STORE_UNAVAILABLE", "NOT_SENT", 0, identity)
+    if claim["status"] != "acquired":
+        return _result(False, STATE_BLOCKED, "EXELY_ARI_RATE_WRITE_IN_PROGRESS", "NOT_SENT", 0, identity)
+    try:
+        if changed_prices_only and operation == "rate_batch":
+            try:
+                messages = await _changed_rate_messages(normalized)
+            except UnconfirmedRateDelivery:
+                return _result(False, STATE_RECONCILIATION_PENDING, "EXELY_ARI_WRITE_OUTCOME_UNKNOWN", "WRITE_OUTCOME_UNKNOWN", 0, identity)
+            except Exception:
+                return _result(False, STATE_BLOCKED, "EXELY_ARI_DELIVERY_STORE_UNAVAILABLE", "NOT_SENT", 0, identity)
+            if not messages:
+                return _result(True, "unchanged", "", "NOT_SENT", 0, identity, message_count=0)
+            if len(messages) > 200:
+                return _result(False, STATE_BLOCKED, "EXELY_ARI_RATE_DELTA_PERIOD_LIMIT", "NOT_SENT", 0, identity)
+            normalized["value"] = messages
+        result = await _deliver(operation, normalized, identity, provider)
+        if operation == "rate_batch" and result.success:
+            return _result(True, result.state, "", result.provider_status_class, result.provider_write_count,
+                           identity, result.warning_codes, message_count=len(normalized["value"]))
+        return result
+    finally:
+        try:
+            await release_idempotency(db, lock_id=claim["lock_id"])
+        except Exception:
+            logger.warning("Exely rate write claim release failed")
+
+
+async def _changed_rate_messages(update):
+    messages = update["value"]
+    rooms = sorted({row["room_type_code"] for row in messages})
+    plans = sorted({row["rate_plan_code"] for row in messages})
+    cursor = db[COLL_EXELY_ARI_DELIVERIES].find({
+        "tenant_id": update["tenant_id"],
+        "property_id": update["property_id"],
+        "state": {"$in": [STATE_CONFIRMED, STATE_WARNING_SUCCESS, STATE_AMBIGUOUS, STATE_RECONCILIATION_PENDING, "sending"]},
+        "rate_periods": {"$exists": True, "$elemMatch": {
+            "room_type_code": {"$in": rooms}, "rate_plan_code": {"$in": plans},
+            "start_date": {"$lte": max(row["end_date"] for row in messages)},
+            "end_date": {"$gte": min(row["start_date"] for row in messages)},
+        }},
+    }, {"state": 1, "rate_periods": 1}).sort([("created_at", -1), ("_id", -1)])
+    return changed_rate_messages(messages, [receipt async for receipt in cursor])
+
+
+async def _deliver(operation, normalized, identity, provider):
     owner_token = str(uuid.uuid4())
     prepared, existing = await _prepare_delivery(identity, owner_token, operation, normalized)
     if not prepared:
@@ -144,7 +205,7 @@ async def deliver_exely_ari(
         try:
             from .factory import get_exely_provider
 
-            provider, _connection = await get_exely_provider(tenant_id)
+            provider, _connection = await get_exely_provider(normalized["tenant_id"])
         except Exception:
             await _finish(identity, owner_token, STATE_BLOCKED, "EXELY_ARI_PROVIDER_UNAVAILABLE", "NOT_SENT")
             return _result(False, STATE_BLOCKED, "EXELY_ARI_PROVIDER_UNAVAILABLE", "NOT_SENT", 0, identity)
@@ -215,7 +276,7 @@ async def reconcile_pending_exely_ari(tenant_id: str, *, limit: int = 50) -> dic
     count = await db[COLL_EXELY_ARI_DELIVERIES].count_documents(
         {
             "tenant_id": tenant_id,
-            "state": {"$in": [STATE_PREPARED, STATE_AMBIGUOUS, STATE_RECONCILIATION_PENDING]},
+            "state": {"$in": [STATE_PREPARED, STATE_AMBIGUOUS, STATE_RECONCILIATION_PENDING, "sending"]},
         },
         limit=limit,
     )
@@ -262,7 +323,7 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
                     from .rate_placements import validate_guest_prices
 
                     try:
-                        validate_guest_prices(message["guest_prices"])
+                        validate_guest_prices(message["guest_prices"], require_adult=False)
                     except ValueError:
                         return "EXELY_ARI_PLACEMENTS_INVALID"
                 guests = message.get("number_of_guests")
@@ -373,6 +434,8 @@ async def _prepare_delivery(identity: str, owner: str, operation: str, update: d
         "created_at": now,
         "updated_at": now,
     }
+    if operation in {"rate", "rate_batch"}:
+        document["rate_periods"] = rate_periods(operation, update)
     try:
         await db[COLL_EXELY_ARI_DELIVERIES].insert_one(document)
         return True, None
@@ -454,6 +517,8 @@ def _result(
     write_count: int,
     identity: str,
     warning_codes: tuple[str, ...] = (),
+    *,
+    message_count: int | None = None,
 ) -> ExelyARIDeliveryResult:
     return ExelyARIDeliveryResult(
         success=success,
@@ -463,4 +528,5 @@ def _result(
         provider_write_count=write_count,
         operation_identity=identity,
         warning_codes=warning_codes,
+        message_count=message_count,
     )
