@@ -7,6 +7,8 @@ from core.database import _raw_db
 
 logger = logging.getLogger(__name__)
 
+EXELY_PULL_SUPERVISOR_MAX_TICK_SECONDS = 60
+
 
 async def _start_exely_pull_supervisor(app):
     """Keep an idle supervisor ready for tenants that opt in after startup.
@@ -25,7 +27,11 @@ async def _start_exely_pull_supervisor(app):
 
     from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 
-    interval = int(os.getenv("SYROCE_EXELY_PULL_INTERVAL", "180"))
+    # A 180-second supervisor tick makes a five-minute tenant lease due
+    # only on the sixth minute. Cap the scan interval, not the tenant lease:
+    # the distributed lock still decides when the next provider read can run.
+    configured_interval = int(os.getenv("SYROCE_EXELY_PULL_INTERVAL", str(EXELY_PULL_SUPERVISOR_MAX_TICK_SECONDS)))
+    interval = max(1, min(configured_interval, EXELY_PULL_SUPERVISOR_MAX_TICK_SECONDS))
     started = await exely_pull_scheduler.start(interval_seconds=interval)
     if started:
         app.state.exely_pull_scheduler = exely_pull_scheduler

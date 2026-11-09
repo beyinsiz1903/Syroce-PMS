@@ -24,7 +24,7 @@ def startup(monkeypatch):
 async def test_supervisor_starts_with_no_enabled_tenants_at_boot(startup):
     app, scheduler, connections = startup
     assert await g_channels._start_exely_pull_supervisor(app) is True
-    scheduler.start.assert_awaited_once_with(interval_seconds=180)
+    scheduler.start.assert_awaited_once_with(interval_seconds=60)
     connections.find_one.assert_not_awaited()
     assert app.state.exely_pull_scheduler is scheduler
 
@@ -38,11 +38,14 @@ async def test_global_kill_switch_still_prevents_supervisor_start(startup, monke
     assert not hasattr(app.state, "exely_pull_scheduler")
 
 
-async def test_supervisor_respects_configured_tick_not_tenant_poll_interval(startup, monkeypatch):
+@pytest.mark.parametrize("configured,expected_tick", [("30", 30), ("180", 60), ("240", 60)])
+async def test_supervisor_can_pick_up_a_five_minute_tenant_lease(startup, monkeypatch, configured, expected_tick):
     app, scheduler, _ = startup
-    monkeypatch.setenv("SYROCE_EXELY_PULL_INTERVAL", "240")
+    monkeypatch.setenv("SYROCE_EXELY_PULL_INTERVAL", configured)
     assert await g_channels._start_exely_pull_supervisor(app) is True
-    scheduler.start.assert_awaited_once_with(interval_seconds=240)
+    scheduler.start.assert_awaited_once_with(interval_seconds=expected_tick)
+    tick = scheduler.start.await_args.kwargs["interval_seconds"]
+    assert next(t for t in range(tick, 601, tick) if t >= 300) == 300
 
 
 async def test_failed_start_is_not_attached_as_running(startup):
