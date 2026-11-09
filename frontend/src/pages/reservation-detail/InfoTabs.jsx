@@ -305,7 +305,8 @@ export function GeneralInfoTab({
               {Number(summary.additional_charge_total ?? summary.total_extra) > 0 && <InfoLine label="Ekstra bedeli" value={fmtCurrency(summary.additional_charge_total ?? summary.total_extra, currency)} />}
               {summary.gross_total != null && <InfoLine label="Genel toplam (indirim öncesi)" value={fmtCurrency(summary.gross_total, currency)} />}
               {Number(summary.total_discounts) > 0 && <InfoLine label="İkram / indirim" value={`−${fmtCurrency(summary.total_discounts, currency)}`} />}
-              <InfoLine label="Toplam tahsilat" value={fmtCurrency(summary.total_payments, currency)} />
+              <InfoLine label="Toplam tahsilat" value={fmtCurrency(summary.cash_collection_total ?? summary.total_payments, currency)} />
+              {Number(summary.city_ledger_transfer_total) > 0 && <InfoLine label="Cariye aktarılan (tahsilat değil)" value={fmtCurrency(summary.city_ledger_transfer_total, currency)} />}
               <InfoLine label={paymentOverview.label} value={<span className={`font-semibold ${paymentTone}`}>{paymentOverview.displayAmount == null ? '—' : fmtCurrency(paymentOverview.displayAmount, currency)}</span>} />
               <InfoLine label="Son tahsilat yöntemi" value={lastPayment
                 ? PAYMENT_METHOD_LABELS[paymentMethod(lastPayment)] || paymentMethod(lastPayment)

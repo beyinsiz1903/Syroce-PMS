@@ -688,8 +688,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   )}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">Toplam tahsilat</span>
-                    <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.total_payments, currency)}</span>
+                    <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.cash_collection_total ?? summary?.total_payments, currency)}</span>
                   </div>
+                  {Number(summary?.city_ledger_transfer_total) > 0 && (
+                    <div className="flex justify-between gap-2 text-xs">
+                      <span className="text-slate-500">Cariye aktarılan (tahsilat değil)</span>
+                      <span className="shrink-0 font-semibold text-slate-800">{fmtCurrency(summary.city_ledger_transfer_total, currency)}</span>
+                    </div>
+                  )}
                   {prepaymentTotal > 0 && (
                     <div className="rounded bg-emerald-100/70 px-1.5 py-1 text-xs" data-testid="prepayment-total">
                       <div className="flex items-start justify-between gap-3"><span className="font-medium text-emerald-800">Ön ödeme</span><span className="shrink-0 whitespace-nowrap font-semibold text-emerald-700">{fmtCurrency(prepaymentTotal, currency)}</span></div>

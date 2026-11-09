@@ -105,6 +105,22 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Ön ödeme');
   });
 
+  it.each([[3500, '3.500 TL'], [0, '0 TL']])('separates receipts (%s) from a city ledger transfer in both summaries', async (receipts, displayedReceipts) => {
+    get.mockResolvedValue({ data: { ...detail, summary: {
+      ...detail.summary, total_payments: receipts + 13508,
+      cash_collection_total: receipts, city_ledger_transfer_total: 13508,
+    } } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    await screen.findByTestId('financial-summary-card');
+    const receiptRows = screen.getAllByText('Toplam tahsilat');
+    expect(receiptRows).toHaveLength(2);
+    for (const label of receiptRows) expect(label.parentElement).toHaveTextContent(displayedReceipts);
+    const transferRows = screen.getAllByText('Cariye aktarılan (tahsilat değil)');
+    expect(transferRows).toHaveLength(2);
+    for (const label of transferRows) expect(label.parentElement).toHaveTextContent('13.508 TL');
+  });
+
   it('keeps the redesigned workspace shortcuts connected to the existing operation tabs', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
