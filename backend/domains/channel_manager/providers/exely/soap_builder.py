@@ -622,7 +622,7 @@ def build_rate_amount_batch_rq(
 def _append_guest_prices(rate, prices, currency):
     from .rate_placements import money, validate_guest_prices
 
-    validate_guest_prices(prices)
+    validate_guest_prices(prices, require_adult=False)
     containers = {}
     # OTA ordering: all main-bed rows before additional-bed rows.
     for additional in (False, True):

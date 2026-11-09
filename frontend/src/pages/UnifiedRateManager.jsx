@@ -64,6 +64,9 @@ export const getUnifiedRateDeliveryFeedback = data => {
   if (data?.provider_verified === true) {
     return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve kanal sağlayıcısına teslimat doğrulandı.` };
   }
+  if (data?.provider_delivery_state === 'UNCHANGED') {
+    return { level: 'info', message: 'Seçili fiyatlar Exely’deki son onaylı fiyatlarla aynı. Yeni gönderim gerekmedi.' };
+  }
   if (data?.provider_delivery_state === 'SCHEDULED' || data?.provider_delivery_state === 'QUEUED' || data?.provider_delivery_state === 'PENDING') {
     return { level: 'warning', message: `${data.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat henüz doğrulanmadı.` };
   }
@@ -71,6 +74,12 @@ export const getUnifiedRateDeliveryFeedback = data => {
     return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat kısmen tamamlandı. İşlem günlüğünü kontrol edin.` };
   }
   const providerError = data?.provider_error_codes?.[0];
+  if (providerError === 'EXELY_ARI_RATE_DELTA_PERIOD_LIMIT') {
+    return { level: 'error', message: 'Fiyatlar PMS’ye kaydedildi. Exely’ye iletmek için daha kısa bir tarih aralığı seçin.' };
+  }
+  if (providerError === 'EXELY_ARI_RATE_WRITE_IN_PROGRESS') {
+    return { level: 'warning', message: 'Fiyatlar PMS’ye kaydedildi. Exely’de devam eden fiyat gönderimi tamamlanınca tekrar yayınlayın.' };
+  }
   if (providerError) {
     return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat başarısız: ${providerError}` };
   }

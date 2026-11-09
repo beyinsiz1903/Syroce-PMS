@@ -11,9 +11,11 @@ from lxml import etree
 
 from domains.channel_manager import unified_rate_manager_router as rates
 from domains.channel_manager.providers.exely import ari_delivery
+from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
 from domains.channel_manager.providers.exely.batch_policy import category_change_counts, plan_rate_envelopes, price_upload_allowed, single_envelope_error
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.provider_quota import QuotaDecision
+from domains.channel_manager.providers.exely.rate_delta import changed_rate_messages
 from domains.channel_manager.providers.exely.response_parser import parse_hotel_avail_rs
 
 pytestmark = pytest.mark.exely_failure_stress
@@ -169,7 +171,8 @@ async def test_editor_to_real_quota_checked_provider_builds_complete_price_xmls(
         b'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
         b'<OTA_HotelRateAmountNotifRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/>'
         b'</OTA_HotelRateAmountNotifRS></s:Body></s:Envelope>'))
-    async def deliver(_tenant, operation, payload):
+    async def deliver(_tenant, operation, payload, *, changed_prices_only=False):
+        assert changed_prices_only
         result = await provider.push_ari_operation(operation=operation, room_type_code="", rate_plan_code="",
             start_date="", end_date="", value=payload["value"])
         return ari_delivery.ExelyARIDeliveryResult(result.success, "confirmed", "", "SUCCESS", 1, "synthetic")
@@ -196,6 +199,93 @@ async def test_selected_weekdays_remain_one_envelope_without_filling_excluded_da
     rows = editor.send.await_args.args[2]["value"]
     assert len(rows) < 200
     assert all(date.fromisoformat(row["start_date"]).isoweekday() == 1 for row in rows)
+
+
+async def test_editor_sends_only_changed_single_adult_rate_and_retains_full_calendar(editor, monkeypatch):
+    monkeypatch.setattr(ari_delivery, "ari_write_block_reason", lambda: "")
+    monkeypatch.setattr("domains.channel_manager.providers.exely.provider.ari_write_block_reason", lambda: "")
+    monkeypatch.setattr(ari_delivery, "claim_idempotency", AsyncMock(return_value={"status": "acquired", "lock_id": "lock"}))
+    monkeypatch.setattr(ari_delivery, "release_idempotency", AsyncMock())
+    receipts = []
+
+    async def prepare(identity, owner, operation, payload):
+        assert operation == "rate_batch"
+        receipts.insert(0, {"state": "prepared", "rate_periods": ari_delivery.rate_periods(operation, payload)})
+        return True, None
+
+    async def finish(identity, owner, state, *args, **kwargs):
+        receipts[0]["state"] = state
+        return True
+
+    async def lookup(payload):
+        return changed_rate_messages(payload["value"], [row for row in receipts if row["state"] in {"confirmed", "ambiguous"}])
+
+    monkeypatch.setattr(ari_delivery, "_prepare_delivery", prepare)
+    monkeypatch.setattr(ari_delivery, "_mark_sending", AsyncMock(return_value=True))
+    monkeypatch.setattr(ari_delivery, "_finish", finish)
+    monkeypatch.setattr(ari_delivery, "_changed_rate_messages", lookup)
+    quota = SimpleNamespace(reserve=AsyncMock(return_value=QuotaDecision(True, "QUOTA_RESERVED")))
+    provider = ExelyProvider(username="synthetic", password="synthetic", hotel_code="synthetic-property",
+                             connection_id="offline-price-delta", quota_guard=quota)
+    success = (b'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+               b'<OTA_HotelRateAmountNotifRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/>'
+               b'</OTA_HotelRateAmountNotifRS></s:Body></s:Envelope>')
+    provider._transport.send_soap = AsyncMock(return_value=success)
+
+    async def deliver(tenant, operation, payload, **kwargs):
+        return await deliver_exely_ari(tenant, operation, payload, provider=provider, write_enabled=True, **kwargs)
+
+    editor.send.side_effect = deliver
+
+    async def edit(amount, start="2026-11-15", end="2026-11-18"):
+        editor.db.pricing_settings = editor.collection([{
+            "room_type_code": "STD", "pricing_type": "per_person", "base_occupancy": 2, "currency": "USD",
+            "exely_placements_reviewed": True,
+            "exely_price_placements": [{"kind": "adult_main", "number_of_guests": 1, "price_mode": "fixed", "value": amount}],
+        }])
+        return await publish(per_room_values=[{
+            "room_type_code": "panel-STD", "rate_plan_codes": ["panel-BASE"], "rate": 100, "rate_number_of_guests": 2,
+            "rate_guest_prices": [{"kind": "adult_main", "number_of_guests": 1, "amount": amount},
+                                  {"kind": "adult_main", "number_of_guests": 2, "amount": 100}],
+        }], start_date=start, end_date=end)
+
+    def wire_prices():
+        xml = etree.fromstring(provider._transport.send_soap.await_args.args[0].encode())
+        return [(row.get("NumberOfGuests"), row.get("AmountAfterTax"), row.get("CurrencyCode"))
+                for row in xml.findall(".//ota:BaseByGuestAmt", NS)]
+
+    assert (await edit(80, "2026-11-06", "2026-11-20"))["provider_verified"]
+    assert wire_prices() == [("1", "80.00", "USD"), ("2", "100.00", "USD")]
+    changed = await edit(85)
+    assert changed["provider_verified"] and changed["saved"] == 4
+    assert wire_prices() == [("1", "85.00", "USD")]
+    assert quota.reserve.await_args.kwargs["change_count"] == 4
+    assert [row["amount"] for row in editor.save.await_args.args[0][0]._doc["$set"]["rate_guest_prices"]] == [85, 100]
+    assert [row["amount"] for row in changed["price_guest_prices"]["panel-STD"]] == [85, 100]
+    unchanged = await edit(85)
+    assert unchanged["provider_delivery_state"] == "UNCHANGED"
+    assert unchanged["provider_write_count"] == 0
+    assert provider._transport.send_soap.await_count == 2
+
+    provider._transport.send_soap.side_effect = TimeoutError
+    unknown = await edit(90)
+    assert unknown["provider_delivery_state"] == "UNKNOWN"
+    assert (await edit(90))["provider_delivery_state"] == "UNKNOWN"
+    assert provider._transport.send_soap.await_count == 3
+
+
+def test_price_history_splits_at_known_date_boundaries_and_respects_currency_and_guest_type():
+    adult = {"kind": "adult_main", "number_of_guests": 2, "amount": 100}
+    child = {"kind": "child_without_bed", "min_age": 0, "max_age": 7, "amount": 0}
+    current = {**message(start="2026-11-15", end="2026-11-18"), "guest_prices": [adult, child]}
+    known = [{"state": "confirmed", "rate_periods": [{**current, "start_date": "2026-11-16", "end_date": "2026-11-17",
+               "guest_prices": [adult, {**child, "amount": 15}]}]}]
+    rows = changed_rate_messages([current], known)
+    assert [(row["start_date"], row["end_date"], row["guest_prices"]) for row in rows] == [
+        ("2026-11-15", "2026-11-15", [adult, child]), ("2026-11-16", "2026-11-17", [child]),
+        ("2026-11-18", "2026-11-18", [adult, child]),
+    ]
+    assert changed_rate_messages([{**current, "currency": "EUR"}], known)[0]["guest_prices"] == [adult, child]
 
 
 def test_more_than_200_periods_is_not_automatically_split():

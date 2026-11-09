@@ -429,7 +429,7 @@ def _provider_delivery_summary(results: list[dict]) -> dict:
     if not pending:
         return {
             "provider_verified": False,
-            "provider_delivery_state": "NOT_SENT",
+            "provider_delivery_state": "UNCHANGED" if results and all(result["delivery_state"] == "UNCHANGED" for result in results) else "NOT_SENT",
             "provider_write_count": 0,
             "provider_error_codes": errors,
         }
@@ -2009,8 +2009,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     confirmed_messages = 0
     confirmed_writes = 0
     confirmed_batches = 0
+    unchanged_batches = 0
     outcome_unknown = False
-    requested_messages = sum(len(messages) for _operation, messages in batches)
     for index, (operation, messages) in enumerate(batches):
         if messages:
             if index:
@@ -2024,6 +2024,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                         "value": messages,
                         "operation_identity": f"unified-rate-manager:{resend_token}:{operation}:{index}",
                     },
+                    **({"changed_prices_only": True} if operation == "rate_batch" else {}),
                 )
             except Exception:
                 # Preserve earlier confirmations, never retry an unknown write
@@ -2031,8 +2032,10 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 failures.append("EXELY_ARI_WRITE_OUTCOME_UNKNOWN")
                 outcome_unknown = True
                 break
-            if result.success:
-                confirmed_messages += len(messages)
+            if result.state == "unchanged":
+                unchanged_batches += 1
+            elif result.success:
+                confirmed_messages += result.message_count if result.message_count is not None else len(messages)
                 confirmed_writes += result.provider_write_count
                 confirmed_batches += 1
             else:
@@ -2049,9 +2052,11 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 break
 
     task_count = confirmed_messages
-    provider_verified = requested_messages > 0 and confirmed_messages == requested_messages and not failures
+    provider_verified = confirmed_batches > 0 and confirmed_batches + unchanged_batches == len(batches) and not failures
     if provider_verified:
         delivery_state = "CONFIRMED"
+    elif unchanged_batches and unchanged_batches == len(batches) and not failures:
+        delivery_state = "UNCHANGED"
     elif confirmed_messages > 0:
         delivery_state = "PARTIAL"
     elif outcome_unknown:
