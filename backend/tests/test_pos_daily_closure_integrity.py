@@ -1,6 +1,7 @@
 """Cent-exact settlement, refund, replay and transactional audit contract."""
 import asyncio
 from copy import deepcopy
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -113,6 +114,40 @@ async def test_historical_requires_real_completed_night_audit(db, monkeypatch):
     result = await router.create_pos_closure(data, current_user=user, _perm=True)
     assert result['is_historical_snapshot'] and result['closure_date'] == '2026-10-18'
     assert (await db.tenant_settings.find_one({'tenant_id': 't'}))['business_date'] == '2026-10-19'
+
+
+@pytest.mark.asyncio
+async def test_zero_activity_day_seals_once_without_inventing_payments(db, monkeypatch):
+    user = await seed(db, monkeypatch)
+    await db.pos_transactions.delete_one({'id': 's'})
+    await db.night_audit_runs.insert_one(
+        {'tenant_id': 't', 'business_date': '2026-10-18', 'status': 'completed', 'dry_run': False}
+    )
+    await db.tenant_settings.update_one({'tenant_id': 't'}, {'$set': {'business_date': '2026-10-19'}})
+    reviewed = await router.get_pos_closure_preview(
+        business_date=date(2026, 10, 18), current_user=user,
+    )
+    assert reviewed['transaction_count'] == 0
+    assert reviewed['source_manifest'] == []
+    assert reviewed['totals_by_currency'] == {}
+    data = router.POSClosureRequest(
+        business_date='2026-10-18', expected_preview_hash=reviewed['preview_hash'], reason='Kaynakları inceledim',
+    )
+    await db.pos_orders.insert_one({'id': 'open', 'tenant_id': 't', 'business_date': '2026-10-18', 'status': 'open'})
+    with pytest.raises(HTTPException, match='açık adisyonlarını'):
+        await router.get_pos_closure_preview(business_date=date(2026, 10, 18), current_user=user)
+    with pytest.raises(HTTPException, match='açık adisyonlarını'):
+        await router.create_pos_closure(data, current_user=user, _perm=True)
+    await db.pos_orders.delete_one({'id': 'open'})
+
+    first = await router.create_pos_closure(data, current_user=user, _perm=True)
+    repeat = await router.create_pos_closure(data, current_user=user, _perm=True)
+    assert first['transaction_count'] == 0
+    assert first['is_historical_snapshot'] is True
+    assert repeat['replayed'] is True and repeat['id'] == first['id']
+    assert await db.pos_transactions.count_documents({}) == 0
+    assert await db.pos_closures.count_documents({}) == 1
+    assert await db.audit_logs.count_documents({'action': 'pos.daily_closure'}) == 1
 
 
 @pytest.mark.asyncio
