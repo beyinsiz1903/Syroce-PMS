@@ -540,6 +540,8 @@ async def create_appointment(
                 if not await _check_conflict(tenant_id, therapist_id=t["id"], room_id=None, start=starts, end=ends):
                     therapist_id = t["id"]
                     break
+        if not therapist_id:
+            raise HTTPException(409, "Uygun terapist bulunamadı. Başka bir saat seçin.")
     if not room_id:
         req_type = service.get("requires_room_type")
         async for r in db.spa_rooms.find({"tenant_id": tenant_id, "active": True}):
@@ -548,6 +550,8 @@ async def create_appointment(
             if not await _check_conflict(tenant_id, therapist_id=None, room_id=r["id"], start=starts, end=ends):
                 room_id = r["id"]
                 break
+        if not room_id:
+            raise HTTPException(409, "Uygun oda bulunamadı. Başka bir saat seçin.")
 
     appt = {
         "id": str(uuid.uuid4()),

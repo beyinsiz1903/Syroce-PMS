@@ -38,6 +38,7 @@ describe('mobile front desk reservations', () => {
       data: {
         '/pms/bookings': [reservation],
         '/frontdesk/business-day': businessDay,
+        '/unified/in-house': { in_house: [reservation], count: 28 },
         '/bookings/arrival-1/available-rooms': {
           available_rooms: [
             { id: 'r1', room_number: '101', room_type: 'Standard', is_same_type: true, floor: 1 },
@@ -78,7 +79,7 @@ describe('mobile front desk reservations', () => {
     renderFrontDesk();
     expect(await screen.findByText('PMS iş günü · 26.10.2026')).toBeVisible();
     expect(screen.getByText('İŞ GÜNÜ ÇIKIŞ').nextElementSibling).toHaveTextContent('6');
-    expect(screen.getByText('KONAKLAYANLAR').nextElementSibling).toHaveTextContent('25');
+    expect(screen.getByText('KONAKLAYANLAR').nextElementSibling).toHaveTextContent(/^28$/);
     expect(screen.getByText('BOŞ ODALAR').nextElementSibling).toHaveTextContent('3');
 
     fireEvent.click(screen.getByRole('button', { name: 'Check-Out' }));
@@ -97,6 +98,16 @@ describe('mobile front desk reservations', () => {
     expect(screen.getByText('İŞ GÜNÜ GELİŞ').nextElementSibling).toHaveTextContent('—');
     expect(screen.getByRole('button', { name: 'Check-In' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Walk-In' })).toBeEnabled();
+  });
+
+  it('does not substitute the worknight count when the current guest count fails', async () => {
+    axios.get.mockImplementation(async (path) => {
+      if (path === '/unified/in-house') throw new Error('Unavailable');
+      return { data: path === '/frontdesk/business-day' ? businessDay : {} };
+    });
+    renderFrontDesk();
+    expect(await screen.findByText('PMS iş günü · 26.10.2026')).toBeVisible();
+    expect(screen.getByText('KONAKLAYANLAR').nextElementSibling).toHaveTextContent('—');
   });
 
   it('assigns a same-type room through the regular reservation update without changing the price', async () => {

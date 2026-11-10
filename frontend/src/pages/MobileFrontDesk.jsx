@@ -43,7 +43,7 @@ const MobileFrontDesk = ({ user }) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [businessDay, setBusinessDay] = useState(null);
-  const [inHouse, setInHouse] = useState([]);
+  const [inHouse, setInHouse] = useState(null);
   const [bookingPicker, setBookingPicker] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reservationsModalOpen, setReservationsModalOpen] = useState(false);
@@ -106,7 +106,7 @@ const MobileFrontDesk = ({ user }) => {
       
       const snapshot = businessDayRes?.data;
       setBusinessDay(snapshot?.business_date ? snapshot : null);
-      setInHouse(inHouseRes?.data?.in_house ?? null);
+      setInHouse(inHouseRes?.data ?? null);
       setAllRooms(roomsRes?.data?.rooms ?? []);
       if (!roomsRes) toast.error('Oda durumları yüklenemedi');
     } catch (error) {
@@ -523,7 +523,7 @@ const MobileFrontDesk = ({ user }) => {
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-cyan-600 hover:bg-cyan-700 text-white p-1"
             onClick={() => {
-              if (inHouse) chooseBooking('Kart basılacak rezervasyonu seçin', inHouse, openKeycardModal);
+              if (Array.isArray(inHouse?.in_house)) chooseBooking('Kart basılacak rezervasyonu seçin', inHouse.in_house, openKeycardModal);
               else toast.error('Konaklayan misafirler yüklenemedi. Yenileyip tekrar deneyin.');
             }}
           >
@@ -563,7 +563,7 @@ const MobileFrontDesk = ({ user }) => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-green-600 font-medium">KONAKLAYANLAR</p>
-                  <p className="text-3xl font-bold text-green-700">{businessDay?.in_house_stays ?? '—'}</p>
+                  <p className="text-3xl font-bold text-green-700">{inHouse?.count ?? '—'}</p>
                 </div>
                 <Users className="w-10 h-10 text-green-300" />
               </div>
