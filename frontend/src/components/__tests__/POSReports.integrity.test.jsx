@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 
@@ -19,6 +19,7 @@ vi.mock('sonner', () => ({
 describe('POSReports financial integrity', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
     axios.get.mockImplementation((url) => {
       if (url === '/pos/v2/receipts') return Promise.resolve({ data: { receipts: [] } });
@@ -41,6 +42,35 @@ describe('POSReports financial integrity', () => {
       }
       return Promise.reject(new Error(`unexpected request: ${url}`));
     });
+  });
+
+  it('hides the previous outlet totals while loading and ignores late responses', async () => {
+    const pending = new Map();
+    const report = (total) => ({ data: {
+      report_date: '2026-09-03', gross_sales: total, net_sales: total, currency: 'TRY',
+    } });
+    axios.get.mockImplementation((url, { params } = {}) => {
+      if (url === '/pos/v2/receipts') return Promise.resolve({ data: { receipts: [] } });
+      if (url === '/pos/void-transactions') return Promise.resolve({ data: [] });
+      if (url === '/pos/z-report') {
+        if (params.outlet_id === 'outlet-a') return Promise.resolve(report(132));
+        return new Promise((resolve) => pending.set(params.outlet_id, resolve));
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+
+    const { rerender } = render(<POSReports outletId="outlet-a" />);
+    expect(await screen.findAllByText('₺132,00')).not.toHaveLength(0);
+
+    rerender(<POSReports outletId="outlet-b" />);
+    expect(screen.queryAllByText('₺132,00')).toHaveLength(0);
+    rerender(<POSReports outletId="outlet-c" />);
+    await act(async () => pending.get('outlet-c')(report(87)));
+    expect(await screen.findAllByText('₺87,00')).not.toHaveLength(0);
+
+    await act(async () => pending.get('outlet-b')(report(44)));
+    expect(screen.queryAllByText('₺44,00')).toHaveLength(0);
+    expect(screen.getAllByText('₺87,00')).not.toHaveLength(0);
   });
 
   it('does not describe a failed void query as an empty result', async () => {

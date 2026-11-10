@@ -602,13 +602,20 @@ async def _pos_business_date(tenant_id: str, session=None) -> str:
 
 
 async def _checked_pos_preview(tenant_id, day, session=None):
+    session_args = {"session": session} if session is not None else {}
+    if await db.pos_orders.find_one(
+        {
+            "tenant_id": tenant_id,
+            "business_date": day,
+            "status": {"$in": ["draft", "open", "pending", "preparing", "ready", "served"]},
+        },
+        **session_args,
+    ):
+        raise HTTPException(409, detail="Önce iş gününün açık adisyonlarını tamamlayın")
     try:
-        result = await pos_closure_preview(db, tenant_id, day, session=session)
+        return await pos_closure_preview(db, tenant_id, day, session=session)
     except ValueError as exc:
         raise HTTPException(409, detail={"message": "POS kapanış kaynakları doğrulanamadı", "code": str(exc)}) from exc
-    if not result["transaction_count"]:
-        raise HTTPException(409, detail="Kapanış için kesinleşmiş POS işlemi bulunamadı")
-    return result
 
 
 @router.get("/pos/daily-closure-preview")
@@ -643,9 +650,6 @@ async def create_pos_closure(
             {"tenant_id": tenant_id, "business_date": day, "status": "completed", "dry_run": False}, **kwargs
         ):
             raise HTTPException(409, detail="Geçmiş POS kapanışı için tamamlanmış otel gün sonu gereklidir")
-        if await db.pos_orders.find_one({"tenant_id": tenant_id, "business_date": day,
-            "status": {"$in": ["open", "pending", "preparing", "ready", "served"]}}, **kwargs):
-            raise HTTPException(409, detail="Önce iş gününün açık adisyonlarını tamamlayın")
         existing = await db.pos_closures.find_one({"tenant_id": tenant_id, "closure_date": day}, {"_id": 0}, **kwargs)
         if existing and existing.get("calculation_version") != POS_CLOSURE_VERSION:
             raise HTTPException(409, detail="Eski POS kapanışı yeni hesaplamayla doğrulanamıyor; özgün kayıt korundu")

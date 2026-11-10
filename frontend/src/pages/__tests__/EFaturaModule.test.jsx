@@ -72,6 +72,36 @@ describe('EFaturaModule POS closure integrity', () => {
     expect(confirmDialog).not.toHaveBeenCalled();
   });
 
+  it('labels a verified zero-transaction day in the preview and in the saved closure', async () => {
+    const closed = {
+      id: 'zero-day',
+      closure_date: '2026-10-28',
+      transaction_count: 0,
+      totals_by_currency: {},
+      calculation_version: 'canonical_pos_ledger_v2',
+      preview_hash: 'b'.repeat(64),
+    };
+    const defaultGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => {
+      if (url === '/pos/daily-closure-preview') return Promise.resolve({ data: closed });
+      if (url === '/pos/daily-closures' && axios.post.mock.calls.length > 0) {
+        return Promise.resolve({ data: { closures: [closed] } });
+      }
+      return defaultGet(url);
+    });
+    confirmDialog.mockResolvedValue(true);
+    axios.post.mockResolvedValue({ data: closed });
+    render(<EFaturaModule />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /daily pos closure/i }));
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('Kesinleşmiş POS işlemi yok'),
+    })));
+    expect(await screen.findByText('Kesinleşmiş POS işlemi yok')).toBeInTheDocument();
+    expect(axios.post).toHaveBeenCalledOnce();
+  });
+
   it('renders each native currency separately and labels room charge as non-cash', async () => {
     axios.get.mockResolvedValue({ data: { closures: [{ id: 'multi', closure_date: '2026-10-25', transaction_count: 2,
       totals_by_currency: { USD: { net_sales: 100, tips: 5, refund_total: 0, cash_sales: 105, card_sales: 0, room_charge_sales: 0 },

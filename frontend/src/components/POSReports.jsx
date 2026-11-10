@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -50,45 +50,54 @@ const POSReports = ({ outletId }) => {
   const { t } = useTranslation();
   const businessDate = useBusinessDate();
   const [date, setDate] = useState(businessDate);
-  const [report, setReport] = useState(null);
-  const [voids, setVoids] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [voidError, setVoidError] = useState('');
+  const [result, setResult] = useState(null);
+  const activeRequest = useRef(null);
+  const selection = JSON.stringify([date, outletId ?? null]);
+  const visible = result?.selection === selection ? result : null;
+  const { report, voids = [], error, voidError, loading = true } = visible ?? {};
 
   useEffect(() => { setDate(businessDate); }, [businessDate]);
 
   const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError('');
-      setVoidError('');
-      const params = { date };
-      if (outletId) params.outlet_id = outletId;
-      const zRes = await axios.get('/pos/z-report', { params });
-      setReport(zRes.data || null);
-      try {
-        const vRes = await axios.get('/pos/void-transactions', { params });
-        const vlist = Array.isArray(vRes.data)
-          ? vRes.data
-          : (vRes.data.void_transactions || vRes.data.voided_transactions || []);
-        setVoids(vlist);
-      } catch (voidRequestError) {
-        console.error('İptal kayıtları yüklenemedi:', voidRequestError);
-        setVoids([]);
-        setVoidError('İptal ayrıntıları yüklenemedi. Bu durum, iptal olmadığı anlamına gelmez.');
-      }
-    } catch (err) {
-      console.error('Z raporu yüklenemedi:', err);
-      setReport(null);
-      setError('Rapor verileri yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.');
-      toast.error('Rapor yüklenemedi');
-    } finally {
-      setLoading(false);
-    }
-  }, [date, outletId]);
+    activeRequest.current?.abort();
+    const request = new AbortController();
+    activeRequest.current = request;
+    setResult({ selection, loading: true });
+    const params = outletId ? { date, outlet_id: outletId } : { date };
+    const options = { params, signal: request.signal };
+    const [summary, cancellations] = await Promise.allSettled([
+      axios.get('/pos/z-report', options),
+      axios.get('/pos/void-transactions', options),
+    ]);
+    if (request.signal.aborted) return;
 
-  useEffect(() => { load(); }, [load]);
+    if (summary.status === 'rejected') {
+      console.error('Z raporu yüklenemedi:', summary.reason);
+      setResult({
+        selection, loading: false,
+        error: 'Rapor verileri yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+      });
+      toast.error('Rapor yüklenemedi');
+      return;
+    }
+
+    const voidData = cancellations.status === 'fulfilled' ? cancellations.value.data : null;
+    if (cancellations.status === 'rejected') {
+      console.error('İptal kayıtları yüklenemedi:', cancellations.reason);
+    }
+    setResult({
+      selection, loading: false, report: summary.value.data || null,
+      voids: Array.isArray(voidData) ? voidData : (voidData?.void_transactions || voidData?.voided_transactions || []),
+      voidError: cancellations.status === 'rejected'
+        ? 'İptal ayrıntıları yüklenemedi. Bu durum, iptal olmadığı anlamına gelmez.'
+        : '',
+    });
+  }, [date, outletId, selection]);
+
+  useEffect(() => {
+    load();
+    return () => activeRequest.current?.abort();
+  }, [load]);
 
   const handlePrint = () => {
     window.print();
@@ -126,8 +135,8 @@ const POSReports = ({ outletId }) => {
           </div>
         </CardHeader>
         <CardContent>
-          {loading && !report ? (
-            <div className="text-center py-12 text-gray-500">
+          {loading ? (
+            <div className="text-center py-12 text-gray-500" role="status">
               <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mx-auto mb-2" />
               <p>{t('cm.components_POSReports.yukleniyor')}</p>
             </div>

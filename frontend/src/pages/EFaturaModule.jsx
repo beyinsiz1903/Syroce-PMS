@@ -11,6 +11,8 @@ import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
+const NO_POS_TRANSACTIONS = 'Kesinleşmiş POS işlemi yok';
+
 const EFaturaModule = () => {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState([]);
@@ -19,8 +21,11 @@ const EFaturaModule = () => {
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
   const [closureDate, setClosureDate] = useState('');
-  const closureAmounts = (closure) => Object.entries(closure.totals_by_currency || {})
-    .map(([currency, totals]) => `${formatCurrency(totals.net_sales, currency)} gelir + ${formatCurrency(totals.tips, currency)} bahşiş`).join(' / ');
+  const closureAmounts = (closure) => {
+    if (closure.transaction_count === 0) return NO_POS_TRANSACTIONS;
+    return Object.entries(closure.totals_by_currency || {})
+      .map(([currency, totals]) => `${formatCurrency(totals.net_sales, currency)} gelir + ${formatCurrency(totals.tips, currency)} bahşiş`).join(' / ');
+  };
 
   useEffect(() => {
     loadData();
@@ -252,7 +257,9 @@ const EFaturaModule = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  {closure.totals_by_currency ? Object.entries(closure.totals_by_currency).map(([currency, totals]) => (
+                  {closure.transaction_count === 0 && closure.calculation_version ? (
+                    <div className="text-sm text-muted-foreground">{NO_POS_TRANSACTIONS}</div>
+                  ) : closure.totals_by_currency ? Object.entries(closure.totals_by_currency).map(([currency, totals]) => (
                     <div key={currency} className="text-sm space-y-1">
                       <div className="font-bold text-green-600">Gelir: {formatCurrency(totals.net_sales, currency)}</div>
                       <div>Bahşiş: {formatCurrency(totals.tips, currency)} · İade: {formatCurrency(totals.refund_total, currency)}</div>
