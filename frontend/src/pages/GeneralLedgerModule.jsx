@@ -16,6 +16,7 @@ import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
 import { GeneralLedgerNavigation } from '@/pages/accounting/GeneralLedgerNavigation';
 import { GeneralLedgerOverview } from '@/pages/accounting/GeneralLedgerOverview';
 import { VoucherPolicyControls } from '@/pages/accounting/VoucherPolicyControls';
+import OperationalValuationCard from '@/pages/accounting/OperationalValuationCard';
 import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText, Send, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
@@ -1944,6 +1945,13 @@ const GeneralLedgerModule = () => {
             <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p>{workspaceUnavailable('PMS/POS köprüsü') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</>}</CardContent></Card>
           </div>
           {Number(operationalBridge?.source_valuation_pending) > 0 && <p className="text-sm text-amber-800 mt-4" role="status">Kaynak-gün değerlemesi bekleyen {operationalBridge.source_valuation_pending} gece denetimi var. Dengeli fiş, tek başına döviz/vergi mutabakatının tamamlandığı anlamına gelmez.</p>}
+          {!workspaceUnavailable('PMS/POS köprüsü') && operationalBridge?.can_value_night_audit && (
+            <OperationalValuationCard
+              runs={operationalBridge.pending_night_audits}
+              requestedRunId={searchParams.get('night-audit')}
+              onPosted={fetchWorkspace}
+            />
+          )}
           <Card className="mt-4">
             <CardHeader><CardTitle>Güvence, Vergi ve İkram Hesapları</CardTitle></CardHeader>
             <CardContent className="space-y-3">
