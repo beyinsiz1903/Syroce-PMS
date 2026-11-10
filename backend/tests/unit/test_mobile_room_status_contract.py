@@ -162,6 +162,24 @@ async def test_inhouse_room_card_source_preserves_currency_without_conversion(cu
     assert stay.get("currency") == currency
     assert stay["room_number"] == "201"
     assert bookings.find.call_args.args[0]["tenant_id"] == "tenant-1"
+    assert result.data["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unified_inhouse_count_includes_stays_beyond_the_list_limit():
+    from domains.pms.frontdesk_service import FrontdeskService
+
+    rows = [{"id": f"booking-{index}"} for index in range(503)]
+    bookings = SimpleNamespace(find=MagicMock(return_value=Cursor(rows)), count_documents=AsyncMock(return_value=503))
+    service = FrontdeskService.__new__(FrontdeskService)
+    service._db = SimpleNamespace(bookings=bookings)
+    service._enrich_bookings = AsyncMock(side_effect=lambda entries, tenant_id: entries)
+
+    result = await service.get_unified_inhouse(SimpleNamespace(tenant_id="tenant-1"))
+
+    assert len(result.data["in_house"]) == 500
+    assert result.data["count"] == 503
+    bookings.count_documents.assert_awaited_once_with({"status": "checked_in", "tenant_id": "tenant-1"})
 
 
 def _room_collection(rows):

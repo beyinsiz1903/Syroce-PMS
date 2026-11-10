@@ -727,15 +727,14 @@ class FrontdeskService:
         return ServiceResult.success({"departures": enriched, "count": len(enriched), "date": today})
 
     async def get_unified_inhouse(self, ctx: OperationContext) -> ServiceResult:
-        bookings = await self._db.bookings.find(
-            {
-                "status": "checked_in",
-                "tenant_id": ctx.tenant_id,
-            },
-            {"_id": 0},
-        ).to_list(500)
+        query = {"status": "checked_in", "tenant_id": ctx.tenant_id}
+        limit = 500
+        bookings = await self._db.bookings.find(query, {"_id": 0}).to_list(limit)
+        count = len(bookings)
+        if count == limit:
+            count = await self._db.bookings.count_documents(query)
         enriched = await self._enrich_bookings(bookings, ctx.tenant_id)
-        return ServiceResult.success({"in_house": enriched, "count": len(enriched)})
+        return ServiceResult.success({"in_house": enriched, "count": count})
 
     # ------------------------------------------------------------------
     # Folio
