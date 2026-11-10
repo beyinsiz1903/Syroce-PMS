@@ -2,6 +2,9 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import pytest
+from fastapi import HTTPException
+
 from domains.spa import router as spa
 from tests.test_pos_final_consistency_replica import db  # noqa: F401
 
@@ -19,6 +22,42 @@ class Rows:
 
     def limit(self, count):
         return Rows(self.rows[:count])
+
+
+@pytest.mark.parametrize(("busy_resource", "error"), [
+    ("therapist", "Uygun terapist bulunamadı"),
+    ("room", "Uygun oda bulunamadı"),
+])
+async def test_automatic_assignment_refuses_to_save_when_a_resource_is_busy(monkeypatch, busy_resource, error):
+    service = {"name": "Test hizmeti", "category": "massage", "duration_minutes": 60, "tax_rate": 20, "price": 1500}
+    insert = AsyncMock()
+    database = SimpleNamespace(
+        client=None,
+        spa_services=SimpleNamespace(find_one=AsyncMock(return_value=service)),
+        spa_therapists=SimpleNamespace(find=Mock(return_value=Rows([{"id": "t"}]))),
+        spa_rooms=SimpleNamespace(find=Mock(return_value=Rows([{"id": "r"}]))),
+        spa_appointments=SimpleNamespace(insert_one=insert),
+    )
+
+    async def conflict(_tenant_id, *, therapist_id, room_id, **_):
+        return "Çakışma" if (therapist_id and busy_resource == "therapist") or (room_id and busy_resource == "room") else None
+
+    async def locked(**kwargs):
+        return await kwargs["callback"](None)
+
+    monkeypatch.setattr(spa, "require_spa_ops", lambda _: None)
+    monkeypatch.setattr(spa, "_ensure_indexes", AsyncMock())
+    monkeypatch.setattr(spa, "get_system_db", lambda: database)
+    monkeypatch.setattr(spa, "_check_conflict", conflict)
+    monkeypatch.setattr(spa, "with_resource_locks", locked)
+    appointment = spa.AppointmentIn(service_id="massage", starts_at="2026-11-10T08:05:00Z", guest_name="Sentetik Misafir")
+    user = SimpleNamespace(tenant_id="hotel", username="operator")
+
+    with pytest.raises(HTTPException, match=error) as caught:
+        await spa.create_appointment(appointment, user)
+
+    assert caught.value.status_code == 409
+    insert.assert_not_awaited()
 
 
 async def test_availability_requires_room_and_therapist_for_the_full_local_shift(monkeypatch):
