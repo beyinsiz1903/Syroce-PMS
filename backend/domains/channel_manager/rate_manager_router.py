@@ -258,13 +258,18 @@ async def update_rates(
     if not hotel_code:
         raise HTTPException(status_code=422, detail="Exely property mapping is missing")
 
-    await assert_exely_inventory_source(db, tenant_id, [update.model_dump() for update in request.updates])
-
     mapping_rows = await db.exely_room_mappings.find(
         {"tenant_id": tenant_id},
         {"_id": 0},
     ).to_list(200)
     mapping_controls = {(str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row for row in mapping_rows}
+
+    # Disabled stock dimensions are masked from provider writes below. They
+    # must not block an otherwise valid price/restriction-only resend.
+    await assert_exely_inventory_source(db, tenant_id, [
+        update.model_dump() for update in request.updates
+        if mapping_controls.get((str(update.room_type_code), str(update.rate_plan_code)), {}).get("sync_availability", True)
+    ])
 
     bulk_ops = []
     push_tasks = []
@@ -466,6 +471,8 @@ async def bulk_grid_update(
                 selected_dates.append(day.isoformat())
             day += timedelta(days=1)
         for rt_code, rp_code in pairs:
+            if not mapping_controls.get((str(rt_code), str(rp_code)), {}).get("sync_availability", True):
+                continue
             value = per_room_map[rt_code].availability if rt_code in per_room_map else request.availability
             for range_start, range_end in group_consecutive_dates(selected_dates):
                 inventory_updates.append({"room_type_code": rt_code, "rate_plan_code": rp_code,

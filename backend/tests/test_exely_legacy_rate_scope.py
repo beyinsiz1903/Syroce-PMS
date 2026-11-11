@@ -122,6 +122,8 @@ async def test_disabled_sync_dimensions_cannot_leak_in_a_sibling_update(scoped_r
     call = env.queue.await_args.kwargs
     assert call["rate_amount"] == 111
     assert all(call[key] is None for key in ("availability", "stop_sell", "max_los"))
+    assert all("availability" not in op._doc["$set"]
+               for op in env.calendar.bulk_write.await_args.args[0])
 
 
 @pytest.mark.asyncio
