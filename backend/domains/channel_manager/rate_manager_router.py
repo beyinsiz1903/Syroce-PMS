@@ -14,6 +14,7 @@ from pymongo import UpdateOne
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
+from domains.channel_manager.exely_inventory_source import assert_exely_inventory_source
 from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 from domains.channel_manager.rate_utils import (
     BulkGridUpdateRequest,
@@ -263,6 +264,13 @@ async def update_rates(
     ).to_list(200)
     mapping_controls = {(str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row for row in mapping_rows}
 
+    # Disabled stock dimensions are masked from provider writes below. They
+    # must not block an otherwise valid price/restriction-only resend.
+    await assert_exely_inventory_source(db, tenant_id, [
+        update.model_dump() for update in request.updates
+        if mapping_controls.get((str(update.room_type_code), str(update.rate_plan_code)), {}).get("sync_availability", True)
+    ])
+
     bulk_ops = []
     push_tasks = []
 
@@ -283,8 +291,8 @@ async def update_rates(
             }
             if upd.rate is not None:
                 set_fields["rate"] = upd.rate
-            if upd.availability is not None:
-                set_fields["availability"] = upd.availability
+            # Legacy availability is a source-validated resend. Rewriting a
+            # net value as its stored base would subtract sold rooms twice.
             if upd.min_stay is not None:
                 set_fields["min_stay"] = upd.min_stay
             if upd.stop_sell is not None:
@@ -449,6 +457,28 @@ async def bulk_grid_update(
     bulk_ops = []
     push_tasks = []
 
+    if "availability" in update_fields:
+        # Validate only selected nights, but reject the entire request before
+        # any local price/restriction or provider mutation on a mismatch.
+        inventory_updates = []
+        first_day, last_day = date.fromisoformat(request.start_date), date.fromisoformat(request.end_date)
+        if last_day < first_day or (last_day - first_day).days > 730:
+            raise HTTPException(422, detail="Müsaitlik için en fazla 731 gecelik geçerli bir dönem seçin.")
+        selected_dates = []
+        day = first_day
+        while day <= last_day:
+            if selected_days_set is None or day.isoweekday() % 7 in selected_days_set:
+                selected_dates.append(day.isoformat())
+            day += timedelta(days=1)
+        for rt_code, rp_code in pairs:
+            if not mapping_controls.get((str(rt_code), str(rp_code)), {}).get("sync_availability", True):
+                continue
+            value = per_room_map[rt_code].availability if rt_code in per_room_map else request.availability
+            for range_start, range_end in group_consecutive_dates(selected_dates):
+                inventory_updates.append({"room_type_code": rt_code, "rate_plan_code": rp_code,
+                                          "start_date": range_start, "end_date": range_end, "availability": value})
+        await assert_exely_inventory_source(db, tenant_id, inventory_updates)
+
     for rt_code, rp_code in pairs:
         total_room_types_set.add(rt_code)
         rv = per_room_map.get(rt_code)
@@ -484,8 +514,7 @@ async def bulk_grid_update(
 
             if "rate" in update_fields and v_rate is not None:
                 set_fields["rate"] = v_rate
-            if "availability" in update_fields and v_avail is not None:
-                set_fields["availability"] = v_avail
+            # Preserve the canonical base/mode for validated inventory resends.
             if "min_stay" in update_fields and v_min is not None:
                 set_fields["min_stay"] = v_min
             if "max_stay" in update_fields and v_max is not None:

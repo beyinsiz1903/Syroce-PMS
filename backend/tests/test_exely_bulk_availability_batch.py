@@ -24,6 +24,9 @@ def bulk(monkeypatch):
     monkeypatch.setattr(exely_router, "db", database)
     monkeypatch.setattr(exely_router, "ari_write_block_reason", lambda: "")
     monkeypatch.setattr(exely_router, "log_sync", AsyncMock())
+    # Inventory source validation is exercised with a stateful calendar and
+    # booking/event flow in test_exely_inventory_source.py.
+    monkeypatch.setattr(exely_router, "assert_exely_inventory_source", AsyncMock())
     deliver = AsyncMock(return_value=ari_delivery.ExelyARIDeliveryResult(True, "confirmed", "", "SUCCESS", 1, "synthetic-operation"))
     monkeypatch.setattr(exely_router, "deliver_exely_ari", deliver)
     enqueue = AsyncMock(return_value={"accepted": True, "queued_operation_count": 1})
@@ -116,6 +119,7 @@ async def test_full_period_batch_still_respects_quota_denial_before_one_write(mo
 
 async def test_same_idempotency_key_with_changed_values_does_not_claim_old_confirmation(monkeypatch):
     monkeypatch.setattr(ari_delivery, "ari_write_block_reason", lambda: "")
+    monkeypatch.setattr(ari_delivery, "assert_exely_inventory_source", AsyncMock())
     monkeypatch.setattr(ari_delivery, "_prepare_delivery", AsyncMock(return_value=(False, {"state": "confirmed", "payload_fingerprint": "different"})))
     provider = AsyncMock()
     rows = exely_router._availability_batch_messages([update("STD", "2026-11-02", "2026-11-09", 8)])

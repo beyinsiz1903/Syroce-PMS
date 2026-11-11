@@ -30,6 +30,13 @@ from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 
 pytestmark = pytest.mark.exely_failure_stress
 
+
+@pytest.fixture(autouse=True)
+def validated_inventory_source(monkeypatch):
+    # This module isolates durable receipts, transport and retry behavior.
+    # Stateful PMS/booking source checks have their own route-to-delivery tests.
+    monkeypatch.setattr("domains.channel_manager.providers.exely.ari_delivery.assert_exely_inventory_source", AsyncMock())
+
 SOAP_SUCCESS = b"""<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
 <s:Body><OTA_HotelAvailNotifRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.17">
 <Success/></OTA_HotelAvailNotifRS></s:Body></s:Envelope>"""

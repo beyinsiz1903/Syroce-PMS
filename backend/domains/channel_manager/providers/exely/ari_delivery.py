@@ -12,9 +12,11 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
+from domains.channel_manager.exely_inventory_source import assert_exely_inventory_source
 from shared_kernel.idempotency import claim_idempotency, release_idempotency
 
 from .production_safety import ari_write_block_reason
@@ -124,6 +126,19 @@ async def deliver_exely_ari(
             write_enabled = False
     if not write_enabled:
         return _result(False, STATE_BLOCKED, "EXELY_ARI_WRITE_DISABLED", "NOT_SENT", 0, identity)
+
+    if operation in {"availability", "availability_batch"}:
+        # A queued snapshot may have become stale after another booking or
+        # manual edit. Recheck before claiming/sending; never replay old stock
+        # over the current source or attach its hash to a different payload.
+        stock_updates = normalized["value"] if operation == "availability_batch" else [{
+            **normalized, "availability": normalized["value"],
+        }]
+        try:
+            await assert_exely_inventory_source(db, tenant_id, stock_updates)
+        except HTTPException as exc:
+            code = exc.detail.get("error_code", "EXELY_INVENTORY_SOURCE_UNAVAILABLE") if isinstance(exc.detail, dict) else "EXELY_INVENTORY_SOURCE_UNAVAILABLE"
+            return _result(False, STATE_BLOCKED, code, "NOT_SENT", 0, identity)
 
     if operation not in {"rate", "rate_batch"}:
         return await _deliver(operation, normalized, identity, provider)

@@ -1034,6 +1034,9 @@ def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, co
                 "availability": real_avail,
                 "base_availability": base_avail if base_avail is not None else counts["total"],
                 "availability_mode": availability_entry.get("availability_mode") or ("legacy" if base_avail is not None else "automatic"),
+                "availability_updated_at": availability_entry.get("availability_updated_at"),
+                "availability_updated_by": availability_entry.get("availability_updated_by"),
+                "availability_source": availability_entry.get("availability_source"),
                 "sold": sold_count,
                 "min_stay": entry.get("min_stay", 1),
                 "stop_sell": entry.get("stop_sell", False),
@@ -1394,6 +1397,15 @@ async def _apply_unified_bulk_update(request, current_user, *, remaining_availab
                     # A legacy client must not accidentally inherit a prior
                     # operator's explicit overbooking authorization.
                     set_fields["availability_mode"] = None
+                if "availability" in set_fields:
+                    # Price/restriction edits also change updated_at. Keep
+                    # inventory provenance independent so later divergence
+                    # investigations can identify the actual stock edit.
+                    set_fields.update({
+                        "availability_updated_at": now,
+                        "availability_updated_by": current_user.id,
+                        "availability_source": "unified_remaining" if remaining_plan is not None else "unified_base",
+                    })
             if "min_stay" in update_fields and v_min is not None:
                 set_fields["min_stay"] = v_min
             if "min_los_arrival" in update_fields and v_min_arrival is not None:
