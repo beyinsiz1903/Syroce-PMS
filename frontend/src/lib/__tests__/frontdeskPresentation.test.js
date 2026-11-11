@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import axios from 'axios';
 import registry from '@/config/frontdeskPresentation.json';
 import { PRESENTATION_TENANT as tenant, presentationContextTenant, presentationHotelName, presentationOperatorName, presentFrontdeskResponse, preserveFrontdeskSourceUpdate, projectFrontdeskPresentation, storedPresentationTenant } from '../frontdeskPresentation';
 
@@ -86,6 +87,47 @@ describe('reviewed natural frontdesk presentation', () => {
 });
 
 describe('tenant and transport boundaries', () => {
+  it.each(['put', 'patch'])('sends a %s guest edit with blank optional fields through Axios', async method => {
+    const requests = [];
+    const client = axios.create({ adapter: async config => {
+      requests.push(config);
+      return { data: { status: 'updated' }, status: 200, statusText: 'OK', headers: {}, config };
+    } });
+    client.interceptors.request.use(config => preserveFrontdeskSourceUpdate(config, tenant));
+    const payload = {
+      name: 'Olivia Walker', nationality: 'GB', id_type: 'passport',
+      id_number: 'FICTIONAL-PASSPORT', date_of_birth: '1985-06-12', gender: 'female',
+      email: undefined, phone: undefined, address: undefined, city: undefined,
+    };
+
+    const result = await client.request({ method, url: '/pms/reservations/booking-1/update-guest', data: payload });
+
+    expect(result.data).toEqual({ status: 'updated' });
+    expect(requests).toHaveLength(1);
+    expect(JSON.parse(requests[0].data)).toEqual({
+      name: 'Olivia Walker', nationality: 'GB', id_type: 'passport',
+      id_number: 'FICTIONAL-PASSPORT', date_of_birth: '1985-06-12', gender: 'female',
+    });
+    expect(payload).toHaveProperty('address', undefined);
+  });
+
+  it('preserves omitted, null and nested fields while restoring an observed display name', () => {
+    const displayed = presentFrontdeskResponse(response({ id: guest.id, name: guest.original }), tenant).data;
+    const data = {
+      name: displayed.name, phone: undefined, city: null,
+      preferences: { note: undefined, enabled: false },
+      companions: [{ name: 'Olivia Walker', email: undefined }],
+    };
+    const update = { method: 'patch', url: `/pms/guests/${guest.id}`, data };
+
+    const saved = preserveFrontdeskSourceUpdate(update, tenant);
+
+    expect(saved.data).toEqual({ ...data, name: guest.original });
+    expect(saved.data.preferences).toBe(data.preferences);
+    expect(saved.data.companions[0]).toBe(data.companions[0]);
+    expect(data.name).toBe(displayed.name);
+  });
+
   it('does not save unchanged presentation names back through an edit form', () => {
     const raw = { id: guest.id, name: guest.original, first_name: 'Ada', last_name: 'AcceptanceTest', phone: '', total_amount: 100 };
     const displayed = presentFrontdeskResponse(response(raw), tenant).data;

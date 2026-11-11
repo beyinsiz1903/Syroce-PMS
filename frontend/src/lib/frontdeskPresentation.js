@@ -79,7 +79,8 @@ export function preserveFrontdeskSourceUpdate(config, currentTenant = storedPres
     let result = value;
     for (const [key, child] of Object.entries(value)) {
       if (rawBranches.has(key)) continue;
-      const mapped = fields[key]?.display === child ? fields[key].original : visit(child, null, depth + 1);
+      const source = fields[key];
+      const mapped = source && source.display === child ? source.original : visit(child, null, depth + 1);
       if (mapped !== child) {
         if (result === value) result = { ...value };
         result[key] = mapped;
