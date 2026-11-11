@@ -4,11 +4,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import MobileFrontDesk from '@/pages/MobileFrontDesk';
 import { performCheckout } from '@/utils/offlineCheckout';
+import { performCheckin } from '@/utils/offlineCheckin';
+import { withReservationEditLock } from '@/lib/reservationEditLockManager';
 
-vi.mock('axios', () => ({ default: { get: vi.fn(), put: vi.fn() } }));
+vi.mock('axios', () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key) => key === 'pms.bookings' ? 'Rezervasyonlar' : key }) }));
 vi.mock('@/hooks/useMediaCapture', () => ({ default: () => ({ uploading: false }) }));
 vi.mock('@/utils/offlineCheckout', () => ({ performCheckout: vi.fn() }));
+vi.mock('@/utils/offlineCheckin', () => ({ performCheckin: vi.fn() }));
+vi.mock('@/lib/reservationEditLockManager', () => ({
+  RESERVATION_EDIT_LOCK_HEADER: 'X-Reservation-Lock-ID', withReservationEditLock: vi.fn(),
+}));
 
 const reservation = {
   id: 'reservation-127', guest_name: 'Hakan Arslan', room_number: '127', status: 'checked_in',
@@ -48,6 +54,8 @@ describe('mobile front desk reservations', () => {
       }[path] ?? {},
     }));
     performCheckout.mockResolvedValue({ blocked: false });
+    withReservationEditLock.mockImplementation(async (_id, action) => action({ lockId: 'mobile-lease' }));
+    axios.post.mockResolvedValue({ data: {} });
   });
 
   it('displays a PMS reservation when the endpoint returns a bare list', async () => {
@@ -98,6 +106,24 @@ describe('mobile front desk reservations', () => {
     expect(screen.getByText('İŞ GÜNÜ GELİŞ').nextElementSibling).toHaveTextContent('—');
     expect(screen.getByRole('button', { name: 'Check-In' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Walk-In' })).toBeEnabled();
+  });
+
+  it.each(['Check-In', 'Check-Out'])('acquires the selected reservation lease for mobile %s', async (label) => {
+    const operation = label === 'Check-In' ? performCheckin : performCheckout;
+    operation.mockImplementation(async (_id, { onlineRequest }) => {
+      await onlineRequest();
+      return { offlineQueued: false, blocked: false };
+    });
+    renderFrontDesk();
+    fireEvent.click(await screen.findByRole('button', { name: label }));
+    const name = label === 'Check-In' ? /Selin Kaya/ : /Mert Akın/;
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name }));
+    const id = label === 'Check-In' ? 'arrival-1' : 'reservation-203';
+    await waitFor(() => expect(withReservationEditLock).toHaveBeenCalledWith(id, expect.any(Function)));
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+      `/frontdesk/${label === 'Check-In' ? 'checkin' : 'checkout'}/${id}`, null,
+      { headers: { 'X-Reservation-Lock-ID': 'mobile-lease' } },
+    );
   });
 
   it('does not substitute the worknight count when the current guest count fails', async () => {

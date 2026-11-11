@@ -39,10 +39,11 @@ const createLockId = () => {
   return `view-${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
 };
 
-const lockError = (message) => {
+const lockError = (message, config) => {
   const error = new Error(message);
   error.code = 'RESERVATION_EDIT_LOCK_REQUIRED';
   error.isReservationEditLockError = true;
+  if (config) error.config = config;
   return error;
 };
 
@@ -71,10 +72,11 @@ function createManager() {
     if (current) current.lastViewActivityAt = Date.now();
   };
 
-  const releaseCurrent = async (expectedBookingId = null) => {
+  const releaseCurrent = async (expectedBookingId = null, expectedLockId = null) => {
     // A delayed close from an older modal must never release the lock that a
     // newer reservation view has just acquired.
     if (expectedBookingId && current?.bookingId !== expectedBookingId) return false;
+    if (expectedLockId && current?.lockId !== expectedLockId) return false;
     const owned = current;
     current = null;
     acquirePromise = null;
@@ -240,7 +242,7 @@ function createManager() {
       || current?.status !== 'acquired'
       || !current?.lockId
     ) {
-      throw lockError('Rezervasyon düzenleme kilidi aktif değil; işlem güvenlik nedeniyle engellendi.');
+      throw lockError('Rezervasyon düzenleme kilidi aktif değil; işlem güvenlik nedeniyle engellendi.', config);
     }
 
     config.headers = config.headers || {};
@@ -274,3 +276,21 @@ export function installReservationEditLockManager() {
 }
 
 export const reservationEditLockManager = installReservationEditLockManager();
+
+// List actions borrow an existing view lease or own a temporary one. Cleanup
+// must never release a lease acquired by a later modal/action.
+export async function withReservationEditLock(bookingId, action) {
+  const previous = reservationEditLockManager?.getCurrent();
+  const borrowed = previous?.bookingId === bookingId && previous.status === 'acquired';
+  const lock = await reservationEditLockManager?.acquire(bookingId);
+  if (!lock || lock.status !== 'acquired') {
+    throw lockError('Rezervasyon işlem kilidi alınamadı. Lütfen tekrar deneyin.');
+  }
+  try {
+    return await action(lock);
+  } finally {
+    if (!borrowed) {
+      await reservationEditLockManager.releaseCurrent(bookingId, lock.lockId);
+    }
+  }
+}
