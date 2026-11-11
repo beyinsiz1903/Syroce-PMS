@@ -7,8 +7,10 @@ import {
   reservationIdFromFullDetailUrl,
   reservationIdFromProtectedMutation,
   reservationEditLockManager,
+  withReservationEditLock,
 } from '../reservationEditLockManager';
 import axios from 'axios';
+import { installAxiosResilience } from '../httpResilience';
 
 describe('reservationEditLockManager contract', () => {
   it('pins the server lease and heartbeat cadence', () => {
@@ -68,6 +70,63 @@ describe('reservationEditLockManager release isolation', () => {
   afterEach(async () => {
     await reservationEditLockManager.releaseCurrent();
     vi.restoreAllMocks();
+  });
+
+  it('rejects a protected guest edit locally without retrying it as GET /api/', async () => {
+    const adapter = vi.fn();
+    const reportFailure = vi.fn();
+    installAxiosResilience(axios, { sleep: vi.fn(), reportFailure });
+    await expect(axios.put('/pms/reservations/booking-current/update-guest', {}, { adapter }))
+      .rejects.toMatchObject({
+        code: 'RESERVATION_EDIT_LOCK_REQUIRED',
+        config: expect.objectContaining({ method: 'put', url: '/pms/reservations/booking-current/update-guest' }),
+      });
+    expect(adapter).not.toHaveBeenCalled();
+    expect(reportFailure).not.toHaveBeenCalled();
+  });
+
+  it('releases only the temporary lease after a list action fails', async () => {
+    vi.spyOn(axios, 'post').mockResolvedValue({ data: {} });
+    const remove = vi.spyOn(axios, 'delete').mockResolvedValue({ data: {} });
+    const error = new Error('check-in rejected');
+    await expect(withReservationEditLock('booking-current', async () => { throw error; }))
+      .rejects.toBe(error);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(reservationEditLockManager.getCurrent()).toBeNull();
+  });
+
+  it('borrows the existing detail lease without releasing it', async () => {
+    vi.spyOn(axios, 'post').mockResolvedValue({ data: {} });
+    const remove = vi.spyOn(axios, 'delete').mockResolvedValue({ data: {} });
+    const owned = await reservationEditLockManager.acquire('booking-current');
+    const action = vi.fn().mockResolvedValue('done');
+    expect(await withReservationEditLock('booking-current', action)).toBe('done');
+    expect(action).toHaveBeenCalledWith(owned);
+    expect(reservationEditLockManager.getCurrent()).toBe(owned);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('does not release a replacement lease for the same reservation', async () => {
+    vi.spyOn(axios, 'post').mockResolvedValue({ data: {} });
+    const remove = vi.spyOn(axios, 'delete').mockResolvedValue({ data: {} });
+    let replacement;
+    await withReservationEditLock('booking-current', async (owned) => {
+      await reservationEditLockManager.releaseCurrent('booking-current');
+      replacement = await reservationEditLockManager.acquire('booking-current');
+      expect(replacement.lockId).not.toBe(owned.lockId);
+    });
+    expect(reservationEditLockManager.getCurrent()).toBe(replacement);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not run an action or release another view after acquisition fails', async () => {
+    vi.spyOn(axios, 'post').mockRejectedValue({ response: { status: 409 } });
+    const remove = vi.spyOn(axios, 'delete').mockResolvedValue({ data: {} });
+    const action = vi.fn();
+    await expect(withReservationEditLock('booking-current', action))
+      .rejects.toMatchObject({ isReservationEditLockError: true });
+    expect(action).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('does not let an older modal release the active reservation lock', async () => {

@@ -14,7 +14,7 @@ vi.mock('@/context/EntitlementContext', () => ({ useEntitlements: () => ({ hasMo
 vi.mock('@/config/navItems', () => ({ NAV_ITEMS: [] }));
 vi.mock('@/utils/moduleAccess', () => ({ canAccessPmsTab: () => true, canAccessNavItem: () => true }));
 vi.mock('@/components/pms/BookingsTab', () => ({ default: ({ businessDate, setOpenDialog }) => <section>Reservation workspace {businessDate}<button onClick={() => setOpenDialog('findroom')}>Find room</button></section> }));
-vi.mock('@/components/pms/FrontdeskTab', () => ({ default: ({ businessDate, arrivals, loadFrontDeskData }) => <section data-testid="frontdesk-board">Frontdesk {businessDate} {arrivals.map(row => row.guest_name).join(',')}<button onClick={() => loadFrontDeskData()}>Refresh frontdesk</button></section> }));
+vi.mock('@/components/pms/FrontdeskTab', () => ({ default: ({ businessDate, arrivals, loadFrontDeskData, handleCheckIn }) => <section data-testid="frontdesk-board">Frontdesk {businessDate} {arrivals.map(row => row.guest_name).join(',')}<button onClick={() => loadFrontDeskData()}>Refresh frontdesk</button><button onClick={() => handleCheckIn('arrival-1')}>Check in arrival</button></section> }));
 vi.mock('@/components/pms/BookingDialog', () => ({ default: ({ open, multiRoomBooking, newBooking }) => open && <section role="dialog" aria-label="Booking draft">{newBooking.check_in} {newBooking.check_out} {multiRoomBooking[0].room_id}</section> }));
 vi.mock('@/components/pms/GuestsTab', () => ({ default: () => <section>Guest workspace</section> }));
 vi.mock('@/components/pms/Guest360Dialog', () => ({ default: ({ open, onClose, guest360Data, loadingGuest360, error, selectedGuest360, loadGuest360 }) => open && <section role="dialog" aria-label="Guest profile">
@@ -23,6 +23,13 @@ vi.mock('@/components/pms/Guest360Dialog', () => ({ default: ({ open, onClose, g
 </section> }));
 vi.mock('@/pages/ReservationDetailModal', () => ({ default: ({ bookingId }) => <section role="dialog">Reservation detail {bookingId}</section> }));
 import PMSModule from '../PMSModule';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+vi.mock('@/lib/reservationEditLockManager', async (importOriginal) => {
+  const original = await importOriginal();
+  return { ...original, reservationEditLockManager: {
+    getCurrent: vi.fn(), acquire: vi.fn(), releaseCurrent: vi.fn(),
+  } };
+});
 
 const guest = { id: 'guest-outside-bootstrap', name: 'Murat Sutay' };
 const booking = { id: 'booking-outside-window', check_in: '2026-11-20', check_out: '2026-11-22' };
@@ -61,6 +68,19 @@ describe('global search opens the selected PMS entity', () => {
     await waitFor(() => expect(screen.getByTestId('frontdesk-board')).toHaveTextContent('2026-10-27 New day'));
     await act(async () => old.resolve({ data: [{ guest_name: 'Old day' }] }));
     expect(screen.getByTestId('frontdesk-board')).not.toHaveTextContent('Old day');
+  });
+
+  it('keeps the detail lease when check-in redirects to missing guest information', async () => {
+    window.location.hash = 'frontdesk';
+    const original = axios.get.getMockImplementation();
+    axios.get.mockImplementation(url => url === '/kbs/booking/arrival-1/readiness'
+      ? Promise.resolve({ data: { ready: false } }) : original(url));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Check in arrival' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Reservation detail arrival-1');
+    expect(reservationEditLockManager.acquire).not.toHaveBeenCalled();
+    expect(reservationEditLockManager.releaseCurrent).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   it('wires room-search dates and the selected room into a reservation draft without creating it', async () => {

@@ -27,6 +27,9 @@ function retryAfterHeader(headers) {
 }
 
 export function shouldRetryRequest(error) {
+  // Interceptors can reject before any HTTP request exists. Retrying an empty
+  // config would turn a local validation/lease error into GET /api/.
+  if (!error?.config?.url || error?.isReservationEditLockError) return false;
   const config = error?.config || {};
   const method = String(config.method || "get").toLowerCase();
   if (!SAFE_METHODS.has(method) || config._skipRetry) return false;
@@ -51,6 +54,7 @@ export function retryDelayMs(error, attempt, {
 }
 
 export function isReportableModuleReadFailure(error) {
+  if (!error?.config?.url || error?.isReservationEditLockError) return false;
   const method = String(error?.config?.method || "get").toLowerCase();
   if (!SAFE_METHODS.has(method)) return false;
   const status = error?.response?.status;

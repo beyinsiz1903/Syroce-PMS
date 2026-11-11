@@ -49,6 +49,7 @@ function emitQueueChanged(detail = {}) {
 
 // Sunucudan HTTP yanıtı YOKSA (ağ/zaman aşımı) çevrimdışı kabul edilir.
 function isNetworkError(error) {
+  if (error?.isReservationEditLockError || error?.code === 'ERR_CANCELED') return false;
   return !error || !error.response;
 }
 

@@ -72,6 +72,16 @@ describe('performCheckin', () => {
     expect(enqueueCheckin).not.toHaveBeenCalled();
   });
 
+  it('never queues a rejected reservation lock as an offline check-in', async () => {
+    const error = Object.assign(new Error('lease unavailable'), {
+      isReservationEditLockError: true, code: 'RESERVATION_EDIT_LOCK_REQUIRED',
+    });
+    await expect(performCheckin('bk-lock', {
+      onlineRequest: vi.fn().mockRejectedValue(error),
+    })).rejects.toBe(error);
+    expect(enqueueCheckin).not.toHaveBeenCalled();
+  });
+
   it('navigator.onLine=false ise dogrudan kuyruga ALIR (online cagri yapilmaz)', async () => {
     Object.defineProperty(global.navigator, 'onLine', {
       value: false,

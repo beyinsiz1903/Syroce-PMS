@@ -37,9 +37,25 @@ describe("httpResilience", () => {
   });
 
   it("retries safe transient reads but never mutations", () => {
-    expect(shouldRetryRequest({ config: { method: "get" }, response: { status: 429 } })).toBe(true);
+    expect(shouldRetryRequest({ config: { method: "get", url: "/rooms" }, response: { status: 429 } })).toBe(true);
     expect(shouldRetryRequest({ config: { method: "post" }, response: { status: 503 } })).toBe(false);
     expect(shouldRetryRequest({ config: { method: "get" }, response: { status: 422 } })).toBe(false);
+  });
+
+  it.each([
+    new Error("request interceptor rejected"),
+    Object.assign(new Error("lease unavailable"), {
+      code: "RESERVATION_EDIT_LOCK_REQUIRED", isReservationEditLockError: true,
+    }),
+  ])("preserves local rejection without issuing a request to the API root", async (error) => {
+    const client = createClient();
+    const sleep = vi.fn();
+    const reportFailure = vi.fn();
+    installAxiosResilience(client, { sleep, reportFailure });
+    await expect(client.rejectedHandlers[0](error)).rejects.toBe(error);
+    expect(client.request).not.toHaveBeenCalled();
+    expect(sleep).not.toHaveBeenCalled();
+    expect(reportFailure).not.toHaveBeenCalled();
   });
 
   it("waits for Retry-After and retries through the same client", async () => {

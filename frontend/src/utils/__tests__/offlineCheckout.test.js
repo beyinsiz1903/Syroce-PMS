@@ -71,6 +71,16 @@ describe('performCheckout — sifir bakiye yolu', () => {
     expect(enqueueCheckout).not.toHaveBeenCalled();
   });
 
+  it.each([0, undefined])('does not disguise a lease rejection as offline checkout (balance %s)', async (balance) => {
+    const error = Object.assign(new Error('lease unavailable'), {
+      code: 'RESERVATION_EDIT_LOCK_REQUIRED', isReservationEditLockError: true,
+    });
+    await expect(performCheckout('bk-lock', {
+      balance, onlineRequest: vi.fn().mockRejectedValue(error),
+    })).rejects.toBe(error);
+    expect(enqueueCheckout).not.toHaveBeenCalled();
+  });
+
   it('zaten tamamlanmis cikisi idempotent basari sayar', async () => {
     const err = new Error('already checked out');
     err.response = { status: 400, data: { detail: 'Guest already checked out' } };
