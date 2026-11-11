@@ -458,6 +458,16 @@ async def test_existing_editor_full_two_room_period_reaches_one_quota_checked_so
     )
     provider._transport.send_soap = AsyncMock(return_value=b'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><OTA_HotelAvailNotifRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/></OTA_HotelAvailNotifRS></s:Body></s:Envelope>')
     monkeypatch.setattr(ari_delivery, "ari_write_block_reason", lambda: "")
+    monkeypatch.setattr(ari_delivery, "db", editor.db)
+    # The final delivery source guard reads each owner's exact calendar rows.
+    # Keep this full editor-to-SOAP test stateful rather than mocking the guard.
+    def calendar_find(query, projection):
+        assert query["tenant_id"] == TENANT
+        return cursor([row for row in editor.calendar
+                       if row["room_type_code"] == query["room_type_code"]
+                       and row["rate_plan_code"] == query["rate_plan_code"]
+                       and row["date"] in query["date"]["$in"]])
+    editor.db.rate_calendar.find.side_effect = calendar_find
     monkeypatch.setattr("domains.channel_manager.providers.exely.provider.ari_write_block_reason", lambda: "")
     monkeypatch.setattr(ari_delivery, "_prepare_delivery", AsyncMock(return_value=(True, None)))
     monkeypatch.setattr(ari_delivery, "_mark_sending", AsyncMock(return_value=True))

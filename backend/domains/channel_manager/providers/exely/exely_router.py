@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 from core.database import db
 from core.secrets import get_secrets_manager
 from core.security import get_current_user
+from domains.channel_manager.exely_inventory_source import assert_exely_inventory_source
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari, preview_exely_ari
 from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
@@ -604,6 +605,7 @@ async def push_ari(
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
+    await assert_exely_inventory_source(db, current_user.tenant_id, [payload.model_dump()])
     result = await enqueue_exely_ari_update(
         current_user.tenant_id,
         str(conn.get("hotel_code") or ""),
@@ -655,6 +657,7 @@ async def bulk_push_ari(
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
+    await assert_exely_inventory_source(db, current_user.tenant_id, [update.model_dump() for update in updates])
     if all(u.availability is not None and all(getattr(u, field) is None for field in (
         "rate_amount", "stop_sell", "min_stay", "min_los_arrival", "max_stay", "cta", "ctd",
     )) for u in updates):
