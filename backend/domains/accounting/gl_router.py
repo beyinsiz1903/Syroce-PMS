@@ -2022,11 +2022,26 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
         {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_status": 1, "gl_entry_no": 1},
         sort=[("business_date", -1)],
     )
+    can_value = bool(getattr(current_user, "is_super_admin", False) or _role_of(current_user) in _GL_ROLES)
+    pending_night_audits = []
+    if can_value:
+        pending_night_audits = await db.night_audit_runs.find(
+            {
+                "tenant_id": tenant_id,
+                "status": "completed",
+                "dry_run": {"$ne": True},
+                "is_dry_run": {"$ne": True},
+                "gl_bridge_status": {"$in": ["valuation_required", "failed"]},
+            },
+            {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_error": 1},
+        ).sort("business_date", -1).limit(50).to_list(50)
     return {
         "configured": bool(mapping["enabled"]),
         "mapping": mapping,
         "failed": {"night_audit": failed_night_audits, "pos": failed_pos},
         "source_valuation_pending": unverified,
+        "pending_night_audits": pending_night_audits,
+        "can_value_night_audit": can_value,
         "latest_night_audit": latest,
         "healthy": bool(mapping["enabled"]) and failed_night_audits == 0 and failed_pos == 0 and unverified == 0,
     }

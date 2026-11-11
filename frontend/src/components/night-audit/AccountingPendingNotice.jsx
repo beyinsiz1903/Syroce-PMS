@@ -6,5 +6,9 @@ export default function AccountingPendingNotice({ runs = [] }) {
     <p className="font-semibold">{run.business_date} günü kapandı; muhasebe aktarımı henüz tamamlanmadı</p>
     <p className="mt-1 text-sm">Kaynak gününe ait döviz değerlemesi ve ikram/indirim hesaplarını Genel Muhasebe bölümünde kontrol edin. Gün kapanışını tekrar çalıştırmayın.</p>
     {run.gl_bridge_error && <p className="mt-1 text-xs">{run.gl_bridge_error}</p>}
+    {(run.id || run.audit_id) && <a className="mt-2 inline-block text-sm font-medium underline"
+      href={`/app/general-ledger?tab=workspace&night-audit=${encodeURIComponent(run.id || run.audit_id)}`}>
+      Muhasebe aktarımını incele
+    </a>}
   </div>;
 }
