@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections import Counter
 from datetime import UTC, datetime
 
 from security.guest_write import encrypt_guest_insert, encrypt_guest_update
@@ -107,6 +108,10 @@ async def sync_room_roster(database, tenant_id: str, booking: dict, roster: list
                 if _rest_time(proof["rest_modified_at"]) == _rest_time(previous["rest_modified_at"]):
                     _require(proof["rest_snapshot_hash"] == previous.get("rest_snapshot_hash"), "EXELY_ROSTER_SOURCE_CONFLICT")
             prior = previous.get("members") or []
+            if source == "read_reservation_v1":
+                # Completion must not remove or rename an already imported
+                # occupant based on a different API's revision namespace.
+                _require(not (Counter(member["name_hash"] for member in prior) - Counter(_name_hash(name) for name in names)), "EXELY_ROSTER_SOURCE_CONFLICT")
             links = await database.booking_guests.find({"tenant_id": tenant_id, "booking_id": booking["id"]}, {"_id": 0}, session=session).to_list(1001)
             # Never replace receptionist-added occupants or their checkout data.
             owned = {member["guest_id"] for member in prior[1:]}

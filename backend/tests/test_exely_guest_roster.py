@@ -50,6 +50,14 @@ def test_all_room_occupants_survive_normalization_without_contact_or_other_room_
     assert normalized["guest"]["name"] == "Booking Contact"
     assert [[p["guest_name"] for p in room["guests"]] for room in normalized["rooms"]] == [["Sam Example", "Robin Example"], ["Morgan Example"]]
     assert normalized["total_guests"] == 3
+    assert set(normalized["rooms"][0]["guests"][1]) == {"source_rph", "guest_firstname", "guest_lastname", "guest_name"}
+
+
+def test_roster_provenance_does_not_retain_extra_contact_payloads():
+    raw = parse_read_rs(_xml())["reservations"][0]
+    raw["rooms"][0]["guests"][1].update(guest_email="synthetic@example.invalid", guest_phone="synthetic-private-phone", passport_number="not-a-document")
+    normalized = normalize_reservation(raw)
+    assert set(normalized["rooms"][0]["guests"][1]) == {"source_rph", "guest_firstname", "guest_lastname", "guest_name"}
 
 
 @pytest.mark.parametrize("kwargs", [{"second_ref": "missing"}, {"duplicate": True}])
@@ -236,6 +244,7 @@ async def test_full_parser_normalizer_pms_durability_and_reordered_guest_referen
     sam = await local_mongo.guests.find_one({"first_name": "Sam"})
     robin = await local_mongo.guests.find_one({"first_name": "Robin"})
     canonical["rooms"][0]["guests"].reverse()
+    canonical["rooms"][0]["guest_email"] = "other-occupant@example.invalid"
     canonical["provider_last_modified_at"] = "2030-01-01T11:00:00Z"
     _, current = await _persist(local_mongo, canonical, payload_hash="new-room-roster-order")
     assert (await pms_lifecycle.process_reservation_version("tenant", current))["success"]
@@ -244,6 +253,7 @@ async def test_full_parser_normalizer_pms_durability_and_reordered_guest_referen
     link = await local_mongo.booking_guests.find_one({})
     booking = await local_mongo.bookings.find_one({"id": link["booking_id"]})
     assert booking["guest_id"] == sam["id"] and link["guest_id"] == robin["id"]
+    assert (await local_mongo.guests.find_one({"id": sam["id"]})).get("email") == sam.get("email")
     # Losing the secondary profile after durable import must block an ACK retry.
     version = await local_mongo.exely_reservation_versions.find_one({"version_identity": current["provider_version_identity"]})
     await local_mongo.guests.delete_one({"id": robin["id"]})
@@ -259,3 +269,13 @@ async def test_manual_removal_of_imported_link_requires_review(local_mongo):
     with pytest.raises(ReadReservationError, match="MANUAL_MEMBERSHIP_REVIEW"):
         await guest_roster.sync_room_roster(local_mongo, "tenant-a", booking, [_person("1", "Sam"), _person("2", "Robin")])
     assert await local_mongo.booking_guests.count_documents({}) == 0
+
+
+@pytest.mark.live_mongo
+async def test_rest_completion_cannot_rename_an_existing_soap_occupant(local_mongo):
+    booking = await _seed(local_mongo)
+    manifest = await guest_roster.sync_room_roster(local_mongo, "tenant-a", booking, [_person("1", "Sam"), _person("2", "Robin")])
+    booking = await local_mongo.bookings.find_one({"id": booking["id"]})
+    with pytest.raises(ReadReservationError, match="SOURCE_CONFLICT"):
+        await guest_roster.sync_room_roster(local_mongo, "tenant-a", booking, [_person("1", "Sam"), _person("2", "Morgan")], source="read_reservation_v1")
+    assert await guest_roster.roster_readback(local_mongo, "tenant-a", booking["id"], manifest)

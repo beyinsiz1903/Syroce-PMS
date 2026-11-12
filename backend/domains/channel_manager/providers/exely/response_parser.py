@@ -381,12 +381,14 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
                 raise _GuestRosterError("EXELY_GUEST_REFERENCE_NOT_FOUND")
             person = guests_by_rph[rph]
             if person.get("guest_name"):
-                roster.append(dict(person))
+                # Names are searchable plaintext guest fields. Keep private
+                # contact data out of the additional roster provenance.
+                roster.append({key: person[key] for key in ("source_rph", "guest_firstname", "guest_lastname", "guest_name") if key in person})
         if roster:
             if len(roster) > adults + children:
                 raise _GuestRosterError("EXELY_GUEST_ROSTER_EXCEEDS_OCCUPANCY")
             room["guests"] = roster
-            room.update(roster[0])
+            room.update(guests_by_rph[roster[0]["source_rph"]])
         room["adults"] = adults
         room["children"] = children
         if child_ages:
