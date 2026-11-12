@@ -18,6 +18,19 @@ async function fill() {
   fireEvent.change(screen.getByLabelText('Açıklama / iade gerekçesi'), { target: { value: 'Synthetic receipt only' } });
 }
 describe('Independent SPA settlements', () => {
+  it('keeps a server rejection visible after the payment list has been reconciled', async () => {
+    const reason = 'Geçerli iş gününde kasa vardiyasını açın';
+    axios.post.mockRejectedValue({ response: { status: 409, data: { detail: reason } } });
+    render(<AppointmentSettlements appointmentId="appt" />);
+    await fill();
+    fireEvent.click(screen.getByRole('button', { name: 'Hareketi kaydet' }));
+    expect(await screen.findByText(reason)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Durumu yenile' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Hareketi kaydet' })).toBeEnabled());
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Makbuz / banka referansı')).toHaveValue('SPA-001');
+  });
   it('sends one confirmed manual payment without a booking or folio', async () => {
     axios.post.mockResolvedValue({ data: {} });
     const changed = vi.fn();

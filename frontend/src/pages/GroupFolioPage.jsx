@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { runIdle } from '@/lib/idle';
@@ -157,6 +157,8 @@ const GroupFolioPage = ({
   const [bulkRef, setBulkRef] = useState('');
   const [bulkDistribution, setBulkDistribution] = useState('proportional');
   const [bulkPaying, setBulkPaying] = useState(false);
+  const selectedGroupIdRef = useRef(null);
+  const detailRequestRef = useRef(0);
   const loadGroups = useCallback(async () => {
     try {
       const res = await axios.get(`/pms/group-bookings`);
@@ -186,18 +188,29 @@ const GroupFolioPage = ({
     return cancel;
   }, [loadGroups, loadSummary]);
   const loadGroupDetail = async groupId => {
+    if (selectedGroupIdRef.current !== groupId) return;
+    const requestId = ++detailRequestRef.current;
     setDetailLoading(true);
+    setGroupDetail(null);
+    setShowMerge(false);
+    setShowPayment(false);
+    setShowBulkPayment(false);
+    setMasterBookingId('');
+    setPaymentBookingId('');
+    setPaymentAmount('');
+    setBulkAmount('');
     setExpandedBooking(null);
     try {
       const res = await axios.get(`/pms/group-folio/${groupId}`);
-      setGroupDetail(res.data);
+      if (requestId === detailRequestRef.current) setGroupDetail(res.data);
     } catch {
-      toast.error('Grup detay yüklenemedi');
+      if (requestId === detailRequestRef.current) toast.error('Grup detay yüklenemedi');
     } finally {
-      setDetailLoading(false);
+      if (requestId === detailRequestRef.current) setDetailLoading(false);
     }
   };
   const handleSelectGroup = group => {
+    selectedGroupIdRef.current = group.id;
     setSelectedGroup(group);
     loadGroupDetail(group.id);
   };
@@ -493,6 +506,7 @@ const GroupFolioPage = ({
           </div>
         </div>
 
+        {groupDetail && <>
         {/* ─── Merge Dialog ─── */}
         <Dialog open={showMerge} onOpenChange={setShowMerge}>
           <DialogContent className="max-w-md">
@@ -564,7 +578,7 @@ const GroupFolioPage = ({
               </div>
 
               <div>
-                <Label>{t('cm.pages_GroupFolioPage.tutar_tl')}</Label>
+                <Label>{t('common.amount')} ({groupDetail.currency})</Label>
                 <Input type="number" min="0" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="0.00" className="mt-1" data-testid="payment-amount-input" />
               </div>
 
@@ -620,7 +634,7 @@ const GroupFolioPage = ({
               </div>
 
               <div>
-                <Label>{t('cm.pages_GroupFolioPage.toplam_tutar_tl')}</Label>
+                <Label>{t('common.amount')} ({groupDetail.currency})</Label>
                 <Input type="number" min="0" step="0.01" value={bulkAmount} onChange={e => setBulkAmount(e.target.value)} placeholder={groupBalance > 0 ? fmtTL(groupBalance) : '0.00'} className="mt-1" data-testid="bulk-amount-input" />
                 {groupBalance > 0 && <Button variant="link" size="sm" className="text-xs text-blue-600 p-0 h-auto mt-1" onClick={() => setBulkAmount(String(groupBalance > 0 ? groupBalance : 0))} data-testid="fill-balance-btn">
                     {t('cm.pages_GroupFolioPage.bakiye_tutarini_doldur')}{fmtMoney(groupBalance, groupDetail.currency)})
@@ -691,6 +705,7 @@ const GroupFolioPage = ({
             </div>
           </DialogContent>
         </Dialog>
+        </>}
       </div>
     </>;
 };
