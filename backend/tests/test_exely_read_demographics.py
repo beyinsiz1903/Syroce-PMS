@@ -659,7 +659,7 @@ async def test_explicit_test_consent_is_saved_only_after_remote_validation(monke
         read.require_read_allowed(database.exely_connections.documents[0])
 
 
-@pytest.mark.parametrize("path", ["connect", "pause", "reconcile", "inspect"])
+@pytest.mark.parametrize("path", ["connect", "pause", "reconcile", "inspect", "guest-roster"])
 async def test_routes_enforce_permission_dependency_before_any_write(monkeypatch, path):
     app = FastAPI()
     app.include_router(api.router)

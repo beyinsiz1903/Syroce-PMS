@@ -301,7 +301,9 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
             proof["room_amount_comparison"] = amount_evidence
         evidence_hash = hashlib.sha256(json.dumps(proof, sort_keys=True).encode()).hexdigest()
         proof.update(evidence_hash=evidence_hash, verified_at=datetime.now(UTC).isoformat())
-        plans.append({"booking": booking, "proof": proof})
+        # Kept transiently for the separately authorized guest-list repair;
+        # demographic reconciliation still changes counts/provenance only.
+        plans.append({"booking": booking, "proof": proof, "remote_guests": remote_room.get("guests")})
     return plans
 
 

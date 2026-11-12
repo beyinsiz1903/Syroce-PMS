@@ -36,8 +36,8 @@ export default function ExelyReadReservationSettings({ connection, requestConfig
         await axios.post(`${ROOT}/pause`, {}, requestConfig);
         setResult({ status: 'paused', rooms: [] });
       } else {
-        ({ data } = await axios.post(`${ROOT}/reconcile`, { reservation_id: number.trim() }, requestConfig));
-        if (!data.success || data.status !== 'verified') throw new Error('EXELY_READ_NOT_VERIFIED');
+        ({ data } = await axios.post(`${ROOT}/${operation === 'roster' ? 'guest-roster' : 'reconcile'}`, { reservation_id: number.trim() }, requestConfig));
+        if (!data.success || data.status !== (operation === 'roster' ? 'roster_verified' : 'verified')) throw new Error('EXELY_READ_NOT_VERIFIED');
         setResult(data);
       }
       await onChanged?.();
@@ -56,7 +56,7 @@ export default function ExelyReadReservationSettings({ connection, requestConfig
   };
   return <Card data-testid="exely-read-reservation-settings">
     <CardHeader>
-      <CardTitle>Çocuk yaşı ve kişi ayrımı — Read Reservation API</CardTitle>
+      <CardTitle>Exely misafir bilgilerini doğrula</CardTitle>
       <CardDescription>
         Tesis {property} · {connection.mode === 'sandbox' ? 'Exely TEST ortamı' : 'Exely üretim ortamı'} · {enabled ? 'Okuma bağlantısı açık' : 'Okuma bağlantısı kapalı'}
       </CardDescription>
@@ -80,14 +80,16 @@ export default function ExelyReadReservationSettings({ connection, requestConfig
       </>}
       {enabled && <div className="flex flex-wrap gap-2">
         <Button onClick={() => run('reconcile')} disabled={busy || !number.trim()}>Kişi ayrımını doğrula ve düzelt</Button>
+        <Button variant="outline" onClick={() => run('roster')} disabled={busy || !number.trim()}>Misafir listesini doğrula ve tamamla</Button>
         <Button variant="outline" onClick={() => run('pause')} disabled={busy}>Otomatik kişi doğrulamasını durdur</Button>
       </div>}
+      {enabled && <p className="text-sm text-muted-foreground">Misafir listesini tamamlama, Exely’de adı bulunan diğer kişileri ilgili odanın Misafirler sekmesine ekler. Başlamış konaklama veya elle değiştirilmiş misafir listesi incelemeye bırakılır. Fiyatlar ve rezervasyon durumu değişmez.</p>}
       <p className="text-xs text-muted-foreground">Otomatik doğrulama, tesisin rezervasyon senkronizasyonu açıksa her çekim sonunda en fazla 25 gelecekteki kaydı kontrol eder. Durdurma, başlamış bir isteği geri almaz. Başlamış konaklama, elle değişmiş kişi bilgileri ve belirsiz çok odalı eşleşmeler otomatik değiştirilmez; hata koduyla incelemeye bırakılır.</p>
       {busy && <p role="status">Exely okuma API’si kontrol ediliyor…</p>}
       {error && <p role="alert">İşlem tamamlanmadı: {error}. Kayıt yeniden okunmadan doğrulandı sayılmaz; çok odalı bir işlemde kısmi sonuç oluşmuş olabilir.</p>}
       {result && <div role="status" className="rounded-md border p-3 space-y-1">
-        <p>{result.status === 'verified' ? 'PMS kişi ayrımı güncellendi ve tekrar okunarak doğrulandı.' : result.status === 'paused' ? 'Otomatik kişi doğrulaması durduruldu.' : 'API ve eşleşme doğrulandı; anahtarlar şifreli kasaya kaydedildi. PMS kaydı henüz değiştirilmedi.'}</p>
-        {result.rooms?.map((room, index) => <p key={room.booking_id || index}>Oda {index + 1}: {room.adults} yetişkin · {room.children_ages.length} çocuk{room.children_ages.length > 0 ? ` · yaşlar: ${room.children_ages.join(', ')}` : ''}</p>)}
+        <p>{result.status === 'roster_verified' ? 'Misafir listesi tamamlandı ve kayıtlar doğrulandı.' : result.status === 'verified' ? 'PMS kişi ayrımı güncellendi ve tekrar okunarak doğrulandı.' : result.status === 'paused' ? 'Otomatik kişi doğrulaması durduruldu.' : 'API ve eşleşme doğrulandı; anahtarlar şifreli kasaya kaydedildi. PMS kaydı henüz değiştirilmedi.'}</p>
+        {result.rooms?.map((room, index) => <p key={room.booking_id || index}>{result.status === 'roster_verified' ? `Oda ${index + 1}: ${room.named_guests} kayıtlı misafir` : <>Oda {index + 1}: {room.adults} yetişkin · {room.children_ages.length} çocuk{room.children_ages.length > 0 ? ` · yaşlar: ${room.children_ages.join(', ')}` : ''}</>}</p>)}
       </div>}
     </CardContent>
   </Card>;

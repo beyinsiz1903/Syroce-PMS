@@ -69,4 +69,25 @@ describe('Exely REST read-only setup and reconciliation', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('durduruldu'));
     expect(post).toHaveBeenCalledExactlyOnceWith('/channel-manager/exely/read-reservation/pause', {}, {});
   });
+
+  it('completes only the entered booking roster through its separate endpoint', async () => {
+    post.mockResolvedValue({ data: { success: true, status: 'roster_verified', rooms: [{ booking_id: 'booking-a', named_guests: 2 }] } });
+    mount(true);
+    const apply = screen.getByRole('button', { name: 'Misafir listesini doğrula ve tamamla' });
+    expect(apply).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Doğrulanacak mevcut Exely rezervasyon numarası'), { target: { value: 'synthetic-booking' } });
+    fireEvent.click(apply);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Misafir listesi tamamlandı'));
+    expect(screen.getByRole('status')).toHaveTextContent('Oda 1: 2 kayıtlı misafir');
+    expect(post).toHaveBeenCalledExactlyOnceWith('/channel-manager/exely/read-reservation/guest-roster', { reservation_id: 'synthetic-booking' }, {});
+  });
+
+  it('does not claim roster completion when source identity or durable readback fails', async () => {
+    post.mockRejectedValue({ response: { data: { detail: 'EXELY_ROSTER_PRIMARY_AMBIGUOUS' } } });
+    mount(true);
+    fireEvent.change(screen.getByLabelText('Doğrulanacak mevcut Exely rezervasyon numarası'), { target: { value: 'synthetic-booking' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Misafir listesini doğrula ve tamamla' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('EXELY_ROSTER_PRIMARY_AMBIGUOUS'));
+    expect(screen.queryByText('Misafir listesi tamamlandı ve kayıtlar doğrulandı.')).not.toBeInTheDocument();
+  });
 });

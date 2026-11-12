@@ -44,6 +44,8 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
             room_details[-1]["children_ages_complete"] = bool(room.get("children_ages_complete", len(room_details[-1]["children_ages"]) == room.get("children", 0)))
         if room.get("unrecognized_guest_count_codes"):
             room_details[-1]["unrecognized_guest_count_codes"] = list(room["unrecognized_guest_count_codes"])
+        if room.get("guests"):
+            room_details[-1]["guests"] = [dict(guest) for guest in room["guests"]]
 
     # Map Exely status to canonical
     exely_status = (raw.get("status") or "").lower()

@@ -10,6 +10,7 @@ from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
 from .demographics import inspect_reconciliation, reconcile_one, stable_reconciliation_plan
+from .guest_roster import reconcile_guest_roster
 from .read_reservation import (
     VAULT_PROVIDER,
     ReadReservationError,
@@ -136,3 +137,20 @@ async def inspect_read_reservation(payload: ReconcileRequest, current_user: User
         raise HTTPException(409, str(exc)) from None
     except Exception:
         raise HTTPException(503, "EXELY_READ_INSPECTION_UNAVAILABLE") from None
+
+
+@router.post("/guest-roster")
+async def reconcile_read_guest_roster(payload: ReconcileRequest, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_channel_connectors"))):
+    """Complete named occupants from a stable, room-matched provider read."""
+    connection = await active_connection(current_user)
+    try:
+        require_read_allowed(connection)
+        credentials = await saved_read_credentials(current_user.tenant_id, connection)
+        if not credentials:
+            raise ReadReservationError("EXELY_READ_NOT_CONFIGURED")
+        async with read_client(connection, credentials) as client:
+            return await reconcile_guest_roster(db, current_user.tenant_id, connection, payload.reservation_id, client)
+    except ReadReservationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except Exception:
+        raise HTTPException(503, "EXELY_ROSTER_RECONCILIATION_UNAVAILABLE") from None
