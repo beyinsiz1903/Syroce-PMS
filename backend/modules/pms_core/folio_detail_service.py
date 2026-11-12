@@ -319,31 +319,42 @@ class FolioDetailService:
         """Calculate line-level tax breakdown."""
         lines = []
         by_rate = {}
-        total_net = 0
-        total_tax = 0
-        total_gross = 0
+        total_net = money(0)
+        total_tax = money(0)
+        total_gross = money(0)
 
         for c in charges:
             if c.get("voided"):
                 continue
-            net = c.get("amount", 0)
-            tax = c.get("tax_amount", 0)
-            gross = c.get("total", net + tax)
-            rate = c.get("tax_rate", 0)
+            net = money(c.get("amount"))
+            tax = money(c.get("tax_amount"))
+            breakdown = c.get("tax_breakdown")
+            if isinstance(breakdown, dict) and breakdown:
+                # POS/SPA store VAT separately; night audit may store the
+                # same components in aggregate tax_amount. Count the sealed
+                # components once, never apply today's tax rate to old sales.
+                tax = sum((money(value) for value in breakdown.values()), money(0))
+            elif c.get("vat_amount") is not None:
+                tax += money(c["vat_amount"])
+            gross = money(c.get("total", net + tax))
+            # Department snapshots use fractional rates or omit them. The
+            # effective percentage comes from the recorded net/tax amounts.
+            rate = float(round(tax / net * 100, 2)) if net else 0
 
             lines.append(
                 {
                     "charge_id": c.get("id"),
                     "description": c.get("description"),
                     "category": c.get("charge_category"),
-                    "net_amount": round(net, 2),
+                    "net_amount": float(round(net, 2)),
                     "tax_rate": rate,
-                    "tax_amount": round(tax, 2),
-                    "gross_amount": round(gross, 2),
+                    "tax_amount": float(round(tax, 2)),
+                    "gross_amount": float(round(gross, 2)),
+                    "currency": c.get("currency"),
                 }
             )
 
-            rate_key = f"{rate}%"
+            rate_key = f"{rate:g}%"
             if rate_key not in by_rate:
                 by_rate[rate_key] = {"rate": rate, "net": 0, "tax": 0, "gross": 0, "count": 0}
             by_rate[rate_key]["net"] += net
@@ -358,15 +369,15 @@ class FolioDetailService:
         # Round summaries
         for k in by_rate:
             for field in ["net", "tax", "gross"]:
-                by_rate[k][field] = round(by_rate[k][field], 2)
+                by_rate[k][field] = float(round(by_rate[k][field], 2))
 
         return {
             "lines": lines,
             "by_tax_rate": by_rate,
             "totals": {
-                "net": round(total_net, 2),
-                "tax": round(total_tax, 2),
-                "gross": round(total_gross, 2),
+                "net": float(round(total_net, 2)),
+                "tax": float(round(total_tax, 2)),
+                "gross": float(round(total_gross, 2)),
             },
         }
 
