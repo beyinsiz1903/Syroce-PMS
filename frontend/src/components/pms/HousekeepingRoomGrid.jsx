@@ -149,12 +149,14 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
       return;
     }
     try {
-      await axios.put(`/pms/housekeeping/rooms/bulk-status`, null, {
+      const response = await axios.put(`/pms/housekeeping/rooms/bulk-status`, null, {
         params: { room_ids: selectedRooms, status: newStatus }
       });
-      toast.success(
+      const conflicts = response.data?.conflicted_room_ids || [];
+      if (conflicts.length) toast.warning(`${response.data.updated_count || 0} oda güncellendi. ${conflicts.length} odanın durumu değişti; listeyi kontrol edin.`);
+      else toast.success(
         tg('bulkUpdated')
-          .replace('{count}', String(selectedRooms.length))
+          .replace('{count}', String(response.data?.updated_count ?? selectedRooms.length))
           .replace('{label}', STATUS_CONFIG[newStatus]?.label || newStatus)
       );
       setSelectedRooms([]);

@@ -58,6 +58,7 @@ def _invalidate_hk_caches(tenant_id: str) -> None:
         cache.invalidate_tenant_cache(tenant_id, "hk_active_timers")
         cache.invalidate_tenant_cache(tenant_id, "housekeeping_performance")
         cache.invalidate_tenant_cache(tenant_id, "housekeeping_room_status")
+        cache.invalidate_tenant_cache(tenant_id, "housekeeping_rooms_list")
     except Exception:
         pass
 
