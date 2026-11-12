@@ -41,6 +41,10 @@ class _ReservationIdentityError(ValueError):
     """The read cannot safely select its provider acknowledgement target."""
 
 
+class _GuestRosterError(ValueError):
+    """Invalid room/person references must never be acknowledged."""
+
+
 def _ns(tag: str, ns: str = OTA_NS) -> str:
     return f"{{{ns}}}{tag}"
 
@@ -189,7 +193,7 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
     for hr in body.iter(_ns("HotelReservation")):
         try:
             res = _parse_hotel_reservation(hr)
-        except (_ReservationIdentityError, ServicePayloadError):
+        except (_ReservationIdentityError, ServicePayloadError, _GuestRosterError):
             # Do not acknowledge a partial batch or expose provider IDs in logs.
             return {"success": False, "result_class": MALFORMED,
                     "error": "Invalid reservation identity or service details", "reservations": [], "count": 0}
@@ -278,6 +282,9 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
                 guest_info["guest_city"] = _text(address_el.find(_ns("CityName")))
         rph = _attr(guest, "ResGuestRPH")
         if rph:
+            if rph in guests_by_rph:
+                raise _GuestRosterError("EXELY_GUEST_REFERENCE_DUPLICATE")
+            guest_info["source_rph"] = rph
             guests_by_rph[rph] = guest_info
             customer = guest.find(f".//{_ns('Customer')}")
             birth_dates_by_rph[rph] = _attr(customer, "BirthDate")
@@ -333,6 +340,7 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         children = 0
         child_ages = []
         unknown_count_codes = []
+        guest_refs = []
         for gc in room_stay.iter(_ns("GuestCount")):
             age_code = _attr(gc, "AgeQualifyingCode")
             raw_count = _attr(gc, "Count", "0")
@@ -359,8 +367,28 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             elif count:
                 unknown_count_codes.append(age_code)
             guest_info = guests_by_rph.get(_attr(gc, "ResGuestRPH"))
+            if _attr(gc, "ResGuestRPH"):
+                guest_refs.append(_attr(gc, "ResGuestRPH"))
             if guest_info and not room.get("guest_name"):
                 room.update(guest_info)
+        guest_refs.extend(_attr(ref, "RPH", _attr(ref, "ResGuestRPH")) for ref in
+                          room_stay.findall(f"{_ns('ResGuestRPHs')}/{_ns('ResGuestRPH')}"))
+        # Occupancy is a count, not a roster. Retain every explicitly linked
+        # person without copying the booking contact into unrelated rooms.
+        roster = []
+        for rph in dict.fromkeys(guest_refs):
+            if not rph or rph not in guests_by_rph:
+                raise _GuestRosterError("EXELY_GUEST_REFERENCE_NOT_FOUND")
+            person = guests_by_rph[rph]
+            if person.get("guest_name"):
+                # Names are searchable plaintext guest fields. Keep private
+                # contact data out of the additional roster provenance.
+                roster.append({key: person[key] for key in ("source_rph", "guest_firstname", "guest_lastname", "guest_name") if key in person})
+        if roster:
+            if len(roster) > adults + children:
+                raise _GuestRosterError("EXELY_GUEST_ROSTER_EXCEEDS_OCCUPANCY")
+            room["guests"] = roster
+            room.update(guests_by_rph[roster[0]["source_rph"]])
         room["adults"] = adults
         room["children"] = children
         if child_ages:

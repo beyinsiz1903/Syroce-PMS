@@ -434,6 +434,10 @@ async def _durable_readback(version_doc: dict[str, Any]) -> bool:
             return False
         if 'total_amount' in expected and booking.get('total_amount') != expected['total_amount']:
             return False
+        if 'guest_roster' in expected:
+            from .guest_roster import roster_readback
+            if not await roster_readback(db, version_doc['tenant_id'], expected['pms_booking_id'], expected['guest_roster']):
+                return False
     return True
 
 

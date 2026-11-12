@@ -319,7 +319,8 @@ async def _ensure_guest(tenant_id: str, property_id: str, reservation: dict[str,
     from security.guest_write import encrypt_guest_insert, encrypt_guest_update
 
     if existing:
-        fields = {key: guest[key] for key in ("first_name", "last_name", "name", "email", "phone", "nationality")}
+        fields = {key: guest[key] for key in ("first_name", "last_name", "name", "email", "phone", "nationality")
+                  if not reservation.get("_preserve_guest_contact") or key in {"first_name", "last_name", "name"}}
         fields["updated_at"] = _now()
         await db.guests.update_one(
             {"tenant_id": tenant_id, "id": guest_id},
@@ -625,6 +626,10 @@ async def _readback_expectations(tenant_id: str, version_key: str, expectations:
             return False
         if 'total_amount' in expected and booking.get('total_amount') != expected['total_amount']:
             return False
+        if 'guest_roster' in expected:
+            from .guest_roster import roster_readback
+            if not await roster_readback(db, tenant_id, expected['pms_booking_id'], expected['guest_roster']):
+                return False
     return True
 
 
@@ -778,13 +783,23 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             new_lineage = [{**row, "active": False} for row in previous_lineage if int(row.get("slot_ordinal", 0)) not in assigned_slots]
             for row, mapping in zip(assigned, mappings, strict=True):
                 slot = int(row["slot_ordinal"])
+                booking_id = str(row.get("pms_booking_id") or _stable_id("booking", tenant_id, property_id, external_id, slot))
+                preserve_contact = False
+                if row["room"].get("guests"):
+                    from .guest_roster import preserve_primary
+                    previous_booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0, "exely_guest_roster": 1})
+                    people = preserve_primary(row["room"]["guests"], (previous_booking or {}).get("exely_guest_roster"))
+                    # The source scalar contact belongs to the first source
+                    # reference, which may no longer be our stable lead guest.
+                    preserve_contact = people[0]["source_rph"] != row["room"]["guests"][0]["source_rph"]
+                    row["room"] = {**row["room"], **{key: value for key, value in people[0].items() if key.startswith("guest_")}, "guests": people}
                 room_guest = {**current, **{key: value for key, value in row["room"].items() if key.startswith("guest_")}}
+                room_guest["_preserve_guest_contact"] = preserve_contact
                 guest_id = await _run_claimed(
                     _ensure_guest(tenant_id, property_id, room_guest, slot),
                     claim,
                     claim_lost,
                 )
-                booking_id = str(row.get("pms_booking_id") or _stable_id("booking", tenant_id, property_id, external_id, slot))
                 booking_doc = _booking_fields(
                     tenant_id=tenant_id,
                     property_id=property_id,
@@ -801,6 +816,11 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                     claim,
                     claim_lost,
                 )
+                roster = None
+                if row["room"].get("guests"):
+                    from .guest_roster import sync_room_roster
+                    persisted = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0})
+                    roster = await _run_claimed(sync_room_roster(db, tenant_id, persisted, row["room"]["guests"]), claim, claim_lost)
                 created += action == "created"
                 updated += action == "updated"
                 index_number = str(row["room"].get("index_number") or "")
@@ -814,7 +834,8 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                     }
                 )
                 expectations.append({"pms_booking_id": booking_id, "status": "confirmed",
-                    "provider_services": booking_doc['provider_services'], "total_amount": booking_doc['total_amount']})
+                    "provider_services": booking_doc['provider_services'], "total_amount": booking_doc['total_amount'],
+                    **({"guest_roster": roster} if roster else {})})
                 confirmations.append({"pms_booking_id": booking_id, "room_stay_indexes": [index_number]})
 
             for row in removed:
