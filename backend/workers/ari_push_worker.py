@@ -10,6 +10,7 @@ import logging
 
 from controlplane.failure_tracker import get_failure_tracker
 from core.database import db
+from core.tenant_db import tenant_context
 from core.transient_db_guard import TransientFailureTracker, is_transient_db_error
 from domains.channel_manager.ari.outbound_service import push_pending_changes
 
@@ -53,7 +54,12 @@ async def ari_push_worker_loop():
                 tenant_id = t["_id"]
                 tenant_key = str(tenant_id or "")
                 try:
-                    result = await push_pending_changes(tenant_id, limit=20)
+                    # Workers do not run behind HTTP tenant middleware. The
+                    # inventory preflight must read this tenant's rooms and
+                    # bookings without weakening strict isolation, and reset
+                    # context before processing the next tenant or a failure.
+                    with tenant_context(tenant_id):
+                        result = await push_pending_changes(tenant_id, limit=20)
                     if result["pushed"] > 0 or result["failed"] > 0:
                         logger.info(f"ARI push worker [{tenant_id}]: {result}")
 
