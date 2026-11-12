@@ -922,7 +922,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             </div>
 
             {/* Sticky footer — birincil eylem (Giriş/Çıkış) hep görünür */}
-            {!readOnly && (booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
+            {canCheckIn && (
               <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
                 <Button
                   size="sm"

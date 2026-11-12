@@ -229,6 +229,41 @@ describe('ReservationDetailModal operation URLs', () => {
     }));
   });
 
+  it('offers normal check-in for an assigned pending reservation without using early check-in', async () => {
+    get.mockResolvedValue({ data: { ...detail, booking: { ...detail.booking, status: 'pending' } } });
+    const onOperationComplete = vi.fn();
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}}
+      onOperationComplete={onOperationComplete} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('btn-checkin'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/frontdesk/checkin/booking-test?create_folio=true&force_clean=true',
+    ));
+    expect(post.mock.calls.some(([url]) => url.includes('early-checkin'))).toBe(false);
+    await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
+      bookingId: 'booking-test', operation: 'checked_in',
+    }));
+  });
+
+  it('keeps pending historical reservations read-only and unassigned arrivals in room assignment', async () => {
+    get.mockResolvedValue({ data: { ...detail, read_only: true, booking: { ...detail.booking, status: 'pending' } } });
+    const view = render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    await screen.findByText('Salt okunur');
+    expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
+    view.unmount();
+
+    get.mockResolvedValue({ data: { ...detail, room: null,
+      booking: { ...detail.booking, status: 'pending', room_id: null, room_number: null } } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    const button = await screen.findByTestId('btn-checkin');
+    expect(button).toHaveTextContent('Önce oda atayın');
+    fireEvent.click(button);
+    expect(post).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Girişi onayla' })).not.toBeInTheDocument();
+  });
+
   it('shows only lifecycle-eligible mutation buttons for a confirmed booking', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 

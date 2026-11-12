@@ -51,12 +51,25 @@ describe('existing folio allocation', () => {
     fireEvent.change(screen.getByLabelText('Paylaştırma yöntemi'), { target: { value: 'amount' } });
     fireEvent.change(screen.getByLabelText('Paylaştırma tutarı'), { target: { value: '10000,01' } });
     expect(screen.getByRole('button', { name: 'Paylaştırmayı Onayla' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Seçilen tutar kaynak hesaptaki açık borcu aşıyor');
     fireEvent.change(screen.getByLabelText('Paylaştırma tutarı'), { target: { value: '10000,00' } });
     expect(screen.getByRole('button', { name: 'Paylaştırmayı Onayla' })).toBeEnabled();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Paylaştırma tutarı'), { target: { value: '6000,01' } });
     fireEvent.click(screen.getByRole('button', { name: 'Paylaştırmayı Onayla' }));
     await waitFor(() => expect(post).toHaveBeenCalledWith('/folio-windows/allocate', expect.objectContaining({ mode: 'amount', amount: 6000.01 })));
     expect(post.mock.calls[0][1]).not.toHaveProperty('charge_ids');
+  });
+
+  it.each([0, -1368])('explains a blocked credit/zero balance (%s) without posting a transfer', balance => {
+    const data = props(); data.folios[0].balance = balance;
+    render(<FolioAllocationPanel {...data} />); choose();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Oda Ücreti/ }));
+    expect(screen.getByRole('status')).toHaveTextContent('Kaynak hesapta açık borç yok');
+    const button = screen.getByRole('button', { name: 'Paylaştırmayı Onayla' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('locks uncertain requests and retries the same request id without double-submit', async () => {
