@@ -10,6 +10,27 @@ import routers.finance.folio as finance_folio
 import routers.reservation_detail as reservation_detail
 
 
+@pytest.mark.parametrize("room_credit,status,expected_difference", [(100, "paid", 0), (40, "paid", 60), (0, "paid", 100), (100, "refunded", 100)])
+def test_entire_stay_comp_preserves_prior_room_concession_without_using_food_credit(room_credit, status, expected_difference):
+    charges = [{"id": "room", "charge_category": "room", "total": 100},
+               {"id": "food", "charge_category": "food", "total": 120},
+               {"id": "laundry", "charge_category": "laundry", "total": 50}]
+    payments = [{"id": "room-comp", "amount": room_credit, "method": "discount", "payment_type": "comp_adjustment",
+                 "concession_id": "room", "charge_ids": ["room"], "status": status},
+                {"id": "food-comp", "amount": 120, "method": "discount", "payment_type": "comp_adjustment",
+                 "concession_id": "food", "charge_ids": ["food"]},
+                {"id": "receipt", "amount": 50, "method": "cash"}]
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 0, "is_complimentary": True, "complimentary_mode": "entire_stay"},
+        charges, payments, [], [],
+    )
+    assert summary["pricing_reconciliation_difference"] == expected_difference
+    assert summary["pricing_reconciliation_required"] is (expected_difference > 0)
+    assert summary["cash_collection_total"] == 50
+    if status == "paid":
+        assert summary["folio_balance"] == summary["reservation_total_due"] == 100 - room_credit
+
+
 @pytest.mark.parametrize("posted_nights", [0, 1, 3])
 def test_room_upgrade_surcharge_does_not_replace_agreed_room_nights(posted_nights):
     charges = [

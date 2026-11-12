@@ -122,12 +122,12 @@ describe('kur çevirici', () => {
   it('iki folyoda hedef seçmeden ödeme göndermez; seçimden sonra yalnız o folyonun bakiyesini gönderir', async () => {
     render(<FoliosTab {...multiFolioProps()} />);
     fireEvent.click(screen.getByTestId('btn-odeme-al'));
-    let panel = screen.getByTestId('payment-form');
-    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/ }));
+    expect(screen.queryByTestId('payment-form')).not.toBeInTheDocument();
     expect(await screen.findByRole('alert')).toHaveTextContent('Hedef folyoyu seçin');
     expect(axiosPost).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('İşlem hedef folyo'), { target: { value: 'f2' } });
-    panel = screen.getByTestId('payment-form');
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
     fireEvent.click(within(panel).getByRole('button', { name: /kaydet/ }));
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/reservations/bk-1/record-payment', expect.objectContaining({ folio_id: 'f2', amount: 200, payment_type: 'final' })));
   });
@@ -623,4 +623,22 @@ describe('FoliosTab — masraf var folio yok (Task #423)', () => {
     expect(screen.queryByTestId('split-folio-panel')).toBeNull();
     expect(toast.error).toHaveBeenCalledWith('Bölünecek folyo bulunmuyor');
   });
+});
+
+
+it('split preview uses the source currency and excludes another payer’s extras', () => {
+  const data = multiFolioProps({ booking: { ...booking, currency: 'USD' },
+    folios: multiFolioProps().folios.map(f => ({ ...f, currency: 'USD' })),
+    extra_charges: [{ id: 'own', folio_id: 'f1', total: 10, description: 'Misafir çamaşırhane' },
+      { id: 'other', folio_id: 'f2', total: 20, description: 'Şirket yemeği' },
+      { id: 'unassigned', total: 30, description: 'Hesabı belirsiz hizmet' }] });
+  render(<FoliosTab {...data} />);
+  fireEvent.click(screen.getByTestId('btn-folyo-bol'));
+  const panel = screen.getByTestId('split-folio-panel');
+  expect(within(panel).getByTestId('split-charge-own')).toBeInTheDocument();
+  expect(within(panel).queryByTestId('split-charge-other')).not.toBeInTheDocument();
+  expect(within(panel).queryByTestId('split-charge-unassigned')).not.toBeInTheDocument();
+  expect(panel).toHaveTextContent('$');
+  expect(panel).not.toHaveTextContent('₺');
+  expect(panel).toHaveTextContent('Kalan hizmetlerin brüt tutarı');
 });

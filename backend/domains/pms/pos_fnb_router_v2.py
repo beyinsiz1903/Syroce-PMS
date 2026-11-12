@@ -134,6 +134,10 @@ class TransferOrderTableRequest(BaseModel):
     to_table_number: str
 
 
+class MergeOrderTablesRequest(BaseModel):
+    target_order_id: str = Field(min_length=1, max_length=100)
+
+
 class OrderAdjustmentRequest(BaseModel):
     adjustment_type: str = Field(pattern="^(discount|service_charge)$")
     calculation: str = Field(pattern="^(percentage|fixed)$")
@@ -333,6 +337,17 @@ async def transfer_order_table(
     if not result.ok:
         status_code = 409 if result.code in {"ORDER_NOT_OPEN", "TABLE_UNAVAILABLE"} else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/merge-table")
+async def merge_order_tables(
+    order_id: str,
+    req: MergeOrderTablesRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_module_role("pos")),
+):
+    result = await pos_fnb_service_v2.merge_order_tables(OperationContext.from_user(user), order_id, req.target_order_id)
     return _ok_payload(result)
 
 

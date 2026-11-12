@@ -63,3 +63,13 @@ describe('folio payee binding', () => {
     expect(screen.queryByTestId('window-add-btn')).not.toBeInTheDocument();
   });
 });
+
+
+it('does not describe non-cash ledger offsets as received payments', async () => {
+  get.mockResolvedValueOnce({ data: [{ folio_id: 'comp', folio_number: 'F-COMP', window_number: 1,
+    status: 'open', balance: 0, charges_count: 2, payments_count: 2 }] });
+  render(<FolioWindowsPanel bookingId="comp-booking" />);
+  const account = await screen.findByTestId('window-row-1');
+  expect(account).toHaveTextContent('2 ödeme veya hesap düzeltmesi');
+  expect(account).not.toHaveTextContent('ödeme hareketi');
+});

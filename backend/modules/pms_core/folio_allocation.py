@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from modules.pms_core.folio_selection import select_booking_folio
 from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.report_money import currency_code, money, rounded
+from modules.pms_core.reporting_financials import effective_folio_payment
 
 
 class FolioAllocationRequest(BaseModel):
@@ -101,6 +102,10 @@ async def allocate_posted_debt(database, tenant_id, actor_id, body, *, session):
     selected = [row for row in rows if row.get("id") in body.charge_ids] if body.mode == "items" else []
     if body.mode == "items" and {row["id"] for row in selected} != set(body.charge_ids):
         raise HTTPException(409, "Seçilen kalemler kaynak folyoda yok veya iptal edilmiş; yenileyin")
+    if selected and any(effective_folio_payment(row) > 0 and
+            set(row.get("charge_ids") or []).intersection(body.charge_ids)
+            for row in snapshots[source["id"]]["payments"]):
+        raise HTTPException(409, "İkram veya indirim uygulanmış hizmet kalemi taşınamaz. Net borç için tutar bazlı paylaştırmayı kullanın.")
     if any(row.get("invoice_id") or row.get("charge_category") == "split_adjustment" or
            money(row["total"]) <= 0 or money(row["total"]) != money(rounded(row["total"])) or
            currency_code(row.get("currency"), currency) != currency for row in selected):

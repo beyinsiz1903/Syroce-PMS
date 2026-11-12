@@ -7,8 +7,8 @@ const WORKSPACES = [
   {
     key: 'guest-folios',
     title: 'Misafir folyosu ve tahsilat',
-    description: 'Rezervasyon hesabını, ücretleri, ödemeleri ve açık bakiyeleri yönetin.',
-    path: '/app/pms?tab=cashier',
+    description: 'Rezervasyonu seçip Folyolar bölümünden ücretleri, ödemeleri ve açık bakiyeleri yönetin.',
+    path: '/app/pms#bookings',
     action: 'Folyoları aç',
     icon: WalletCards,
   },

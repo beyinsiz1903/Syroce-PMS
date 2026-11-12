@@ -435,7 +435,8 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                         )}
                       </div>
                       <div className="text-xs text-gray-600 mt-2 px-1">
-                        Kalan: <strong>{money(stayTotal)}</strong>
+                        Kalan hizmetlerin brüt tutarı: <strong>{money(stayTotal)}</strong>
+                        <p className="mt-1">İkram, tahsilat ve mahsuplar folyo bakiyesinde ayrıca dikkate alınır.</p>
                       </div>
                     </div>
 

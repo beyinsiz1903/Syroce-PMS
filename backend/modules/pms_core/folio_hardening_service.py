@@ -350,6 +350,21 @@ class FolioHardeningService:
         if found_ids != set(charge_ids):
             return {"success": False, "error": "Some charges not found or already voided"}
 
+        # Moving a gross service without its attributed concession would leave
+        # a credit with one payer and charge the next payer for an already
+        # comped service. Keep that service identity in place; net debt can be
+        # allocated separately without moving or duplicating the concession.
+        from modules.pms_core.reporting_financials import effective_folio_payment
+
+        offsets = await db.payments.find(
+            {"tenant_id": tenant_id, "folio_id": source_folio_id, "voided": {"$ne": True}}, {"_id": 0},
+        ).to_list(None)
+        if any(effective_folio_payment(row) > 0
+               and set(row.get("charge_ids") or []).intersection(charge_ids) for row in offsets):
+            return {"success": False, "error": "İkram veya indirim uygulanmış hizmet kalemi taşınamaz. Net borç için tutar bazlı paylaştırmayı kullanın."}
+        if any(row.get("folio_id") and row["folio_id"] != source_folio_id for row in extra_charges):
+            return {"success": False, "error": "Seçilen ekstra başka bir folyoya ait; kaynak hesabı seçin."}
+
         # Create new folio
         from core.utils import generate_folio_number
 
@@ -365,6 +380,7 @@ class FolioHardeningService:
             "status": "open",
             "guest_id": source_folio.get("guest_id"),
             "company_id": source_folio.get("company_id"),
+            "currency": source_folio.get("currency"),
             "balance": 0.0,
             "notes": f"Split from {source_folio.get('folio_number')}: {reason}",
             "created_at": now.isoformat(),

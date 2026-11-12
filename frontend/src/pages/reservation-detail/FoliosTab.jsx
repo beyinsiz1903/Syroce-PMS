@@ -180,16 +180,17 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     const src = folioList.find(f => f.id === sid && f.status === 'open');
     if (!src) return null;
     // Folio kalemleri (folio_id eşleşen) + booking kapsamlı ekstra masraflar.
-    // extra_charges'ın folio_id'si yoktur; bölme sırasında backend bunları
-    // booking_id ile doğrulayıp hedef folioya folio kalemi olarak taşır.
+    // Legacy extras can be unassigned; include them only when a single folio
+    // owns that booking scope, never alongside another payer's explicit rows.
     const folioItems = (charges || []).filter(c => c.folio_id === src.id && !c.voided);
-    const extraItems = (extra_charges || []).filter(c => !c.voided);
+    const extraItems = (extra_charges || []).filter(c => !c.voided && folioItemInScope(c, folioList, [sid]));
     return {
       id: src.id,
       folio_number: src.folio_number,
       guest_name: guest?.name || guest?.full_name || booking?.guest_name,
       room_number: room?.room_number || room?.number || booking?.room_number,
       balance: src.balance,
+      currency: src.currency || booking.currency,
       charges: [...folioItems, ...extraItems],
     };
   }, [splitSourceId, defaultSourceId, folioList, charges, extra_charges, booking, guest, room]);
@@ -205,8 +206,13 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const rawFolioBalance = Number(summary?.folio_balance ?? summary?.balance) || 0;
   const reservationTotalDue = Number(summary?.reservation_total_due ?? summary?.balance) || 0;
   const openPaymentForm = () => {
+    if (!targetFolio && folioList.filter(f => f.status === 'open').length > 1) {
+      setActionError('Hedef folyoyu seçin; ardından ödeme alın.');
+      return;
+    }
+    setActionError('');
     const balance = targetFolio ? Number(targetFolio.balance) || 0 : reservationTotalDue;
-    setPayForm(p => ({ ...p, amount: balance > 0 ? String(balance) : p.amount }));
+    setPayForm(p => ({ ...p, amount: balance > 0 ? String(balance) : '' }));
     setShowPayment(!showPayment);
     setCashierTryRate('');
   };
