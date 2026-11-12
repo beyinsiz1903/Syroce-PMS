@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import MongoClient
 
 load_dotenv("/app/backend/.env")
 
@@ -35,14 +36,29 @@ TEST_TENANT = f"test-import-{uuid.uuid4().hex[:6]}"
 TEST_PROPERTY = f"prop-import-{uuid.uuid4().hex[:6]}"
 TEST_PROVIDER = "exely"
 TEST_CONNECTOR = "test-connector-001"
+TEST_DATABASE_SUFFIX = f"import_bridge_{uuid.uuid4().hex}"
+
+
+def _isolated_database_name():
+    # CI also runs a real backend with an import worker. A random tenant is
+    # insufficient isolation: that worker claims pending imports across all
+    # tenants in its database before this test can exercise the manual claim.
+    return f"{os.environ.get('DB_NAME', 'hotel_pms')}_{TEST_DATABASE_SUFFIX}"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def isolated_import_database():
+    yield
+    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+    with MongoClient(mongo_url) as client:
+        client.drop_database(_isolated_database_name())
 
 
 async def _get_db():
     """Create a fresh Motor client for testing (same loop)."""
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
-    db_name = os.environ.get("DB_NAME", "hotel_pms")
     client = AsyncIOMotorClient(mongo_url)
-    return client, client[db_name]
+    return client, client[_isolated_database_name()]
 
 
 async def _cleanup(db):
@@ -349,7 +365,6 @@ async def test_auto_import_pending_assignment_defers_availability_outbox():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky in CI - Record not claimable. Investigating in background")
 async def test_hotelrunner_import_projects_provider_note_into_existing_notes_collection():
     client, db = await _get_db()
     try:
@@ -528,7 +543,8 @@ async def test_unmapped_room_triggers_review(provider):
         lineage = _make_lineage(provider=provider)
 
         with patch("core.import_bridge_service.db", db), \
-             patch("core.import_decision.db", db):
+             patch("core.import_decision.db", db), \
+             patch("domains.channel_manager.providers.unmatched_hold.db", db):
             from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
             success, message = await auto_import_reservation_to_pms(record["id"])
@@ -775,6 +791,11 @@ async def test_admin_approve_and_import():
             from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "review_required", connector_id=TEST_CONNECTOR)
 
+            # The separately running backend must not be able to claim this
+            # record while the test changes review_required to pending.
+            application_db = client[os.environ.get("DB_NAME", "hotel_pms")]
+            assert await application_db[COLL_IMPORTED].find_one({"id": record["id"]}) is None
+
             # Admin approves: reset to pending
             now = datetime.now(UTC).isoformat()
             await db[COLL_IMPORTED].update_one(
@@ -784,7 +805,7 @@ async def test_admin_approve_and_import():
 
             success, message = await auto_import_reservation_to_pms(record["id"])
 
-        assert success is True
+        assert success is True, message
 
         imp = await db[COLL_IMPORTED].find_one({"id": record["id"]}, {"_id": 0})
         assert imp["import_status"] == "imported"
