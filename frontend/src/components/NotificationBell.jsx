@@ -174,7 +174,7 @@ const NotificationBell = ({ user } = {}) => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setIsOpen(true)}
+          onClick={() => { loadNotifications(); setIsOpen(true); }}
           className="relative p-2 hover:bg-white/20 dark:text-gray-100"
           data-testid="notification-bell-button"
           aria-label={totalUnread > 0 ? `Bildirimler: ${totalUnread} okunmamış` : 'Bildirimleri aç'}

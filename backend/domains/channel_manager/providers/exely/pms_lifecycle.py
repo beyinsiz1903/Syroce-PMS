@@ -651,6 +651,9 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
     state = version_doc.get("processing_state")
     if state == PMS_DURABLE:
         durable = await _readback_expectations(tenant_id, version_doc["provider_version_key"], version_doc.get("durable_expectations") or [])
+        if durable:
+            from .reservation_notifications import deliver_notification
+            await deliver_notification(db, tenant_id, identity)
         return {
             "success": durable,
             "reason": "ALREADY_DURABLE" if durable else "PMS_READBACK_FAILED",
@@ -924,6 +927,10 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
 
         if claim_lost.is_set():
             raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
+        from .reservation_notifications import build_notification, deliver_notification
+
+        durable_at = _now()
+        notification = build_notification(current, version_doc, confirmations, expectations, durable_at)
         finished = await _finish_processing_claim(
             claim,
             processing_state=PMS_DURABLE,
@@ -931,12 +938,15 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             ack_confirmations=confirmations,
             durable_expectations=expectations,
             failure_code=None,
-            pms_durable_at=_now(),
+            pms_durable_at=durable_at,
             inventory_targets_v1=inventory_targets,
             inventory_outbox_state=inventory_state,
+            reservation_notification_v1=notification,
+            reservation_notification_state="PENDING" if notification else "SKIPPED",
         )
         if not finished:
             raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
+        await deliver_notification(db, tenant_id, identity)
         logger.info(
             "[EXELY-LIFECYCLE] pms_state=durable created=%d updated=%d cancelled=%d",
             created,
@@ -1016,6 +1026,11 @@ async def process_pending_reservations(tenant_id: str, provider=None, limit: int
                 mapping_rejections["sent"] += int(bool(rejection.get("success")) and rejection.get("provider_write_count", 0) > 0)
                 mapping_rejections["provider_write_count"] += int(rejection.get("provider_write_count", 0))
 
+    from .reservation_notifications import deliver_pending_notifications
+
+    # Retry only local notification delivery, even for an already-ACKed source
+    # that is no longer in the pending PMS/ACK queues.
+    await deliver_pending_notifications(db, tenant_id, limit=limit)
     ack_result = {"acked": 0, "failed": 0, "provider_write_count": 0}
     if provider is not None:
         ack_result = await acknowledge_pending_versions(provider, tenant_id, limit=limit)

@@ -238,6 +238,10 @@ async def persist_exely_event(
         "provider_payload_hash": payload_hash,
         "version_identity": identity,
         "event_type": "cancellation" if is_cancellation else event_type,
+        "reservation_notification_kind": (
+            "reservation_cancelled" if is_cancellation else
+            "reservation_modified" if current and (current.get("pms_booking_ids") or current.get("pms_booking_id")) else "reservation"
+        ),
         "provider_state": canonical["status"],
         "room_stays": canonical["rooms"],
         "services": list(canonical.get('services') or []),
@@ -329,6 +333,11 @@ async def persist_exely_event(
 
         if winner.get("pms_booking_ids") or winner.get("pms_booking_id"):
             reservation_doc["pms_status"] = "updated"
+            if not is_cancellation:
+                await db.exely_reservation_versions.update_one(
+                    {"tenant_id": tenant_id, "version_identity": identity},
+                    {"$set": {"reservation_notification_kind": "reservation_modified"}},
+                )
         retry_query = {"tenant_id": tenant_id, "external_id": external_id}
         if winner_identity:
             retry_query["provider_version_identity"] = winner_identity
