@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { confirmDialog } from '@/lib/dialogs';
 
 const axiosGet = vi.fn();
 const axiosPost = vi.fn();
@@ -22,6 +23,8 @@ describe('POS waiter menu regressions', () => {
     localStorage.clear();
     axiosGet.mockReset();
     axiosPost.mockReset();
+    confirmDialog.mockClear();
+    confirmDialog.mockResolvedValue(true);
   });
 
   it('keeps unavailable products visible while excluding inactive products', () => {
@@ -165,5 +168,69 @@ describe('POS waiter menu regressions', () => {
     ));
     expect(await screen.findByRole('option', { name: 'Masa 1' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Masa 2' })).not.toBeInTheDocument();
+  });
+
+  it.each([true, false])('confirms table merge and keeps the target check identity (confirm=%s)', async (approved) => {
+    let merged = false;
+    confirmDialog.mockResolvedValue(approved);
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [
+        { id: 'table-1', table_number: '1', status: merged ? 'available' : 'occupied', current_order_id: merged ? null : 'order-1' },
+        { id: 'table-2', table_number: '2', status: 'occupied', current_order_id: 'order-2' },
+        { id: 'legacy-table', table_number: '3', status: 'occupied', current_transaction_id: 'legacy-sale' },
+      ] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
+      if (url.startsWith('/pos/v2/orders/')) {
+        const target = url.endsWith('/order-2');
+        return Promise.resolve({ data: { order: { id: target ? 'order-2' : 'order-1', order_number: target ? 'ORD-TARGET' : 'ORD-SOURCE',
+          status: 'pending', payment_status: 'unpaid', table_number: target ? '2' : '1', grand_total: target ? 330 : 110,
+          order_items: [{ line_id: 'line1', item_name: 'Çay', quantity: 1, total: 100 }],
+        } } });
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockImplementation(() => { merged = true; return Promise.resolve({ data: { target_order_id: 'order-2' } }); });
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.change(await screen.findByLabelText('Hedef masa'), { target: { value: '2' } });
+    expect(screen.getByTestId('transfer-table')).toHaveTextContent('Birleştir');
+    expect(screen.queryByRole('option', { name: /Masa 3/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('transfer-table'));
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Tahsilat yapılmaz') })));
+    if (approved) {
+      await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders/order-1/merge-table', { target_order_id: 'order-2' }));
+      await waitFor(() => expect(screen.getByTestId('active-order-summary')).toHaveTextContent('ORD-TARGET'));
+      expect(screen.getByRole('option', { name: 'Masa 1' })).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: /Masa 2/ })).not.toBeInTheDocument();
+    } else {
+      expect(axiosPost).not.toHaveBeenCalled();
+      expect(screen.getByTestId('active-order-summary')).toHaveTextContent('ORD-SOURCE');
+    }
+  });
+
+  it('requires new cart lines to be sent before transferring or merging an existing check', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran' }] } });
+      if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [
+        { id: 'table-1', table_number: '1', status: 'occupied', current_order_id: 'order-1' },
+        { id: 'table-2', table_number: '2', status: 'occupied', current_order_id: 'order-2' },
+      ] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [{ id: 'tea', name: 'Çay', price: 100, available: true }] } });
+      if (url === '/pos/v2/orders/order-1') return Promise.resolve({ data: { order: {
+        id: 'order-1', order_number: 'ORD-1', status: 'pending', payment_status: 'unpaid', grand_total: 100, order_items: [],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.change(await screen.findByLabelText('Hedef masa'), { target: { value: '2' } });
+    fireEvent.click(await screen.findByTestId('menu-item-tea'));
+    expect(screen.getByTestId('transfer-table')).toBeDisabled();
+    expect(axiosPost).not.toHaveBeenCalled();
   });
 });

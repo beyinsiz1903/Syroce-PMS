@@ -12,7 +12,7 @@ describe('FolioManagementHub', () => {
     render(<FolioManagementHub />);
 
     for (const [button, path] of [
-      ['Folyoları aç', '/app/pms?tab=cashier'],
+      ['Folyoları aç', '/app/pms#bookings'],
       ['Kuralları yönet', '/folio-routing'],
       ['Grup folyolarını aç', '/group-folio'],
       ['Faturaları aç', '/app/invoices'],

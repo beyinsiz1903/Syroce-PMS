@@ -490,22 +490,27 @@ const POSWaiterTerminal = () => {
   };
   const transferOrder = async () => {
     if (!activeOrder?.id || !transferTarget) return;
+    if (cart.length) { toast.error('Önce yeni ürünleri mutfağa gönderin; ardından masa işlemini yapın.'); return; }
     const destinationTable = tables.find(item => String(item.table_number) === String(transferTarget));
+    const merge = Boolean(destinationTable?.current_order_id);
+    if (merge && !await confirmDialog({ message: `Bu adisyon Masa ${transferTarget} üzerindeki açık adisyonla birleştirilsin mi? Kalemler hedef masada kalır; kaynak masa boşalır. Tahsilat yapılmaz.` })) return;
     setLoading(true);
     try {
-      await axios.post(`/pos/v2/orders/${activeOrder.id}/transfer-table`, {
-        to_table_number: transferTarget,
-      });
-      toast.success(`Adisyon Masa ${transferTarget} üzerine aktarıldı`);
+      const response = await axios.post(`/pos/v2/orders/${activeOrder.id}/${merge ? 'merge-table' : 'transfer-table'}`, merge
+        ? { target_order_id: destinationTable.current_order_id }
+        : { to_table_number: transferTarget });
+      const nextOrderId = merge ? response.data?.target_order_id || destinationTable.current_order_id : activeOrder.id;
+      toast.success(merge ? `Adisyonlar Masa ${transferTarget} üzerinde birleştirildi` : `Adisyon Masa ${transferTarget} üzerine aktarıldı`);
       const nextTables = await loadTables(outlet.id);
       const persistedTarget = nextTables.find(item => String(item.table_number) === String(transferTarget));
       setTable({
         ...(persistedTarget || destinationTable),
         table_number: transferTarget,
         status: 'occupied',
-        current_order_id: activeOrder.id,
+        current_order_id: nextOrderId,
       });
-      setActiveOrder(prev => ({ ...prev, table_number: transferTarget }));
+      if (merge) await refreshActiveOrder(nextOrderId);
+      else setActiveOrder(prev => ({ ...prev, table_number: transferTarget }));
       setTransferTarget('');
     } catch (error) {
       toast.error(posErrorMessage(error, 'Masa transferi yapılamadı'));
@@ -682,9 +687,12 @@ const POSWaiterTerminal = () => {
                     <div className="mt-3 flex gap-2">
                       <select className="h-9 flex-1 rounded-md border bg-white px-2 text-sm" value={transferTarget} onChange={event => setTransferTarget(event.target.value)} aria-label="Hedef masa">
                         <option value="">Başka masaya aktar…</option>
-                        {tables.filter(candidate => candidate.id !== table?.id && candidate.status === 'available' && !candidate.current_order_id).map(candidate => <option key={candidate.id} value={candidate.table_number}>Masa {candidate.table_number}</option>)}
+                        {tables.filter(candidate => candidate.id !== table?.id && !candidate.current_transaction_id &&
+                          ((candidate.status === 'available' && !candidate.current_order_id) ||
+                           (candidate.status === 'occupied' && candidate.current_order_id && candidate.current_order_id !== activeOrder.id)))
+                          .map(candidate => <option key={candidate.id} value={candidate.table_number}>Masa {candidate.table_number}{candidate.current_order_id ? ' · Adisyonları birleştir' : ''}</option>)}
                       </select>
-                      <Button size="sm" variant="outline" disabled={!transferTarget || loading} onClick={transferOrder} data-testid="transfer-table"><ArrowRightLeft className="h-4 w-4 mr-1" />Aktar</Button>
+                      <Button size="sm" variant="outline" disabled={!transferTarget || loading || cart.length > 0} onClick={transferOrder} data-testid="transfer-table"><ArrowRightLeft className="h-4 w-4 mr-1" />{tables.find(candidate => String(candidate.table_number) === String(transferTarget))?.current_order_id ? 'Birleştir' : 'Aktar'}</Button>
                       <Button size="sm" variant="destructive" disabled={loading} onClick={voidActiveOrder} data-testid="void-order"><XCircle className="h-4 w-4 mr-1" />İptal</Button>
                     </div>
                   </div>}

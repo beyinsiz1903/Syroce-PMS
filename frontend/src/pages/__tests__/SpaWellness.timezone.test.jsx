@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { MemoryRouter } from 'react-router-dom';
@@ -38,6 +38,43 @@ async function openBooking() {
 }
 
 describe('SPA hotel wall clock, independent of browser UTC', () => {
+  it('keeps the date input mounted and focused while a filtered list loads', async () => {
+    const { container } = renderSpa();
+    await screen.findByText('Selin Kaya');
+    let resolveAppointments;
+    axios.get.mockImplementation((url) => url === '/spa/appointments'
+      ? new Promise(resolve => { resolveAppointments = resolve; })
+      : Promise.resolve({ data: dataFor(url) }));
+    const date = container.querySelector('input[type="date"]');
+    date.focus();
+    fireEvent.change(date, { target: { value: '2026-11-10' } });
+    expect(container.querySelector('input[type="date"]')).toBe(date);
+    expect(date).toHaveFocus();
+    expect(date).toHaveValue('2026-11-10');
+    await act(async () => { resolveAppointments({ data: { appointments: [] } }); });
+    expect(container.querySelector('input[type="date"]')).toBe(date);
+    expect(date).toHaveFocus();
+  });
+
+  it('does not replace a newer date result with an older slow response', async () => {
+    const { container } = renderSpa();
+    await screen.findByText('Selin Kaya');
+    const requests = {};
+    axios.get.mockImplementation((url, options) => url === '/spa/appointments'
+      ? new Promise(resolve => { requests[options.params.date_from] = resolve; })
+      : Promise.resolve({ data: dataFor(url) }));
+    const date = container.querySelector('input[type="date"]');
+    fireEvent.change(date, { target: { value: '2026-11-10' } });
+    fireEvent.change(date, { target: { value: '2026-11-11' } });
+    const appointment = dataFor('/spa/appointments').appointments[0];
+    await act(async () => { requests['2026-11-11']({ data: { appointments: [{ ...appointment, guest_name: 'Ayla Deniz' }] } }); });
+    expect(await screen.findByText('Ayla Deniz')).toBeVisible();
+    await act(async () => { requests['2026-11-10']({ data: { appointments: [{ ...appointment, guest_name: 'Esin Arda' }] } }); });
+    expect(screen.getByText('Ayla Deniz')).toBeVisible();
+    expect(screen.queryByText('Esin Arda')).not.toBeInTheDocument();
+    expect(date).toHaveValue('2026-11-11');
+  });
+
   it('opens the availability tab and shows only slots with a therapist and room', async () => {
     axios.get.mockImplementation(async (url) => ({ data: url === '/spa/availability' ? {
       timezone: 'Europe/Istanbul',

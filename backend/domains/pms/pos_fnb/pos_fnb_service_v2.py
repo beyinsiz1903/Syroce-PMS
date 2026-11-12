@@ -478,6 +478,8 @@ class PosFnbServiceV2:
         # CI 2026-05-25 (98-pos-deep-lifecycle G) failed because close
         # silently succeeded on a voided order. Void is a terminal state
         # for the order lifecycle — reject with 4xx (CONFLICT).
+        if order.get("status") == "merged":
+            return ServiceResult.fail("Birleştirilen adisyon tekrar tahsil edilemez; hedef masayı açın.", "ORDER_MERGED")
         if order.get("status") == "voided":
             return ServiceResult.fail("Cannot close a voided order", "ORDER_VOIDED")
         if order.get("status") == "closed":
@@ -1094,6 +1096,14 @@ class PosFnbServiceV2:
             {"order_id": order_id, "from_table": source_number, "to_table": target_number}
         )
 
+    @audited("pos.merge_order_tables", "pos_order", severity=SEVERITY_INFO, capture_before=True)
+    async def merge_order_tables(self, ctx: OperationContext, order_id: str, target_order_id: str) -> ServiceResult:
+        from domains.pms.pos_fnb.table_merge import merge_open_checks
+
+        result = await merge_open_checks(self._db, ctx.tenant_id, ctx.actor_id, order_id, target_order_id)
+        await self._broadcast_kitchen_queue(ctx.tenant_id)
+        return ServiceResult.success(result)
+
     @audited("pos.adjust_order", "pos_order", severity=SEVERITY_WARNING, require_reason=True, capture_before=True)
     async def apply_order_adjustment(
         self,
@@ -1421,6 +1431,8 @@ class PosFnbServiceV2:
         order = await self._db.pos_orders.find_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not order:
             return ServiceResult.fail("Order not found", "NOT_FOUND")
+        if order.get("status") == "merged":
+            return ServiceResult.fail("Birleştirilen adisyon iptal edilemez; hedef masadaki kalemleri yönetin.", "ORDER_MERGED")
         if order.get("status") == "voided":
             return ServiceResult.success({"message": "Already voided", "idempotent": True})
         # Terminal-state guard: a closed (paid) order MUST NOT be voided.

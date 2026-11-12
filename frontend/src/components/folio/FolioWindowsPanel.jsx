@@ -165,7 +165,7 @@ export default function FolioWindowsPanel({
                     </div>
                     {w.cari_account_name && <p className="text-xs font-medium">{w.cari_account_name}</p>}
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {w.charges_count || 0} hizmet kaydı · {w.payments_count || 0} ödeme hareketi
+                      {w.charges_count || 0} hizmet kaydı · {w.payments_count || 0} ödeme veya hesap düzeltmesi
                     </div>
                   </div>
                 </div>

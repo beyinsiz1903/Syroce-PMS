@@ -251,3 +251,18 @@ def test_allocation_requires_transfer_permission():
     route = next(route for route in api.router.routes if route.path.endswith('/allocate'))
     dependency = next(dep for dep in route.dependant.dependencies if dep.name == '_perm')
     assert 'transfer_folio' in [cell.cell_contents for cell in dependency.call.__closure__]
+
+
+@pytest.mark.asyncio
+async def test_concession_stays_with_its_service_but_net_debt_can_be_allocated(ledger):
+    ledger.payments.rows.append({"id": "comp", "tenant_id": "hotel-a", "folio_id": "guest",
+        "amount": 2000, "method": "discount", "payment_type": "comp_adjustment", "charge_ids": ["room"], "currency": "TRY"})
+    before = deepcopy(ledger.folio_charges.rows)
+    with pytest.raises(HTTPException, match="İkram"):
+        await run(ledger, request())
+    assert ledger.folio_charges.rows == before
+    assert not ledger.folio_operations.rows
+    result = await run(ledger, request().model_copy(update={"mode": "amount", "charge_ids": [], "expected_amount": None, "amount": Decimal("4000")}))
+    assert (result["source_balance"], result["target_balance"]) == (4000, 4000)
+    assert ledger.payments.rows[0]["folio_id"] == "guest"
+    assert ledger.folio_charges.rows[0]["folio_id"] == "guest"

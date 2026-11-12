@@ -19,6 +19,37 @@ from ._common import (
 logger = logging.getLogger(__name__)
 sub_router = APIRouter()
 
+_HK_STATUSES = {"clean", "dirty", "cleaning", "inspected", "maintenance", "out_of_order"}
+_VACANT_STATUSES = {"available", "clean", "dirty", "cleaning", "inspected"}
+
+
+def _housekeeping_change(room, status, actor, now):
+    if status not in _HK_STATUSES:
+        raise HTTPException(422, "Geçersiz temizlik durumu.")
+    updates = {"housekeeping_status": status, "hk_status": status, "updated_at": now,
+               "housekeeping_updated_at": now, "housekeeping_updated_by": actor}
+    # Readiness may follow cleaning only for an unoccupied, unblocked room.
+    # Keep occupancy ownership and maintenance restrictions authoritative.
+    if room.get("status") in _VACANT_STATUSES and not room.get("current_booking_id"):
+        updates["status"] = "available" if status == "clean" else status
+        updates["room_status"] = updates["status"]
+    if status == "clean":
+        updates.update(last_cleaned=now, last_cleaned_at=now)
+    return updates
+
+
+def _housekeeping_scope(room, tid):
+    # A concurrent check-in, checkout or block must be reread, never undone by
+    # a cleaning action prepared against the old occupancy state.
+    return {"id": room["id"], "tenant_id": tid, "status": room.get("status"),
+            "current_booking_id": room.get("current_booking_id")}
+
+
+def _invalidate_housekeeping(tid):
+    from routers.housekeeping import _invalidate_hk_caches
+
+    _invalidate_hk_caches(tid)
+
 
 @sub_router.get("/housekeeping/rooms")
 async def get_housekeeping_rooms(
@@ -79,15 +110,14 @@ async def update_room_housekeeping_status(
 
     old_status = room.get("housekeeping_status", "clean")
 
-    update_data = {
-        "housekeeping_status": data.status,
-        "housekeeping_updated_at": datetime.now(UTC).isoformat(),
-        "housekeeping_updated_by": current_user.name,
-    }
+    update_data = _housekeeping_change(room, data.status, current_user.name, datetime.now(UTC).isoformat())
     if data.notes:
         update_data["housekeeping_notes"] = data.notes
 
-    await db.rooms.update_one({"id": room_id, "tenant_id": tid}, {"$set": update_data})
+    result = await db.rooms.update_one(_housekeeping_scope(room, tid), {"$set": update_data})
+    if result.matched_count != 1:
+        raise HTTPException(409, "Odanın durumu değişti; yenileyip tekrar kontrol edin.")
+    _invalidate_housekeeping(tid)
 
     # Log the change
     log_entry = {
@@ -126,18 +156,17 @@ async def bulk_update_room_status(
     tid = current_user.tenant_id
 
     now = datetime.now(UTC).isoformat()
-    result = await db.rooms.update_many(
-        {"id": {"$in": room_ids}, "tenant_id": tid},
-        {
-            "$set": {
-                "housekeeping_status": status,
-                "housekeeping_updated_at": now,
-                "housekeeping_updated_by": current_user.name,
-            }
-        },
-    )
+    if status not in _HK_STATUSES:
+        raise HTTPException(422, "Geçersiz temizlik durumu.")
+    rooms = await db.rooms.find({"id": {"$in": room_ids}, "tenant_id": tid}, {"_id": 0}).to_list(None)
+    changed, conflicts = [], []
+    for room in rooms:
+        updates = _housekeeping_change(room, status, current_user.name, now)
+        result = await db.rooms.update_one(_housekeeping_scope(room, tid), {"$set": updates})
+        (changed if result.matched_count else conflicts).append(room["id"])
+    _invalidate_housekeeping(tid)
 
-    if result.modified_count:
+    if changed:
         try:
             from websocket_server import broadcast_room_status_update
         except Exception as exc:
@@ -145,13 +174,13 @@ async def bulk_update_room_status(
             logger.warning("[HK-WS] bulk room status yayini yuklenemedi: %s", exc)
         if broadcast_room_status_update:
             # Per-room try: tek odanin yayini patlasa da kalanlar yayinlanir.
-            for rid in room_ids:
+            for rid in changed:
                 try:
                     await broadcast_room_status_update(rid, status, tenant_id=tid)
                 except Exception as exc:
                     logger.warning("[HK-WS] bulk room status yayini basarisiz room=%s: %s", rid, exc)
 
-    return {"success": True, "updated_count": result.modified_count}
+    return {"success": not conflicts, "updated_count": len(changed), "conflicted_room_ids": conflicts}
 
 
 # ═══════════════════════════════════════════════════

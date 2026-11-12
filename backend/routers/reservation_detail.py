@@ -513,6 +513,26 @@ def _build_financial_summary(
             or booking.get("is_partially_complimentary")
         )
     )
+    # A full-stay conversion can follow an already-applied item concession.
+    # That room credit is still valid after the agreed stay price becomes zero.
+    # Attribute only explicit room-only concessions; an unrelated restaurant
+    # credit or an ambiguous mixed-service legacy concession cannot hide a
+    # genuine accommodation-price difference.
+    if booking.get("is_complimentary") and booking.get("complimentary_mode") == "entire_stay":
+        room_ids = {charge["id"] for charge in active_charges if charge.get("id") and is_base_room_charge(charge)}
+        prior_room_concessions = sum(
+            max(0.0, effective_folio_payment(payment))
+            for payment in deduplicate_report_payments(payments)
+            if is_effective(payment)
+            and payment.get("method") == "discount"
+            and payment.get("payment_type") == "comp_adjustment"
+            and payment.get("concession_id")
+            and payment.get("charge_ids")
+            and set(payment["charge_ids"]).issubset(room_ids)
+        )
+        room_price_comp_conversion_total += min(
+            prior_room_concessions, max(0.0, float(room_charge_total) - room_price_comp_conversion_total),
+        )
     reconciled_reservation_price_component_total = max(
         0.0,
         float(reservation_price_component_total or 0)

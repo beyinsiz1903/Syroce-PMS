@@ -260,3 +260,30 @@ async def test_split_does_not_steal_other_bookings_extra_charge(fake_db):
     assert res["success"] is False
     # Yabancı booking'in ekstra masrafı silinmedi.
     assert any(d["id"] == "E4" for d in fake_db.extra_charges.docs)
+
+
+@pytest.mark.parametrize("voided,allowed", [(False, False), (True, True)])
+async def test_split_keeps_active_concession_with_its_service(fake_db, voided, allowed):
+    fake_db.folios.docs[0]["currency"] = "USD"
+    fake_db.folio_charges.docs.append({"id": "ROOM", "tenant_id": "t1", "folio_id": "F1",
+        "total": 100, "currency": "USD", "voided": False})
+    fake_db.payments.docs.append({"id": "COMP", "tenant_id": "t1", "folio_id": "F1",
+        "amount": 20, "method": "discount", "payment_type": "comp_adjustment", "charge_ids": ["ROOM"], "voided": voided})
+    result = await FolioHardeningService().split_folio("t1", "F1", ["ROOM"], "guest", "Hizmet ayrıştırma", "u1")
+    assert result["success"] is allowed
+    if allowed:
+        assert result["new_folio"]["currency"] == "USD"
+    else:
+        assert "İkram" in result["error"]
+        assert len(fake_db.folios.docs) == 1
+        assert fake_db.folio_charges.docs[0]["folio_id"] == "F1"
+        assert not fake_db.folio_operations.docs
+
+
+async def test_split_rejects_extra_owned_by_another_window(fake_db):
+    fake_db.extra_charges.docs.append({"id": "E", "tenant_id": "t1", "booking_id": "BK1",
+        "folio_id": "OTHER", "total": 50, "voided": False})
+    result = await FolioHardeningService().split_folio("t1", "F1", ["E"], "guest", "Hizmet ayrıştırma", "u1")
+    assert result["success"] is False
+    assert len(fake_db.folios.docs) == 1
+    assert fake_db.extra_charges.docs[0]["folio_id"] == "OTHER"
