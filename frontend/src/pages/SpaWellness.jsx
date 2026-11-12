@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -74,6 +74,8 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const [clockPending, setClockPending] = useState(true);
   const timeZone = spaTimeZone(summary?.timezone);
   const [loading, setLoading] = useState(true);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const loadVersion = useRef(0);
   const [loadError, setLoadError] = useState(null);
   const [showBook, setShowBook] = useState(false);
   const [settlementAppointment, setSettlementAppointment] = useState(null);
@@ -98,6 +100,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   });
 
   const load = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
     setLoadError(null);
     setSummary(null);
@@ -114,6 +117,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
         axios.get('/spa/rooms'),
         axios.get('/spa/appointments', { params: filter }),
       ]);
+      if (version !== loadVersion.current) return;
       const failed = [];
       if (sRes.status === 'fulfilled') setServices(sRes.value.data.services || []);
       else { setServices([]); failed.push('Hizmetler'); }
@@ -131,17 +135,26 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
       // Günlük özet — idle'da arka plandan yükle.
       runIdle(async () => {
+        if (version !== loadVersion.current) return;
         try {
           // The server resolves both the configured hotel timezone and its day.
           const sum = await axios.get('/spa/daily-summary');
-          setSummary(sum.data);
-        } catch { setSummary(null); }
-        finally { setClockPending(false); }
+          if (version === loadVersion.current) setSummary(sum.data);
+        } catch { if (version === loadVersion.current) setSummary(null); }
+        finally { if (version === loadVersion.current) setClockPending(false); }
       });
-    } finally { setLoading(false); }
+    } finally {
+      if (version === loadVersion.current) {
+        setLoadedOnce(true);
+        setLoading(false);
+      }
+    }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    load();
+    return () => { loadVersion.current += 1; };
+  }, [filter]);
 
   const therapistById = useMemo(() => Object.fromEntries(therapists.map((t) => [t.id, t])), [therapists]);
   const roomById = useMemo(() => Object.fromEntries(rooms.map((r) => [r.id, r])), [rooms]);
@@ -195,7 +208,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
     catch (err) { toast.error(err.response?.data?.detail || 'Eklenemedi'); }
   };
 
-  if (loading) {
+  if (loading && !loadedOnce) {
     return (
       <>
         <div className="p-8 text-center text-gray-500">
@@ -281,9 +294,9 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
           {hasCrossDepartmentPackages && <TabsTrigger value="packages" data-testid="tab-packages">Çapraz Paketler</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="appointments" className="space-y-3">
+        <TabsContent value="appointments" className="space-y-3" aria-busy={loading}>
           <div className="flex gap-2 flex-wrap">
-            <Input type="date" value={filter.date_from}
+            <Input type="date" aria-label="Randevu başlangıç tarihi" value={filter.date_from}
                    onChange={(e) => setFilter({ ...filter, date_from: e.target.value })}
                    className="max-w-[180px]" />
             <select className="border rounded px-2 text-sm"
