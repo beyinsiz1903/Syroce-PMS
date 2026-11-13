@@ -15,6 +15,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
   const endpoint = `/spa/appointments/${appointmentId}/settlements`;
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [submissionError, setSubmissionError] = useState('');
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
@@ -37,6 +38,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
       const current = await load();
       if (current.payments.some(p => p.request_id === form.request_id)) {
         setForm(blank());
+        setSubmissionError('');
         onRecorded?.();
       }
       setUncertain(false);
@@ -53,6 +55,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
     try {
       const accepted = await confirmDialog({ message: `${form.kind === 'refund' ? 'İade edilen' : 'Alınan'} ${formatCurrency(payload.amount, data.currency)} tutarı manuel deftere kaydedilecek. Bu işlem bankaya/karta talimat göndermez. Onaylıyor musunuz?` });
       if (!accepted) return;
+      setSubmissionError('');
       await axios.post(endpoint, payload);
       setForm(blank());
       await load();
@@ -60,7 +63,9 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
       toast.success('SPA hareketi ve makbuz kaydı oluşturuldu');
     } catch (e) {
       setUncertain(true);
-      toast.error(apiErrorText(e, 'Sonuç doğrulanamadı. Yeni işlem açmadan önce durumu yenileyin.'));
+      const message = apiErrorText(e, 'Sonuç doğrulanamadı. Yeni işlem açmadan önce durumu yenileyin.');
+      setSubmissionError(message);
+      toast.error(message);
       try { await load(); } catch { /* Keep the exact request and block new writes. */ }
     } finally { setBusy(false); submitting.current = false; }
   };
@@ -82,6 +87,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
         <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="font-semibold">{formatCurrency(amount, data.currency)}</dd></div>)}
     </dl>
     {error && <p role="alert">{error}</p>}
+    {submissionError && <p role="alert" className="text-sm text-red-700">{submissionError}</p>}
     {uncertain && <div role="alert" className="rounded border border-amber-300 p-3 text-sm">
       İşlem sonucu henüz uzlaştırılmadı. Yeni ödeme açmayın.
       <Button type="button" variant="outline" disabled={busy} onClick={reconcile}>Durumu yenile</Button>

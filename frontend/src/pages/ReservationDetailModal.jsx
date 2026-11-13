@@ -1311,7 +1311,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         onConfirm={async () => {
           setCheckinAlertOpen(false);
           try {
-            await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
+            await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true`);
             
             await finishOperation('checked_in');
           } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }

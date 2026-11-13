@@ -575,7 +575,7 @@ export function ExtraChargesTab({
           <p className="text-xs text-amber-800">{isFullComp ? `Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 ${currency === 'TRY' ? 'TL' : currency} yansır.` : `0 ${currency === 'TRY' ? 'TL' : currency} girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.`}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleAdd} disabled={loading || ratesLoading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : `${buttonAmountLabel} Ekle`}</Button>
+            <Button size="sm" onClick={handleAdd} disabled={loading || ratesLoading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : isFullComp ? 'İkramı kaydet' : `${buttonAmountLabel} Ekle`}</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_PricingTabs.iptal')}</Button>
           </div>
         </div>}

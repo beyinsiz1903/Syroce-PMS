@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ReservationDetailModal, { isEarlyCheckoutDate } from '@/pages/ReservationDetailModal';
 
@@ -221,7 +221,7 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith(
-      '/frontdesk/checkin/booking-test?create_folio=true&force_clean=true',
+      '/frontdesk/checkin/booking-test?create_folio=true',
     ));
     await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
       bookingId: 'booking-test',
@@ -239,12 +239,26 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith(
-      '/frontdesk/checkin/booking-test?create_folio=true&force_clean=true',
+      '/frontdesk/checkin/booking-test?create_folio=true',
     ));
     expect(post.mock.calls.some(([url]) => url.includes('early-checkin'))).toBe(false);
     await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
       bookingId: 'booking-test', operation: 'checked_in',
     }));
+  });
+
+  it('preserves a dirty-room rejection instead of silently forcing housekeeping readiness', async () => {
+    get.mockResolvedValue({ data: { ...detail, room: { ...detail.room, status: 'dirty' } } });
+    post.mockRejectedValue({ response: { status: 409, data: { detail: 'Room is not ready for check-in' } } });
+    const onOperationComplete = vi.fn();
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}}
+      onOperationComplete={onOperationComplete} allBookings={[]} />);
+    fireEvent.click(await screen.findByTestId('btn-checkin'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/frontdesk/checkin/booking-test?create_folio=true'));
+    expect(post.mock.calls.some(([url]) => url.includes('force_clean'))).toBe(false);
+    await act(async () => {});
+    expect(onOperationComplete).not.toHaveBeenCalled();
   });
 
   it('keeps pending historical reservations read-only and unassigned arrivals in room assignment', async () => {

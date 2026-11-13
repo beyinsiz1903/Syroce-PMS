@@ -540,6 +540,7 @@ async def _post_charge_allocations(
     posted_by: str | None,
     *,
     currency: str = "TRY",
+    full_comp: bool = False,
     session=None,
 ) -> list[dict]:
     """Her allocation icin folio_charges insert + ilgili folio balance $inc.
@@ -549,7 +550,8 @@ async def _post_charge_allocations(
     created: list[dict] = []
     for alloc in allocations:
         folio = alloc["folio"]
-        amt = round(float(alloc["amount"]), 2)
+        original_amount = round(float(alloc["amount"]), 2)
+        amt = 0.0 if full_comp else original_amount
         charge_doc = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -557,7 +559,7 @@ async def _post_charge_allocations(
             "booking_id": booking_id,
             "charge_category": category_value,
             "description": description,
-            "unit_price": amt if is_split else unit_price,
+            "unit_price": 0.0 if full_comp else (amt if is_split else unit_price),
             "quantity": 1.0 if is_split else quantity,
             "amount": amt,
             "tax_amount": 0.0,
@@ -567,6 +569,12 @@ async def _post_charge_allocations(
             "posted_at": now_iso,
             "date": now_iso,
         }
+        if full_comp:
+            charge_doc.update(
+                is_complimentary=True,
+                complimentary_scope="full",
+                complimentary_original_amount=original_amount,
+            )
         # Wall-clock time can be weeks ahead during controlled business-date
         # recovery. Charge reports must follow the same open day as payments.
         await stamp_open_business_date(db, tenant_id, charge_doc)
@@ -621,6 +629,7 @@ async def add_folio_charge(
     unit_price = float(payload.amount)
     quantity = float(payload.quantity)
     net_amount = round(unit_price * quantity, 2)
+    full_comp = bool(booking.get("is_complimentary") and booking.get("complimentary_scope") == "full")
 
     # Idempotency-Key replay koruması (çift tıklama / ağ retry). Header yoksa
     # davranış aynen korunur. Tüm split satırları tek mantıksal işlem altında.
@@ -645,7 +654,11 @@ async def add_folio_charge(
     try:
         # Routing rules: kategori-bazlı yönlendirme + (varsa) oransal/eşit bölme.
         # Hedef yoksa veya resolve edilemezse default (misafir) folyoya düşer.
-        allocations = await _resolve_routing_allocations(current_user.tenant_id, booking, category.value, default_folio, net_amount)
+        # Full-comp services belong on the guest account as auditable zero-value
+        # consumption; routing must not turn an included service into company debt.
+        allocations = [{"folio": default_folio, "amount": net_amount}] if full_comp else await _resolve_routing_allocations(
+            current_user.tenant_id, booking, category.value, default_folio, net_amount,
+        )
         if any(str(alloc["folio"].get("currency") or currency).upper() != currency for alloc in allocations):
             raise HTTPException(409, "Masraf farklı para birimindeki folyoya yönlendirilemez")
         is_split = len(allocations) > 1
@@ -687,6 +700,7 @@ async def add_folio_charge(
                         now_iso,
                         current_user.name,
                         currency=currency,
+                        full_comp=full_comp,
                         session=session,
                     )
                     response = _build_response(created)
@@ -735,6 +749,7 @@ async def add_folio_charge(
                 now_iso,
                 current_user.name,
                 currency=currency,
+                full_comp=full_comp,
                 session=None,
             )
             response = _build_response(created)
