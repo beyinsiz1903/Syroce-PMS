@@ -10,6 +10,7 @@ from typing import Any
 
 from defusedxml import ElementTree as safe_ET
 
+from .prepayments import PrepaymentPayloadError, parse_prepayments
 from .services import ServicePayloadError, parse_service_inventory, parse_services
 
 logger = logging.getLogger(__name__)
@@ -193,10 +194,10 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
     for hr in body.iter(_ns("HotelReservation")):
         try:
             res = _parse_hotel_reservation(hr)
-        except (_ReservationIdentityError, ServicePayloadError, _GuestRosterError):
+        except (_ReservationIdentityError, ServicePayloadError, _GuestRosterError, PrepaymentPayloadError):
             # Do not acknowledge a partial batch or expose provider IDs in logs.
             return {"success": False, "result_class": MALFORMED,
-                    "error": "Invalid reservation identity or service details", "reservations": [], "count": 0}
+                    "error": "Invalid reservation identity, service or payment details", "reservations": [], "count": 0}
         if res:
             reservations.append(res)
 
@@ -462,6 +463,10 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
     res.setdefault("total_rooms", len(rooms))
     res.setdefault("total_guests", sum(r.get("adults", 1) + r.get("children", 0) for r in rooms) or 1)
     res.setdefault("notes", "")
+
+    prepayment = parse_prepayments(global_info, res["total"], res.get("currency", ""))
+    if prepayment is not None:
+        res["prepayment"] = prepayment
 
     services = parse_services(hr_el, rooms, res.get('currency', ''))
     if services:

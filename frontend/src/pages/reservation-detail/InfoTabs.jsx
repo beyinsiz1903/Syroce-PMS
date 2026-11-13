@@ -15,6 +15,7 @@ import { useOptionalEntitlements } from '@/context/EntitlementContext';
 import api from '@/api/axios';
 import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
+import ExelyPrepaymentSummary from './ExelyPrepaymentSummary';
 import { exelyReservationDetails } from '@/utils/exelyReservation';
 import { reservationPaymentSummary } from './paymentSummary';
 import { latestCollectionPayment, paymentMethod } from '@/lib/folioPayments';
@@ -278,6 +279,7 @@ export function GeneralInfoTab({
             <InfoLine label="Exely ödeme yöntemi" value={exelySource.paymentMethod || 'Belirtilmemiş'} />
           </div>
           <p className="text-xs text-slate-500">Sağlayıcının ödeme/garanti talimatıdır; PMS tahsilat kaydı değildir.</p>
+          <ExelyPrepaymentSummary booking={booking} />
           {Array.isArray(booking.provider_services) && booking.provider_services.length > 0 && <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3" data-testid="exely-booked-services">
             <h4 className="text-sm font-semibold text-slate-800">Rezervasyona eklenen hizmetler</h4>
             <p className="text-xs text-slate-500">Exely sipariş bilgileri. Hizmetin verilmesi ve folyoya işlenmesi ayrıca takip edilir.</p>

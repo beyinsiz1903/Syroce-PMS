@@ -10,6 +10,7 @@ import {
   Plus, Trash2, Loader2, Check, Info
 } from 'lucide-react';
 import { API } from './helpers';
+import ExelyPrepaymentSummary from './ExelyPrepaymentSummary';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
@@ -106,8 +107,11 @@ export function OnlinePaymentTab({ booking, onRefresh, readOnly = false }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12" data-testid="online-payment-loading">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      <div className="space-y-6">
+        <ExelyPrepaymentSummary booking={booking} />
+        <div className="flex items-center justify-center py-12" data-testid="online-payment-loading">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+        </div>
       </div>
     );
   }
@@ -119,6 +123,7 @@ export function OnlinePaymentTab({ booking, onRefresh, readOnly = false }) {
 
   return (
     <div className="space-y-6" data-testid="online-payment-tab">
+      <ExelyPrepaymentSummary booking={booking} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

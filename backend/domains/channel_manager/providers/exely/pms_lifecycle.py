@@ -390,6 +390,8 @@ def _booking_fields(
         # not receipts or revenue posted on today's open accounting day.
         "provider_services": list(room.get('services') or []),
         "provider_booking_total": float(reservation.get('total') or 0),
+        # Group-level provider evidence is not a room allocation or local receipt.
+        "provider_prepayment": reservation.get("prepayment"),
         "base_rate": room_total / nights,
         "paid_amount": 0.0,
         "payment_method": str(reservation.get("payment_method") or ""),
@@ -490,6 +492,8 @@ async def _upsert_booking(
     update_fields.pop("id", None)
     update_fields.pop("tenant_id", None)
     update_fields.pop("created_at", None)
+    # Channel payment snapshots must never erase money collected in the PMS.
+    update_fields.pop("paid_amount", None)
     assignment_changed = bool(
         existing
         and existing.get("room_id")
@@ -612,7 +616,7 @@ async def _readback_expectations(tenant_id: str, version_key: str, expectations:
         booking = await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": expected["pms_booking_id"]},
             {"_id": 0, "status": 1, "provider_version_key": 1, "inventory_release_pending": 1,
-             "provider_services": 1, "total_amount": 1},
+             "provider_services": 1, "provider_prepayment": 1, "total_amount": 1},
         )
         if not booking:
             return False
@@ -623,6 +627,8 @@ async def _readback_expectations(tenant_id: str, version_key: str, expectations:
         if booking.get("inventory_release_pending"):
             return False
         if 'provider_services' in expected and booking.get('provider_services') != expected['provider_services']:
+            return False
+        if 'provider_prepayment' in expected and booking.get('provider_prepayment') != expected['provider_prepayment']:
             return False
         if 'total_amount' in expected and booking.get('total_amount') != expected['total_amount']:
             return False
@@ -838,6 +844,7 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                 )
                 expectations.append({"pms_booking_id": booking_id, "status": "confirmed",
                     "provider_services": booking_doc['provider_services'], "total_amount": booking_doc['total_amount'],
+                    "provider_prepayment": booking_doc["provider_prepayment"],
                     **({"guest_roster": roster} if roster else {})})
                 confirmations.append({"pms_booking_id": booking_id, "room_stay_indexes": [index_number]})
 
