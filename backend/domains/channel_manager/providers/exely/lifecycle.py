@@ -125,6 +125,7 @@ def _reservation_document(
         "total_guests": canonical["total_guests"],
         "rooms": canonical["rooms"],
         "services": list(canonical.get('services') or []),
+        "prepayment": canonical.get("prepayment"),
         "note": canonical["notes"],
         "message_uid": canonical.get("message_uid", ""),
         "source_system": "EXELY",
@@ -245,6 +246,7 @@ async def persist_exely_event(
         "provider_state": canonical["status"],
         "room_stays": canonical["rooms"],
         "services": list(canonical.get('services') or []),
+        "prepayment": canonical.get("prepayment"),
         "processing_state": processing_state,
         "mapping_state": mapping_code,
         "ack_state": ACK_NOT_READY,
@@ -430,6 +432,7 @@ async def _durable_readback(version_doc: dict[str, Any]) -> bool:
                 "provider_version_key": 1,
                 "inventory_release_pending": 1,
                 "provider_services": 1,
+                "provider_prepayment": 1,
                 "total_amount": 1,
             },
         )
@@ -440,6 +443,8 @@ async def _durable_readback(version_doc: dict[str, Any]) -> bool:
         if booking.get("inventory_release_pending"):
             return False
         if 'provider_services' in expected and booking.get('provider_services') != expected['provider_services']:
+            return False
+        if 'provider_prepayment' in expected and booking.get('provider_prepayment') != expected['provider_prepayment']:
             return False
         if 'total_amount' in expected and booking.get('total_amount') != expected['total_amount']:
             return False

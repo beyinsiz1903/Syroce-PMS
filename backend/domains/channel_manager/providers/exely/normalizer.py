@@ -106,6 +106,7 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
         },
         "rooms": room_details,
         "services": list(raw.get('services') or []),
+        "prepayment": raw.get("prepayment"),
         "total_rooms": raw.get("total_rooms", len(rooms)),
         "total_guests": raw.get("total_guests", 1),
         "status": canonical_status,
