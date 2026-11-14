@@ -46,7 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libgomp1 libstdc++6 \
     libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
-    libcairo2 libglib2.0-0 \
+    libcairo2 libglib2.0-0 libharfbuzz-subset0 \
     shared-mime-info fonts-dejavu-core fonts-liberation && \
     rm -rf /var/lib/apt/lists/*
 
@@ -56,6 +56,9 @@ COPY backend/ .
 RUN chown -R celeryuser:celeryuser /app
 
 USER celeryuser
+
+# Scheduled PDF reports need the same native renderer as API exports.
+RUN python -c "from weasyprint import HTML; document = HTML(string='<p>Syroce PDF: Çığ Şölen 123,45 TRY</p>').write_pdf(); assert document.startswith(b'%PDF-') and len(document) > 500"
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=15s --retries=3 \
     CMD celery -A celery_app inspect ping --timeout 5 || exit 1

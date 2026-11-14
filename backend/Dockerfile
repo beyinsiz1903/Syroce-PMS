@@ -53,7 +53,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
-    libcairo2 libglib2.0-0 \
+    libcairo2 libglib2.0-0 libharfbuzz-subset0 \
     shared-mime-info fonts-dejavu-core fonts-liberation \
     tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur && \
     rm -rf /var/lib/apt/lists/*
@@ -67,6 +67,11 @@ ENV COMMIT_SHA=${COMMIT_SHA}
 RUN chown -R appuser:appuser /app
 
 USER appuser
+
+# WeasyPrint 70 also loads HarfBuzz Subset. Verify a real PDF in the final
+# non-root image, so missing shared libraries fail the build before rollout.
+# https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#debian-11
+RUN python -c "from weasyprint import HTML; document = HTML(string='<p>Syroce PDF: Çığ Şölen 123,45 TRY</p>').write_pdf(); assert document.startswith(b'%PDF-') and len(document) > 500"
 
 EXPOSE 8001
 

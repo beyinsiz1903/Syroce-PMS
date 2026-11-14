@@ -189,6 +189,68 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
   });
 });
 
+describe('FolioViewDialog transfer intent', () => {
+  const source = { id: 'source', folio_number: 'F-SOURCE', booking_id: 'b1', currency: 'TRY', status: 'open', balance: 150 };
+  const target = { id: 'target', folio_number: 'F-TARGET', booking_id: 'b2', currency: 'TRY', status: 'open', balance: 0,
+    guest_name: 'Barış Kaya', room_number: '105' };
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+    axios.get.mockReset().mockResolvedValue({ data: { folios: [target,
+      { ...target, id: 'foreign-currency', folio_number: 'F-USD', currency: 'USD' }] } });
+    axios.post.mockReset();
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.warning).mockClear();
+  });
+
+  const prepareTransfer = async (props = {}) => {
+    render(<FolioViewDialog {...baseProps} {...props} selectedFolio={source}
+      folioCharges={[{ id: 'parking', description: 'Otopark', total: 150, currency: 'TRY', date: '2026-11-10' }]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'İşlem Aktar' }));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/folio/list', expect.any(Object)));
+    fireEvent.click(screen.getByRole('combobox', { name: '' }));
+    const targetOption = await screen.findByRole('option', { name: /F-TARGET/ });
+    expect(targetOption).toHaveTextContent('Barış Kaya');
+    expect(screen.queryByRole('option', { name: /F-USD/ })).toBeNull();
+    fireEvent.click(targetOption);
+    fireEvent.click(screen.getByLabelText(/Otopark/));
+    fireEvent.change(screen.getByPlaceholderText(/misafir oda değişikliği/), { target: { value: 'Oda hesabının ayrılması' } });
+  };
+
+  it('retains one transfer key across an uncertain response', async () => {
+    axios.post.mockRejectedValueOnce(new Error('network lost')).mockResolvedValueOnce({ data: {} });
+    await prepareTransfer();
+    fireEvent.click(screen.getByRole('button', { name: 'Aktar', exact: true }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    const first = axios.post.mock.calls[0][1];
+    fireEvent.click(screen.getByRole('button', { name: 'Aktar', exact: true }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+    expect(axios.post.mock.calls[1][1]).toEqual(first);
+    expect(first).toMatchObject({ request_id: expect.any(String), from_folio_id: 'source', to_folio_id: 'target', charge_ids: ['parking'] });
+  });
+
+  it('does not turn a committed transfer into a failed draft when the readback fails', async () => {
+    axios.post.mockResolvedValue({ data: {} });
+    await prepareTransfer({ onChargePosted: vi.fn().mockRejectedValue(new Error('read failed')) });
+    fireEvent.click(screen.getByRole('button', { name: 'Aktar', exact: true }));
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('İşlem kaydedildi')));
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('does not submit the same transfer twice while its response is pending', async () => {
+    let finish;
+    axios.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await prepareTransfer();
+    const submit = screen.getByRole('button', { name: 'Aktar', exact: true });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ data: {} }));
+    expect(screen.queryByPlaceholderText(/misafir oda değişikliği/)).toBeNull();
+  });
+});
+
 describe('FolioViewDialog — receipt write safety', () => {
   const folio = { id: 'receipt-1', booking_id: 'booking-1', folio_number: 'F-300', status: 'open', currency: 'TRY', balance: 100 };
   const mountPayment = (selectedFolio = folio) => {
