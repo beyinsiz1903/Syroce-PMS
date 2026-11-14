@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import ReservationDetailModal, { isEarlyCheckoutDate } from '@/pages/ReservationDetailModal';
 
@@ -105,7 +105,7 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Ön ödeme');
   });
 
-  it('shows the Exely services-inclusive balance in every headline and scopes the PMS ledger separately', async () => {
+  it('shows one Exely account overview, keeps local balances collapsed and opens the real invoice tab', async () => {
     get.mockResolvedValue({ data: { ...detail,
       booking: { ...detail.booking, channel: 'exely', currency: 'USD', total_amount: 160,
         provider_prepayment: { schema_version: 1, scope: 'reservation', booking_total: 460,
@@ -116,13 +116,22 @@ describe('ReservationDetailModal operation URLs', () => {
     } });
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
-    expect(await screen.findByTestId('reservation-total-due')).toHaveTextContent('300 USD');
-    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Exely’de kalan tutar: 300 USD');
-    expect(screen.getByTestId('ops-payment-alert')).toHaveTextContent('Exely’de kalan tutar: 300 USD');
-    expect(screen.getByTestId('exely-prepayment-sidebar')).toHaveTextContent('Alınan ön ödeme160 USD');
-    expect(screen.getByTestId('local-payment-scope')).toHaveTextContent('PMS kayıt bakiyesi160 USD');
-    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('PMS tahsilatı0 USD');
-    expect(screen.queryByText('Tüm konaklama ve ekstralar dahil kalan tutar.')).not.toBeInTheDocument();
+    const general = await screen.findByTestId('general-info-tab');
+    const account = within(general).getByTestId('reservation-account-overview');
+    expect(within(account).getByText('Toplam bedel').parentElement).toHaveTextContent('460 USD');
+    expect(within(account).getByText('Alınan ön ödeme').parentElement).toHaveTextContent('160 USD');
+    expect(within(account).getByText('Kalan tutar').parentElement).toHaveTextContent('300 USD');
+    expect(within(general).getAllByTestId('exely-prepayment-summary')).toHaveLength(1);
+    expect(screen.queryByTestId('financial-summary-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-payment-overview')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-payment-alert')).not.toBeInTheDocument();
+    expect(within(account).getByTestId('account-ledger-details')).not.toHaveAttribute('open');
+    expect(within(account).getByTestId('local-payment-scope')).toHaveTextContent('PMS kayıt bakiyesi160 USD');
+    expect(within(account).getByTestId('local-payment-scope')).toHaveTextContent('PMS tahsilatı0 USD');
+    expect(within(account).getByTestId('account-invoice-info')).toHaveTextContent('Fatura ekranında belirlenir');
+    fireEvent.click(within(account).getByRole('button', { name: 'Fatura bilgilerini aç' }));
+    expect(await screen.findByTestId('invoice-tab')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Fatura' })).toHaveAttribute('aria-selected', 'true');
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -677,11 +686,11 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getByTestId('btn-checkout')).not.toHaveTextContent('mutabakat');
   });
 
-  it('repairs an unpaid double-taxed channel charge without cancelling the booking', async () => {
+  it.each(['Etstur', 'exely'])('repairs an unpaid double-taxed %s charge without cancelling the booking', async channel => {
     get.mockResolvedValue({
       data: {
         ...detail,
-        booking: { ...detail.booking, status: 'checked_in', channel: 'Etstur' },
+        booking: { ...detail.booking, status: 'checked_in', channel },
         summary: {
           ...detail.summary,
           balance: 5320,

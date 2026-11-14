@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -27,8 +27,8 @@ describe('GeneralInfoTab', () => {
     expect(services).toHaveTextContent('Ücrete dahil');
     expect(services).toHaveTextContent('2 adet');
     expect(services).toHaveTextContent('Rezervasyon genelinde');
-    expect(screen.getByText('Konaklama bedeli').parentElement).toHaveTextContent('100');
-    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Tahsilat kaydı yok');
+    expect(screen.getByText('Bu odanın konaklaması').parentElement).toHaveTextContent('100');
+    expect(screen.getByTestId('local-payment-scope')).toHaveTextContent('PMS tahsilatı0');
   });
 
   it('separates the provider payment instruction and external reference from actual receipts', () => {
@@ -37,10 +37,10 @@ describe('GeneralInfoTab', () => {
       channel_reservation_id: 'liberty-booking', provider_payment_method: 'PayOnArrival' }}
       summary={{ balance: 220, total_payments: 0 }} payments={[]} />);
     expect(screen.getByTestId('exely-source-details')).toHaveTextContent('Liberty Channel');
-    expect(screen.getByText('Exely rezervasyon no').parentElement).toHaveTextContent('exely-group');
+    expect(within(screen.getByTestId('exely-source-details')).getByText('Exely rezervasyon no').parentElement).toHaveTextContent('exely-group');
     expect(screen.getByText('Kanal rezervasyon no').parentElement).toHaveTextContent('liberty-booking');
-    expect(screen.getByText('Exely ödeme yöntemi').parentElement).toHaveTextContent('PayOnArrival');
-    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Tahsilat kaydı yok');
+    expect(within(screen.getByTestId('exely-source-details')).getByText('Exely ödeme yöntemi').parentElement).toHaveTextContent('PayOnArrival');
+    expect(screen.getByTestId('local-payment-scope')).toHaveTextContent('PMS tahsilatı0');
   });
 
   it('shows legacy Exely payment instructions without pretending that a card guarantee is a receipt', () => {
@@ -107,7 +107,8 @@ describe('GeneralInfoTab', () => {
         guest={null} room={null}
       />);
     });
-    expect(screen.getAllByText('Doğrulanmadı')).toHaveLength(2);
+    expect(screen.getByText('Yetişkin').parentElement.parentElement).toHaveTextContent('Doğrulanmadı');
+    expect(screen.getByText('Çocuk').parentElement.parentElement).toHaveTextContent('Doğrulanmadı');
     expect(screen.getByTestId('exely-demographics-warning')).toBeInTheDocument();
     expect(screen.getByText('Toplam Konuk').parentElement.parentElement).toHaveTextContent('3');
   });

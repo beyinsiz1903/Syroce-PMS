@@ -36,7 +36,7 @@ import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHel
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 import { reservationDisplaySummary, reservationPaymentSummary } from './reservation-detail/paymentSummary';
-import ExelyPrepaymentSummary from './reservation-detail/ExelyPrepaymentSummary';
+import { exelyReservationDetails } from '@/utils/exelyReservation';
 import { UnpostedRoomBreakdown } from './reservation-detail/UnpostedRoomBreakdown';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
@@ -357,6 +357,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const pricingReconciliationRequired = Boolean(summary?.pricing_reconciliation_required);
   const pricingReconciliationDifference = Number(summary?.pricing_reconciliation_difference) || 0;
   const hasOpenBalance = balance > 0.01 && !pricingReconciliationRequired;
+  const isExely = Boolean(exelyReservationDetails(booking));
   const localPaymentOverview = reservationPaymentSummary(summary, booking);
   const paymentOverview = reservationDisplaySummary(summary, booking);
   const hasReservationAmountDue = paymentOverview.kind === 'due';
@@ -544,7 +545,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     { id: 'general', label: 'Genel Bilgiler', icon: FileText },
     { id: 'guests', label: `Misafirler${guests?.length ? ` (${guests.length})` : ''}`, icon: Users },
     { id: 'folios', label: 'Folyolar', icon: DollarSign },
-    { id: 'online_payment', label: 'Online Ödeme', icon: CreditCard },
+    { id: 'online_payment', label: isExely ? 'Hesap ve ödeme' : 'Online Ödeme', icon: CreditCard },
     { id: 'extras', label: 'Ek Ücretler', icon: Receipt },
     { id: 'invoice', label: 'Fatura', icon: Receipt },
     { id: 'history', label: 'Geçmiş', icon: History },
@@ -607,7 +608,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <Badge className="bg-amber-50 text-amber-800 border border-amber-300 text-[11px] h-5 px-2 hidden md:inline-flex">
                 <AlertTriangle className="w-3 h-3 mr-1" /> Fiyat / tahakkuk mutabakatı gerekli
               </Badge>
-            ) : hasReservationAmountDue && (
+            ) : !isExely && hasReservationAmountDue && (
               <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
                 <AlertTriangle className="w-3 h-3 mr-1" /> {paymentOverview.label}: {paymentAmountText}
               </Badge>
@@ -654,6 +655,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               </div>
 
               {/* Fiyat & Bakiye — bakiye vurgulu */}
+              {isExely ? <Button type="button" variant="outline" onClick={() => setActiveTab('online_payment')} className="h-10 w-full justify-start border-blue-200 bg-blue-50 text-blue-800" data-testid="open-reservation-account"><CreditCard className="mr-2 h-4 w-4" />Hesap ve ödemeyi aç</Button> : (
               <div className={`rounded-xl p-4 space-y-3 shadow-sm ${
                 paymentNeedsReview ? 'bg-amber-50 border-2 border-amber-300' : hasReservationAmountDue ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
               }`} data-testid="financial-summary-card">
@@ -662,12 +664,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <div className={`text-2xl font-bold leading-tight ${paymentNeedsReview ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`} data-testid="reservation-total-due">{paymentAmountText}</div>
                   <p className="text-[11px] text-slate-500">{paymentOverview.description}</p>
                 </div>
-                {paymentOverview.providerScope && <ExelyPrepaymentSummary booking={booking} compact />}
                 <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
-                  {paymentOverview.providerScope && <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs" data-testid="local-payment-scope">
-                    <div className="flex justify-between gap-3 font-semibold text-slate-700"><span>{localPaymentOverview.label}</span><span className="shrink-0">{localPaymentOverview.displayAmount == null ? '—' : fmtCurrency(localPaymentOverview.displayAmount, currency)}</span></div>
-                    <p className="mt-1 text-[11px] leading-4 text-slate-500">{localPaymentOverview.description}</p>
-                  </div>}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">Konaklama</span>
                     <span className="font-semibold text-slate-800">{fmtCurrency(accommodationTotal, currency)}</span>
@@ -717,6 +714,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </div>
                   )}
                 </div>
+              </div>
+              )}
+
                 {channelPricingIssue && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5" data-testid="channel-pricing-issue">
                     <div className="flex items-start gap-2">
@@ -747,8 +747,6 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </Button>
                   </div>
                 )}
-              </div>
-
               {/* Oda Bilgisi — yalnızca gerçek alanlar */}
               <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-sm">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Oda Bilgisi</p>
@@ -884,17 +882,17 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <div className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5" data-testid="ops-payment-review">
                     <AlertTriangle className="w-3 h-3 shrink-0 text-amber-600" /><span className="text-[11px] font-medium text-amber-800">{paymentOverview.label}</span>
                   </div>
-                ) : hasReservationAmountDue ? (
+                ) : !isExely && hasReservationAmountDue ? (
                   <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
                     <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0" />
                     <span className="text-[11px] text-rose-700 font-medium">{paymentOverview.label}: {paymentAmountText}</span>
                   </div>
-                ) : (
+                ) : !isExely ? (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
                     <span className="text-[11px] text-emerald-700">{paymentOverview.providerScope ? `${paymentOverview.label}: ${paymentAmountText}` : paymentOverview.kind === 'credit' ? `Misafir alacağı: ${paymentAmountText}` : 'Kalan ödeme yok'}</span>
                   </div>
-                )}
+                ) : null}
                 {room && (room.status === 'dirty' || room.status === 'cleaning') && (
                   <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid="ops-room-dirty">
                     <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
@@ -1085,15 +1083,15 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               </TabsList>
               {activeTab === 'general' && (
                 <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6" data-testid="reservation-workspace-overview">
-                  <div className="mb-3 grid gap-2 lg:grid-cols-2">
+                  <div className={`mb-3 grid gap-2 ${isExely ? '' : 'lg:grid-cols-2'}`}>
                     <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5">
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><CheckCircle2 className="h-4 w-4" /></span>
                       <div className="min-w-0"><p className="text-xs font-bold text-emerald-900">{booking?.status === 'checked_out' ? 'Konaklama tamamlandı' : booking?.status === 'checked_in' ? 'Konaklama devam ediyor' : 'Giriş bekleniyor'}</p><p className="truncate text-[11px] text-emerald-700">{stayNights} gece · {guestCount} misafir · Oda {room?.room_number || 'atanmadı'}</p></div>
                     </div>
-                    <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${paymentNeedsReview ? 'border-amber-200 bg-amber-50/70' : hasReservationAmountDue ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`} data-testid="workspace-payment-overview">
+                    {!isExely && <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${paymentNeedsReview ? 'border-amber-200 bg-amber-50/70' : hasReservationAmountDue ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`} data-testid="workspace-payment-overview">
                       <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${paymentNeedsReview ? 'bg-amber-600' : hasReservationAmountDue ? 'bg-rose-600' : 'bg-emerald-600'}`}>{paymentNeedsReview ? <AlertTriangle className="h-4 w-4" /> : hasReservationAmountDue ? <CreditCard className="h-4 w-4" /> : <Shield className="h-4 w-4" />}</span>
                       <div className="min-w-0"><p className={`text-xs font-bold ${paymentNeedsReview ? 'text-amber-900' : hasReservationAmountDue ? 'text-rose-900' : 'text-emerald-900'}`}>{paymentOverview.label}{paymentOverview.displayAmount != null ? `: ${paymentAmountText}` : ''}</p><p className={`text-[11px] ${paymentNeedsReview ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-700'}`}>{paymentOverview.description}</p></div>
-                    </div>
+                    </div>}
                   </div>
                   {!readOnly && (
                     <div className="flex flex-wrap gap-2" aria-label="Hızlı işlemler">
@@ -1110,7 +1108,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} onStayEdit={openStayEditor} canEditStay={canEditStayDates} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
-                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} summary={summary} onSwitchTab={setActiveTab} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} property={property} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} summary={summary} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>

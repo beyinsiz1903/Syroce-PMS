@@ -15,7 +15,7 @@ import { useOptionalEntitlements } from '@/context/EntitlementContext';
 import api from '@/api/axios';
 import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
-import ExelyPrepaymentSummary from './ExelyPrepaymentSummary';
+import ReservationAccountOverview from './ReservationAccountOverview';
 import { exelyReservationDetails } from '@/utils/exelyReservation';
 import { reservationPaymentSummary } from './paymentSummary';
 import { latestCollectionPayment, paymentMethod } from '@/lib/folioPayments';
@@ -183,6 +183,7 @@ export function GeneralInfoTab({
   const recentNotes = (notes || []).slice(0, 2);
   const recentHistory = (history || []).slice(0, 3);
   return <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="general-info-tab">
+      {exelySource && <div className="min-w-0 lg:col-span-3"><ReservationAccountOverview booking={booking} summary={summary} onSwitchTab={onSwitchTab} /></div>}
       <div className="lg:col-span-2 space-y-5">
         {highlights?.has_alerts && <div className="space-y-1.5" data-testid="guest-highlights-banner">
             {highlights.alerts.map((a, i) => {
@@ -269,7 +270,9 @@ export function GeneralInfoTab({
             <div className="border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900">{booking.special_requests}</div>
           </section>}
 
-        {exelySource && <section className="space-y-3" data-testid="exely-source-details">
+        {exelySource && <details className="rounded-xl border border-slate-200 p-4" data-testid="exely-source-details">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Rezervasyon kaynak bilgileri ve hizmet ayrıntıları</summary>
+          <div className="mt-4 space-y-3">
           <SectionHeader icon={Globe} title="Exely kaynak bilgileri" />
           <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm">
             <InfoLine label="Entegrasyon" value="Exely" />
@@ -279,7 +282,6 @@ export function GeneralInfoTab({
             <InfoLine label="Exely ödeme yöntemi" value={exelySource.paymentMethod || 'Belirtilmemiş'} />
           </div>
           <p className="text-xs text-slate-500">Sağlayıcının ödeme/garanti talimatıdır; PMS tahsilat kaydı değildir.</p>
-          <ExelyPrepaymentSummary booking={booking} />
           {Array.isArray(booking.provider_services) && booking.provider_services.length > 0 && <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3" data-testid="exely-booked-services">
             <h4 className="text-sm font-semibold text-slate-800">Rezervasyona eklenen hizmetler</h4>
             <p className="text-xs text-slate-500">Exely sipariş bilgileri. Hizmetin verilmesi ve folyoya işlenmesi ayrıca takip edilir.</p>
@@ -295,10 +297,11 @@ export function GeneralInfoTab({
             </div>
             {booking.provider_booking_total != null && <InfoLine label="Exely rezervasyon toplamı (hizmetler dahil)" value={fmtCurrency(booking.provider_booking_total, currency)} />}
           </div>}
-        </section>}
+          </div>
+        </details>}
 
         {/* Bölüm 4: Ödeme Bilgileri */}
-        {summary && <section className="space-y-3" data-testid="general-payment-info">
+        {summary && !exelySource && <section className="space-y-3" data-testid="general-payment-info">
             <SectionHeader icon={Wallet} title={exelySource ? 'PMS Hesap Bilgileri' : 'Ödeme Bilgileri'} />
             {exelySource && <p className="text-xs text-slate-600">{paymentOverview.description}</p>}
             <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm grid grid-cols-1 sm:grid-cols-2 sm:gap-x-6">
