@@ -380,6 +380,40 @@ async def test_guest_order_rechecks_the_stay_guest_inside_transaction(services):
     assert not await services.room_service_orders.count_documents({})
 
 
+async def test_merged_check_history_and_mirrored_settlement_reconcile_across_reports(services, monkeypatch):
+    from domains.pms.pos_fnb_router import pos_mobile
+    from domains.pms.pos_router import pos_core
+    from domains.revenue.analytics_router import pos_inventory
+
+    for module in (pos_mobile, pos_core, pos_inventory):
+        monkeypatch.setattr(module, "db", services)
+        monkeypatch.setattr(module, "get_current_user", AsyncMock(return_value=actor()))
+    monkeypatch.setattr(pos_inventory, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+    await services.pos_outlets.insert_one({"id": "bar", "tenant_id": "t", "outlet_name": "Restoran"})
+    await services.pos_orders.insert_many([
+        {"id": "target", "tenant_id": "t", "business_date": "2026-10-26", "outlet_id": "bar",
+         "status": "completed", "currency": "TRY", "total_amount": 120, "grand_total": 132},
+        {"id": "source", "tenant_id": "t", "business_date": "2026-10-26", "outlet_id": "bar",
+         "status": "merged", "merged_into_order_id": "target", "currency": "TRY", "total_amount": 80, "grand_total": 88},
+    ])
+    settlement = {"id": "sale", "order_id": "target", "tenant_id": "t", "outlet_id": "bar",
+                  "transaction_date": "2026-10-26", "status": "completed", "currency": "TRY",
+                  "total_amount": 132, "tax_amount": 12, "payment_method": "room_charge"}
+    await services.pos_transactions.insert_one(dict(settlement))
+    await services.pos_menu_transactions.insert_one({**settlement, "id": "mirror"})
+    await services.pos_transactions.insert_one({**settlement, "tenant_id": "other", "id": "foreign", "total_amount": 999})
+
+    history = await pos_mobile.get_order_history("2026-10-26", "2026-10-26", None, None, None, 20, object())
+    z = await pos_core.get_z_report("2026-10-26", None, actor())
+    daily = await pos_core.get_pos_daily_summary("2026-10-26", None, actor())
+    outlets = await pos_inventory.get_outlet_sales_breakdown("2026-10-26", "2026-10-26", object())
+    assert {row["id"] for row in history["orders"]} == {"source", "target"}
+    assert z["net_sales"] == daily["total_sales"] == outlets["total_sales"] == 132
+    assert z["tax_total"] == 12 and z["payment_methods"] == {"room_charge": 132}
+    assert z["transaction_count"] == daily["transaction_count"] == outlets["outlets"]["Restoran"]["orders"] == 1
+    assert (await services.pos_orders.find_one({"id": "source"}))["grand_total"] == 88
+
+
 async def test_active_room_lookup_joins_room_id_and_does_not_guess_folio_or_stay(services, monkeypatch):
     from domains.pms import cashier_router
 
@@ -399,6 +433,7 @@ async def test_active_room_lookup_joins_room_id_and_does_not_guess_folio_or_stay
 @pytest.mark.parametrize("properties,expected", [([None, None], "t"), (["p", "p"], "p"), (["p", "q"], None)])
 async def test_bulk_qr_exposes_exact_scope_not_first_room(services, monkeypatch, properties, expected):
     from starlette.requests import Request
+
     from routers import room_qr_requests as qr
 
     monkeypatch.setattr(qr, "raw_db", services)

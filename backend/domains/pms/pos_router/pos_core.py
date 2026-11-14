@@ -328,12 +328,8 @@ async def get_pos_daily_summary(
         outlet_id=outlet_id,
         date=date,
     )
-    void_statuses = {"void", "voided", "cancelled", "canceled"}
-    open_statuses = {"pending", "preparing", "ready", "open", "draft"}
-    completed = [
-        row for row in transactions
-        if str(row.get("status") or "").lower() not in void_statuses | open_statuses
-    ]
+    from domains.pms.pos_fnb.reporting import is_finalized
+    completed = [row for row in transactions if is_finalized(row)]
     total_sales = round(sum(float(row.get("total_amount", 0) or 0) for row in completed), 2)
     count = len(completed)
     item_totals: dict[str, dict[str, Any]] = {}
@@ -461,15 +457,11 @@ async def get_z_report(
             outlet_id=outlet_id,
             date=report_date,
         )
-        from domains.pms.pos_fnb.reporting import category_amounts, enrich_refunds
+        from domains.pms.pos_fnb.reporting import category_amounts, enrich_refunds, is_finalized
         all_tx, report_warnings = await enrich_refunds(db, current_user.tenant_id, all_tx)
 
         void_statuses = {"void", "voided", "cancelled", "canceled"}
-        open_statuses = {"pending", "preparing", "ready", "open", "draft"}
-        valid_tx = [
-            t for t in all_tx
-            if str(t.get("status") or "").lower() not in void_statuses | open_statuses
-        ]
+        valid_tx = [t for t in all_tx if is_finalized(t)]
         void_tx = [t for t in all_tx if str(t.get("status") or "").lower() in void_statuses]
         from domains.pms.pos_fnb.reporting import is_refund
         sales = [row for row in valid_tx if not is_refund(row)]

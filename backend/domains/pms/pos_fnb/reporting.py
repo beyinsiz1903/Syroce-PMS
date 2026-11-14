@@ -1,6 +1,13 @@
 """Read-only enrichment of legacy refunds; never rewrite accounting history."""
 from datetime import UTC, datetime
 
+FINALIZED_STATUSES = frozenset({"completed", "closed", "paid", "settled", "refunded", "refund"})
+
+
+def is_finalized(row):
+    # A merged/served check is operational history, not another settlement.
+    return str(row.get("status") or "").strip().lower() in FINALIZED_STATUSES
+
 
 def is_refund(row):
     return row.get('payment_type') == 'refund' or row.get('status') == 'refunded'
