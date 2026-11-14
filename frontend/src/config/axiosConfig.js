@@ -202,6 +202,7 @@ async function _verifyActiveSessionState(cookieOnly = false) {
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
 async function _rotateRefreshToken(retryCount = 0) {
   const refreshToken = localStorage.getItem("refresh_token");
+  const userAtStart = localStorage.getItem("user");
   const wasAdminTenantContext = isAdminTenantContextActive();
   
   try {
@@ -210,6 +211,9 @@ async function _rotateRefreshToken(retryCount = 0) {
       refreshToken ? { refresh_token: refreshToken } : {},
       { _skipAuthRetry: true },
     );
+    // A sign-in/out elsewhere can complete while the network request runs.
+    // Its identity and credentials belong to that newer session.
+    if (localStorage.getItem("user") !== userAtStart) return { transient: true };
     const newAccess = r?.data?.access_token;
     const newRefresh = r?.data?.refresh_token;
     if (!newAccess) return { invalid: true };
@@ -236,6 +240,7 @@ async function _rotateRefreshToken(retryCount = 0) {
     recordSessionEvent("refresh");
     return { token: newAccess };
   } catch (err) {
+    if (localStorage.getItem("user") !== userAtStart) return { transient: true };
     const status = err?.response?.status;
     // FIX: Cross-tab race condition.
     // If Tab 1 refreshes the token, it updates localStorage.

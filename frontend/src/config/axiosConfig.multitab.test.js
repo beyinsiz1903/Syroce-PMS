@@ -123,4 +123,27 @@ describe("browser tabs sharing one rotating session", () => {
     await expect(tab.keepActiveSessionAlive()).resolves.toEqual({ transient: true });
     expect(localStorage.getItem("user")).not.toBeNull();
   });
+
+  it.each([200, 401])("ignores an old in-flight refresh response (%s) after another account signs in", async status => {
+    vi.stubGlobal("navigator", {});
+    const response = deferred();
+    mocks.post.mockImplementation(async () => {
+      await response.promise;
+      if (status === 401) throw { response: { status: 401 } };
+      return { data: { access_token: "old-account-access", refresh_token: "old-account-refresh" } };
+    });
+    const tab = await import("./axiosConfig");
+    const pending = tab.keepActiveSessionAlive();
+    await vi.waitFor(() => expect(mocks.post).toHaveBeenCalledOnce());
+    const nextUser = JSON.stringify({ id: "u2", tenant_id: "t2" });
+    localStorage.setItem("user", nextUser);
+    localStorage.setItem("refresh_token", "new-account-refresh");
+    mocks.defaults.headers.common.Authorization = "Bearer new-account-access";
+    response.resolve();
+    await expect(pending).resolves.toEqual({ transient: true });
+    expect(localStorage.getItem("user")).toBe(nextUser);
+    expect(localStorage.getItem("refresh_token")).toBe("new-account-refresh");
+    expect(mocks.defaults.headers.common.Authorization).toBe("Bearer new-account-access");
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
 });
