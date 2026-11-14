@@ -9,7 +9,6 @@ Domain Router: POS & F&B
 
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -44,84 +43,15 @@ async def _query_pos_transactions(
     session=None,
     validate_duplicates=None,
 ) -> list[dict]:
-    """Canonical POS transaction query.
+    """Compatibility entry point; shared report reads have no router dependency."""
+    from core.pos_reporting import query_pos_transactions
 
-    Finalized payments live in ``pos_transactions``. Older integrations wrote
-    to ``pos_menu_transactions`` or the shared ``transactions`` collection.
-    ``pos_orders`` is an operational order source, not a payment ledger, but is
-    retained as a last-resort legacy fallback when no finalized transaction for
-    that order exists. Read every source and de-duplicate by transaction and
-    order identity so the same check cannot be counted twice.
-    """
-    database = database if database is not None else db
-    common_q: dict[str, Any] = {"tenant_id": tenant_id}
-    if outlet_id:
-        common_q["outlet_id"] = outlet_id
-    if booking_id:
-        common_q["booking_id"] = booking_id
-
-    legacy_q = dict(common_q)
-    order_q = dict(common_q)
-    if date:
-        legacy_q["transaction_date"] = date
-        order_q["business_date"] = date
-    elif start_date or end_date:
-        rng: dict[str, Any] = {}
-        if start_date:
-            rng["$gte"] = start_date
-        if end_date:
-            rng["$lte"] = end_date
-        if rng:
-            legacy_q["transaction_date"] = rng
-            order_q["business_date"] = dict(rng)
-
-    tx_q = dict(legacy_q)
-    tx_q["$or"] = [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]
-
-    kwargs = {"session": session} if session is not None else {}
-    queries = [(database.pos_transactions, legacy_q), (database.pos_menu_transactions, legacy_q),
-               (database.transactions, tx_q), (database.pos_orders, order_q)]
-    if session is not None:
-        # MongoDB forbids parallel operations within one transaction/session.
-        source_rows = [await coll.find(query, {"_id": 0}, **kwargs).sort("created_at", -1).to_list(limit)
-                       for coll, query in queries]
-    else:
-        source_rows = await asyncio.gather(*(coll.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
-                                           for coll, query in queries))
-
-    financial_rows = [*source_rows[0], *source_rows[1], *source_rows[2]]
-    if validate_duplicates is not None:
-        # Normal report reads retain legacy precedence. Financial sealing may
-        # instead reject conflicting copies before precedence hides them.
-        validate_duplicates(financial_rows)
-    settled_order_ids = {
-        str(row.get("order_id"))
-        for row in financial_rows
-        if row.get("order_id")
-    }
-    merged: list[dict] = []
-    seen_ids: set[str] = set()
-    financial_order_source: dict[str, int] = {}
-    for source_index, rows in enumerate(source_rows):
-        is_order_source = source_index == 3
-        for row in rows:
-            row_id = str(row.get("id") or row.get("transaction_id") or "")
-            order_id = str(row.get("order_id") or (row_id if is_order_source else ""))
-            if is_order_source and order_id and order_id in settled_order_ids:
-                continue
-            if not is_order_source and order_id:
-                prior_source = financial_order_source.get(order_id)
-                if prior_source is not None and prior_source != source_index:
-                    continue
-                financial_order_source.setdefault(order_id, source_index)
-            if row_id and row_id in seen_ids:
-                continue
-            if row_id:
-                seen_ids.add(row_id)
-            merged.append(row)
-    merged.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-    return merged if limit is None else merged[:limit]
-
+    return await query_pos_transactions(
+        tenant_id, limit=limit, outlet_id=outlet_id, booking_id=booking_id,
+        start_date=start_date, end_date=end_date, date=date,
+        database=database if database is not None else db, session=session,
+        validate_duplicates=validate_duplicates,
+    )
 
 async def get_anomaly_detection(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Detect anomalies in room operations"""
@@ -328,12 +258,8 @@ async def get_pos_daily_summary(
         outlet_id=outlet_id,
         date=date,
     )
-    void_statuses = {"void", "voided", "cancelled", "canceled"}
-    open_statuses = {"pending", "preparing", "ready", "open", "draft"}
-    completed = [
-        row for row in transactions
-        if str(row.get("status") or "").lower() not in void_statuses | open_statuses
-    ]
+    from domains.pms.pos_fnb.reporting import is_finalized
+    completed = [row for row in transactions if is_finalized(row)]
     total_sales = round(sum(float(row.get("total_amount", 0) or 0) for row in completed), 2)
     count = len(completed)
     item_totals: dict[str, dict[str, Any]] = {}
@@ -461,15 +387,11 @@ async def get_z_report(
             outlet_id=outlet_id,
             date=report_date,
         )
-        from domains.pms.pos_fnb.reporting import category_amounts, enrich_refunds
+        from domains.pms.pos_fnb.reporting import category_amounts, enrich_refunds, is_finalized
         all_tx, report_warnings = await enrich_refunds(db, current_user.tenant_id, all_tx)
 
         void_statuses = {"void", "voided", "cancelled", "canceled"}
-        open_statuses = {"pending", "preparing", "ready", "open", "draft"}
-        valid_tx = [
-            t for t in all_tx
-            if str(t.get("status") or "").lower() not in void_statuses | open_statuses
-        ]
+        valid_tx = [t for t in all_tx if is_finalized(t)]
         void_tx = [t for t in all_tx if str(t.get("status") or "").lower() in void_statuses]
         from domains.pms.pos_fnb.reporting import is_refund
         sales = [row for row in valid_tx if not is_refund(row)]

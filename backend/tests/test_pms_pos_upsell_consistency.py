@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from core import pos_reporting
 from domains.guest.experience_router import upsell
 from domains.revenue.analytics_router import pos_inventory
 
@@ -33,9 +34,16 @@ class _PosOrders:
 
 
 @pytest.mark.asyncio
-async def test_pos_sales_uses_business_date_and_excludes_cancelled(monkeypatch):
-    orders = _PosOrders([{"outlet_name": "Restoran", "total_amount": 125, "currency": "TRY"}])
-    monkeypatch.setattr(pos_inventory, "db", SimpleNamespace(pos_orders=orders))
+async def test_pos_sales_uses_same_business_period_and_finalized_ledger_as_z(monkeypatch):
+    database = SimpleNamespace()
+    monkeypatch.setattr(pos_inventory, "db", database)
+    query = AsyncMock(return_value=[
+        {"outlet_name": "Restoran", "status": "completed", "total_amount": 132, "currency": "TRY"},
+        {"outlet_name": "Restoran", "status": "merged", "total_amount": 80, "currency": "TRY"},
+        {"outlet_name": "Restoran", "status": "pending", "total_amount": 25, "currency": "TRY"},
+    ])
+    monkeypatch.setattr(pos_reporting, "query_pos_transactions", query)
+    monkeypatch.setattr(pos_inventory, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
 
     async def _user(_credentials):
         return SimpleNamespace(tenant_id="tenant-1")
@@ -43,22 +51,44 @@ async def test_pos_sales_uses_business_date_and_excludes_cancelled(monkeypatch):
     monkeypatch.setattr(pos_inventory, "get_current_user", _user)
     result = await pos_inventory.get_outlet_sales_breakdown("2026-09-24", "2026-09-24", object())
 
-    assert result["total_sales"] == 125
-    assert orders.query["status"] == {"$nin": ["cancelled", "voided"]}
-    assert orders.query["$or"][0] == {"business_date": {"$gte": "2026-09-24", "$lt": "2026-09-25"}}
-    assert orders.query["$or"][1]["created_at"]["$lt"] == "2026-09-25"
+    assert result["total_sales"] == 132
+    assert result["orders_by_currency"] == {"TRY": 1}
+    query.assert_awaited_once_with("tenant-1", limit=None, start_date="2026-09-24", end_date="2026-09-24", database=database)
 
 
 @pytest.mark.asyncio
 async def test_pos_does_not_sum_currencies_or_invent_legacy_currency(monkeypatch):
-    orders = _PosOrders([{"total_amount": 100, "currency": "USD"}, {"total_amount": 200, "currency": "TRY"}, {"total_amount": 30}])
-    monkeypatch.setattr(pos_inventory, "db", SimpleNamespace(pos_orders=orders))
+    monkeypatch.setattr(pos_inventory, "db", SimpleNamespace())
+    monkeypatch.setattr(pos_inventory, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+    monkeypatch.setattr(pos_reporting, "query_pos_transactions", AsyncMock(return_value=[
+        {"status": "completed", "total_amount": 100, "currency": "USD"},
+        {"status": "completed", "total_amount": 200, "currency": "TRY"},
+        {"status": "completed", "total_amount": 30},
+    ]))
     monkeypatch.setattr(pos_inventory, "get_current_user", AsyncMock(return_value=SimpleNamespace(tenant_id="t")))
     result = await pos_inventory.get_outlet_sales_breakdown("2026-10-26", "2026-10-26", object())
     assert result["total_sales"] is None
     assert result["total_sales_by_currency"] == {"USD": 100, "TRY": 200, "UNKNOWN": 30}
     assert result["orders_by_currency"] == {"USD": 1, "TRY": 1, "UNKNOWN": 1}
     assert result["outlets"]["Bilinmeyen"]["avg_ticket"] is None
+
+
+@pytest.mark.asyncio
+async def test_pos_summary_refund_reduces_sales_without_becoming_another_order(monkeypatch):
+    rows = [
+        {"status": "completed", "total_amount": 110, "tip_amount": 10, "currency": "TRY"},
+        {"status": "refunded", "total_amount": -22, "tip_amount": -2, "currency": "TRY"},
+    ]
+    monkeypatch.setattr(pos_inventory, "db", SimpleNamespace())
+    monkeypatch.setattr(pos_inventory, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+    monkeypatch.setattr(pos_inventory, "get_current_user", AsyncMock(return_value=SimpleNamespace(tenant_id="t")))
+    monkeypatch.setattr(pos_reporting, "query_pos_transactions", AsyncMock(return_value=rows))
+    monkeypatch.setattr(pos_reporting, "enrich_refunds", AsyncMock(return_value=(rows, [])))
+    result = await pos_inventory.get_outlet_sales_breakdown("2026-11-10", "2026-11-10", object())
+    assert result["total_sales_by_currency"] == {"TRY": 80}
+    assert result["orders_by_currency"] == {"TRY": 1}
+    assert result["outlets"]["Bilinmeyen"]["orders"] == 1
+    assert rows[0]["total_amount"] == 110 and rows[1]["total_amount"] == -22
 
 
 class _Collection:

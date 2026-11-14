@@ -16,7 +16,6 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
-from core.pos_report_period import pos_report_period
 from core.security import get_current_user, security
 from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_module_role  # v89 DW
@@ -64,34 +63,38 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
     if not end_date:
         end_date = today.date().isoformat()
 
-    # Yeni siparişlerde business_date otoritedir. Legacy kayıtlarda bu alan
-    # bulunmadığı için created_at aralığına kontrollü fallback yapılır.
-    period_filter = pos_report_period(start_date, end_date)
-    query = {
-        "tenant_id": current_user.tenant_id,
-        "status": {"$nin": ["cancelled", "voided"]},
-        **period_filter,
-    }
+    from core.pos_reporting import enrich_refunds, is_finalized, is_refund, query_pos_transactions
 
-    # Gerçek POS siparişlerinden outlet kırılımı; sabit/placeholder outlet üretilmez.
-    # Veri yoksa boş döner (fail-closed), uydurma kategori yok.
+    rows = await query_pos_transactions(current_user.tenant_id, limit=None,
+                                         start_date=start_date, end_date=end_date, database=db)
+    rows, warnings = await enrich_refunds(db, current_user.tenant_id, rows)
+    finalized = [row for row in rows if is_finalized(row)]
+    outlet_ids = sorted({row['outlet_id'] for row in finalized if row.get('outlet_id')})
+    names = {}
+    if outlet_ids:
+        outlets = await db.pos_outlets.find({'tenant_id': current_user.tenant_id, 'id': {'$in': outlet_ids}},
+                                           {'_id': 0, 'id': 1, 'outlet_name': 1}).to_list(None)
+        names = {row['id']: row.get('outlet_name') for row in outlets}
+
+    # The same de-duplicated settlement ledger as Z; merged checks remain history.
     outlet_sales = {}
     total_sales_by_currency: dict[str, float] = {}
     orders_by_currency: dict[str, int] = {}
 
-    async for order in db.pos_orders.find(query):
-        outlet = order.get("outlet_name") or "Bilinmeyen"
+    for order in finalized:
+        outlet = order.get("outlet_name") or names.get(order.get('outlet_id')) or "Bilinmeyen"
         if outlet not in outlet_sales:
             outlet_sales[outlet] = {"sales": 0, "orders": 0, "avg_ticket": 0, "sales_by_currency": {}, "orders_by_currency": {}}
 
-        amount = float(order.get("total_amount", 0) or 0)
+        amount = float(order.get("total_amount", 0) or 0) - float(order.get('tip_amount') or 0)
         currency = str(order.get("currency") or "UNKNOWN").upper()
         outlet_sales[outlet]["sales"] += amount
         outlet_sales[outlet]["sales_by_currency"][currency] = round(outlet_sales[outlet]["sales_by_currency"].get(currency, 0) + amount, 2)
         total_sales_by_currency[currency] = round(total_sales_by_currency.get(currency, 0) + amount, 2)
-        orders_by_currency[currency] = orders_by_currency.get(currency, 0) + 1
-        outlet_sales[outlet]["orders_by_currency"][currency] = outlet_sales[outlet]["orders_by_currency"].get(currency, 0) + 1
-        outlet_sales[outlet]["orders"] += 1
+        if not is_refund(order):
+            orders_by_currency[currency] = orders_by_currency.get(currency, 0) + 1
+            outlet_sales[outlet]["orders_by_currency"][currency] = outlet_sales[outlet]["orders_by_currency"].get(currency, 0) + 1
+            outlet_sales[outlet]["orders"] += 1
 
     # Calculate averages
     for outlet in outlet_sales:
@@ -112,6 +115,8 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
         "currency": tenant_currency,
         "period": {"start": start_date, "end": end_date},
         "data_available": len(outlet_sales) > 0,
+        "report_warnings": warnings,
+        "basis": "Kesinleşmiş POS satışı − iade; vergiler dahil, bahşiş hariç. Oda hesabı tahsilat değildir.",
     }
 
 

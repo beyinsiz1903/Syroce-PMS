@@ -26,6 +26,11 @@ const POSTab = ({ businessDate }) => {
 
   const STATUS_MAP = {
     completed: { label: t('pmsComponents.housekeeping.completed'), color: 'bg-green-100 text-green-700' },
+    closed: { label: 'Kapalı', color: 'bg-green-100 text-green-700' },
+    paid: { label: 'Ödendi', color: 'bg-green-100 text-green-700' },
+    settled: { label: 'Hesap kapandı', color: 'bg-green-100 text-green-700' },
+    merged: { label: 'Birleştirildi', color: 'bg-slate-100 text-slate-700' },
+    refunded: { label: 'İade edildi', color: 'bg-amber-100 text-amber-700' },
     pending:   { label: t('pmsComponents.housekeeping.waiting'),   color: 'bg-yellow-100 text-yellow-700' },
     preparing: { label: tc('preparing'),                            color: 'bg-amber-100 text-amber-700' },
     ready:     { label: tc('ready'),                                color: 'bg-blue-100 text-blue-700' },
@@ -181,7 +186,7 @@ const POSTab = ({ businessDate }) => {
           ) : (
             <div className="space-y-2">
               {orders.slice(0, 20).map((order) => {
-                const st = STATUS_MAP[order.status] || STATUS_MAP.pending;
+                const st = STATUS_MAP[order.status] || { label: 'Durum doğrulanamadı', color: 'bg-slate-100 text-slate-700' };
                 return (
                   <div key={order.id} className="flex justify-between items-center p-3 border rounded-lg hover:shadow-sm transition">
                     <div className="min-w-0">
@@ -195,9 +200,10 @@ const POSTab = ({ businessDate }) => {
                         <span title={HOTEL_EVENT_TIME_ZONE_LABEL}>{order.created_at ? formatHotelEventTimestamp(order.created_at) : '—'}</span>
                         {order.items_count != null ? ` • ${order.items_count} ${tc('items')}` : ''}
                       </div>
+                      {order.status === 'merged' && <p className="text-xs text-slate-500">Satış toplamına tekrar eklenmez.</p>}
                     </div>
                     <div className="text-right ml-3 flex-shrink-0">
-                      <div className="font-bold">{money(order.total_amount, order.currency || 'UNKNOWN')}</div>
+                      <div className="font-bold">{money(order.grand_total ?? order.total_amount, order.currency || 'UNKNOWN')}</div>
                       <Badge className={st.color}>{st.label}</Badge>
                     </div>
                   </div>

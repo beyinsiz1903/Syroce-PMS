@@ -29,6 +29,29 @@ class _Collection:
 
 
 @pytest.mark.asyncio
+async def test_merged_check_is_history_not_a_second_sale(monkeypatch):
+    rows = [
+        {"id": "sale", "order_id": "target", "status": "completed", "payment_method": "room_charge",
+         "total_amount": 132, "tax_amount": 12, "currency": "TRY"},
+        {"id": "source", "status": "merged", "merged_into_order_id": "target", "payment_status": "unpaid",
+         "total_amount": 80, "grand_total": 88, "tax_amount": 8, "currency": "TRY"},
+        {"id": "served", "status": "served", "total_amount": 20, "currency": "TRY"},
+    ]
+    query = AsyncMock(return_value=rows)
+    monkeypatch.setattr(pos_core, "_query_pos_transactions", query)
+    monkeypatch.setattr(pos_core, "db", SimpleNamespace(
+        hotel_settings=SimpleNamespace(find_one=AsyncMock(return_value={"currency": "TRY"}))))
+    user = SimpleNamespace(tenant_id="tenant-a")
+    report = await pos_core.get_z_report("2026-11-10", None, user)
+    summary = await pos_core.get_pos_daily_summary("2026-11-10", None, user)
+    assert report["net_sales"] == summary["total_sales"] == 132
+    assert report["transaction_count"] == summary["transaction_count"] == 1
+    assert report["tax_total"] == 12
+    assert report["payment_methods"] == {"room_charge": 132}
+    assert rows[1]["status"] == "merged" and rows[1]["total_amount"] == 80
+
+
+@pytest.mark.asyncio
 async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch):
     finalized_transactions = _Collection(
         [
