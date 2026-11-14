@@ -1,4 +1,4 @@
-"""Bounded, offline decoder regressions for CVE-2026-114605/106435.
+"""Bounded, offline decoder regressions for CVE-2026-114605/106435/128089.
 
 Cases follow the producers' stated fixed behavior, not a network exploit:
 https://github.com/rthalley/dnspython/commit/b485e46
@@ -10,7 +10,9 @@ import struct
 from importlib.metadata import version
 
 import bson
+import dns.exception
 import dns.name
+import dns.rdata
 import pytest
 from packaging.version import Version
 
@@ -20,7 +22,18 @@ def require_patched_decoders():
     # Fail clearly on an uninstalled requirements update before exercising any
     # malformed native-buffer input on an older, potentially unsafe decoder.
     assert Version(version('pymongo')) >= Version('4.18.3'), 'Install patched backend requirements first'
-    assert Version(version('dnspython')) >= Version('2.9.0'), 'Install patched backend requirements first'
+    assert Version(version('dnspython')) >= Version('2.9.2'), 'Install patched backend requirements first'
+
+
+def test_dns_wks_service_above_bitmap_limit_is_rejected():
+    # A boundary value only; never allocate an attacker-sized bitmap.
+    with pytest.raises(dns.exception.SyntaxError):
+        dns.rdata.from_text('IN', 'WKS', '10.0.0.1 udp 65536')
+
+
+def test_dns_wks_last_valid_service_still_roundtrips():
+    record = dns.rdata.from_text('IN', 'WKS', '10.0.0.1 udp 65535')
+    assert record.to_text() == '10.0.0.1 17 65535'
 
 
 def test_dns_root_at_compression_limit_still_decodes():
