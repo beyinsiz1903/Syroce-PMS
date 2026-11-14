@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reservationPaymentSummary } from '../paymentSummary';
+import { reservationDisplaySummary, reservationPaymentSummary } from '../paymentSummary';
 
 describe('reservationPaymentSummary — server amounts, presentation only', () => {
   it('separates whole-stay debt from posted folio debt', () => {
@@ -52,5 +52,58 @@ describe('reservationPaymentSummary — server amounts, presentation only', () =
       reservation_total_due: 15.03, balance: 15.03,
       pricing_reconciliation_required: true, pricing_reconciliation_difference: 15.03,
     })).toMatchObject({ kind: 'reconciliation', label: 'Fiyat / tahakkuk farkı', displayAmount: 15.03 });
+  });
+});
+
+describe('Exely reservation and local ledger scopes', () => {
+  const booking = { channel: 'exely', currency: 'USD', provider_prepayment: {
+    schema_version: 1, scope: 'reservation', booking_currency: 'USD', booking_total: 460,
+    remaining_amount: 300, totals: [{ currency: 'USD', received_amount: 160 }],
+  } };
+  const summary = Object.freeze({ reservation_total_due: 160, gross_total: 160, cash_collection_total: 0 });
+
+  it('uses the services-inclusive provider balance for the headline without changing PMS amounts', () => {
+    expect(reservationDisplaySummary(summary, booking)).toMatchObject({
+      label: 'Exely’de kalan tutar', displayAmount: 300, currency: 'USD', providerScope: true, kind: 'due',
+    });
+    expect(reservationPaymentSummary(summary, booking)).toMatchObject({
+      label: 'PMS kayıt bakiyesi', totalDue: 160, pmsOnly: true,
+    });
+    expect(summary.cash_collection_total).toBe(0);
+  });
+
+  it('does not add local extras or multiply a shared provider balance across rooms', () => {
+    for (const room of ['standard', 'deluxe']) {
+      expect(reservationDisplaySummary({ ...summary, reservation_total_due: 210 }, { ...booking, id: room }).displayAmount).toBe(300);
+    }
+  });
+
+  it('keeps the source currency when it differs from the folio currency', () => {
+    expect(reservationDisplaySummary(summary, { ...booking, currency: 'TRY' })).toMatchObject({ displayAmount: 300, currency: 'USD' });
+  });
+
+  it.each([null, undefined, '', 'invalid', -1, Infinity])('does not substitute a local balance for an unknown source balance (%s)', remaining_amount => {
+    expect(reservationDisplaySummary(summary, { ...booking, provider_prepayment: { ...booking.provider_prepayment, remaining_amount } }))
+      .toMatchObject({ kind: 'unknown', displayAmount: null });
+  });
+
+  it('does not treat a missing snapshot or a card guarantee as a settled payment', () => {
+    expect(reservationDisplaySummary(summary, { channel: 'exely', payment_method: 'BankCardGuarantee' }))
+      .toMatchObject({ kind: 'unknown', displayAmount: null });
+  });
+
+  it('preserves a fully prepaid provider balance even while the local folio is not settled', () => {
+    expect(reservationDisplaySummary(summary, { ...booking, provider_prepayment: { ...booking.provider_prepayment, remaining_amount: 0 } }))
+      .toMatchObject({ kind: 'settled', displayAmount: 0 });
+    expect(reservationPaymentSummary(summary, booking).totalDue).toBe(160);
+  });
+
+  it('keeps a PMS price discrepancy visible instead of hiding it behind the source payment', () => {
+    expect(reservationDisplaySummary({ ...summary, pricing_reconciliation_required: true, pricing_reconciliation_difference: 20 }, booking))
+      .toMatchObject({ kind: 'reconciliation', displayAmount: 20 });
+  });
+
+  it('preserves the normal overview for direct bookings', () => {
+    expect(reservationDisplaySummary(summary, { channel: 'direct' })).toEqual(reservationPaymentSummary(summary));
   });
 });
