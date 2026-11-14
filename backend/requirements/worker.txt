@@ -25,7 +25,8 @@ prompt_toolkit==3.0.52
 # CVE-2026-116577 / CVE-2026-115927 / CVE-2026-116578:
 # reject folded headers, bound chunked-body work, and validate redirect targets.
 # Tornado 6.6 requires Python >=3.11, matching CI and both runtime images.
-tornado==6.6.0
+# CVE-2026-126347: also reject triple-slash redirect targets.
+tornado==6.6.1
 vine==5.1.0
 wcwidth==0.6.0
 # CVE-2026-102598: safe_join must reject Windows device-name paths.

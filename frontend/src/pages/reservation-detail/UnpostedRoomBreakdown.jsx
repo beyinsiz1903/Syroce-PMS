@@ -13,7 +13,7 @@ export function UnpostedRoomBreakdown({ payment, currency, testIdPrefix = '' }) 
         <span className="min-w-0 text-slate-500">Henüz işlenmemiş oda bedeli</span>
         <span className="shrink-0 whitespace-nowrap font-semibold text-slate-700">{fmtCurrency(payment.pendingRoomAmount, currency)}</span>
       </div>
-      <p className="text-[11px] leading-4 text-slate-500">İşlenmemiş oda bedeli toplam kalan ödemede dikkate alınır; ayrıca eklenmez.</p>
+      <p className="text-[11px] leading-4 text-slate-500">{payment.pmsOnly ? 'İşlenmemiş oda bedeli PMS kayıt bakiyesinde dikkate alınır; Exely bakiyesine ayrıca eklenmez.' : 'İşlenmemiş oda bedeli toplam kalan ödemede dikkate alınır; ayrıca eklenmez.'}</p>
       {payment.hasAllocatedPrepayment && <p className="text-[11px] leading-4 text-emerald-700">Ön ödeme henüz işlenmemiş oda bedelini karşılıyor. Bu tutar yeniden tahsil edilmez.</p>}
     </div>
   );

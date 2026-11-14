@@ -105,6 +105,27 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Ön ödeme');
   });
 
+  it('shows the Exely services-inclusive balance in every headline and scopes the PMS ledger separately', async () => {
+    get.mockResolvedValue({ data: { ...detail,
+      booking: { ...detail.booking, channel: 'exely', currency: 'USD', total_amount: 160,
+        provider_prepayment: { schema_version: 1, scope: 'reservation', booking_total: 460,
+          booking_currency: 'USD', remaining_amount: 300,
+          totals: [{ currency: 'USD', received_amount: 160, expected_amount: 0, loyalty_amount: 0 }] } },
+      summary: { ...detail.summary, reservation_total_due: 160, balance: 0, folio_balance: 0,
+        unposted_room_amount: 160, accommodation_total: 160, gross_total: 160, cash_collection_total: 0 },
+    } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('reservation-total-due')).toHaveTextContent('300 USD');
+    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Exely’de kalan tutar: 300 USD');
+    expect(screen.getByTestId('ops-payment-alert')).toHaveTextContent('Exely’de kalan tutar: 300 USD');
+    expect(screen.getByTestId('exely-prepayment-sidebar')).toHaveTextContent('Alınan ön ödeme160 USD');
+    expect(screen.getByTestId('local-payment-scope')).toHaveTextContent('PMS kayıt bakiyesi160 USD');
+    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('PMS tahsilatı0 USD');
+    expect(screen.queryByText('Tüm konaklama ve ekstralar dahil kalan tutar.')).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it.each([[3500, '3.500 TL'], [0, '0 TL']])('separates receipts (%s) from a city ledger transfer in both summaries', async (receipts, displayedReceipts) => {
     get.mockResolvedValue({ data: { ...detail, summary: {
       ...detail.summary, total_payments: receipts + 13508,

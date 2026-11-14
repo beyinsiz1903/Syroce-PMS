@@ -35,7 +35,8 @@ import { useTranslation } from 'react-i18next';
 import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import { bookingSourceLabel } from '@/utils/bookingSource';
-import { reservationPaymentSummary } from './reservation-detail/paymentSummary';
+import { reservationDisplaySummary, reservationPaymentSummary } from './reservation-detail/paymentSummary';
+import ExelyPrepaymentSummary from './reservation-detail/ExelyPrepaymentSummary';
 import { UnpostedRoomBreakdown } from './reservation-detail/UnpostedRoomBreakdown';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
@@ -356,10 +357,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const pricingReconciliationRequired = Boolean(summary?.pricing_reconciliation_required);
   const pricingReconciliationDifference = Number(summary?.pricing_reconciliation_difference) || 0;
   const hasOpenBalance = balance > 0.01 && !pricingReconciliationRequired;
-  const paymentOverview = reservationPaymentSummary(summary);
+  const localPaymentOverview = reservationPaymentSummary(summary, booking);
+  const paymentOverview = reservationDisplaySummary(summary, booking);
   const hasReservationAmountDue = paymentOverview.kind === 'due';
   const paymentNeedsReview = ['reconciliation', 'unknown'].includes(paymentOverview.kind);
-  const paymentAmountText = paymentOverview.displayAmount == null ? '—' : fmtCurrency(paymentOverview.displayAmount, currency);
+  const paymentAmountText = paymentOverview.displayAmount == null ? '—' : fmtCurrency(paymentOverview.displayAmount, paymentOverview.currency || currency);
   const accommodationTotal = Number(summary?.accommodation_total ?? summary?.total_amount) || 0;
   const additionalChargeTotal = Number(summary?.additional_charge_total ?? summary?.total_extra) || 0;
   const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
@@ -607,7 +609,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               </Badge>
             ) : hasReservationAmountDue && (
               <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
-                <AlertTriangle className="w-3 h-3 mr-1" /> Toplam kalan ödeme: {paymentAmountText}
+                <AlertTriangle className="w-3 h-3 mr-1" /> {paymentOverview.label}: {paymentAmountText}
               </Badge>
             )}
             {readOnly && (
@@ -660,7 +662,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <div className={`text-2xl font-bold leading-tight ${paymentNeedsReview ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`} data-testid="reservation-total-due">{paymentAmountText}</div>
                   <p className="text-[11px] text-slate-500">{paymentOverview.description}</p>
                 </div>
+                {paymentOverview.providerScope && <ExelyPrepaymentSummary booking={booking} compact />}
                 <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
+                  {paymentOverview.providerScope && <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs" data-testid="local-payment-scope">
+                    <div className="flex justify-between gap-3 font-semibold text-slate-700"><span>{localPaymentOverview.label}</span><span className="shrink-0">{localPaymentOverview.displayAmount == null ? '—' : fmtCurrency(localPaymentOverview.displayAmount, currency)}</span></div>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-500">{localPaymentOverview.description}</p>
+                  </div>}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">Konaklama</span>
                     <span className="font-semibold text-slate-800">{fmtCurrency(accommodationTotal, currency)}</span>
@@ -672,7 +679,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </div>
                   )}
                   <div className="flex justify-between border-t border-slate-200 pt-1.5 text-xs" data-testid="gross-total">
-                    <span className="font-medium text-slate-600">Genel toplam</span>
+                    <span className="font-medium text-slate-600">{paymentOverview.providerScope ? 'PMS toplamı' : 'Genel toplam'}</span>
                     <span className="font-semibold text-slate-900">{fmtCurrency(grossTotal, currency)}</span>
                   </div>
                   {pricingReconciliationRequired && (
@@ -687,7 +694,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </div>
                   )}
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Toplam tahsilat</span>
+                    <span className="text-slate-500">{paymentOverview.providerScope ? 'PMS tahsilatı' : 'Toplam tahsilat'}</span>
                     <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.cash_collection_total ?? summary?.total_payments, currency)}</span>
                   </div>
                   {Number(summary?.city_ledger_transfer_total) > 0 && (
@@ -702,7 +709,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       <p className="mt-1 text-[11px] leading-4 text-emerald-800">Toplam tahsilatın içinde; yeniden düşülmez.</p>
                     </div>
                   )}
-                  <UnpostedRoomBreakdown payment={paymentOverview} currency={currency} />
+                  <UnpostedRoomBreakdown payment={localPaymentOverview} currency={currency} />
                   {(summary?.total_deposits || 0) > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Depozito</span>
@@ -880,12 +887,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 ) : hasReservationAmountDue ? (
                   <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
                     <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0" />
-                    <span className="text-[11px] text-rose-700 font-medium">Toplam kalan ödeme: {paymentAmountText}</span>
+                    <span className="text-[11px] text-rose-700 font-medium">{paymentOverview.label}: {paymentAmountText}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                    <span className="text-[11px] text-emerald-700">{paymentOverview.kind === 'credit' ? `Misafir alacağı: ${paymentAmountText}` : 'Kalan ödeme yok'}</span>
+                    <span className="text-[11px] text-emerald-700">{paymentOverview.providerScope ? `${paymentOverview.label}: ${paymentAmountText}` : paymentOverview.kind === 'credit' ? `Misafir alacağı: ${paymentAmountText}` : 'Kalan ödeme yok'}</span>
                   </div>
                 )}
                 {room && (room.status === 'dirty' || room.status === 'cleaning') && (

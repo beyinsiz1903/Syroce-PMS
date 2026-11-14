@@ -32,7 +32,7 @@ def test_msgpack_pin_rejects_affected_decoder_and_checks_installed_runtime():
 
 
 @pytest.mark.parametrize('package,affected,patched', [
-    ('dnspython', '2.8.0', '2.9.0'),
+    ('dnspython', '2.9.0', '2.9.2'),
     ('pymongo', '4.18.2', '4.18.3'),
 ])
 def test_dns_and_bson_pins_require_the_patched_decoder(package, affected, patched):
@@ -43,4 +43,4 @@ def test_dns_and_bson_pins_require_the_patched_decoder(package, affected, patche
     if package == 'pymongo':
         assert "Version(pymongo.version) >= Version('4.18.3')" in post_install
     else:
-        assert "Version(version('dnspython')) >= Version('2.9.0')" in post_install
+        assert "Version(version('dnspython')) >= Version('2.9.2')" in post_install

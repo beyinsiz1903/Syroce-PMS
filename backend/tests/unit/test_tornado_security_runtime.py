@@ -1,6 +1,6 @@
 """Bounded, socket-free Tornado 6.6 security and Flower compatibility checks.
 
-Upstream: https://www.tornadoweb.org/en/stable/releases/v6.6.0.html
+Upstream: https://www.tornadoweb.org/en/stable/releases/v6.6.1.html
 No external server, broker, task worker or production data is used.
 """
 import asyncio
@@ -23,13 +23,14 @@ def test_tornado_security_pin_and_post_install_guard():
             if line.strip() and not line.startswith(('#', '-'))]
     pin = next(item for item in pins if item.name == 'tornado')
     assert Version('6.5.9') not in pin.specifier
-    assert Version('6.6.0') in pin.specifier
-    assert "Version(tornado.version) >= Version('6.6.0')" in (ROOT / 'scripts/post_install.sh').read_text()
+    assert Version('6.6.0') not in pin.specifier
+    assert Version('6.6.1') in pin.specifier
+    assert "Version(tornado.version) >= Version('6.6.1')" in (ROOT / 'scripts/post_install.sh').read_text()
 
 
 @pytest.fixture
 def patched_runtime():
-    assert Version(version('tornado')) >= Version('6.6.0'), 'Install patched worker requirements first'
+    assert Version(version('tornado')) >= Version('6.6.1'), 'Install patched worker requirements first'
 
 
 def test_flower_requirement_and_image_python_floor_accept_the_patch(patched_runtime):
@@ -62,6 +63,7 @@ def test_normal_headers_still_parse(patched_runtime):
 
 @pytest.mark.parametrize('template,capture', [
     ('/{0}/destination', '/example.invalid'),
+    ('/{0}/destination', '//example.invalid'),
     ('/{0}/destination', '\\example.invalid'),
     ('https://trusted.invalid{0}', '@example.invalid/'),
     ('{0}', 'https://example.invalid/'),

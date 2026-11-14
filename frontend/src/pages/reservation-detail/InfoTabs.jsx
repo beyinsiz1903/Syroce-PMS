@@ -152,7 +152,7 @@ export function GeneralInfoTab({
     } finally { setEnablingLongStay(false); }
   };
   const nights = booking?.check_in && booking?.check_out ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
-  const paymentOverview = reservationPaymentSummary(summary);
+  const paymentOverview = reservationPaymentSummary(summary, booking);
   const paymentTone = ['unknown', 'reconciliation'].includes(paymentOverview.kind) ? 'text-amber-700'
     : paymentOverview.kind === 'due' ? 'text-rose-600' : 'text-emerald-600';
   const paymentStatus = ['unknown', 'reconciliation'].includes(paymentOverview.kind) ? paymentOverview.label
@@ -299,15 +299,16 @@ export function GeneralInfoTab({
 
         {/* Bölüm 4: Ödeme Bilgileri */}
         {summary && <section className="space-y-3" data-testid="general-payment-info">
-            <SectionHeader icon={Wallet} title="Ödeme Bilgileri" />
+            <SectionHeader icon={Wallet} title={exelySource ? 'PMS Hesap Bilgileri' : 'Ödeme Bilgileri'} />
+            {exelySource && <p className="text-xs text-slate-600">{paymentOverview.description}</p>}
             <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm grid grid-cols-1 sm:grid-cols-2 sm:gap-x-6">
-              <InfoLine label="Ödeme Durumu" value={<span className={paymentTone}>{paymentStatus}</span>} />
+              <InfoLine label={exelySource ? 'PMS hesap durumu' : 'Ödeme Durumu'} value={<span className={paymentTone}>{exelySource && paymentOverview.kind === 'due' ? 'PMS kayıtlarında açık bakiye var' : paymentStatus}</span>} />
               <InfoLine label="Para Birimi" value={currency} />
               <InfoLine label="Konaklama bedeli" value={fmtCurrency(summary.accommodation_total ?? summary.total_amount, currency)} />
               {Number(summary.additional_charge_total ?? summary.total_extra) > 0 && <InfoLine label="Ekstra bedeli" value={fmtCurrency(summary.additional_charge_total ?? summary.total_extra, currency)} />}
-              {summary.gross_total != null && <InfoLine label="Genel toplam (indirim öncesi)" value={fmtCurrency(summary.gross_total, currency)} />}
+              {summary.gross_total != null && <InfoLine label={exelySource ? 'PMS toplamı (indirim öncesi)' : 'Genel toplam (indirim öncesi)'} value={fmtCurrency(summary.gross_total, currency)} />}
               {Number(summary.total_discounts) > 0 && <InfoLine label="İkram / indirim" value={`−${fmtCurrency(summary.total_discounts, currency)}`} />}
-              <InfoLine label="Toplam tahsilat" value={fmtCurrency(summary.cash_collection_total ?? summary.total_payments, currency)} />
+              <InfoLine label={exelySource ? 'PMS tahsilatı' : 'Toplam tahsilat'} value={fmtCurrency(summary.cash_collection_total ?? summary.total_payments, currency)} />
               {Number(summary.city_ledger_transfer_total) > 0 && <InfoLine label="Cariye aktarılan (tahsilat değil)" value={fmtCurrency(summary.city_ledger_transfer_total, currency)} />}
               <InfoLine label={paymentOverview.label} value={<span className={`font-semibold ${paymentTone}`}>{paymentOverview.displayAmount == null ? '—' : fmtCurrency(paymentOverview.displayAmount, currency)}</span>} />
               <InfoLine label="Son tahsilat yöntemi" value={lastPayment
