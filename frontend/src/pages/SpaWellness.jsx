@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -24,6 +24,7 @@ import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatSpaTime, spaDateTimeInput, spaTimeZone, spaWallTimeToUtc } from '@/lib/spaTime';
 import AppointmentSettlements from '@/components/spa/AppointmentSettlements';
 import { SpaAvailability, SpaGuestHistory } from '@/components/spa/SpaOperationsPanels';
+import SpaResidentTarget from '@/components/spa/SpaResidentTarget';
 
 // Revenue per currency as the server keeps it (never added across currencies).
 export const revenueText = (summary, format) => {
@@ -150,24 +151,32 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
       }
     }
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     load();
     return () => { loadVersion.current += 1; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load follows the explicitly selected filter; do not reload on unrelated form edits.
   }, [filter]);
 
   const therapistById = useMemo(() => Object.fromEntries(therapists.map((t) => [t.id, t])), [therapists]);
   const roomById = useMemo(() => Object.fromEntries(rooms.map((r) => [r.id, r])), [rooms]);
   const bookingTaxMissing = Boolean(bookForm.service_id) && services.find(s => s.id === bookForm.service_id)?.tax_rate == null;
+  const residentTargetChanged = useCallback(target => setBookForm(previous => ({ ...previous,
+    reservation_id: target?.reservation_id || '', folio_id: target?.folio_id || '',
+    ...(target ? { guest_name: target.guest_name } : {}),
+  })), []);
+  const residentTargetMissing = bookForm.charge_to_room && (!bookForm.reservation_id || !bookForm.folio_id);
 
   const book = async (e) => {
     e.preventDefault();
+    if (residentTargetMissing) { toast.error('Konaklayan misafiri ve açık hesabını seçin.'); return; }
     try {
       const startsAt = spaWallTimeToUtc(bookForm.starts_at, timeZone);
-      await axios.post('/spa/appointments', { ...bookForm, starts_at: startsAt, folio_id: bookForm.folio_id || null });
+      await axios.post('/spa/appointments', { ...bookForm, starts_at: startsAt,
+        reservation_id: bookForm.charge_to_room ? bookForm.reservation_id : null,
+        folio_id: bookForm.charge_to_room ? bookForm.folio_id : null });
       toast.success('Randevu oluşturuldu');
       setShowBook(false);
-      setBookForm({ ...bookForm, guest_name: '', guest_phone: '' });
+      setBookForm({ ...bookForm, guest_name: '', guest_phone: '', reservation_id: '', folio_id: '', charge_to_room: false });
       await load();
     } catch (err) {
       toast.error(err.response?.data?.detail || err.message || 'Oluşturulamadı');
@@ -485,7 +494,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             <Field label="Hizmet">
               <select required className="w-full border rounded px-2 py-1.5"
                       value={bookForm.service_id}
-                      onChange={(e) => setBookForm({ ...bookForm, service_id: e.target.value })}>
+                      onChange={(e) => setBookForm({ ...bookForm, service_id: e.target.value, reservation_id: '', folio_id: '' })}>
                 <option value="">{t('cm.pages_SpaWellness.secin')}</option>
                 {services.map((s) => <option key={s.id} value={s.id}>
                   {s.name} ({s.duration_minutes}dk • {money(s.price, s.currency)})
@@ -518,7 +527,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label={t('cm.pages_SpaWellness.misafir_adi')}>
-                <Input required value={bookForm.guest_name}
+                <Input required disabled={bookForm.charge_to_room} value={bookForm.guest_name}
                        onChange={(e) => setBookForm({ ...bookForm, guest_name: e.target.value })} />
               </Field>
               <Field label="Telefon">
@@ -526,21 +535,16 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                        onChange={(e) => setBookForm({ ...bookForm, guest_phone: e.target.value })} />
               </Field>
             </div>
-            <Field label={t('cm.pages_SpaWellness.pms_rezervasyon_id_opsiyonel')}>
-              <Input value={bookForm.reservation_id}
-                     onChange={(e) => setBookForm({ ...bookForm, reservation_id: e.target.value })} />
-            </Field>
-            {bookForm.charge_to_room && <Field label="Hedef folyo ID (birden fazla açık folyo varsa zorunlu)">
-              <Input value={bookForm.folio_id} onChange={(e) => setBookForm({ ...bookForm, folio_id: e.target.value })} />
-            </Field>}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={bookForm.charge_to_room}
-                     onChange={(e) => setBookForm({ ...bookForm, charge_to_room: e.target.checked })} />
+                     onChange={(e) => setBookForm({ ...bookForm, charge_to_room: e.target.checked, reservation_id: '', folio_id: '' })} />
               {t('cm.pages_SpaWellness.oda_hesabina_yansitilsin')}
             </label>
+            {bookForm.charge_to_room && <SpaResidentTarget key={bookForm.service_id} currency={services.find(service => service.id === bookForm.service_id)?.currency}
+              onTargetChange={residentTargetChanged} />}
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setShowBook(false)}>{t('cm.pages_SpaWellness.iptal_25174')}</Button>
-              <Button type="submit" disabled={bookingTaxMissing}>{t('cm.pages_SpaWellness.randevu_olustur')}</Button>
+              <Button type="submit" disabled={bookingTaxMissing || residentTargetMissing}>{t('cm.pages_SpaWellness.randevu_olustur')}</Button>
             </div>
           </form>
         </Modal>
