@@ -10,11 +10,12 @@ import {
   Plus, Trash2, Loader2, Check, Info
 } from 'lucide-react';
 import { API } from './helpers';
-import ExelyPrepaymentSummary from './ExelyPrepaymentSummary';
+import ReservationAccountOverview from './ReservationAccountOverview';
+import { exelyReservationDetails } from '@/utils/exelyReservation';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
-export function OnlinePaymentTab({ booking, onRefresh, readOnly = false }) {
+export function OnlinePaymentTab({ booking, summary, onSwitchTab, onRefresh, readOnly = false }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -108,7 +109,7 @@ export function OnlinePaymentTab({ booking, onRefresh, readOnly = false }) {
   if (loading) {
     return (
       <div className="space-y-6">
-        <ExelyPrepaymentSummary booking={booking} />
+        <ReservationAccountOverview booking={booking} summary={summary} onSwitchTab={onSwitchTab} />
         <div className="flex items-center justify-center py-12" data-testid="online-payment-loading">
           <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
         </div>
@@ -123,7 +124,10 @@ export function OnlinePaymentTab({ booking, onRefresh, readOnly = false }) {
 
   return (
     <div className="space-y-6" data-testid="online-payment-tab">
-      <ExelyPrepaymentSummary booking={booking} />
+      <ReservationAccountOverview booking={booking} summary={summary} onSwitchTab={onSwitchTab} />
+      <details open={!exelyReservationDetails(booking)} className="rounded-xl border border-slate-200 p-4">
+      <summary className="cursor-pointer text-sm font-semibold text-slate-700">Sanal kart bilgileri</summary>
+      <div className="mt-4 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -413,6 +417,8 @@ export function OnlinePaymentTab({ booking, onRefresh, readOnly = false }) {
           <p className="text-xs text-gray-400">{t('cm.pages_reservationdetail_OnlinePaymentTab.ota_veya_acente_tarafindan_gonderilen_sa')}</p>
         </div>
       )}
+      </div>
+      </details>
     </div>
   );
 }

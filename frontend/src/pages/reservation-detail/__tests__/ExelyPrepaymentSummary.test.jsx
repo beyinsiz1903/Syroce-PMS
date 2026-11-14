@@ -30,15 +30,16 @@ describe('Exely provider prepayment', () => {
     render(<GeneralInfoTab booking={booking()} summary={{ balance: 160, total_payments: 0 }} payments={[]} />);
     const source = within(screen.getByTestId('exely-prepayment-summary'));
     expect(source.getByText('Alınan ön ödeme').parentElement).toHaveTextContent('160');
-    expect(source.getByText('Exely rezervasyon bedeli').parentElement).toHaveTextContent('460');
-    expect(source.getByText('Exely’de kalan tutar').parentElement).toHaveTextContent('300');
-    expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Tahsilat kaydı yok');
+    expect(source.getByText('Toplam bedel').parentElement).toHaveTextContent('460');
+    expect(source.getByText('Kalan tutar').parentElement).toHaveTextContent('300');
+    expect(screen.getByTestId('account-ledger-details')).not.toHaveAttribute('open');
+    expect(screen.getByTestId('local-payment-scope')).toHaveTextContent('PMS tahsilatı0');
   });
 
   it('shows the prepayment in Online Payment even without a virtual card', async () => {
     render(<OnlinePaymentTab booking={booking()} readOnly />);
     expect(await screen.findByTestId('exely-prepayment-summary')).toHaveTextContent('Alınan ön ödeme160');
-    expect(screen.getByTestId('online-payment-tab')).toHaveTextContent('Exely’de kalan tutar300');
+    expect(screen.getByTestId('online-payment-tab')).toHaveTextContent('Kalan tutar300');
   });
 
   it('does not let a card API error hide provider payment evidence', async () => {
@@ -60,26 +61,45 @@ describe('Exely provider prepayment', () => {
     expect(screen.getByText('Alınan ön ödeme').parentElement).toHaveTextContent('0');
     expect(screen.getByText('Beklenen ön ödeme (henüz alınmamış)').parentElement).toHaveTextContent('160');
     expect(screen.getByText('Kullanılan sadakat bakiyesi').parentElement).toHaveTextContent('20');
-    expect(screen.getByText('Exely’de kalan tutar').parentElement).toHaveTextContent('440');
+    expect(screen.getByText('Kalan tutar').parentElement).toHaveTextContent('440');
   });
 
   it('keeps mixed currencies separate and avoids an invented remaining amount', () => {
     render(<ExelyPrepaymentSummary booking={booking({ remaining_amount: null, overpayment_amount: null,
       totals: [{ currency: 'EUR', received_amount: 160, expected_amount: 0, loyalty_amount: 0 }] })} />);
     expect(screen.getByText('Alınan ön ödeme').parentElement).toHaveTextContent('EUR');
-    expect(screen.getByText('Exely’de kalan tutar').parentElement).toHaveTextContent('Para birimleri farklı');
+    expect(screen.getByText('Kalan tutar').parentElement).toHaveTextContent('Doğrulanmadı');
+    expect(screen.getByText(/Para birimleri farklıysa/)).toBeInTheDocument();
   });
 
   it('identifies group scope and overpayments without duplicating a per-room receipt', () => {
     render(<ExelyPrepaymentSummary booking={booking({ remaining_amount: 0, overpayment_amount: 40 })} />);
-    expect(screen.getByTestId('exely-prepayment-summary')).toHaveTextContent('oda başına tekrar sayılmaz');
+    expect(screen.getByText('Kalan tutar').parentElement).toHaveTextContent('0 USD');
     expect(screen.getByText('Rezervasyon bedelini aşan ödeme').parentElement).toHaveTextContent('40');
   });
 
   it('does not describe legacy data or a bank-card guarantee as paid', () => {
     render(<ExelyPrepaymentSummary booking={{ channel: 'exely', payment_method: 'BankCardGuarantee' }} />);
-    expect(screen.getByTestId('exely-prepayment-unknown')).toHaveTextContent('ön ödeme tutarı bulunmuyor');
+    expect(screen.getByTestId('exely-prepayment-unknown')).toHaveTextContent('Ön ödeme bilgisi doğrulanmadı');
     expect(screen.queryByText('Alınan ön ödeme')).not.toBeInTheDocument();
+  });
+
+  it.each([null, '', false, -10, 'invalid'])('does not present an invalid provider amount (%s) as paid or zero', value => {
+    render(<ExelyPrepaymentSummary booking={booking({ booking_total: value, remaining_amount: value,
+      totals: [{ currency: 'USD', received_amount: value }] })} />);
+    expect(screen.getByText('Toplam bedel').parentElement).toHaveTextContent('Doğrulanmadı');
+    expect(screen.getByText('Alınan ön ödeme').parentElement).toHaveTextContent('Doğrulanmadı');
+    expect(screen.getByText('Kalan tutar').parentElement).toHaveTextContent('Doğrulanmadı');
+  });
+
+  it.each([50, -25])('keeps hotel activity (%s) and reconciliation visible while the ledger starts collapsed', receipts => {
+    render(<GeneralInfoTab booking={booking()} summary={{ reservation_total_due: 200,
+      cash_collection_total: receipts, additional_charge_total: 0, pricing_reconciliation_required: true }} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Fiyat ve hesap kayıtları uyuşmuyor');
+    expect(screen.getByText(/Otelde eklenen harcama, ödeme veya hesap işlemi var/)).toBeInTheDocument();
+    expect(screen.getByTestId('account-ledger-details')).not.toHaveAttribute('open');
+    expect(screen.getByTestId('local-payment-scope')).toHaveTextContent(`PMS tahsilatı${receipts}`);
+    expect(screen.getByText('Kalan tutar').parentElement).toHaveTextContent('300 USD');
   });
 
   it('does not render Exely payment information on direct bookings', () => {
