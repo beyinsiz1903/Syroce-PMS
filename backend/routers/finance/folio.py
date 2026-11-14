@@ -1165,63 +1165,19 @@ async def transfer_charges(operation_data: FolioOperationCreate, current_user: U
     if operation_data.operation_type != FolioOperationType.TRANSFER:
         raise HTTPException(status_code=400, detail="Invalid operation type")
 
-    if not operation_data.to_folio_id:
-        raise HTTPException(status_code=400, detail="Destination folio required for transfer")
+    from core.booking_atomicity import is_replica_set_unavailable
+    from modules.pms_core.folio_transfer import transfer_posted_charges
 
-    # Verify both folios exist
-    from_folio = await db.folios.find_one({"id": operation_data.from_folio_id, "tenant_id": current_user.tenant_id})
+    try:
+        result = await transfer_posted_charges(db, db.client, current_user.tenant_id, current_user.id, operation_data)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Folyo aktarımı için transaction desteği gerekli") from exc
+        raise
+    from core.report_cache import invalidate_financial_report_caches
 
-    to_folio = await db.folios.find_one({"id": operation_data.to_folio_id, "tenant_id": current_user.tenant_id, "status": "open"})
-
-    if not from_folio or not to_folio:
-        raise HTTPException(status_code=404, detail="Folio not found")
-
-    if not operation_data.charge_ids:
-        raise HTTPException(status_code=400, detail="En az bir charge_id gerekli")
-
-    # Önce hedef charge'ların hepsi gerçekten kaynak folio'da ve void değil mi doğrula
-    existing = await db.folio_charges.find(
-        {
-            "id": {"$in": operation_data.charge_ids},
-            "folio_id": operation_data.from_folio_id,
-            "tenant_id": current_user.tenant_id,
-            "voided": {"$ne": True},
-        },
-        {"_id": 0, "id": 1},
-    ).to_list(len(operation_data.charge_ids))
-    found_ids = {c["id"] for c in existing}
-    missing = [cid for cid in operation_data.charge_ids if cid not in found_ids]
-    if missing:
-        raise HTTPException(status_code=409, detail=f"Aktarılamayan kayıtlar (kaynakta yok / iptal edilmiş / başka tenant): {missing}")
-
-    # Tek bulk update — modified_count tüm hedeflerle eşit olmalı
-    res = await db.folio_charges.update_many(
-        {
-            "id": {"$in": operation_data.charge_ids},
-            "folio_id": operation_data.from_folio_id,
-            "tenant_id": current_user.tenant_id,
-            "voided": {"$ne": True},
-        },
-        {"$set": {"folio_id": operation_data.to_folio_id}},
-    )
-    if getattr(res, "modified_count", 0) != len(operation_data.charge_ids):
-        raise HTTPException(status_code=500, detail=f"Aktarım kısmi: {res.modified_count}/{len(operation_data.charge_ids)} işlem güncellendi")
-
-    # Create operation record
-    operation = FolioOperation(tenant_id=current_user.tenant_id, performed_by=current_user.id, **operation_data.model_dump())
-
-    operation_dict = operation.model_dump()
-    operation_dict["performed_at"] = operation_dict["performed_at"].isoformat()
-    await db.folio_operations.insert_one(operation_dict)
-
-    # Update balances
-    from_balance = await calculate_folio_balance(operation_data.from_folio_id, current_user.tenant_id)
-    to_balance = await calculate_folio_balance(operation_data.to_folio_id, current_user.tenant_id)
-
-    await db.folios.update_one({"id": operation_data.from_folio_id}, {"$set": {"balance": from_balance}})
-    await db.folios.update_one({"id": operation_data.to_folio_id}, {"$set": {"balance": to_balance}})
-
-    return operation
+    invalidate_financial_report_caches(current_user.tenant_id)
+    return result
 
 
 @router.post("/folio/{folio_id}/void-charge/{charge_id}")
