@@ -63,10 +63,9 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
     if not end_date:
         end_date = today.date().isoformat()
 
-    from domains.pms.pos_fnb.reporting import enrich_refunds, is_finalized, is_refund
-    from domains.pms.pos_router.pos_core import _query_pos_transactions
+    from core.pos_reporting import enrich_refunds, is_finalized, is_refund, query_pos_transactions
 
-    rows = await _query_pos_transactions(current_user.tenant_id, limit=None,
+    rows = await query_pos_transactions(current_user.tenant_id, limit=None,
                                          start_date=start_date, end_date=end_date, database=db)
     rows, warnings = await enrich_refunds(db, current_user.tenant_id, rows)
     finalized = [row for row in rows if is_finalized(row)]

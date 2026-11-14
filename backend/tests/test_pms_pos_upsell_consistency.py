@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from core import pos_reporting
 from domains.guest.experience_router import upsell
-from domains.pms.pos_router import pos_core
 from domains.revenue.analytics_router import pos_inventory
 
 
@@ -42,7 +42,7 @@ async def test_pos_sales_uses_same_business_period_and_finalized_ledger_as_z(mon
         {"outlet_name": "Restoran", "status": "merged", "total_amount": 80, "currency": "TRY"},
         {"outlet_name": "Restoran", "status": "pending", "total_amount": 25, "currency": "TRY"},
     ])
-    monkeypatch.setattr(pos_core, "_query_pos_transactions", query)
+    monkeypatch.setattr(pos_reporting, "query_pos_transactions", query)
     monkeypatch.setattr(pos_inventory, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
 
     async def _user(_credentials):
@@ -60,7 +60,7 @@ async def test_pos_sales_uses_same_business_period_and_finalized_ledger_as_z(mon
 async def test_pos_does_not_sum_currencies_or_invent_legacy_currency(monkeypatch):
     monkeypatch.setattr(pos_inventory, "db", SimpleNamespace())
     monkeypatch.setattr(pos_inventory, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
-    monkeypatch.setattr(pos_core, "_query_pos_transactions", AsyncMock(return_value=[
+    monkeypatch.setattr(pos_reporting, "query_pos_transactions", AsyncMock(return_value=[
         {"status": "completed", "total_amount": 100, "currency": "USD"},
         {"status": "completed", "total_amount": 200, "currency": "TRY"},
         {"status": "completed", "total_amount": 30},
@@ -75,7 +75,6 @@ async def test_pos_does_not_sum_currencies_or_invent_legacy_currency(monkeypatch
 
 @pytest.mark.asyncio
 async def test_pos_summary_refund_reduces_sales_without_becoming_another_order(monkeypatch):
-    from domains.pms.pos_fnb import reporting
     rows = [
         {"status": "completed", "total_amount": 110, "tip_amount": 10, "currency": "TRY"},
         {"status": "refunded", "total_amount": -22, "tip_amount": -2, "currency": "TRY"},
@@ -83,8 +82,8 @@ async def test_pos_summary_refund_reduces_sales_without_becoming_another_order(m
     monkeypatch.setattr(pos_inventory, "db", SimpleNamespace())
     monkeypatch.setattr(pos_inventory, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
     monkeypatch.setattr(pos_inventory, "get_current_user", AsyncMock(return_value=SimpleNamespace(tenant_id="t")))
-    monkeypatch.setattr(pos_core, "_query_pos_transactions", AsyncMock(return_value=rows))
-    monkeypatch.setattr(reporting, "enrich_refunds", AsyncMock(return_value=(rows, [])))
+    monkeypatch.setattr(pos_reporting, "query_pos_transactions", AsyncMock(return_value=rows))
+    monkeypatch.setattr(pos_reporting, "enrich_refunds", AsyncMock(return_value=(rows, [])))
     result = await pos_inventory.get_outlet_sales_breakdown("2026-11-10", "2026-11-10", object())
     assert result["total_sales_by_currency"] == {"TRY": 80}
     assert result["orders_by_currency"] == {"TRY": 1}
