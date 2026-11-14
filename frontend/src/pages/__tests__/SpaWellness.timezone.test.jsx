@@ -145,6 +145,31 @@ describe('SPA hotel wall clock, independent of browser UTC', () => {
     expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
+  it('posts only the selected resident account and clears it for an external guest', async () => {
+    axios.get.mockImplementation(async url => ({ data: url === '/frontdesk/inhouse'
+      ? [{ id: 'resident', status: 'checked_in', currency: 'TRY', guest_name: 'Deniz Tan', room_number: '105' }]
+      : url === '/folio/booking/resident' ? [{ id: 'personal', booking_id: 'resident', status: 'open', currency: 'TRY', folio_number: 'F105' }]
+        : dataFor(url) }));
+    const { container } = await openBooking(); const form = container.querySelector('form');
+    fireEvent.change(form.querySelector('select'), { target: { value: 's' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'cm.pages_SpaWellness.oda_hesabina_yansitilsin' }));
+    expect(screen.getByRole('button', { name: 'cm.pages_SpaWellness.randevu_olustur' })).toBeDisabled();
+    fireEvent.submit(form);
+    expect(axios.post).not.toHaveBeenCalled();
+    await screen.findByRole('option', { name: /Deniz Tan · Oda 105/ });
+    fireEvent.change(screen.getByLabelText('Konaklayan misafir'), { target: { value: 'resident' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'cm.pages_SpaWellness.randevu_olustur' })).toBeEnabled());
+    expect(screen.getAllByRole('textbox')[0]).toBeDisabled();
+    fireEvent.submit(form);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/spa/appointments', expect.objectContaining({ reservation_id: 'resident', folio_id: 'personal', guest_name: 'Deniz Tan', charge_to_room: true })));
+    fireEvent.click(screen.getByRole('button', { name: 'Randevu' }));
+    expect(screen.queryByLabelText('Konaklayan misafir')).not.toBeInTheDocument();
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Ayla Erdem' } });
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+    expect(axios.post.mock.calls[1][1]).toMatchObject({ charge_to_room: false, reservation_id: null, folio_id: null, guest_name: 'Ayla Erdem' });
+  });
+
   it('renders existing appointment instants in the same verified hotel timezone', async () => {
     renderSpa();
     expect(await screen.findByText('08.11 12:00')).toBeInTheDocument();
