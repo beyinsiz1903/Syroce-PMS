@@ -499,6 +499,26 @@ class PosFnbServiceV2:
         checkout_quote = None
         if payments and post_to_folio:
             raise HTTPException(422, "Oda aktarımı ile nakit/kart ödeme dağılımı birlikte kullanılamaz.")
+        # Keep room/folio failures stable before pricing the room-charge quote.
+        if post_to_folio and not booking_id:
+            return ServiceResult.fail("Room charge requires a booking", "BOOKING_REQUIRED")
+        if post_to_folio and booking_id:
+            booking = await self._db.bookings.find_one(
+                {
+                    "id": booking_id,
+                    "tenant_id": ctx.tenant_id,
+                    "status": {"$in": ["checked_in", "in_house"]},
+                },
+                {"_id": 0, "id": 1, "status": 1, "currency": 1},
+            )
+            if not booking:
+                return ServiceResult.fail(
+                    "Oda hesabına yalnızca giriş yapmış misafirlerin adisyonu aktarılabilir",
+                    "BOOKING_NOT_IN_HOUSE",
+                )
+            folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
+            if not folio:
+                return ServiceResult.fail("Open guest folio not found", "FOLIO_NOT_OPEN")
         if checkout_options is not None or post_to_folio:
             from domains.pms.pos_fnb.checkout_benefits import quote_checkout
 
@@ -597,25 +617,7 @@ class PosFnbServiceV2:
         # $inc) and guards a non-open folio at apply time.
         folio_charge_id = None
         outbox_payload = None
-        if post_to_folio and not booking_id:
-            return ServiceResult.fail("Room charge requires a booking", "BOOKING_REQUIRED")
-        if post_to_folio and booking_id:
-            booking = await self._db.bookings.find_one(
-                {
-                    "id": booking_id,
-                    "tenant_id": ctx.tenant_id,
-                    "status": {"$in": ["checked_in", "in_house"]},
-                },
-                {"_id": 0, "id": 1, "status": 1, "currency": 1},
-            )
-            if not booking:
-                return ServiceResult.fail(
-                    "Oda hesabına yalnızca giriş yapmış misafirlerin adisyonu aktarılabilir",
-                    "BOOKING_NOT_IN_HOUSE",
-                )
-            folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
-            if not folio:
-                return ServiceResult.fail("Open guest folio not found", "FOLIO_NOT_OPEN")
+        if post_to_folio:
             sale_currency = str(txn_doc['currency']).upper()
             folio_currency = str(folio.get('currency') or booking.get('currency') or sale_currency).upper()
             if folio_currency != sale_currency:

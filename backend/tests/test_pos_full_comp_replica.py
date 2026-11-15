@@ -85,8 +85,12 @@ async def test_stale_or_wrong_room_quote_writes_nothing(service, db, change):
         args.update(payment_method="cash", post_to_folio=False)
     else:
         args["payments"] = [{"method": "cash", "amount": 104}]
-    with pytest.raises(HTTPException):
-        await service.close_order(ctx(), order["id"], **args)
+    if change in {"status", "tenant", "booking"}:
+        result = await service.close_order(ctx(), order["id"], **args)
+        assert not result.ok and result.code == "BOOKING_NOT_IN_HOUSE"
+    else:
+        with pytest.raises(HTTPException):
+            await service.close_order(ctx(), order["id"], **args)
     assert await db.pos_transactions.count_documents({}) == 0
     assert await db.outbox_events.count_documents({"event_type": "pos.charge.posted.v1"}) == 0
     assert (await db.pos_orders.find_one({"id": order["id"]}))["payment_status"] == "unpaid"
