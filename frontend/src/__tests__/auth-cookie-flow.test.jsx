@@ -136,7 +136,8 @@ describe('Auth Cookie Flow in App.jsx', () => {
     localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
     localStorage.setItem('token_ts', String(Date.now()));
     axios.post.mockRejectedValueOnce({ response: { status: 401 } });
-    axios.get.mockRejectedValueOnce({ response: { status: 401 } });
+    // Both the per-tab bearer and cookie-only recovery reject this session.
+    axios.get.mockRejectedValue({ response: { status: 401 } });
     const error = { config: { url: '/auth/me', method: 'get' }, response: { status: 401 } };
 
     await expect(rejectAuthResponse(error)).rejects.toBe(error);

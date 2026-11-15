@@ -337,10 +337,11 @@ const FolioViewDialog = ({
     try {
       const res = await axios.get('/folio/list', {
         params: {
-          status: 'open'
+          status: 'open', limit: 500
         }
       });
-      const list = (res.data?.folios || res.data || []).filter(f => f.id !== selectedFolio.id);
+      const list = (res.data?.folios || res.data || []).filter(f => f.id !== selectedFolio.id &&
+        f.booking_id && String(f.currency || '').toUpperCase() === folioCurrency);
       setOpenFolios(list);
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Açık folio listesi alınamadı');
@@ -352,7 +353,7 @@ const FolioViewDialog = ({
     setTransferChargeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
   const handleTransferSubmit = async () => {
-    if (!selectedFolio) return;
+    if (!selectedFolio || writeLock.current) return;
     if (!transferTargetId) {
       toast.error('Hedef folio seçin');
       return;
@@ -365,22 +366,29 @@ const FolioViewDialog = ({
       toast.error('Aktarım nedeni zorunlu');
       return;
     }
+    let intent;
+    writeLock.current = true;
     setTransferLoading(true);
     try {
-      await axios.post('/folio/transfer', {
+      intent = getWriteIntent('transfer', {
         operation_type: 'transfer',
         from_folio_id: selectedFolio.id,
         to_folio_id: transferTargetId,
-        charge_ids: transferChargeIds,
+        charge_ids: [...transferChargeIds].sort(),
         reason: transferReason.trim()
       });
+      await axios.post('/folio/transfer', { ...intent.payload, request_id: intent.key });
+      delete writeIntents.current[intent.scope];
       toast.success('İşlemler aktarıldı');
       setSubDialog(null);
-      onChargePosted(selectedFolio.id);
+      await refreshAfterWrite(onChargePosted);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Aktarım başarısız');
+      if (intent && error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 409) delete writeIntents.current[intent.scope];
+      toast.error(error.response?.data?.detail || error.message || 'Aktarım başarısız');
+    } finally {
+      writeLock.current = false;
+      setTransferLoading(false);
     }
-    setTransferLoading(false);
   };
   const printProforma = () => {
     const node = document.getElementById('proforma-printable');
@@ -959,6 +967,7 @@ th{background:#f5f5f5}
                       <div className="flex items-center justify-between w-full min-w-[400px]">
                         <div className="flex flex-col text-left">
                           <span className="font-bold text-gray-800 text-base">{f.folio_number}</span>
+                          <span className="text-sm text-gray-600">{f.guest_name || 'Misafir'} · Oda {f.room_number || 'atanmamış'} · {f.currency}</span>
                           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{f.folio_type || 'GUEST'} FOLIO</span>
                         </div>
                         <div className="flex flex-col items-end">

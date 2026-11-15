@@ -49,7 +49,12 @@ axios.interceptors.request.use(
       config.headers = {};
     }
 
-    if (!isPublicAuthEndpoint) {
+    if (config._cookieAuthOnly) {
+      // Axios has already merged its per-tab defaults here. A stale bearer
+      // must not mask the current HttpOnly cookie during identity recovery.
+      delete config.headers.Authorization;
+      delete config.headers.authorization;
+    } else if (!isPublicAuthEndpoint) {
       // Legacy token fallback - in cookie-auth era this is mostly unused
       // but kept briefly for migration. We no longer write it on login.
       const token = localStorage.getItem("token");
@@ -69,7 +74,8 @@ axios.interceptors.request.use(
     }
 
     if (config.method === "get") {
-      config.headers["Cache-Control"] = "max-age=60";
+      config.headers["Cache-Control"] = config._noCache ? "no-cache, no-store" : "max-age=60";
+      if (config._noCache) config.headers.Pragma = "no-cache";
     }
 
     // --- SIMULATION INTERCEPTOR ---
@@ -155,15 +161,34 @@ export async function verifyActiveSession() {
 // `/auth/me` can be unreachable while the browser still has a valid signed-in
 // session.  Only the identity endpoint's own 401 is definitive; every other
 // failure must preserve local state and let the next retry decide.
-async function _verifyActiveSessionState() {
+async function _verifyActiveSessionState(cookieOnly = false) {
+  const staleBearer = axios.defaults.headers.common.Authorization;
+  const staleRefresh = localStorage.getItem("refresh_token");
+  const staleLegacy = localStorage.getItem("token");
   try {
     const response = await axios.get("/auth/me", {
       _skipAuthRetry: true,
       _skipRetry: true,
       _noCache: true,
+      ...(cookieOnly ? { _cookieAuthOnly: true } : {}),
     });
+    if (cookieOnly) {
+      // Keep subsequent requests on the recovered cookie session. Do not
+      // overwrite credentials another refresh completed during this read.
+      if (axios.defaults.headers.common.Authorization === staleBearer) {
+        delete axios.defaults.headers.common.Authorization;
+      }
+      if (localStorage.getItem("refresh_token") === staleRefresh) localStorage.removeItem("refresh_token");
+      if (localStorage.getItem("token") === staleLegacy) localStorage.removeItem("token");
+    }
     return { active: true, definitive: false, response };
   } catch (error) {
+    // Another tab may already have rotated the shared cookies while this
+    // tab still has an expired access token in axios.defaults. Only retry
+    // authentication, never the rejected business operation, with cookies.
+    if (!cookieOnly && error?.response?.status === 401) {
+      return _verifyActiveSessionState(true);
+    }
     return {
       active: false,
       definitive: error?.response?.status === 401,
@@ -175,80 +200,90 @@ async function _verifyActiveSessionState() {
 //   { token: string }  — başarılı, retry yapılır
 //   { transient: true } — geçici servis/ağ hatası; oturum SİLİNMEZ, istek reddedilir
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
-async function _attemptRefresh(retryCount = 0) {
+async function _rotateRefreshToken(retryCount = 0) {
   const refreshToken = localStorage.getItem("refresh_token");
+  const userAtStart = localStorage.getItem("user");
   const wasAdminTenantContext = isAdminTenantContextActive();
   
-  if (_refreshInFlight) {
-    return _refreshInFlight;
-  }
+  try {
+    const r = await axios.post(
+      "/auth/refresh-token",
+      refreshToken ? { refresh_token: refreshToken } : {},
+      { _skipAuthRetry: true },
+    );
+    // A sign-in/out elsewhere can complete while the network request runs.
+    // Its identity and credentials belong to that newer session.
+    if (localStorage.getItem("user") !== userAtStart) return { transient: true };
+    const newAccess = r?.data?.access_token;
+    const newRefresh = r?.data?.refresh_token;
+    if (!newAccess) return { invalid: true };
 
-  _refreshInFlight = (async () => {
-    try {
-      const r = await axios.post(
-        "/auth/refresh-token",
-        refreshToken ? { refresh_token: refreshToken } : {},
-        { _skipAuthRetry: true },
-      );
-      
-      const newAccess = r?.data?.access_token;
-      const newRefresh = r?.data?.refresh_token;
-      if (!newAccess) return { invalid: true };
+    axios.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
+    localStorage.setItem("token_ts", String(Date.now()));
 
-      axios.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
-      localStorage.setItem("token_ts", String(Date.now()));
+    if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
 
-      if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
-
-      if (window.navigator.webdriver || import.meta.env.DEV) {
-        localStorage.setItem("token", newAccess);
-      }
-
-      // The long-lived refresh token belongs to the real superadmin tenant,
-      // never to the short-lived hotel workspace. If that workspace expires,
-      // restore the matching origin UI snapshot before navigating back; this
-      // prevents an origin API session from being displayed under a stale
-      // target-hotel header.
-      if (wasAdminTenantContext && restoreOriginTenantContext()) {
-        navigateInternal("/admin/tenants", { replace: true });
-        return { contextRestored: true };
-      }
-
-      recordSessionEvent("refresh");
-      return { token: newAccess };
-    } catch (err) {
-      const status = err?.response?.status;
-      
-      // FIX: Cross-tab race condition.
-      // If Tab 1 refreshes the token, it updates localStorage.
-      // If Tab 2 sends a concurrent refresh with the old token, backend returns 401 (Replay rejected).
-      // Tab 2 should check if the refresh token in localStorage has changed, and if so, retry with the new one.
-      if (status === 401) {
-        const currentRefresh = localStorage.getItem("refresh_token");
-        if (currentRefresh && currentRefresh !== refreshToken && retryCount < 2) {
-          console.warn("Refresh token was rotated by another tab. Retrying refresh...");
-          // We must clear _refreshInFlight so the recursive call can execute a new request
-          _refreshInFlight = null;
-          return _attemptRefresh(retryCount + 1);
-        }
-      }
-      
-      if (status === 400 || status === 401) return { invalid: true };
-      return { transient: true };
-    } finally {
-      // Only clear if the current in-flight promise is still this execution's promise.
-      // (If a retry was triggered, _refreshInFlight would have been re-assigned or set to null).
-      // Actually, setting it to null is safe because once the request is done, we don't need it cached.
-      // The only edge case is if the retry's promise is assigned to _refreshInFlight, we shouldn't nullify it here.
-      // So we will just let the top-level execution handle nullifying.
+    if (window.navigator.webdriver || import.meta.env.DEV) {
+      localStorage.setItem("token", newAccess);
     }
-  })();
+
+    // The long-lived refresh token belongs to the real superadmin tenant,
+    // never to the short-lived hotel workspace. If that workspace expires,
+    // restore the matching origin UI snapshot before navigating back; this
+    // prevents an origin API session from being displayed under a stale
+    // target-hotel header.
+    if (wasAdminTenantContext && restoreOriginTenantContext()) {
+      navigateInternal("/admin/tenants", { replace: true });
+      return { contextRestored: true };
+    }
+
+    recordSessionEvent("refresh");
+    return { token: newAccess };
+  } catch (err) {
+    if (localStorage.getItem("user") !== userAtStart) return { transient: true };
+    const status = err?.response?.status;
+    // FIX: Cross-tab race condition.
+    // If Tab 1 refreshes the token, it updates localStorage.
+    // If Tab 2 sends a concurrent refresh with the old token, backend returns 401 (Replay rejected).
+    // Tab 2 should check if the refresh token in localStorage has changed, and if so, retry with the new one.
+    if (status === 401) {
+      const currentRefresh = localStorage.getItem("refresh_token");
+      if (currentRefresh && currentRefresh !== refreshToken && retryCount < 2) {
+        console.warn("Refresh token was rotated by another tab. Retrying refresh...");
+        // Stay inside the origin lock when retrying a token rotated by an
+        // older tab that does not participate in the lock protocol yet.
+        return _rotateRefreshToken(retryCount + 1);
+      }
+    }
+    if (status === 400 || status === 401) return { invalid: true };
+    return { transient: true };
+  }
+}
+
+async function _attemptRefresh() {
+  if (_refreshInFlight) return _refreshInFlight;
+
+  const userAtStart = localStorage.getItem("user");
+  const rotate = () => {
+    // A queued old tab must not rotate credentials belonging to an account
+    // that was explicitly logged in elsewhere while it waited for the lock.
+    if (localStorage.getItem("user") !== userAtStart) return { transient: true };
+    return _rotateRefreshToken();
+  };
+  // Module-local single-flight is insufficient: every browser tab has its
+  // own module instance but shares the single-use refresh token. Re-read the
+  // token inside this browser-origin lock, after the previous tab persisted
+  // its replacement. No tokens or identity data are placed in the lock name.
+  const locks = typeof navigator !== "undefined" ? navigator.locks : null;
+  const pending = locks?.request
+    ? locks.request("syroce:session-refresh", rotate)
+    : Promise.resolve().then(rotate);
+  _refreshInFlight = pending;
 
   try {
-    const result = await _refreshInFlight;
-    return result;
+    return await pending;
   } finally {
-    _refreshInFlight = null;
+    if (_refreshInFlight === pending) _refreshInFlight = null;
   }
 }
 

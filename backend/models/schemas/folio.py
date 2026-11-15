@@ -141,6 +141,7 @@ class FolioOperationCreate(BaseModel):
     charge_ids: list[str] = []  # For transfer operations
     amount: float | None = None
     reason: str
+    request_id: uuid.UUID | None = None
 
 
 class Package(BaseModel):
