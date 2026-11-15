@@ -21,7 +21,7 @@ export function reservationPaymentSummary(summary, booking) {
     pendingRoomAmount,
     pmsOnly: isExely,
     kind,
-    label: kind === 'reconciliation' ? 'Fiyat / tahakkuk farkı' : kind === 'unknown' ? 'Ödeme bilgisi alınamadı' : isExely ? (kind === 'credit' ? 'PMS kayıt alacağı' : 'PMS kayıt bakiyesi') : kind === 'credit' ? 'Misafir alacağı' : 'Toplam kalan ödeme',
+    label: kind === 'reconciliation' ? 'Fiyat / tahakkuk farkı' : kind === 'unknown' ? 'Ödeme bilgisi alınamadı' : isExely ? (kind === 'credit' ? 'PMS kayıt alacağı' : 'PMS kayıt bakiyesi') : kind === 'credit' ? 'Misafir alacağı' : kind === 'due' ? 'Misafirden alınacak' : 'Ödenecek tutar yok',
     displayAmount: kind === 'reconciliation' ? difference : kind === 'credit' ? Math.abs(totalDue) : totalDue,
     description: kind === 'reconciliation' ? 'Ödeme almadan önce fiyat ve kayıtları kontrol edin.'
       : kind === 'unknown' ? 'Tutarı doğrulamak için rezervasyonu yenileyin.'

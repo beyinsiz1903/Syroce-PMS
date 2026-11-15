@@ -8,7 +8,7 @@ describe('reservationPaymentSummary — server amounts, presentation only', () =
       unposted_room_amount: 4800, total_payments: 5800, prepayment_total: 4800,
     });
     expect(reservationPaymentSummary(source)).toMatchObject({
-      kind: 'due', label: 'Toplam kalan ödeme', totalDue: 8200, displayAmount: 8200,
+      kind: 'due', label: 'Misafirden alınacak', totalDue: 8200, displayAmount: 8200,
       folioBalance: 3400, pendingRoomAmount: 4800, hasAllocatedPrepayment: false,
     });
   });

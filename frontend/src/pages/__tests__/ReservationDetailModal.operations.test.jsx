@@ -577,13 +577,13 @@ describe('ReservationDetailModal operation URLs', () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
     expect(await screen.findByTestId('reservation-total-due')).toHaveTextContent('8.200 TL');
-    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Toplam kalan ödeme: 8.200 TL');
-    expect(screen.getByTestId('ops-payment-alert')).toHaveTextContent('Toplam kalan ödeme: 8.200 TL');
-    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('Toplam kalan ödeme8.200 TL');
+    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Misafirden alınacak: 8.200 TL');
+    expect(screen.getByTestId('ops-payment-alert')).toHaveTextContent('Misafirden alınacak: 8.200 TL');
+    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('Misafirden alınacak8.200 TL');
     expect(screen.getByTestId('general-payment-info')).not.toHaveTextContent('3.400 TL');
-    expect(screen.getByTestId('posted-folio-balance')).toHaveTextContent('Folyodaki borç3.400 TL');
-    expect(screen.getByTestId('unposted-room-amount')).toHaveTextContent('Henüz işlenmemiş oda bedeli4.800 TL');
-    expect(screen.getByTestId('payment-balance-breakdown')).toHaveTextContent('ayrıca eklenmez');
+    expect(screen.getByTestId('posted-folio-balance')).toHaveTextContent('İşlenen harcamalardan kalan3.400 TL');
+    expect(screen.getByTestId('unposted-room-amount')).toHaveTextContent('Hesaba henüz yazılmayan konaklama4.800 TL');
+    expect(screen.getByTestId('payment-balance-breakdown')).toHaveTextContent('tekrar eklenmez');
     expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Toplam tahsilatın içinde; yeniden düşülmez.');
     expect(screen.queryByText('Tahakkuk bekleyen konaklama')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ops-payment-ok')).not.toBeInTheDocument();
@@ -597,7 +597,7 @@ describe('ReservationDetailModal operation URLs', () => {
     } });
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
-    expect(await screen.findByTestId('workspace-payment-overview')).toHaveTextContent('Toplam kalan ödeme: 4.800 TL');
+    expect(await screen.findByTestId('workspace-payment-overview')).toHaveTextContent('Misafirden alınacak: 4.800 TL');
     expect(screen.getByTestId('ops-payment-alert')).toHaveTextContent('4.800 TL');
     expect(screen.queryByTestId('ops-payment-ok')).not.toBeInTheDocument();
     expect(screen.queryByText('Ödeme tamamlandı')).not.toBeInTheDocument();
@@ -614,8 +614,8 @@ describe('ReservationDetailModal operation URLs', () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
     expect(await screen.findByTestId('reservation-total-due')).toHaveTextContent(/^0 TL$/);
-    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Toplam kalan ödeme: 0 TL');
-    expect(screen.getByTestId('posted-folio-balance')).toHaveTextContent('Folyodaki ön ödeme / alacak4.800 TL');
+    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Ödenecek tutar yok: 0 TL');
+    expect(screen.getByTestId('posted-folio-balance')).toHaveTextContent('Hesaptaki alacak4.800 TL');
     expect(screen.getByTestId('payment-balance-breakdown')).toHaveTextContent('Bu tutar yeniden tahsil edilmez.');
     expect(screen.queryByTestId('ops-payment-alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Misafir alacağı: 4.800 TL')).not.toBeInTheDocument();
@@ -680,7 +680,7 @@ describe('ReservationDetailModal operation URLs', () => {
 
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
-    expect(await screen.findByTestId('financial-summary-card')).toHaveTextContent('Comp indirimi');
+    expect(await screen.findByTestId('financial-summary-card')).toHaveTextContent('İkram / indirim');
     expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Konaklamanın tamamı için kalan ödeme yok.');
     expect(screen.queryByTestId('pricing-reconciliation-alert')).not.toBeInTheDocument();
     expect(screen.getByTestId('btn-checkout')).not.toHaveTextContent('mutabakat');
