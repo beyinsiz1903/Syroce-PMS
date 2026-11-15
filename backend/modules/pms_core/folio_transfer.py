@@ -1,4 +1,4 @@
-"""Atomic movement of existing receivables between open guest accounts.
+"""Atomic movement of posted service charges between open guest accounts.
 
 No copied revenue, no moved receipts, no exchange-rate assumptions. The original
 service identity, dates and tax survive a change of the responsible room.
@@ -93,8 +93,13 @@ async def transfer_posted_charges(database, client, tenant_id, actor_id, body):
             raise HTTPException(409, "İkram veya indirim uygulanmış hizmeti asıl kalem olarak aktaramazsınız")
         amount = money(rounded(sum(money(row["total"]) for row in selected)))
         before = {fid: money(snap["balance_by_currency"].get(code, 0)) for fid, snap in snapshots.items()}
-        if amount > before[source["id"]] or (body.amount is not None and money(body.amount) != amount):
-            raise HTTPException(409, "Aktarım tutarı kaynak hesabın açık borcuyla uyuşmuyor; yenileyin")
+        # A service transfer is not a payment or a capped receivable transfer.
+        # Earlier receipts stay with the source, so moving an already paid
+        # service can legitimately leave (or increase) a source credit balance.
+        # The selected authoritative rows bound the amount; both signed balances
+        # change by the same amount without moving or inventing a receipt.
+        if body.amount is not None and money(body.amount) != amount:
+            raise HTTPException(409, "Aktarım tutarı seçilen hizmetlerin toplamıyla uyuşmuyor; yenileyin")
         now = datetime.now(UTC).isoformat()
         for row in selected:
             changed = await database.folio_charges.update_one({"tenant_id": tenant_id, "id": row["id"],

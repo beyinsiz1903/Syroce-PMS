@@ -1003,7 +1003,7 @@ th{background:#f5f5f5}
           <DialogHeader>
             <DialogTitle>İşlem Aktar</DialogTitle>
             <DialogDescription>
-              Bu folio'daki seçili işlemleri başka bir açık folio'ya taşır. Bakiyeler her iki tarafta yeniden hesaplanır.
+              Seçili hizmetleri başka bir açık folyoya taşır. Ödemeler kaynak hesapta kalır; kaynak hesabın alacağı artabilir. Hedef hesaba hizmetlerin tutarı eklenir. Para iadesi veya yeni tahsilat yapılmaz.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

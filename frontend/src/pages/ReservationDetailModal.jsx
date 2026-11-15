@@ -664,7 +664,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <div className={`text-2xl font-bold leading-tight ${paymentNeedsReview ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`} data-testid="reservation-total-due">{paymentAmountText}</div>
                   <p className="text-[11px] text-slate-500">{paymentOverview.description}</p>
                 </div>
-                <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
+                <details className="border-t border-slate-200 pt-2" data-testid="sidebar-account-details">
+                  <summary className="cursor-pointer text-xs font-semibold text-slate-700">Hesap detayları</summary>
+                  <div className={`pt-3 space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">Konaklama</span>
                     <span className="font-semibold text-slate-800">{fmtCurrency(accommodationTotal, currency)}</span>
@@ -686,7 +688,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   )}
                   {(summary?.total_discounts || 0) > 0 && (
                     <div className="flex justify-between text-xs" data-testid="total-discounts">
-                      <span className="text-slate-500">{(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp indirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat düzeltmesi' : 'İndirim'}</span>
+                      <span className="text-slate-500">{(summary?.complimentary_adjustment_total || 0) > 0 ? 'İkram / indirim' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat düzeltmesi' : 'İndirim'}</span>
                       <span className="font-semibold text-rose-600">-{fmtCurrency(summary.total_discounts, currency)}</span>
                     </div>
                   )}
@@ -706,6 +708,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       <p className="mt-1 text-[11px] leading-4 text-emerald-800">Toplam tahsilatın içinde; yeniden düşülmez.</p>
                     </div>
                   )}
+                  {Number(summary?.security_application_total) > 0 && <div className="text-xs text-slate-600"><div className="flex justify-between gap-2"><span>Depozitodan kullanılan tutar</span><span className="font-semibold">{fmtCurrency(summary.security_application_total, currency)}</span></div><p className="mt-1 text-[11px]">Önceden alınan depozitodan düşüldü; yeniden para alınmadı.</p></div>}
                   <UnpostedRoomBreakdown payment={localPaymentOverview} currency={currency} />
                   {(summary?.total_deposits || 0) > 0 && (
                     <div className="flex justify-between text-xs">
@@ -714,6 +717,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </div>
                   )}
                 </div>
+                </details>
               </div>
               )}
 

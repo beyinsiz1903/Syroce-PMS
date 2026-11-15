@@ -375,21 +375,27 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     <div data-testid="folios-tab" className="space-y-4">
       <h3 className="text-sm font-semibold text-slate-700">Rezervasyonun genel hesap özeti</h3>
       {actionError && <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"><span><b>İşlem tamamlanamadı:</b> {actionError}</span><button type="button" className="font-semibold text-rose-700 hover:text-rose-900" onClick={() => setActionError('')} aria-label="Hata mesajını kapat">×</button></div>}
+      <div data-testid="primary-payment-summary">
+        {paymentOverview.displayAmount == null
+          ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center text-xs text-amber-800">{paymentOverview.label}</div>
+          : <SummaryCard currency={currency} label={paymentOverview.label} value={paymentOverview.displayAmount} color={paymentOverview.kind === 'reconciliation' ? 'amber' : paymentOverview.kind === 'due' ? 'red' : 'green'} />}
+      </div>
+      <details className="rounded-lg border border-slate-200 bg-white" data-testid="folio-account-details">
+        <summary className="cursor-pointer p-3 text-sm font-semibold text-slate-700">Hesap detayları</summary>
+        <div className="space-y-3 border-t border-slate-100 p-3">
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard currency={currency} label="Konaklama" value={accommodationTotal} color="blue" />
         <SummaryCard currency={currency} label="Ekstralar" value={additionalChargeTotal} color="amber" />
         <SummaryCard currency={currency} label="Genel Toplam" value={grossTotal} color="blue" />
-        <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.cash_collection_total ?? summary?.total_payments} color="emerald" />
+        <SummaryCard currency={currency} label="Alınan ödemeler" value={summary?.cash_collection_total ?? summary?.total_payments} color="emerald" />
         {(summary?.city_ledger_transfer_total || 0) > 0 && <SummaryCard currency={currency} label="Cariye Aktarılan (tahsilat değil)" value={summary.city_ledger_transfer_total} color="amber" />}
-        {(summary?.security_application_total || 0) > 0 && <SummaryCard currency={currency} label="Güvenceden Mahsup (yeni tahsilat değil)" value={summary.security_application_total} color="amber" />}
+        {(summary?.security_application_total || 0) > 0 && <SummaryCard currency={currency} label="Depozitodan kullanılan tutar" value={summary.security_application_total} color="amber" />}
         {(summary?.instrument_settlement_total || 0) > 0 && <SummaryCard currency={currency} label="Kurumsal Mahsuplar (yeni tahsilat değil)" value={summary.instrument_settlement_total} color="amber" />}
-        {paymentOverview.displayAmount == null
-          ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center text-xs text-amber-800">{paymentOverview.label}</div>
-          : <SummaryCard currency={currency} label={paymentOverview.label} value={paymentOverview.displayAmount} color={paymentOverview.kind === 'reconciliation' ? 'amber' : paymentOverview.kind === 'due' ? 'red' : 'green'} />}
         {(summary?.total_discounts || 0) > 0 && (
-          <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat Düzeltmesi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
+          <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'İkram / indirim' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat Düzeltmesi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
         )}
       </div>
+      {Number(summary?.security_application_total) > 0 && <p className="text-xs text-slate-500">Bu tutar daha önce alınan depozitodan kullanıldı. Yeniden para alınmadı.</p>}
       <UnpostedRoomBreakdown payment={paymentOverview} currency={currency} testIdPrefix="folio-" />
       {prepaymentTotal > 0 && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="prepayment-summary">
@@ -400,9 +406,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {hasAllocatedPrepayment && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="allocated-prepayment-note">
           Peşin tahsilat: {allocatedPrepaymentReceipts.map(receipt => fmtCurrency(receipt.amount, receipt.currency)).join(' + ')}.
-          {' '}{fmtCurrency(Math.abs(rawFolioBalance), currency)} rezervasyon bakiyesine mahsup edildi; {fmtCurrency(pendingRoomAmount, currency)} henüz işlenmemiş oda bedelini karşılıyor. Bu tutar yeniden tahsil edilmez.
+          {' '}{fmtCurrency(Math.abs(rawFolioBalance), currency)} hesap borcundan düşüldü; {fmtCurrency(pendingRoomAmount, currency)} henüz işlenmemiş oda bedelini karşılıyor. Bu tutar yeniden tahsil edilmez.
         </div>
       )}
+        </div>
+      </details>
       {pricingReconciliationRequired && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="folio-pricing-reconciliation-alert">
           <span>{pricingReconciliationDirection === 'booking_above_posted'

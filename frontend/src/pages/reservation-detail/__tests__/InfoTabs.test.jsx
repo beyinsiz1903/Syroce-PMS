@@ -70,7 +70,7 @@ describe('GeneralInfoTab', () => {
       ]} />);
     expect(screen.getByText('Son tahsilat yöntemi').parentElement).toHaveTextContent('Nakit');
     expect(screen.getByTestId('general-payment-info')).not.toHaveTextContent('discount');
-    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('Toplam kalan ödeme8.200 TL');
+    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('Misafirden alınacak8.200 TL');
   });
 
   it('does not present a fully Comp or source-settled stay as a cash receipt', () => {

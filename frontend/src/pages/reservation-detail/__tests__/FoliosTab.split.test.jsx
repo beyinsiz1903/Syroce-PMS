@@ -135,7 +135,7 @@ describe('kur çevirici', () => {
   it('cari aktarımını tahsilattan ayrı gösterir', () => {
     render(<FoliosTab {...singleFolioProps({ summary: { ...summary, total_payments: 10000, cash_collection_total: 4000, city_ledger_transfer_total: 6000 } })} />);
     expect(screen.getByText('Cariye Aktarılan (tahsilat değil)')).toBeInTheDocument();
-    expect(screen.getByText('Tahsilatlar').parentElement).toHaveTextContent('4.000');
+    expect(screen.getByText('Alınan ödemeler').parentElement).toHaveTextContent('4.000');
   });
 
   it('rezervasyon ve tahsilat para birimleri arasında çapraz kur hesaplar', () => {
@@ -406,6 +406,23 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
 });
 
 describe('FoliosTab — sade ödeme akışı', () => {
+  it('keeps the payable total visible and explains used deposit inside collapsed account details', () => {
+    render(<FoliosTab {...singleFolioProps({ summary: {
+      total_amount: 4500, additional_charge_total: 582, gross_total: 5082,
+      cash_collection_total: 1650, total_payments: 1650, security_application_total: 250,
+      balance: 182, folio_balance: 182, unposted_room_amount: 3000, reservation_total_due: 3182,
+    } })} />);
+    const primary = screen.getByTestId('primary-payment-summary');
+    expect(primary).toHaveTextContent('Misafirden alınacak3.182 TL');
+    expect(primary).toBeVisible();
+    const details = screen.getByTestId('folio-account-details');
+    expect(details).not.toHaveAttribute('open');
+    expect(within(details).getByText('Depozitodan kullanılan tutar').parentElement).toHaveTextContent('250 TL');
+    expect(details).toHaveTextContent('Yeniden para alınmadı.');
+    expect(screen.queryByText(/Güvenceden Mahsup/)).not.toBeInTheDocument();
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
+
   it.each(['TRY', 'USD', 'EUR'])('separates the whole-stay total from posted debt in %s without changing the selected-folio payment', async currency => {
     const props = singleFolioProps({
       booking: { ...booking, currency },
@@ -418,7 +435,7 @@ describe('FoliosTab — sade ödeme akışı', () => {
     });
     render(<FoliosTab {...props} />);
     const suffix = currency === 'TRY' ? 'TL' : currency;
-    expect(screen.getByText('Toplam kalan ödeme').parentElement).toHaveTextContent(`8.200 ${suffix}`);
+    expect(screen.getByText('Misafirden alınacak').parentElement).toHaveTextContent(`8.200 ${suffix}`);
     expect(screen.getByTestId('folio-posted-folio-balance')).toHaveTextContent(`3.400 ${suffix}`);
     expect(screen.getByTestId('folio-unposted-room-amount')).toHaveTextContent(`4.800 ${suffix}`);
     expect(screen.getByTestId('prepayment-summary')).toHaveTextContent('yeniden düşülmez');
@@ -442,7 +459,7 @@ describe('FoliosTab — sade ödeme akışı', () => {
   it('does not display an unavailable total as a paid balance', () => {
     render(<FoliosTab {...singleFolioProps({ summary: {} })} />);
     expect(screen.getByText('Ödeme bilgisi alınamadı')).toBeInTheDocument();
-    expect(screen.queryByText('Toplam kalan ödeme')).not.toBeInTheDocument();
+    expect(screen.queryByText('Misafirden alınacak')).not.toBeInTheDocument();
   });
 
   it('işlem geçmişinde muhasebe tutarı yanında alınan dövizi gösterir ve iptali işaretler', () => {
