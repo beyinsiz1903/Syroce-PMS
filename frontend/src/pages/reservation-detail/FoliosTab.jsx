@@ -1,6 +1,5 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useCallback } from 'react';
 import { folioPaymentLabel, isNonCashPayment, isRefundPayment, signedFolioPayment } from '@/lib/folioPayments';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -21,6 +20,8 @@ import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import FolioWindowsPanel from '@/components/folio/FolioWindowsPanel';
 import FolioAllocationPanel from '@/components/folio/FolioAllocationPanel';
+import ReservationFolioDetails from '@/components/folio/ReservationFolioDetails';
+import FolioCardTools from '@/components/folio/FolioCardTools';
 import FolioPrintOptions from '@/components/folio/FolioPrintOptions';
 import { folioCategoryLabel, folioItemInScope, folioPayorLabel, serviceTimingLabel } from '@/lib/folioPresentation';
 import {
@@ -80,7 +81,8 @@ export function summarizeReceivedPayments(payments, fallbackAmount, fallbackCurr
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, property, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
   const currency = booking?.currency || "TL";
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const [showDetails, setShowDetails] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showCari, setShowCari] = useState(false);
   const [showAgency, setShowAgency] = useState(false);
@@ -791,11 +793,19 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <FolioPrintOptions key={`print:${booking.id}`} folios={folioList} charges={charges || []} extraCharges={extra_charges || []} payments={payments || []} booking={booking} property={property} guest={guest} room={room} currentFolioId={targetFolioId} onClose={() => setShowPrintableFolio(false)} />
       )}
 
+      {showDetails && <ReservationFolioDetails key={booking.id} booking={booking} guest={guest} folios={folioList}
+        initialFolioId={targetFolioId || (folioList.length === 1 ? folioList[0].id : '')}
+        readOnly={readOnly} onClose={() => setShowDetails(false)} onChanged={onRefresh} />}
+      {!readOnly && <Button variant="outline" onClick={() => setShowTools(v => !v)} disabled={folioList.filter(f => f.status === 'open').length < 2}>
+        Folyo birleştirme ve yönlendirme
+      </Button>}
+      {showTools && !readOnly && <FolioCardTools key={booking.id} booking={booking} folios={folioList} onChanged={onRefresh} onClose={() => setShowTools(false)} />}
+
       <div className="space-y-3 rounded-xl border bg-white p-4">
         <div className="flex items-center justify-between">
           <div><h3 className="text-sm font-semibold text-slate-900">Hesap hareketleri</h3><p className="mt-1 text-xs text-slate-500">{viewedFolio ? `${viewedFolio.folio_number} · ${folioPayorLabel(viewedFolio)}` : 'Rezervasyona ait tüm hesaplar'} · Hizmet zamanı ile kayda alınma zamanı ayrı gösterilir.</p></div>
-          <Button variant="link" size="sm" className="h-auto p-0 text-indigo-600 hover:text-indigo-700" onClick={() => navigate(`/folio-detail/${targetFolioId || folios?.[0]?.id}`)} disabled={!folios || folios.length === 0}>
-            Ayrıntılı hesap yönetimi &rarr;
+          <Button variant="link" size="sm" className="h-auto p-0 text-indigo-600 hover:text-indigo-700" onClick={() => setShowDetails(true)} disabled={!folios || folios.length === 0}>
+            Aktarım, iade ve hesap ayrıntıları
           </Button>
         </div>
         {targetFolioId && <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">

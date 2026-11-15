@@ -15,6 +15,7 @@ import { useOptionalEntitlements } from '@/context/EntitlementContext';
 import api from '@/api/axios';
 import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
+import ReservationOccupancyEditor from './ReservationOccupancyEditor';
 import ReservationAccountOverview from './ReservationAccountOverview';
 import { exelyReservationDetails } from '@/utils/exelyReservation';
 import { reservationPaymentSummary } from './paymentSummary';
@@ -242,6 +243,7 @@ export function GeneralInfoTab({
             <StatCard icon={Tag} label="Tarife Planı" value={translateValue(booking?.rate_plan) || 'Standart'} tone="amber" />
           </div>
           <ExelyDemographicsNotice booking={booking} />
+          {!readOnly && canEditStay && <ReservationOccupancyEditor key={booking.id} booking={booking} onSaved={onGuestUpdate} />}
         </section>
 
         {/* Bölüm 3: Oda & Tarife Bilgileri */}
