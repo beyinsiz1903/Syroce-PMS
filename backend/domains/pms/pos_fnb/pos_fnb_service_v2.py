@@ -497,12 +497,39 @@ class PosFnbServiceV2:
             return ServiceResult.fail('Adisyon fiyat yapısı doğrulanamadı; eski kaydı sıfır tutarla kapatmak engellendi.', 'ORDER_PRICING_INVALID')
         grand_total = order.get("grand_total", 0)
         checkout_quote = None
-        if checkout_options is not None:
+        if payments and post_to_folio:
+            raise HTTPException(422, "Oda aktarımı ile nakit/kart ödeme dağılımı birlikte kullanılamaz.")
+        # Keep room/folio failures stable before pricing the room-charge quote.
+        if post_to_folio and not booking_id:
+            return ServiceResult.fail("Room charge requires a booking", "BOOKING_REQUIRED")
+        if post_to_folio and booking_id:
+            booking = await self._db.bookings.find_one(
+                {
+                    "id": booking_id,
+                    "tenant_id": ctx.tenant_id,
+                    "status": {"$in": ["checked_in", "in_house"]},
+                },
+                {"_id": 0, "id": 1, "status": 1, "currency": 1},
+            )
+            if not booking:
+                return ServiceResult.fail(
+                    "Oda hesabına yalnızca giriş yapmış misafirlerin adisyonu aktarılabilir",
+                    "BOOKING_NOT_IN_HOUSE",
+                )
+            folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
+            if not folio:
+                return ServiceResult.fail("Open guest folio not found", "FOLIO_NOT_OPEN")
+        if checkout_options is not None or post_to_folio:
             from domains.pms.pos_fnb.checkout_benefits import quote_checkout
 
-            checkout_quote = await quote_checkout(self._db, ctx.tenant_id, order, {**checkout_options, "tip_amount": tip_amount})
-            if checkout_options.get("quote_id") != checkout_quote["quote_id"]:
+            checkout_quote = await quote_checkout(self._db, ctx.tenant_id, order, {
+                **(checkout_options or {}), "tip_amount": tip_amount,
+                "post_to_folio": post_to_folio, "booking_id": booking_id if post_to_folio else None,
+            })
+            if checkout_options is not None and checkout_options.get("quote_id") != checkout_quote["quote_id"]:
                 raise HTTPException(409, "Ödeme özeti değişti. Güncel tutarı yeniden onaylayın.")
+            if checkout_quote.get("is_complimentary") and checkout_options is None:
+                raise HTTPException(409, "Tam ikramlı oda için güncel aktarım özetini onaylayın.")
             if post_to_folio and checkout_quote["currency_code"] != checkout_quote["base_currency"]:
                 raise HTTPException(422, "Oda hesabı tesis para biriminde aktarılır.")
             if payments and checkout_quote["currency_code"] != checkout_quote["base_currency"]:
@@ -565,6 +592,17 @@ class PosFnbServiceV2:
             txn_doc["checkout_quote"] = checkout_quote
             txn_doc["discount_amount"] += checkout_quote["coupon_discount"] + checkout_quote["loyalty_discount"]
             txn_doc["tax_amount"] = checkout_quote["tax_amount"]
+            if checkout_quote.get("is_complimentary"):
+                txn_doc["complimentary_original_snapshot"] = {
+                    "amount": order["grand_total"],
+                    "tax_amount": order.get("effective_tax_amount", order.get("tax_amount", 0)),
+                    "service_charge_amount": order.get("service_charge_amount", 0),
+                    "discount_amount": order.get("discount_amount", 0),
+                }
+                txn_doc["is_complimentary"] = True
+                txn_doc["complimentary_original_amount"] = checkout_quote["gross"]
+                txn_doc["discount_amount"] += checkout_quote["complimentary_discount"]
+                txn_doc["service_charge_amount"] = 0
         txn_doc["request_hash"] = request_hash
         txn_doc["order_snapshot"] = {
             field: order.get(field) for field in ("grand_total", "order_items", "discount_amount", "service_charge_amount", 'table_number', 'outlet_id')
@@ -579,25 +617,7 @@ class PosFnbServiceV2:
         # $inc) and guards a non-open folio at apply time.
         folio_charge_id = None
         outbox_payload = None
-        if post_to_folio and not booking_id:
-            return ServiceResult.fail("Room charge requires a booking", "BOOKING_REQUIRED")
-        if post_to_folio and booking_id:
-            booking = await self._db.bookings.find_one(
-                {
-                    "id": booking_id,
-                    "tenant_id": ctx.tenant_id,
-                    "status": {"$in": ["checked_in", "in_house"]},
-                },
-                {"_id": 0, "id": 1, "status": 1, "currency": 1},
-            )
-            if not booking:
-                return ServiceResult.fail(
-                    "Oda hesabına yalnızca giriş yapmış misafirlerin adisyonu aktarılabilir",
-                    "BOOKING_NOT_IN_HOUSE",
-                )
-            folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
-            if not folio:
-                return ServiceResult.fail("Open guest folio not found", "FOLIO_NOT_OPEN")
+        if post_to_folio:
             sale_currency = str(txn_doc['currency']).upper()
             folio_currency = str(folio.get('currency') or booking.get('currency') or sale_currency).upper()
             if folio_currency != sale_currency:

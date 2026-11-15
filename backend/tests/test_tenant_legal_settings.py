@@ -155,6 +155,13 @@ async def test_voucher_includes_total_paid_and_balance(monkeypatch):
     tenant_id = "tenant-1"
     booking_id = "booking-12345678"
     monkeypatch.setattr(
+        "routers.reservation_detail._reservation_financial_snapshot",
+        AsyncMock(return_value={
+            "gross_total": 4510, "cash_collection_total": 1000, "reservation_total_due": 3510,
+            "accommodation_total": 4510, "additional_charge_total": 0, "source_paid_amount": 0,
+        }),
+    )
+    monkeypatch.setattr(
         invoices_router,
         "db",
         SimpleNamespace(

@@ -676,14 +676,14 @@ def _build_channel_pricing_issue(
     }
 
 
-async def _reservation_outstanding_balance(
+async def _reservation_financial_snapshot(
     tenant_id: str,
     booking: dict,
     *,
     session=None,
     database=None,
-) -> float:
-    """Return the same booking-scoped balance shown by reservation detail."""
+) -> dict:
+    """Read the booking-scoped financial summary without rewriting sources."""
     handle = database if database is not None else db
     kwargs = {"session": session} if session is not None else {}
     folios = [
@@ -713,13 +713,24 @@ async def _reservation_outstanding_balance(
     payments = await collect_financial(handle.payments)
     extra_charges = await collect(handle.extra_charges)
     deposits = await collect(handle.deposits)
-    summary = _build_financial_summary(
+    return _build_financial_summary(
         booking,
         charges,
         payments,
         extra_charges,
         deposits,
     )
+
+
+async def _reservation_outstanding_balance(
+    tenant_id: str,
+    booking: dict,
+    *,
+    session=None,
+    database=None,
+) -> float:
+    """Return the same booking-scoped balance shown by reservation detail."""
+    summary = await _reservation_financial_snapshot(tenant_id, booking, session=session, database=database)
     return float(summary["balance"])
 
 

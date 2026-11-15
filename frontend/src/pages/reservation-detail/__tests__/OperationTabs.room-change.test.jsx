@@ -64,4 +64,24 @@ describe('RoomChangeTab upgrade pricing', () => {
       expect.objectContaining({ new_room_id: 'room-suite', reason: 'Upgrade', extra_charge: 2000 }),
     ));
   });
+
+  it.each([
+    [1400, '700 TL'],
+    [0, '0 TL'],
+    [undefined, 'Belirtilmemiş'],
+  ])('shows the booked nightly amount %s instead of the room catalogue price', async (total, expected) => {
+    render(
+      <RoomChangeTab
+        booking={{ id: 'booking-a', room_id: 'room-standard', check_in: '2026-11-10', check_out: '2026-11-12', total_amount: total, currency: 'TL' }}
+        room={{ room_type: 'Standard', room_number: '105', floor: 0, base_price: 4500 }}
+        roomMoves={[]}
+        onRefresh={vi.fn()}
+      />,
+    );
+    await screen.findByTestId('room-change-type-select');
+    expect(screen.getByText('Standard - 105')).toBeInTheDocument();
+    expect(screen.getByText(`Kat: 0 | Kayıtlı ortalama gecelik fiyat: ${expected}`)).toBeInTheDocument();
+    expect(screen.queryByText(/4[.,]500/)).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
 });

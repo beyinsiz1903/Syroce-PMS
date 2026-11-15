@@ -132,6 +132,53 @@ describe('POS waiter menu regressions', () => {
     })));
   });
 
+  it('quotes the selected full-comp room and confirms a zero-debt transfer', async () => {
+    const context = { beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn() };
+    const getContext = vi.spyOn(window.HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+    const toDataURL = vi.spyOn(window.HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,synthetic');
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', status: 'occupied', current_order_id: 'order-1' }] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
+      if (url === '/frontdesk/inhouse') return Promise.resolve({ data: [{ id: 'booking-1', guest_name: 'Sentetik Misafir', room_number: '104' }] });
+      if (url === '/pos/v2/orders/order-1') return Promise.resolve({ data: { order: {
+        id: 'order-1', order_number: 'ORD-1', status: 'pending', payment_status: 'unpaid', grand_total: 132,
+        order_items: [{ item_id: 'soup', item_name: 'Çorba', quantity: 1, total: 120, tax_rate: .1 }],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockImplementation(url => Promise.resolve(url === '/pos/v2/checkout/quote'
+      ? { data: { quote_id: 'comp-quote', payable: 0, base_currency: 'TRY', is_complimentary: true, complimentary_discount: 132 } }
+      : { status: 200, data: { amount_paid: 0, payment_method: 'room_charge' } }));
+    try {
+      render(<POSWaiterTerminal />);
+      fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+      fireEvent.click(await screen.findByTestId('table-1'));
+      fireEvent.focus(await screen.findByTestId('room-guest-search'));
+      fireEvent.click(await screen.findByTestId('inhouse-booking-1'));
+      const canvas = screen.getByTestId('signature-pad');
+      canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 120 });
+      fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10 });
+      fireEvent.mouseMove(canvas, { clientX: 30, clientY: 30 });
+      fireEvent.mouseUp(canvas);
+      fireEvent.click(screen.getByTestId('pay-room'));
+      await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders/close', expect.objectContaining({
+        booking_id: 'booking-1', post_to_folio: true, payment_method: 'room_charge',
+        checkout_options: expect.objectContaining({ quote_id: 'comp-quote' }),
+      })));
+      expect(axiosPost).toHaveBeenCalledWith('/pos/v2/checkout/quote', expect.objectContaining({
+        order_id: 'order-1', booking_id: 'booking-1', post_to_folio: true,
+      }));
+      expect(confirmDialog).toHaveBeenCalledWith({ message: expect.stringContaining('Tam ikram kapsamında:') });
+      expect(confirmDialog.mock.calls[0][0].message).toContain('Misafire borç yazılmayacak.');
+      expect(confirmDialog.mock.calls[0][0].message).not.toContain('Tahsilat:');
+    } finally {
+      getContext.mockRestore();
+      toDataURL.mockRestore();
+    }
+  });
+
   it('keeps the destination table identity after transferring an open check', async () => {
     let tableLoads = 0;
     axiosGet.mockImplementation((url) => {

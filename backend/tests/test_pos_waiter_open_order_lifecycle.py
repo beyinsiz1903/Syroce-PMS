@@ -308,6 +308,9 @@ async def test_room_charge_rejects_booking_that_is_not_in_house():
 async def test_room_charge_reports_durable_folio_queue_status(monkeypatch):
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        hotel_settings=MemoryCollection([{
+            "tenant_id": "tenant-1", "currency": "TRY",
+        }]),
         pos_transactions=MemoryCollection(),
         pos_orders=MemoryCollection([{
             "id": "order-1", "tenant_id": "tenant-1", "status": "pending",

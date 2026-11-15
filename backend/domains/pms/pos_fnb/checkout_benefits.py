@@ -31,11 +31,25 @@ async def quote_checkout(db, tenant_id, order, options, session=None):
     settings = await db.hotel_settings.find_one({"tenant_id": tenant_id}, {"_id": 0}, **kw) or {}
     base = str(settings.get("currency") or "TRY").upper()
     gross = money(order.get("grand_total"))
+    booking_id = options.get("booking_id") if options.get("post_to_folio") else None
+    full_comp = False
+    if options.get("post_to_folio"):
+        if not booking_id:
+            raise HTTPException(422, "Oda hesabı için konaklayan misafiri seçin.")
+        booking = await db.bookings.find_one(
+            {"tenant_id": tenant_id, "id": booking_id, "status": {"$in": ["checked_in", "in_house"]}},
+            {"_id": 0, "id": 1, "is_complimentary": 1, "complimentary_scope": 1}, **kw,
+        )
+        if not booking:
+            raise HTTPException(409, "Oda hesabına yalnız giriş yapmış misafirlerin adisyonu aktarılabilir.")
+        full_comp = bool(booking.get("is_complimentary") and booking.get("complimentary_scope") == "full")
     coupon_code = str(options.get("coupon_code") or "").strip().upper()
     guest_id = options.get("guest_id")
     points = int(options.get("loyalty_points") or 0)
     if points < 0:
         raise HTTPException(422, "Puan negatif olamaz.")
+    if full_comp and (coupon_code or points or money(options.get("tip_amount"))):
+        raise HTTPException(422, "Tam ikramlı oda aktarımında kupon, puan veya bahşiş kullanılamaz.")
     coupon, coupon_discount = None, 0.0
     if coupon_code:
         coupon = await db.pos_coupons.find_one({"tenant_id": tenant_id, "code": coupon_code}, {"_id": 0}, **kw)
@@ -68,6 +82,9 @@ async def quote_checkout(db, tenant_id, order, options, session=None):
     if loyalty_discount > money(gross - coupon_discount):
         raise HTTPException(409, "Puan indirimi kalan adisyon tutarını aşamaz.")
     net = money(gross - coupon_discount - loyalty_discount)
+    complimentary_discount = net if full_comp else 0.0
+    if full_comp:
+        net = 0.0
     tip = money(options.get("tip_amount"))
     if guest_id:
         rate = Decimal(str(policy.get("earn_points_per_unit", 1)))
@@ -96,6 +113,9 @@ async def quote_checkout(db, tenant_id, order, options, session=None):
         "amount_foreign": money(Decimal(str(payable)) / Decimal(str(rate))),
         "tax_amount": money(Decimal(str(order.get("effective_tax_amount", order.get("tax_amount", 0)) or 0)) * Decimal(str(net)) / Decimal(str(gross))) if gross else 0,
     }
+    if booking_id:
+        quote.update(post_to_folio=True, booking_id=booking_id,
+                     is_complimentary=full_comp, complimentary_discount=complimentary_discount)
     # Explicit residual: never hide foreign minor-unit rounding in sales/tax.
     quote["fx_rounding_base"] = float(
         (Decimal(str(quote["amount_foreign"])) * Decimal(str(rate)) - Decimal(str(payable)))
@@ -115,6 +135,13 @@ async def commit_benefits(db, tenant_id, order, txn, session):
     fresh = await quote_checkout(db, tenant_id, order, quote, session=session)
     if fresh["quote_id"] != quote["quote_id"]:
         raise HTTPException(409, "Fiyat, kur veya avantajlar değişti. Ödeme özetini yeniden onaylayın.")
+    if quote.get("post_to_folio"):
+        # Touch the booking inside the sale transaction, so a concurrent
+        # checkout/comp edit conflicts instead of committing a stale policy.
+        await db.bookings.update_one(
+            {"tenant_id": tenant_id, "id": quote["booking_id"]},
+            {"$inc": {"pos_checkout_revision": 1}}, session=session,
+        )
     if quote["coupon_code"]:
         changed = await db.pos_coupons.update_one(
             {"tenant_id": tenant_id, "code": quote["coupon_code"], "active": {"$ne": False},

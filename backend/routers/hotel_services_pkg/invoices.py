@@ -451,6 +451,8 @@ async def generate_voucher(
     booking_id: str,
     current_user: User = Depends(get_current_user),
 ):
+    from routers.reservation_detail import _reservation_financial_snapshot
+
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -480,11 +482,22 @@ async def generate_voucher(
     logo_html = f'<img class="hotel-logo" src="{_e(safe_logo)}" alt="{_e(settings.get("hotel_name"))} logosu" />' if safe_logo else ""
     contact_parts = [settings.get("hotel_phone"), settings.get("hotel_email")]
     contact_line = " • ".join(str(part) for part in contact_parts if part)
-    confirmation_no = booking.get("ota_confirmation") or booking.get("confirmation_number") or booking_id[:12]
+    confirmation_no = booking.get("ota_confirmation") or booking.get("confirmation_number") or booking.get("reservation_number") or booking_id[:12]
     currency = booking.get("currency") or settings.get("currency") or "TRY"
-    total_amount = round(float(booking.get("total_amount") or 0), 2)
-    paid_amount = round(float(booking.get("paid_amount") or 0), 2)
-    balance = round(total_amount - paid_amount, 2)
+    financials = await _reservation_financial_snapshot(tid, booking, database=db)
+    total_amount = financials["gross_total"]
+    paid_amount = financials["cash_collection_total"]
+    balance = financials["reservation_total_due"]
+    prior_paid_amount = financials.get("source_paid_amount", 0)
+    non_cash_amount = round(total_amount - paid_amount - prior_paid_amount - balance, 2)
+    settlement_note = (
+        f'<div>İndirim, ikram, cari devir ve diğer mahsuplar: {_e(_format_document_money(non_cash_amount, currency))}</div>'
+        if abs(non_cash_amount) > 0.005 else ""
+    )
+    prior_payment_note = (
+        f'<div>Önceki sistemden devreden tahsilat: {_e(_format_document_money(prior_paid_amount, currency))}</div>'
+        if abs(prior_paid_amount) > 0.005 else ""
+    )
     special_requests_html = ""
     if booking.get("special_requests"):
         special_requests_html = f"""
@@ -562,9 +575,15 @@ body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial
         <div class="info-item"><div class="info-label">Konaklama Planı</div><div class="info-value">{_e(booking.get("rate_plan") or "Standart")}</div></div>
     </div>
     <div class="price-summary">
-        <div class="price-item total"><div class="price-label">Toplam Tutar</div><div class="price-value">{_e(_format_document_money(total_amount, currency))}</div></div>
-        <div class="price-item paid"><div class="price-label">Ödenen</div><div class="price-value">{_e(_format_document_money(paid_amount, currency))}</div></div>
-        <div class="price-item balance"><div class="price-label">Kalan Bakiye</div><div class="price-value">{_e(_format_document_money(balance, currency))}</div></div>
+        <div class="price-item total"><div class="price-label">Konaklama ve Ekstralar</div><div class="price-value">{_e(_format_document_money(total_amount, currency))}</div></div>
+        <div class="price-item paid"><div class="price-label">Net Tahsilat (PMS)</div><div class="price-value">{_e(_format_document_money(paid_amount, currency))}</div></div>
+        <div class="price-item balance"><div class="price-label">PMS Hesabında Kalan</div><div class="price-value">{_e(_format_document_money(balance, currency))}</div></div>
+    </div>
+    <div class="note-box">
+        <div>Konaklama: {_e(_format_document_money(financials["accommodation_total"], currency))} · Ekstralar: {_e(_format_document_money(financials["additional_charge_total"], currency))}</div>
+        {settlement_note}
+        {prior_payment_note}
+        <div>İadeler tahsilattan düşülmüştür. Kanalın bildirdiği ve henüz PMS hesabına işlenmeyen ön ödemeler bu tahsilata dahil değildir.</div>
     </div>
     {special_requests_html}
     <div class="footer">
@@ -582,6 +601,8 @@ body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial
         "total_amount": total_amount,
         "paid_amount": paid_amount,
         "balance": balance,
+        "non_cash_amount": non_cash_amount,
+        "prior_paid_amount": prior_paid_amount,
         "currency": str(currency).upper(),
     }
 

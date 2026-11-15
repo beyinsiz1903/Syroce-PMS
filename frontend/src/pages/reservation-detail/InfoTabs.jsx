@@ -63,6 +63,7 @@ const ACTIVITY_LABELS = {
   deposit_recorded: 'Depozito alındı',
   deposit_refunded: 'Depozito iade edildi',
   extra_charge_added: 'Ekstra ücret eklendi',
+  extra_charge_voided: 'Ekstra ücret iptal edildi',
   daily_rates_updated: 'Fiyat güncellendi',
   guest_updated: 'Misafir güncellendi',
   communication_logged: 'İletişim kaydedildi',

@@ -4,7 +4,7 @@
 //   2) selectedFolio null + folios>1    → folio picker (kullanıcı seçer)
 //   3) selectedFolio dolu               → tam folyo UI
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import FolioViewDialog from '@/components/pms/FolioViewDialog';
@@ -34,6 +34,61 @@ const baseProps = {
   onChargePosted: noop,
   onPaymentPosted: noop,
 };
+
+describe('guest-card account detail parity', () => {
+  const folio = { id: 'f', booking_id: 'b', folio_number: 'F-105', status: 'open', currency: 'TRY', balance: 50 };
+  it('uses the reservation guest when a window has no guest ID and separates service from posting dates', () => {
+    render(<FolioViewDialog {...baseProps} selectedFolio={folio}
+      bookings={[{ id: 'b', guest_id: 'g', guest_name: 'Ayşe Deniz' }]}
+      guests={[{ name: 'Wrong unlinked guest' }]}
+      folioCharges={[{ id: 'spa', description: 'Masaj', charge_category: 'spa', total: 120, vat_amount: 20,
+        created_at: '2026-11-14T08:00:00Z', service_date: '2026-11-10', service_time: '15:00', service_timing_source: 'spa_appointment' }]} />);
+    expect(screen.getByText('Ayşe Deniz')).toBeInTheDocument();
+    expect(screen.queryByText('Wrong unlinked guest')).not.toBeInTheDocument();
+    expect(screen.getByText(/10.11.2026 · 15:00 \(randevu\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Kayıt:/)).toHaveTextContent('14');
+    expect(screen.getByText(/KDV \(oran belirtilmemiş\)/)).toBeInTheDocument();
+  });
+  it('offers a refund only for eligible receipts and labels offsets and refunds correctly', () => {
+    const rows = [
+      { id: 'cash', method: 'cash', amount: 100 },
+      { id: 'refund', method: 'cash', amount: 20, payment_type: 'refund' },
+      { id: 'comp', method: 'discount', amount: 10 },
+      { id: 'security', method: 'security_deposit_application', amount: 30 },
+      { id: 'pending', method: 'card', amount: 800, status: 'pending' },
+      { id: 'external', method: 'card', amount: 100, provider_ref: 'provider-payment' },
+      { id: 'sealed', method: 'bank_transfer', amount: 100, can_void: false },
+    ];
+    render(<FolioViewDialog {...baseProps} selectedFolio={folio} folioPayments={rows} />);
+    expect(screen.getAllByRole('button', { name: 'İade' })).toHaveLength(1);
+    expect(screen.getByText('Güvence mahsubu (yeni tahsilat değil)')).toBeInTheDocument();
+    expect(screen.getByText('İkram / indirim (tahsilat değil)')).toBeInTheDocument();
+    expect(screen.getByText('Ödeme iadesi')).toBeInTheDocument();
+    expect(screen.getByText(/-₺20,00/)).toBeInTheDocument();
+    expect(screen.getByText('Bakiye hesabına dahil değil')).toBeInTheDocument();
+  });
+  it('shows authoritative net, unknown price/tax details and separate non-cash totals in the proforma', async () => {
+    axios.post.mockResolvedValueOnce({ data: { folio, hotel: {}, guest: {}, booking: {},
+      charges: [{ id: 'spa', description: 'Masaj', total: 120, amount: 120, net_amount: 100, subtotal: 100, vat_amount: 20, vat_rate: null, service_date: '2026-11-10' }],
+      vat_breakdown: [{ vat_rate: null, net: 100, vat_amount: 20 }],
+      totals: { grand_total: 120, subtotal: null, net_total: null, vat_total: null, payments_total: 120, collections_total: 80, non_cash_total: 40, opening_balance: 50, balance_due: 50, tax_breakdown_complete: false } } });
+    render(<FolioViewDialog {...baseProps} selectedFolio={folio} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Proforma Fatura' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Proforma Fatura' });
+    const row = within(dialog).getByText('Masaj').closest('tr');
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[0]).toHaveTextContent('10.11.2026');
+    expect(cells[2]).toHaveTextContent('—');
+    expect(cells[6]).toHaveTextContent('100.00');
+    expect(within(dialog).getByText('Oran belirtilmemiş')).toBeInTheDocument();
+    expect(within(dialog).getByText('Net tahsilat (iadeler düşüldü)').parentElement).toHaveTextContent('80,00');
+    expect(within(dialog).getByText('İkram / cari / güvence mahsupları').parentElement).toHaveTextContent('40,00');
+    expect(within(dialog).getByText('Önceki hesap bakiyesi').parentElement).toHaveTextContent('50,00');
+    expect(within(dialog).getByText(/Bazı hareketlerin vergi ayrıntısı eksik/)).toBeInTheDocument();
+    expect(within(dialog).getByText('Net Toplam').parentElement).toHaveTextContent('—');
+    expect(within(dialog).getByText('Hesaplanan KDV').parentElement).toHaveTextContent('—');
+  });
+});
 
 afterEach(() => cleanup());
 

@@ -25,6 +25,12 @@ def allocate(total, weights):
 
 def checkout_lines(transaction):
     """Return net/VAT/gross/category lines from the immutable sale snapshot."""
+    if transaction.get("is_complimentary") and transaction.get("complimentary_original_snapshot"):
+        original = {**transaction, **transaction["complimentary_original_snapshot"], "is_complimentary": False}
+        return [{**row, "amount": 0, "subtotal": 0, "discount_amount": 0,
+                 "vat_amount": 0, "tax_amount": 0, "tax_breakdown": {"vat": 0}, "total": 0,
+                 "is_complimentary": True, "complimentary_original_amount": row["total"],
+                 "complimentary_original_vat": row["vat_amount"]} for row in checkout_lines(original)]
     rows = transaction.get("order_items") or transaction.get("items") or []
     gross = rounded(transaction.get("amount", transaction.get("total_amount", 0)))
     # amount is net of tip on canonical sales; legacy rows may only have total.

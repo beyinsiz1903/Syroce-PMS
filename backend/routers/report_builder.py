@@ -1418,7 +1418,8 @@ async def export_report_pdf(
     # a PDF-typed response. Caught by stress spec F8H D
     # (90-reports-analytics-export.spec.js) via %PDF- byte-magic assertion.
     try:
-        from weasyprint import HTML, default_url_fetcher
+        from weasyprint import HTML
+        from weasyprint.urls import URLFetcher
     except (ImportError, OSError) as e:
         logger.error(f"[PDF EXPORT] weasyprint renderer unavailable: {e}")
         raise HTTPException(
@@ -1428,12 +1429,9 @@ async def export_report_pdf(
 
     try:
 
-        def _safe_fetcher(url: str, timeout=10, ssl_context=None):
-            if not url.lower().startswith("https://"):
-                raise ValueError(f"blocked URL scheme: {url[:40]}")
-            return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
-
-        pdf_bytes = HTML(string=html, url_fetcher=_safe_fetcher).write_pdf()
+        # The class API also applies the protocol policy to redirects.
+        # WeasyPrint 70 removed the legacy default_url_fetcher function.
+        pdf_bytes = HTML(string=html, url_fetcher=URLFetcher(allowed_protocols={"https"})).write_pdf()
         output = io.BytesIO(pdf_bytes)
     except Exception as e:
         # Real rendering failure — propagate as 500, not a fake 200.

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { API, fmtCurrency, fmtDate, fmtTs, EmptyState, FormField, SelectField } from './helpers';
 import { HOTEL_EVENT_TIME_ZONE_LABEL, hotelEventEpoch } from '@/lib/hotelEventTime';
+import { folioPaymentLabel } from '@/lib/folioPayments';
 import { useTranslation } from 'react-i18next';
 
 export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
@@ -161,7 +162,7 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
     charge_split: 'Masraf bölündü', note_added: 'Not eklendi', room_changed: 'Oda değiştirildi',
     early_checkin: 'Erken giriş', late_checkout: 'Gec çıkış', marked_noshow: 'No-show',
     vip_status_changed: 'VIP durumu', deposit_recorded: 'Depozito', deposit_refunded: 'Depozito iade',
-    extra_charge_added: 'Ekstra ücret', daily_rates_updated: 'Fiyat güncelleme', guest_updated: 'Misafir güncelleme',
+    extra_charge_added: 'Ekstra ücret', extra_charge_voided: 'Ekstra ücret iptal edildi', daily_rates_updated: 'Fiyat güncelleme', guest_updated: 'Misafir güncelleme',
     communication_logged: 'İletişim', group_checkin: 'Grup giriş', group_checkout: 'Grup çıkış',
     stay_dates_updated: 'Konaklama tarihleri güncellendi', reservation_modified: 'Rezervasyon güncellendi',
     complimentary_total_reconciled: 'Comp konaklama tutarı düzeltildi',
@@ -186,6 +187,11 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
     return String(value);
   };
   const visibleChanges = details => Object.entries(details?.changes || {}).filter(([field]) => field !== 'room_id');
+  const eventAmount = details => {
+    if (Number.isSafeInteger(details?.amount_minor)) return details.amount_minor / 100;
+    const value = details?.amount ?? details?.refund_amount;
+    return value != null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
+  };
 
   return (
     <div data-testid="history-tab" className="space-y-3">
@@ -225,11 +231,10 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
                   <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-2">
                     {ev.details.from_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.eski')} {ev.details.from_room}</span>}
                     {ev.details.to_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.yeni')} {ev.details.to_room}</span>}
-                    {ev.details.amount && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.tutar')} {fmtCurrency(ev.details.amount, ev.details.currency || currency)}</span>}
-                    {Number.isSafeInteger(ev.details.amount_minor) && <span>Tutar: {fmtCurrency(ev.details.amount_minor / 100, ev.details.currency || currency)}</span>}
+                    {eventAmount(ev.details) !== null && <span>Tutar: {fmtCurrency(eventAmount(ev.details), ev.details.currency || currency)}</span>}
                     {ev.details.folio_id && ev.action?.startsWith('concession_') && <span>Folyo: {ev.details.folio_id}</span>}
                     {ev.details.service_details?.length > 0 && <span>Hizmetler: {ev.details.service_details.map(row => row.description || row.category || row.id).join(', ')}</span>}
-                    {ev.details.method && <span>Yontem: {ev.details.method}</span>}
+                    {ev.details.method && <span>Yöntem: {folioPaymentLabel(ev.details)}</span>}
                     {ev.details.reason && <span>Sebep: {ev.details.reason}</span>}
                     {ev.details.cari_account && <span>Cari: {ev.details.cari_account}</span>}
                   </div>

@@ -24,6 +24,8 @@ export default function FolioCardTools({ booking, folios, onChanged, onClose }) 
   const [confirmed, setConfirmed] = useState(false);
   const intent = useRef(null);
   const lock = useRef(false);
+  const fromInput = useRef(null);
+  const toInput = useRef(null);
   const windows = folios.filter(f => f.status === 'open');
   const source = windows.find(f => f.id === sourceId);
   const targets = windows.filter(f => f.id !== sourceId && currency(f.currency || booking.currency) === currency(source?.currency || booking.currency));
@@ -47,7 +49,14 @@ export default function FolioCardTools({ booking, folios, onChanged, onClose }) 
     catch (e) { setError(apiErrorText(e, e.message || 'İşlem tamamlanamadı. Hareketleri kontrol edin.')); }
     finally { lock.current = false; setBusy(false); }
   };
-  const submit = () => execute(async () => {
+  const submit = () => {
+    // Safari exposes an unfinished date as value="" with badInput=true.
+    // Check before disabling the fieldset (disabled inputs skip validation).
+    if (mode === 'routing' && ([fromInput, toInput].some(ref => ref.current && !ref.current.validity.valid) || (from && to && from > to))) {
+      setError('İş günü tarihlerini gün, ay ve yıl olarak tamamlayın; son gün ilk günden önce olamaz.');
+      return;
+    }
+    return execute(async () => {
     if (!source || !target || reason.trim().length < 3 || !confirmed) return;
     if (mode === 'merge') {
       const payload = { booking_id: booking.id, source_folio_id: sourceId, target_folio_id: targetId,
@@ -79,7 +88,8 @@ export default function FolioCardTools({ booking, folios, onChanged, onClose }) 
       toast.success('Yönlendirme kuralı kaydedildi. Uygulamak için mevcut masrafları yönlendirin.');
     }
     onClose(); void Promise.resolve().then(() => onChanged?.()).catch(() => toast.warning('İşlem kaydedildi. Kartı yenileyin.'));
-  });
+    });
+  };
   return <section className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-4 space-y-4" aria-label="Folyo birleştirme ve yönlendirme">
     <div className="flex justify-between items-center gap-3"><h3 className="font-semibold">Hesapları düzenle</h3><Button variant="ghost" disabled={busy} onClick={onClose}>Kapat</Button></div>
     <div className="flex flex-wrap gap-2">{[['merge', 'Folyoları birleştir'], ['routing', 'Masrafları yönlendir']].map(([id, text]) => <Button key={id} variant={mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => { setMode(id); setConfirmed(false); }}>{text}</Button>)}</div>
@@ -90,11 +100,11 @@ export default function FolioCardTools({ booking, folios, onChanged, onClose }) 
       {mode === 'routing' && <>
         <label>Masraf türü<select aria-label="Masraf türü" className="block border rounded p-2 w-full" value={category} onChange={e => { setCategory(e.target.value); setConfirmed(false); }}>{categories.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>
         {category === '__custom' && <label>Masraf kodları<input aria-label="Masraf kodları" className="block border rounded p-2 w-full" value={customCodes} maxLength={1000} placeholder="Örn. TAX, TRANSPORT" onChange={e => { setCustomCodes(e.target.value); setConfirmed(false); }} /><span className="text-xs text-slate-600">Kayıtlı masraf kodlarını virgülle ayırın (en fazla 50).</span></label>}
-        <div className="grid grid-cols-2 gap-2"><label>İlk iş günü<input aria-label="İlk iş günü" className="block border rounded p-2 w-full" type="date" value={from} onChange={e => { setFrom(e.target.value); setConfirmed(false); }} /></label><label>Son iş günü<input aria-label="Son iş günü" className="block border rounded p-2 w-full" type="date" value={to} onChange={e => { setTo(e.target.value); setConfirmed(false); }} /></label></div>
+        <div className="grid grid-cols-2 gap-2"><label>İlk iş günü<input ref={fromInput} aria-label="İlk iş günü" className="block border rounded p-2 w-full" type="date" value={from} onInput={() => setConfirmed(false)} onChange={e => { setFrom(e.target.value); setConfirmed(false); }} /></label><label>Son iş günü<input ref={toInput} aria-label="Son iş günü" className="block border rounded p-2 w-full" type="date" value={to} onInput={() => setConfirmed(false)} onChange={e => { setTo(e.target.value); setConfirmed(false); }} /></label></div>
       </>}
       <label className="sm:col-span-2">İşlem açıklaması<input aria-label="İşlem açıklaması" className="mt-1 block border rounded p-2 w-full" maxLength={500} value={reason} onChange={e => setReason(e.target.value)} /></label>
     </fieldset>
-    {source && target && <div className="rounded-lg bg-white p-3 text-sm border"><p>{source.folio_number} → {target.folio_number}</p>{mode === 'merge' && <p>Birleşen hesap bakiyesi: <strong>{formatCurrency(Number(source.balance) + Number(target.balance), code)}</strong></p>}<label className="flex items-start gap-2 mt-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)} />Kaynak, hedef ve işlem kapsamını kontrol ettim.</label></div>}
+    {source && target && <div className="rounded-lg bg-white p-3 text-sm border"><p>{source.folio_number} → {target.folio_number}</p>{mode === 'merge' ? <p>Birleşen hesap bakiyesi: <strong>{formatCurrency(Number(source.balance) + Number(target.balance), code)}</strong></p> : <p>Masraflar: {chargeCodes.map(c => categories.find(([id]) => id === c)?.[1] || c).join(', ') || 'Tüm masraflar'}<br />İş günü kapsamı: {from || 'Başlangıç sınırı yok'} – {to || 'Bitiş sınırı yok'}</p>}<label className="flex items-start gap-2 mt-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)} />Kaynak, hedef ve işlem kapsamını kontrol ettim.</label></div>}
     {error && <p role="alert" className="text-red-700 text-sm">{error}</p>}
     <Button onClick={submit} disabled={busy || !source || !target || !confirmed || reason.trim().length < 3 || (mode === 'routing' && (invalidCodes || routingUncertain || rules === null || (from && to && from > to)))}>{busy ? 'İşleniyor…' : mode === 'merge' ? 'Birleştir' : 'Kuralı kaydet'}</Button>
     {mode === 'routing' && source && <div className="border-t pt-3 space-y-2"><h4 className="font-medium">Kaynak hesabın yönlendirme kuralları</h4>
