@@ -88,6 +88,8 @@ class CloseOrderRequest(BaseModel):
 
 class CheckoutQuoteRequest(BaseModel):
     order_id: str
+    post_to_folio: bool = False
+    booking_id: str | None = None
     coupon_code: str | None = Field(default=None, max_length=64)
     guest_id: str | None = None
     loyalty_points: int = Field(default=0, ge=0)

@@ -378,9 +378,14 @@ const POSWaiterTerminal = () => {
         loyalty_points: Number(loyaltyPoints || 0), currency_code: paymentCurrency || currency };
       const quote = (await axios.post('/pos/v2/checkout/quote', {
         ...options, order_id: order.id, tip_amount: Number(tipAmount || 0),
+        post_to_folio: paymentMethod === 'room_charge',
+        booking_id: paymentMethod === 'room_charge' ? roomBooking.id : null,
       })).data;
       if (!quote?.quote_id) throw new Error('Ödeme özeti alınamadı.');
-      if (!await confirmDialog({ message: `Tahsilat: ${formatCurrency(quote.payable, quote.base_currency, { decimals: 2 })}\nKupon indirimi: ${quote.coupon_discount} · Puan indirimi: ${quote.loyalty_discount}\nÖdeme: ${formatCurrency(quote.amount_foreign, quote.currency_code, { decimals: 2 })} (kur: ${quote.rate_used}; döviz yuvarlama farkı: ${quote.fx_rounding_base || 0} ${quote.base_currency}). Onaylıyor musunuz?` })) return;
+      const confirmation = paymentMethod === 'room_charge'
+        ? `Oda hesabına aktarım: ${formatCurrency(quote.payable, quote.base_currency, { decimals: 2 })}${quote.is_complimentary ? `\nTam ikram kapsamında: ${formatCurrency(quote.complimentary_discount, quote.base_currency, { decimals: 2 })}. Misafire borç yazılmayacak.` : ''}\nOnaylıyor musunuz?`
+        : `Tahsilat: ${formatCurrency(quote.payable, quote.base_currency, { decimals: 2 })}\nKupon indirimi: ${quote.coupon_discount} · Puan indirimi: ${quote.loyalty_discount}\nÖdeme: ${formatCurrency(quote.amount_foreign, quote.currency_code, { decimals: 2 })} (kur: ${quote.rate_used}; döviz yuvarlama farkı: ${quote.fx_rounding_base || 0} ${quote.base_currency}). Onaylıyor musunuz?`;
+      if (!await confirmDialog({ message: confirmation })) return;
       if (payments) {
         const cents = Math.round(quote.payable * 100), part = Math.floor(cents / payments.length);
         payments = payments.map((row, index) => ({ ...row, amount: (part + (index === payments.length - 1 ? cents - part * payments.length : 0)) / 100 }));
