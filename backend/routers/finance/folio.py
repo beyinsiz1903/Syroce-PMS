@@ -252,6 +252,9 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
     currency, _ = await get_tenant_currency(current_user.tenant_id)
     snapshots = await folio_snapshots(db, current_user.tenant_id, folios, fallback_currency=currency)
 
+    room_ids = list({snap["booking"].get("room_id") for snap in snapshots.values() if snap["booking"].get("room_id")})
+    rooms = await db.rooms.find({"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}}, {"_id": 0, "id": 1, "room_number": 1}).to_list(len(room_ids)) if room_ids else []
+    room_numbers = {room["id"]: room.get("room_number", "") for room in rooms}
     for folio in folios:
         snapshot = snapshots[folio["id"]]
         booking = snapshot["booking"]
@@ -260,7 +263,7 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
         folio["balance"] = single_amount(snapshot["balance_by_currency"])
         if booking:
             folio["guest_name"] = booking.get("guest_name", "")
-            folio["room_number"] = booking.get("room_number", "")
+            folio["room_number"] = booking.get("room_number") or room_numbers.get(booking.get("room_id"), "")
             folio["check_in"] = booking.get("check_in", "")
             folio["check_out"] = booking.get("check_out", "")
 
@@ -1619,55 +1622,28 @@ async def generate_folio_proforma(
     if not folio:
         raise HTTPException(status_code=404, detail="Folio bulunamadı")
 
-    charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": False}, {"_id": 0}).to_list(2000)
+    from core.tenant_currency import get_tenant_currency
+    from modules.folio.proforma import proforma_amounts
+    from modules.pms_core.service_timing import project_service_times
+    from security.encrypted_lookup import decrypt_guest_doc
 
-    payments = await db.payments.find({"folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": False}, {"_id": 0}).to_list(2000)
-
-    # KDV oranı bazlı gruplama
-    vat_groups: dict[str, dict[str, float]] = {}
-    subtotal_sum = 0.0
-    discount_sum = 0.0
-    net_sum = 0.0
-    vat_sum = 0.0
-    city_tax_sum = 0.0
-    grand_total = 0.0
-
-    for c in charges:
-        sub = float(c.get("subtotal") or c.get("amount") or 0.0)
-        disc = float(c.get("discount_amount") or 0.0)
-        net = float(c.get("amount") or max(0.0, sub - disc))
-        rate = float(c.get("vat_rate") or 0.0)
-        vat = float(c.get("vat_amount") or 0.0)
-        city = float(c.get("tax_amount") or 0.0)
-        tot = float(c.get("total") or (net + vat + city))
-
-        subtotal_sum += sub
-        discount_sum += disc
-        net_sum += net
-        vat_sum += vat
-        city_tax_sum += city
-        grand_total += tot
-
-        key = f"{rate:.2f}"
-        g = vat_groups.setdefault(key, {"vat_rate": rate, "net": 0.0, "vat_amount": 0.0, "count": 0})
-        g["net"] = round(g["net"] + net, 2)
-        g["vat_amount"] = round(g["vat_amount"] + vat, 2)
-        g["count"] += 1
-
-    payments_total = round(sum(float(p.get("amount") or 0.0) for p in payments), 2)
-    opening_balance = float(folio.get("opening_balance") or 0)
-    balance = round(opening_balance + grand_total - payments_total, 2)
-
-    # Misafir ve booking bilgileri
-    guest = None
-    if folio.get("guest_id"):
-        # Decrypt PII — email/phone/address feed the e-invoice document.
-        from security.encrypted_lookup import decrypt_guest_doc
-
-        guest = decrypt_guest_doc(await db.guests.find_one({"id": folio["guest_id"], "tenant_id": current_user.tenant_id}, {"_id": 0, "name": 1, "email": 1, "phone": 1, "tc_no": 1, "address": 1}))
-    booking = await db.bookings.find_one(
-        {"id": folio["booking_id"], "tenant_id": current_user.tenant_id}, {"_id": 0, "check_in": 1, "check_out": 1, "room_id": 1, "room_number": 1, "adults": 1, "children": 1}
-    )
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency))[folio_id]
+    try:
+        charges, vat_groups, totals = proforma_amounts(snapshot)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await project_service_times(db, current_user.tenant_id, charges)
+    source_booking = snapshot["booking"]
+    booking = {key: source_booking[key] for key in ("check_in", "check_out", "room_id", "room_number", "adults", "children") if key in source_booking}
+    if not booking.get("room_number") and booking.get("room_id"):
+        room = await db.rooms.find_one({"id": booking["room_id"], "tenant_id": current_user.tenant_id}, {"_id": 0, "room_number": 1})
+        booking["room_number"] = (room or {}).get("room_number")
+    guest_id = folio.get("guest_id") or source_booking.get("guest_id")
+    guest = decrypt_guest_doc(await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "tc_no": 1, "address": 1})) if guest_id else None
+    if not guest and source_booking.get("guest_name"):
+        guest = {"name": source_booking["guest_name"]}
 
     # Tenant ad
     tenant = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0, "name": 1, "tax_no": 1, "tax_office": 1, "address": 1}) or {}
@@ -1685,18 +1661,8 @@ async def generate_folio_proforma(
         "hotel": tenant,
         "guest": guest or {},
         "booking": booking or {},
-        "charges": sorted(charges, key=lambda c: c.get("date") or c.get("created_at") or ""),
-        "vat_breakdown": sorted(vat_groups.values(), key=lambda g: g["vat_rate"]),
-        "totals": {
-            "subtotal": round(subtotal_sum, 2),
-            "discount_total": round(discount_sum, 2),
-            "net_total": round(net_sum, 2),
-            "vat_total": round(vat_sum, 2),
-            "city_tax_total": round(city_tax_sum, 2),
-            "grand_total": round(grand_total, 2),
-            "opening_balance": opening_balance,
-            "opening_balance_note": "Önceki PMS bakiyesi; proforma mal/hizmet toplamına ve vergisine dahil değildir." if opening_balance else None,
-            "payments_total": payments_total,
-            "balance_due": balance,
-        },
+        "currency": snapshot["currency"],
+        "charges": sorted(charges, key=lambda row: str(row.get("service_date") or row.get("business_date") or row.get("created_at") or "")),
+        "vat_breakdown": vat_groups,
+        "totals": totals,
     }

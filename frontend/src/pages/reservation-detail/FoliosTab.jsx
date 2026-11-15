@@ -433,7 +433,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           {folioList.filter(f => f.status === 'open').map(f => <option key={f.id} value={f.id}>{f.folio_number} · {folioPayorLabel(f)} · {fmtCurrency(f.balance, f.currency || currency)}</option>)}
         </select>
         <p className="mt-1 text-xs font-normal text-slate-600">Birden fazla açık hesapta hedef seçimi zorunludur. Cari aktarımı tahsilat değil, alacağın ilgili cari hesaba devridir.</p>
-        <p className="mt-1 text-xs font-normal text-slate-600">Folyo Böl mevcut kalemleri/tutarı ayırır. Sonraki gece ücretleri için otomatik yönlendirme bu ekrandan henüz tanımlanmaz; yeni tahakkukları ayrıca kontrol edin.</p>
+        <p className="mt-1 text-xs font-normal text-slate-600">Folyo Böl mevcut masrafları ayırır. Belirli masraf türleri ve tarihler için “Folyo birleştirme ve yönlendirme” alanından kural tanımlayabilirsiniz.</p>
       </label>}
       <div className="flex flex-wrap gap-2">
         {!readOnly && <>

@@ -14,6 +14,9 @@ import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
+import { folioPayorLabel, folioCategoryLabel, serviceTimingLabel } from '@/lib/folioPresentation';
+import { folioPaymentLabel, canVoidFolioEvent, signedFolioPayment, isNonCashPayment, isEffectivePayment } from '@/lib/folioPayments';
+import { projectFrontdeskPresentation, storedPresentationTenant } from '@/lib/frontdeskPresentation';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { calculateFinancialLine, parseExchangeRate, parseMoney, parseQuantity, parseTaxRate } from '@/lib/financialInput';
 import { HOTEL_EVENT_TIME_ZONE_LABEL, formatHotelEventTimestamp } from '@/lib/hotelEventTime';
@@ -36,7 +39,8 @@ const VAT_OPTIONS = [{
   value: '20',
   label: '%20'
 }];
-const fmt = n => Number(n || 0).toFixed(2);
+const fmt = n => n == null || n === '' || !Number.isFinite(Number(n)) ? '—' : Number(n).toFixed(2);
+const refundable = payment => canVoidFolioEvent({ ...payment, type: 'payment' });
 const FolioViewDialog = ({
   open,
   onClose,
@@ -56,13 +60,16 @@ const FolioViewDialog = ({
     t
   } = useTranslation();
   const folioCurrency = (selectedFolio?.currency || bookings.find(b => b.id === selectedFolio?.booking_id)?.currency || cachedTenantCurrency()).toUpperCase().replace(/^TL$/, 'TRY');
+  const selectedBooking = bookings.find(b => b.id === selectedFolio?.booking_id);
+  const guestId = selectedFolio?.guest_id || selectedBooking?.guest_id;
+  const guestName = guests.find(g => g.id && g.id === guestId)?.name || selectedFolio?.guest_name || selectedBooking?.guest_name || '—';
   const canWrite = !readOnly && !isLoading && selectedFolio?.status === 'open';
   const writeLock = useRef(false);
   const viewGeneration = useRef(0);
   const writeIntents = useRef({});
   const [writing, setWriting] = useState(false);
   const [receivedToTryRate, setReceivedToTryRate] = useState('');
-  const money = (value) => formatCurrency(value, folioCurrency, { decimals: 2 });
+  const money = (value) => value == null ? '—' : formatCurrency(value, folioCurrency, { decimals: 2 });
   const [subDialog, setSubDialog] = useState(null);
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
   const [voidTarget, setVoidTarget] = useState(null);
@@ -304,7 +311,7 @@ const FolioViewDialog = ({
     }
   };
   const doVoidPayment = async () => {
-    if (!canWrite || !voidTarget || writeLock.current) return;
+    if (!canWrite || !voidTarget || !refundable(voidTarget) || writeLock.current) return;
     writeLock.current = true;
     setVoidLoading(true);
     try {
@@ -322,7 +329,7 @@ const FolioViewDialog = ({
     setVoidLoading(false);
   };
   const handleVoidPayment = () => {
-    if (!canWrite || !voidTarget || writeLock.current) return;
+    if (!canWrite || !voidTarget || !refundable(voidTarget) || writeLock.current) return;
     if (!voidReason.trim()) {
       toast.error('İade nedeni zorunlu');
       return;
@@ -336,7 +343,7 @@ const FolioViewDialog = ({
     try {
       const res = await axios.post(`/folio/${selectedFolio.id}/proforma`);
       if (generation !== viewGeneration.current) return;
-      setProforma(res.data);
+      setProforma(projectFrontdeskPresentation(res.data, storedPresentationTenant()));
       setSubDialog('proforma');
     } catch (error) {
       if (generation !== viewGeneration.current) return;
@@ -452,7 +459,7 @@ th{background:#f5f5f5}
           <DialogHeader>
             <DialogTitle>{t('pms.folioManagement', 'Folio Yönetimi')}</DialogTitle>
             <DialogDescription>
-              {selectedFolio && `Folio ${selectedFolio.folio_number} - ${selectedFolio.folio_type?.toUpperCase?.()}`}
+              {selectedFolio && `Folio ${selectedFolio.folio_number} - ${folioPayorLabel(selectedFolio)}`}
             </DialogDescription>
           </DialogHeader>
 
@@ -486,10 +493,10 @@ th{background:#f5f5f5}
               <div className="grid gap-2 max-w-md mx-auto">
                 {folios.map(f => <Button key={f.id} variant="outline" onClick={() => onPickFolio?.(f.id)} className="justify-between h-auto py-2.5">
                     <span className="font-medium">
-                      {f.folio_number || f.id?.slice(0, 8)} · {f.folio_type?.toUpperCase?.()}
+                      {f.folio_number || f.id?.slice(0, 8)} · {folioPayorLabel(f)} · {f.status === 'closed' ? 'Kapalı' : f.status === 'open' ? 'Açık' : 'Durum belirtilmemiş'}
                     </span>
                     <span className="text-xs text-gray-500">
-                      Bakiye: {money(f.balance)}
+                      Bakiye: {formatCurrency(f.balance, f.currency || bookings.find(b => b.id === f.booking_id)?.currency || folioCurrency, { decimals: 2 })}
                     </span>
                   </Button>)}
               </div>
@@ -501,7 +508,7 @@ th{background:#f5f5f5}
                   <div className="px-4">
                     <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.guest', 'Misafir Bilgileri')}</div>
                     <div className="font-semibold text-gray-900 text-lg">
-                      {guests.find(g => g.id === selectedFolio.guest_id)?.name || '—'}
+                      {guestName}
                     </div>
                   </div>
                   <div className="px-6">
@@ -579,9 +586,10 @@ th{background:#f5f5f5}
                                     <div className="font-semibold">{charge.description}</div>
                                     {charge.voided && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">İPTAL</span>}
                                   </div>
-                                  <div className="text-xs text-gray-500 capitalize">{charge.charge_category}</div>
+                                  <div className="text-xs text-gray-500 capitalize">{folioCategoryLabel(charge)}</div>
                                   <div title={HOTEL_EVENT_TIME_ZONE_LABEL} className="text-xs text-gray-400">
-                                    {formatHotelEventTimestamp(charge.created_at || charge.date)}
+                                    {serviceTimingLabel(charge)}
+                                    {charge.created_at && <span className="block">Kayıt: {formatHotelEventTimestamp(charge.created_at)}</span>}
                                   </div>
                                   {hasDiscount && <div className="text-xs text-amber-700 mt-1">
                                       İndirim: −{money(charge.discount_amount)}
@@ -592,7 +600,7 @@ th{background:#f5f5f5}
                                   <div className="font-bold">{money(charge.total ?? charge.total_amount ?? charge.amount)}</div>
                                   {(hasVat || hasCity) && <div className="text-[11px] text-gray-500 leading-tight mt-0.5">
                                       {hasDiscount && <div>Net: {money(charge.amount)}</div>}
-                                      {hasVat && <div>KDV %{charge.vat_rate}: {money(charge.vat_amount)}</div>}
+                                      {hasVat && <div>KDV{charge.vat_rate != null ? ` %${charge.vat_rate}` : ' (oran belirtilmemiş)'}: {money(charge.vat_amount)}</div>}
                                       {hasCity && <div>Şehir vergisi: {money(charge.tax_amount)}</div>}
                                     </div>}
                                 </div>
@@ -622,10 +630,10 @@ th{background:#f5f5f5}
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-semibold capitalize">{payment.method}</span>
-                                  {payment.voided && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">İADE</span>}
+                                  <span className="font-semibold capitalize">{folioPaymentLabel(payment)}</span>
+                                  {payment.voided && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">İPTAL / İADE</span>}
                                 </div>
-                                <div className="text-xs text-gray-500 capitalize">{payment.payment_type}</div>
+                                <div className="text-xs text-gray-500 capitalize">{!isEffectivePayment(payment) ? 'Bakiye hesabına dahil değil' : isNonCashPayment(payment) ? 'Hesap mahsubu' : signedFolioPayment(payment) < 0 ? 'Ödeme iadesi' : 'Tahsilat'}</div>
                                 {payment.reference && <div className="text-xs text-gray-400">Ref: {payment.reference}</div>}
                                 <div className="text-xs text-gray-400">
                                   {formatHotelEventTimestamp(payment.created_at || payment.processed_at)} · {HOTEL_EVENT_TIME_ZONE_LABEL}
@@ -634,9 +642,9 @@ th{background:#f5f5f5}
                               </div>
                               <div className="text-right">
                                 <div className={`font-bold ${payment.voided ? 'text-gray-400 line-through' : 'text-green-600'}`}>
-                                  {money(payment.amount)}
+                                  {money(isEffectivePayment(payment) ? signedFolioPayment(payment) : payment.amount)}
                                 </div>
-                                {canWrite && !payment.voided && <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
+                                {canWrite && refundable(payment) && <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
                           setVoidTarget(payment);
                           setVoidReason('');
                         }}>
@@ -811,7 +819,7 @@ th{background:#f5f5f5}
             <DialogTitle>Ödeme İadesi</DialogTitle>
             <DialogDescription>
               {voidTarget && <>
-                  {voidTarget.method?.toUpperCase()} ödemesi {money(voidTarget.amount)} iade edilecek.
+                  {folioPaymentLabel(voidTarget)} ödemesi {money(voidTarget.amount)} iade edilecek.
                   {voidTarget.method === 'cash' && ' Nakit iadesi için açık bir vardiya gerekir.'}
                 </>}
             </DialogDescription>
@@ -839,12 +847,12 @@ th{background:#f5f5f5}
       <Dialog open={subDialog === 'proforma'} onOpenChange={o => !o && setSubDialog(null)}>
         <DialogContent className="z-[100] max-w-4xl max-h-[90vh] overflow-y-auto" overlayClassName="z-[90]">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Proforma Fatura</span>
+            <div className="flex items-center justify-between">
+              <DialogTitle>Proforma Fatura</DialogTitle>
               <Button type="button" size="sm" variant="outline" onClick={printProforma}>
                 <Printer className="w-4 h-4 mr-1" /> Yazdır
               </Button>
-            </DialogTitle>
+            </div>
             <DialogDescription>Taslak — yasal fatura yerine geçmez.</DialogDescription>
           </DialogHeader>
           {proforma && <div id="proforma-printable" className="space-y-4 text-sm">
@@ -902,13 +910,13 @@ th{background:#f5f5f5}
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {(proforma.charges || []).map(c => <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{new Date(c.date || c.created_at).toLocaleDateString()}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{serviceTimingLabel(c)}</td>
                           <td className="px-4 py-3 text-sm text-gray-800 font-medium">{c.description}{c.discount_reason ? <span className="text-xs text-gray-400 block font-normal">({c.discount_reason})</span> : ''}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.unit_price)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 text-center">{c.quantity}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.subtotal ?? c.amount)}</td>
-                          <td className="px-4 py-3 text-sm text-red-600 text-right tabular-nums">{fmt(c.discount_amount)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.amount)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.subtotal)}</td>
+                          <td className="px-4 py-3 text-sm text-red-600 text-right tabular-nums">{fmt(c.discount_amount ?? 0)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.net_amount)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.vat_amount)} <span className="text-xs text-gray-400">{c.vat_rate ? `(%${c.vat_rate})` : ''}</span></td>
                           <td className="px-4 py-3 text-sm text-gray-900 font-bold text-right tabular-nums">{money(c.total)}</td>
                         </tr>)}
@@ -920,6 +928,7 @@ th{background:#f5f5f5}
               <div className="grid grid-cols-12 gap-8 mb-6">
                 <div className="col-span-5">
                   <div className="text-sm font-bold text-gray-800 mb-2 border-b pb-2">KDV Özeti</div>
+                  {proforma.totals?.tax_breakdown_complete === false && <p className="text-amber-700 text-xs mb-2">Bazı hareketlerin vergi ayrıntısı eksik. Eksik matrah ve vergi toplamları hesaplanmadı; mali belge için doğrulayın.</p>}
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="text-gray-500 border-b border-gray-100">
@@ -929,8 +938,8 @@ th{background:#f5f5f5}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {(proforma.vat_breakdown || []).map(g => <tr key={g.vat_rate}>
-                          <td className="py-2 text-gray-600">% {g.vat_rate}</td>
+                      {(proforma.vat_breakdown || []).map(g => <tr key={g.vat_rate ?? 'unknown'}>
+                          <td className="py-2 text-gray-600">{g.vat_rate == null ? 'Oran belirtilmemiş' : `% ${g.vat_rate}`}</td>
                           <td className="py-2 text-gray-800 text-right tabular-nums">{money(g.net)}</td>
                           <td className="py-2 text-gray-800 text-right tabular-nums">{money(g.vat_amount)}</td>
                         </tr>)}
@@ -964,9 +973,11 @@ th{background:#f5f5f5}
                       <span className="tabular-nums">{money(proforma.totals?.grand_total)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600 mt-2">
-                      <span>Tahsil Edilen (Ödenen)</span>
-                      <span className="tabular-nums font-medium text-gray-800">{money(proforma.totals?.payments_total)}</span>
+                      <span>Net tahsilat (iadeler düşüldü)</span>
+                      <span className="tabular-nums font-medium text-gray-800">{money(proforma.totals?.collections_total ?? proforma.totals?.payments_total)}</span>
                     </div>
+                    {!!proforma.totals?.non_cash_total && <div className="flex justify-between text-sm text-gray-600"><span>İkram / cari / güvence mahsupları</span><span>{money(proforma.totals.non_cash_total)}</span></div>}
+                    {!!proforma.totals?.opening_balance && <div className="flex justify-between text-sm text-gray-600"><span>Önceki hesap bakiyesi</span><span>{money(proforma.totals.opening_balance)}</span></div>}
                     <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between text-lg font-bold text-emerald-600">
                       <span>Kalan Bakiye</span>
                       <span className="tabular-nums">{money(proforma.totals?.balance_due)}</span>
@@ -994,14 +1005,14 @@ th{background:#f5f5f5}
             <div>
               <Label className="text-sm font-semibold text-gray-700 mb-2 block">Hedef Folio *</Label>
               <Select value={transferTargetId} onValueChange={setTransferTargetId}>
-                <SelectTrigger className="h-14 bg-gray-50 border-gray-200"><SelectValue placeholder="Aktarım yapılacak folio'yu seçin" /></SelectTrigger>
+                <SelectTrigger className="h-auto min-h-14 bg-gray-50 border-gray-200 text-left"><SelectValue placeholder="Aktarım yapılacak folio'yu seçin">{transferTargetId ? (() => { const f = openFolios.find(row => row.id === transferTargetId); return f ? `${f.folio_number} · ${f.guest_name || 'Misafir'} · Oda ${f.room_number || 'atanmamış'} · ${f.currency}` : null; })() : undefined}</SelectValue></SelectTrigger>
                 <SelectContent className="z-[110] max-w-xl">
                   {openFolios.length === 0 ? <SelectItem value="__none__" disabled>Aktarılabilir açık folio yok</SelectItem> : openFolios.map(f => <SelectItem key={f.id} value={f.id} className="py-3 px-4 cursor-pointer focus:bg-gray-50">
                       <div className="flex flex-wrap items-center justify-between gap-3 w-full min-w-0">
                         <div className="flex flex-col text-left">
                           <span className="font-bold text-gray-800 text-base">{f.folio_number}</span>
                           <span className="text-sm text-gray-600">{f.guest_name || 'Misafir'} · Oda {f.room_number || 'atanmamış'} · {f.currency}</span>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{f.folio_type || 'GUEST'} FOLIO</span>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{folioPayorLabel(f)} hesabı</span>
                         </div>
                         <div className="flex flex-col items-end">
                           <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Güncel Bakiye</span>
@@ -1025,7 +1036,7 @@ th{background:#f5f5f5}
                     <input type="checkbox" className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" checked={transferChargeIds.includes(c.id)} onChange={() => toggleTransferCharge(c.id)} />
                     <div className="flex-1">
                       <div className="font-semibold text-gray-800 text-sm group-hover:text-blue-900 transition-colors">{c.description}</div>
-                      <div className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">{c.charge_category} • {new Date(c.date || c.created_at).toLocaleDateString()}</div>
+                      <div className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">{folioCategoryLabel(c)} • {serviceTimingLabel(c)}</div>
                     </div>
                     <div className="text-right">
                       <div className="font-bold tabular-nums text-gray-900">{money(c.total ?? c.amount)}</div>

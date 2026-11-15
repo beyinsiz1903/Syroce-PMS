@@ -44,10 +44,14 @@ class FolioRepository:
         await db.outbox_events.insert_one(event_doc)
 
     async def get_charges(self, tenant_id: str, folio_id: str) -> list[dict[str, Any]]:
-        return await db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+        from modules.pms_core.service_timing import project_service_times
+
+        charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(None)
+        await project_service_times(db, tenant_id, charges)
+        return charges
 
     async def get_payments(self, tenant_id: str, folio_id: str) -> list[dict[str, Any]]:
-        return await db.payments.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+        return await db.payments.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(None)
 
     async def get_balance(self, tenant_id: str, folio_id: str) -> float:
         return await calculate_folio_balance(folio_id, tenant_id)

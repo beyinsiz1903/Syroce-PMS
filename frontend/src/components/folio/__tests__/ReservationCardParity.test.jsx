@@ -115,7 +115,60 @@ it('occupancy edits preserve all prices/dates and send explicit children ages', 
   fireEvent.change(screen.getByLabelText('2. çocuk yaşı'), { target: { value: '4' } });
   fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
-  expect(axios.put).toHaveBeenCalledWith('/pms/bookings/b1', { adults: 3, children: 2, children_ages: [8, 4] });
+  expect(axios.put).toHaveBeenCalledWith('/pms/bookings/b1', { adults: 3, children: 2, children_ages: [8, 4] }, { headers: { 'Idempotency-Key': expect.any(String) } });
+});
+
+it('retries an uncertain occupancy edit with the original key and blocks a different edit', async () => {
+  axios.put.mockRejectedValue(new Error('Network lost'));
+  render(<ReservationOccupancyEditor booking={booking} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Konuk sayısını düzenle' }));
+  fireEvent.change(screen.getByLabelText('Yetişkin sayısı'), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+  await screen.findByRole('alert');
+  const key = axios.put.mock.calls[0][2].headers['Idempotency-Key'];
+  expect(key).toMatch(/^[\da-f-]{36}$/i);
+  fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Kaydet' })).toBeEnabled());
+  expect(axios.put.mock.calls[1][2].headers['Idempotency-Key']).toBe(key);
+  fireEvent.change(screen.getByLabelText('Yetişkin sayısı'), { target: { value: '4' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Önceki kaydın sonucu doğrulanamadı');
+  expect(axios.put).toHaveBeenCalledTimes(2);
+});
+
+it('locks an occupancy save until it completes and allows a corrected rejected payload', async () => {
+  const pending = deferred(); axios.put.mockReturnValueOnce(pending.promise);
+  render(<ReservationOccupancyEditor booking={booking} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Konuk sayısını düzenle' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+  expect(axios.put).toHaveBeenCalledTimes(1);
+  await act(async () => pending.resolve(Promise.reject({ response: { status: 422, data: { detail: 'Capacity exceeded' } } })));
+  fireEvent.change(screen.getByLabelText('Yetişkin sayısı'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
+  expect(axios.put.mock.calls[1][2].headers['Idempotency-Key']).not.toBe(axios.put.mock.calls[0][2].headers['Idempotency-Key']);
+});
+
+it('rejects a partially typed native date instead of creating an unbounded routing rule', async () => {
+  render(<FolioCardTools booking={booking} folios={folios} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Masrafları yönlendir' }));
+  chooseMerge();
+  const date = screen.getByLabelText('İlk iş günü');
+  // Safari reports an incomplete day/month/year as an empty value and badInput.
+  Object.defineProperty(date, 'validity', { configurable: true, value: { valid: false, badInput: true } });
+  fireEvent.input(date);
+  expect(screen.getByLabelText('Kaynak, hedef ve işlem kapsamını kontrol ettim.')).not.toBeChecked();
+  fireEvent.click(screen.getByLabelText('Kaynak, hedef ve işlem kapsamını kontrol ettim.'));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Kuralı kaydet' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Kuralı kaydet' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('gün, ay ve yıl');
+  expect(axios.post).not.toHaveBeenCalled();
+  Object.defineProperty(date, 'validity', { configurable: true, value: { valid: true, badInput: false } });
+  expect(screen.getByText(/Başlangıç sınırı yok/)).toHaveTextContent('Bitiş sınırı yok');
+  fireEvent.click(screen.getByRole('button', { name: 'Kuralı kaydet' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/folio-routing', expect.objectContaining({ from_date: null, to_date: null })));
 });
 
 

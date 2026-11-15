@@ -12,6 +12,7 @@ export default function ReservationOccupancyEditor({ booking, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const lock = useRef(false);
+  const intent = useRef(null);
   const save = async e => {
     e.preventDefault();
     if (lock.current) return;
@@ -21,10 +22,22 @@ export default function ReservationOccupancyEditor({ booking, onSaved }) {
     }
     lock.current = true; setBusy(true); setError('');
     try {
-      await axios.put(`/pms/bookings/${booking.id}`, { adults: a, children: c, children_ages: ages.map(Number) });
+      const payload = { adults: a, children: c, children_ages: ages.map(Number) };
+      const signature = JSON.stringify([booking.id, payload]);
+      if (intent.current && intent.current.signature !== signature) {
+        setError('Önceki kaydın sonucu doğrulanamadı. Aynı değerlerle tekrar deneyin veya kartı yenileyip konuk sayısını kontrol edin.');
+        return;
+      }
+      intent.current ||= { signature, key: window.crypto.randomUUID() };
+      await axios.put(`/pms/bookings/${booking.id}`, payload, { headers: { 'Idempotency-Key': intent.current.key } });
+      intent.current = null;
       setOpen(false); toast.success('Konuk sayısı güncellendi');
       void Promise.resolve().then(() => onSaved?.()).catch(() => toast.warning('Konuk sayısı kaydedildi. Kartı yenileyin.'));
-    } catch (err) { setError(apiErrorText(err, 'Konuk sayısı güncellenemedi')); }
+    } catch (err) {
+      // Retry a lost response with the same key, never a second booking edit.
+      if (err.response?.status >= 400 && err.response.status < 500 && err.response.status !== 409) intent.current = null;
+      setError(apiErrorText(err, 'Konuk sayısı güncellenemedi'));
+    }
     finally { lock.current = false; setBusy(false); }
   };
   if (!open) return <Button size="sm" variant="outline" onClick={() => { setAdults(String(booking.adults ?? '')); setChildren(String(booking.children ?? '')); setAges(Array.from({ length: booking.children || 0 }, (_, i) => String(booking.children_ages?.[i] ?? ''))); setOpen(true); }}>Konuk sayısını düzenle</Button>;
