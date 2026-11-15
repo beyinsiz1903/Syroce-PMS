@@ -120,3 +120,43 @@ async def test_failed_reservation_readback_rolls_back_transfer_instead_of_acknow
     assert (await transfer_db.folio_charges.find_one({"id": "service"}))["booking_id"] == "b"
     assert (await transfer_db.folios.find_one({"id": "actual-folio"}))["balance"] == 150
     assert await transfer_db.folio_operations.count_documents({}) == 0
+
+
+@pytest.mark.parametrize('receipt_amount', [100, 150, 468])
+async def test_paid_or_credit_source_can_move_service_without_moving_receipt(transfer_db, receipt_amount):
+    # Positive-but-smaller debt, exactly settled and -318 credit source all
+    # transfer the same150 service. The receipt remains with its original guest.
+    await transfer_db.payments.insert_one({'id': 'receipt', 'tenant_id': 't', 'booking_id': 'b',
+        'folio_id': 'actual-folio', 'amount': receipt_amount, 'currency': 'TRY', 'method': 'cash', 'status': 'completed'})
+    await transfer_db.folios.update_one({'id': 'actual-folio'}, {'$set': {'balance': 150 - receipt_amount}})
+    before_receipt = await transfer_db.payments.find_one({'id': 'receipt'})
+    request = body(amount=150)
+    result = await route.transfer_charges(request, actor())
+    assert result['amount'] == 150
+    assert (await route.transfer_charges(request, actor())) == result
+    assert (await transfer_db.folios.find_one({'id': 'actual-folio'}))['balance'] == -receipt_amount
+    assert (await transfer_db.folios.find_one({'id': 'target'}))['balance'] == 150
+    # Reservation.balance is payable-only; the signed credit stays on folio.
+    assert (await transfer_db.bookings.find_one({'id': 'b'}))['balance'] == 0
+    assert (await transfer_db.bookings.find_one({'id': 'b2'}))['balance'] == 150
+    assert await transfer_db.payments.find_one({'id': 'receipt'}) == before_receipt
+    assert await transfer_db.payments.count_documents({}) == 1
+    assert await transfer_db.folio_charges.count_documents({}) == 1
+    assert await transfer_db.folio_operations.count_documents({}) == 1
+    audit = await transfer_db.pms_audit_trail.find_one({'action': 'folio_cross_room_transfer'})
+    assert audit['metadata']['before']['actual-folio'] == 150 - receipt_amount
+    assert audit['metadata']['after']['actual-folio'] == -receipt_amount
+    # The same source must return safely, without re-posting a receipt or tax.
+    await route.transfer_charges(body(from_folio_id='target', to_folio_id='actual-folio'), actor())
+    assert (await transfer_db.folios.find_one({'id': 'actual-folio'}))['balance'] == 150 - receipt_amount
+    assert (await transfer_db.folios.find_one({'id': 'target'}))['balance'] == 0
+    assert await transfer_db.payments.find_one({'id': 'receipt'}) == before_receipt
+
+
+async def test_selected_amount_mismatch_still_rejects_credit_source_atomically(transfer_db):
+    await transfer_db.payments.insert_one({'id': 'receipt', 'tenant_id': 't', 'booking_id': 'b',
+        'folio_id': 'actual-folio', 'amount': 468, 'currency': 'TRY', 'method': 'cash', 'status': 'completed'})
+    with pytest.raises(HTTPException, match='seçilen hizmetlerin toplamıyla'):
+        await route.transfer_charges(body(amount=132), actor())
+    assert (await transfer_db.folio_charges.find_one({'id': 'service'}))['folio_id'] == 'actual-folio'
+    assert await transfer_db.folio_operations.count_documents({}) == 0
