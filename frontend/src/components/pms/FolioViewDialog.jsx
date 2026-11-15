@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
+import POSRoomChargeReversal from '@/components/folio/POSRoomChargeReversal';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
@@ -605,6 +606,10 @@ th{background:#f5f5f5}
                                     </div>}
                                 </div>
                               </div>
+                              {charge.source_pos_order_id && !charge.voided && Number(charge.total ?? charge.total_amount ?? charge.amount) > 0 && <div className="mt-3">
+                                <POSRoomChargeReversal key={`${selectedFolio.id}:${charge.source_pos_order_id}`} orderId={charge.source_pos_order_id} disabled={!canWrite || writing}
+                                  onChanged={() => refreshAfterWrite(onChargePosted)} />
+                              </div>}
                               {isExpanded && hasLineItems && <div className="mt-3 pt-3 border-t space-y-1">
                                   {charge.line_items.map((li, i) => <div key={li.id || i} className="flex justify-between text-xs text-gray-600">
                                       <span>{li.name || li.description} x{li.quantity}</span>
@@ -845,7 +850,7 @@ th{background:#f5f5f5}
       </Dialog>
 
       <Dialog open={subDialog === 'proforma'} onOpenChange={o => !o && setSubDialog(null)}>
-        <DialogContent className="z-[100] max-w-4xl max-h-[90vh] overflow-y-auto" overlayClassName="z-[90]">
+        <DialogContent className="z-[100] max-w-4xl max-h-[90vh] min-w-0 overflow-y-auto overflow-x-hidden" overlayClassName="z-[90]">
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle>Proforma Fatura</DialogTitle>
@@ -855,8 +860,8 @@ th{background:#f5f5f5}
             </div>
             <DialogDescription>Taslak — yasal fatura yerine geçmez.</DialogDescription>
           </DialogHeader>
-          {proforma && <div id="proforma-printable" className="space-y-4 text-sm">
-              <div className="flex justify-between items-start border-b-2 border-gray-200 pb-6 mb-6">
+          {proforma && <div id="proforma-printable" className="min-w-0 space-y-4 text-sm">
+              <div className="flex flex-wrap gap-4 justify-between items-start border-b-2 border-gray-200 pb-6 mb-6">
                 <div>
                   <div className="text-2xl font-black text-gray-900 tracking-tight">{proforma.hotel?.name || '—'}</div>
                   <div className="text-sm text-gray-500 mt-1">{proforma.hotel?.address || ''}</div>
@@ -864,22 +869,22 @@ th{background:#f5f5f5}
                     <span className="font-medium text-gray-700">VKN:</span> {proforma.hotel.tax_no} {proforma.hotel?.tax_office ? `(${proforma.hotel.tax_office})` : ''}
                   </div>}
                 </div>
-                <div className="text-right">
+                <div className="min-w-0 max-w-full break-words text-right">
                   <div className="text-3xl font-light text-gray-400 tracking-widest uppercase mb-2">PROFORMA</div>
                   <div className="text-sm text-gray-700"><span className="font-medium">Fatura No:</span> {proforma.folio?.folio_number}</div>
                   <div className="text-sm text-gray-700"><span className="font-medium">Düzenleme zamanı:</span> {formatHotelEventTimestamp(proforma.generated_at)} · {HOTEL_EVENT_TIME_ZONE_LABEL}</div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-8 mb-8">
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <div className="min-w-0 break-words bg-gray-50 rounded-lg p-4 border border-gray-100">
                   <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Müşteri Bilgileri</div>
                   <div className="font-bold text-gray-800 text-lg">{proforma.guest?.name || '—'}</div>
                   {proforma.guest?.email && <div className="text-sm text-gray-600 mt-1">{proforma.guest.email}</div>}
                   {proforma.guest?.phone && <div className="text-sm text-gray-600 mt-1">{proforma.guest.phone}</div>}
                   {proforma.guest?.tc_no && <div className="text-sm text-gray-600 mt-1"><span className="font-medium">TC/Pasaport:</span> {proforma.guest.tc_no}</div>}
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                <div className="min-w-0 break-words bg-gray-50 rounded-lg p-4 border border-gray-100">
                   <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Konaklama Detayları</div>
                   {proforma.booking?.room_number && <div className="text-sm text-gray-700"><span className="font-medium">Oda:</span> {proforma.booking.room_number}</div>}
                   {proforma.booking?.check_in && <div className="text-sm text-gray-700 mt-1">
@@ -893,7 +898,7 @@ th{background:#f5f5f5}
 
               <div className="mb-8">
                 <div className="text-lg font-bold text-gray-800 mb-3">Hizmet Dökümü</div>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="min-w-0 max-w-full border border-gray-200 rounded-lg overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
