@@ -42,20 +42,23 @@ const FolioViewDialog = ({
   onClose,
   selectedFolio,
   folios = [],
-  folioCharges,
-  folioPayments,
-  guests,
+  folioCharges = [],
+  folioPayments = [],
+  guests = [],
   bookings = [],
   onChargePosted,
   onPaymentPosted,
   onPickFolio,
-  isLoading = false
+  isLoading = false,
+  readOnly = false
 }) => {
   const {
     t
   } = useTranslation();
-  const folioCurrency = (selectedFolio?.currency || bookings.find(b => b.id === selectedFolio?.booking_id)?.currency || cachedTenantCurrency()).toUpperCase();
+  const folioCurrency = (selectedFolio?.currency || bookings.find(b => b.id === selectedFolio?.booking_id)?.currency || cachedTenantCurrency()).toUpperCase().replace(/^TL$/, 'TRY');
+  const canWrite = !readOnly && !isLoading && selectedFolio?.status === 'open';
   const writeLock = useRef(false);
+  const viewGeneration = useRef(0);
   const writeIntents = useRef({});
   const [writing, setWriting] = useState(false);
   const [receivedToTryRate, setReceivedToTryRate] = useState('');
@@ -98,10 +101,27 @@ const FolioViewDialog = ({
     notes: ''
   });
   useEffect(() => {
+    viewGeneration.current += 1;
     setSubDialog(null);
+    setVoidTarget(null);
+    setVoidReason('');
+    setPinGate({ open: false, label: '', onVerified: null });
+    setPinValue('');
+    setPinSubmitting(false);
+    setTransferChargeIds([]);
+    setTransferTargetId('');
+    setOpenFolios([]);
+    setProforma(null);
+    setProformaLoading(false);
+    setOperations(null);
+    setOpsLoading(false);
+    setExpandedChargeItems({});
     setReceivedToTryRate('');
+    setNewFolioCharge({ charge_category: 'room', description: '', amount: 0, quantity: 1,
+      auto_calculate_tax: false, vat_rate: '0', discount_amount: 0, discount_reason: '' });
     setNewFolioPayment({ amount: 0, method: 'card', reference: '', notes: '' });
-  }, [selectedFolio?.id]);
+    return () => { viewGeneration.current += 1; };
+  }, [selectedFolio?.id, open]);
   const getWriteIntent = (kind, payload) => {
     const scope = `${kind}:${selectedFolio.id}`;
     // Payment classification is derived from a balance that can refresh after
@@ -142,7 +162,7 @@ const FolioViewDialog = ({
   }, [newFolioCharge.amount, newFolioCharge.quantity, newFolioCharge.discount_amount, newFolioCharge.vat_rate]);
   const handlePostCharge = async e => {
     e.preventDefault();
-    if (!selectedFolio || writeLock.current) return;
+    if (!canWrite || writeLock.current) return;
     if (chargePreview.disc > 0 && !newFolioCharge.discount_reason.trim()) {
       toast.error('İndirim için neden zorunlu');
       return;
@@ -194,7 +214,7 @@ const FolioViewDialog = ({
   };
   const handlePostPayment = async e => {
     e.preventDefault();
-    if (!selectedFolio || writeLock.current) return;
+    if (!canWrite || writeLock.current) return;
     const amount = parseMoney(newFolioPayment.amount);
     const rate = parseExchangeRate(receivedToTryRate);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -258,6 +278,7 @@ const FolioViewDialog = ({
       toast.error('PIN gerekli');
       return;
     }
+    const generation = viewGeneration.current;
     setPinSubmitting(true);
     try {
       await axios.post(
@@ -265,6 +286,7 @@ const FolioViewDialog = ({
         { pin },
         { _skipAuthRetry: true },
       );
+      if (generation !== viewGeneration.current) return;
       const cb = pinGate.onVerified;
       closePinGate();
       if (cb) await cb();
@@ -282,23 +304,25 @@ const FolioViewDialog = ({
     }
   };
   const doVoidPayment = async () => {
-    if (!selectedFolio || !voidTarget) return;
+    if (!canWrite || !voidTarget || writeLock.current) return;
+    writeLock.current = true;
     setVoidLoading(true);
     try {
       await axios.post(`/folio/${selectedFolio.id}/payment/${voidTarget.id}/void`, {
         reason: voidReason.trim()
       });
       toast.success('Ödeme iade edildi');
-      onPaymentPosted(selectedFolio.id);
+      await refreshAfterWrite(onPaymentPosted);
       setVoidTarget(null);
       setVoidReason('');
     } catch (error) {
       toast.error(error.response?.data?.detail || 'İade başarısız');
     }
+    writeLock.current = false;
     setVoidLoading(false);
   };
   const handleVoidPayment = () => {
-    if (!selectedFolio || !voidTarget) return;
+    if (!canWrite || !voidTarget || writeLock.current) return;
     if (!voidReason.trim()) {
       toast.error('İade nedeni zorunlu');
       return;
@@ -307,30 +331,37 @@ const FolioViewDialog = ({
   };
   const loadProforma = async () => {
     if (!selectedFolio) return;
+    const generation = viewGeneration.current;
     setProformaLoading(true);
     try {
       const res = await axios.post(`/folio/${selectedFolio.id}/proforma`);
+      if (generation !== viewGeneration.current) return;
       setProforma(res.data);
       setSubDialog('proforma');
     } catch (error) {
+      if (generation !== viewGeneration.current) return;
       toast.error(error.response?.data?.detail || 'Proforma alınamadı');
     }
     setProformaLoading(false);
   };
   const loadOperations = async () => {
     if (!selectedFolio) return;
+    const generation = viewGeneration.current;
     setOpsLoading(true);
     try {
       const res = await axios.get(`/folio/${selectedFolio.id}/operations`);
+      if (generation !== viewGeneration.current) return;
       setOperations(res.data);
       setSubDialog('operations');
     } catch (error) {
+      if (generation !== viewGeneration.current) return;
       toast.error(error.response?.data?.detail || 'Geçmiş alınamadı');
     }
     setOpsLoading(false);
   };
   const openTransferDialog = async () => {
-    if (!selectedFolio) return;
+    if (!canWrite) return;
+    const generation = viewGeneration.current;
     setTransferTargetId('');
     setTransferChargeIds([]);
     setTransferReason('');
@@ -340,20 +371,22 @@ const FolioViewDialog = ({
           status: 'open', limit: 500
         }
       });
+      if (generation !== viewGeneration.current) return;
       const list = (res.data?.folios || res.data || []).filter(f => f.id !== selectedFolio.id &&
-        f.booking_id && String(f.currency || '').toUpperCase() === folioCurrency);
+        f.booking_id && String(f.currency || '').toUpperCase().replace(/^TL$/, 'TRY') === folioCurrency);
       setOpenFolios(list);
     } catch (error) {
+      if (generation !== viewGeneration.current) return;
       toast.error(error.response?.data?.detail || 'Açık folio listesi alınamadı');
       setOpenFolios([]);
     }
-    setSubDialog('transfer');
+    if (generation === viewGeneration.current) setSubDialog('transfer');
   };
   const toggleTransferCharge = id => {
     setTransferChargeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
   const handleTransferSubmit = async () => {
-    if (!selectedFolio || writeLock.current) return;
+    if (!canWrite || writeLock.current) return;
     if (!transferTargetId) {
       toast.error('Hedef folio seçin');
       return;
@@ -415,7 +448,7 @@ th{background:#f5f5f5}
   };
   return <>
       <Dialog open={open} onOpenChange={o => !o && onClose()}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="z-[80] max-w-5xl max-h-[90vh] overflow-y-auto" overlayClassName="z-[70]">
           <DialogHeader>
             <DialogTitle>{t('pms.folioManagement', 'Folio Yönetimi')}</DialogTitle>
             <DialogDescription>
@@ -446,7 +479,7 @@ th{background:#f5f5f5}
               </div>
             </div>}
 
-          {!selectedFolio && folios.length > 0 && <div className="py-8 space-y-3" data-testid="folio-picker">
+          {!isLoading && !selectedFolio && folios.length > 0 && <div className="py-8 space-y-3" data-testid="folio-picker">
               <p className="text-sm text-gray-600 text-center">
                 Bu rezervasyonda birden fazla folyo var — açmak istediğinizi seçin:
               </p>
@@ -462,7 +495,7 @@ th{background:#f5f5f5}
               </div>
             </div>}
 
-          {selectedFolio && <div className="space-y-6">
+          {!isLoading && selectedFolio && <div className="space-y-6">
               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                 <div className="grid grid-cols-3 gap-6 divide-x divide-gray-100">
                   <div className="px-4">
@@ -493,23 +526,23 @@ th{background:#f5f5f5}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
-                <div className="flex gap-2">
-                  <Button disabled={writing || selectedFolio.status === 'closed'} onClick={() => setSubDialog('post-charge')} variant="default" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+              <div className="flex flex-wrap gap-2 items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={writing || !canWrite} onClick={() => setSubDialog('post-charge')} variant="default" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
                     <Plus className="w-4 h-4 mr-1.5" /> İşlem Ekle
                   </Button>
-                  <Button disabled={writing || selectedFolio.status === 'closed'} onClick={() => setSubDialog('post-payment')} variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+                  <Button disabled={writing || !canWrite} onClick={() => setSubDialog('post-payment')} variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
                     <Plus className="w-4 h-4 mr-1.5" /> Ödeme Ekle
                   </Button>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button onClick={loadProforma} variant="outline" disabled={proformaLoading} className="bg-white hover:bg-gray-50">
                     <FileText className="w-4 h-4 mr-1.5 text-gray-500" /> {proformaLoading ? 'Hazırlanıyor…' : 'Proforma Fatura'}
                   </Button>
                   <Button onClick={loadOperations} variant="outline" disabled={opsLoading} className="bg-white hover:bg-gray-50">
                     <ArrowLeftRight className="w-4 h-4 mr-1.5 text-gray-500" /> {opsLoading ? 'Yükleniyor…' : 'Transfer Geçmişi'}
                   </Button>
-                  <Button onClick={openTransferDialog} variant="outline" className="bg-white hover:bg-gray-50">
+                  <Button disabled={!canWrite || writing} onClick={openTransferDialog} variant="outline" className="bg-white hover:bg-gray-50">
                     <Send className="w-4 h-4 mr-1.5 text-gray-500" /> İşlem Aktar
                   </Button>
                 </div>
@@ -603,7 +636,7 @@ th{background:#f5f5f5}
                                 <div className={`font-bold ${payment.voided ? 'text-gray-400 line-through' : 'text-green-600'}`}>
                                   {money(payment.amount)}
                                 </div>
-                                {!payment.voided && <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
+                                {canWrite && !payment.voided && <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
                           setVoidTarget(payment);
                           setVoidReason('');
                         }}>
@@ -621,7 +654,7 @@ th{background:#f5f5f5}
       </Dialog>
 
       <Dialog open={subDialog === 'post-charge'} onOpenChange={o => !o && setSubDialog(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="z-[100] max-w-2xl" overlayClassName="z-[90]">
           <DialogHeader>
             <DialogTitle>İşlem Ekle</DialogTitle>
           </DialogHeader>
@@ -634,7 +667,7 @@ th{background:#f5f5f5}
                 charge_category: v
               })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[110]">
                     <SelectItem value="room">Konaklama</SelectItem>
                     <SelectItem value="food">Yiyecek</SelectItem>
                     <SelectItem value="beverage">İçecek</SelectItem>
@@ -656,7 +689,7 @@ th{background:#f5f5f5}
                 vat_rate: v
               })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[110]">
                     {VAT_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -711,13 +744,13 @@ th{background:#f5f5f5}
               <div className="text-[11px] text-gray-500">Şehir vergisi (varsa) sunucuda otomatik eklenir.</div>
             </div>
 
-            <Button type="submit" disabled={writing} className="w-full">{writing ? 'İşleniyor…' : 'Kaydet'}</Button>
+            <Button type="submit" disabled={writing || !canWrite} className="w-full">{writing ? 'İşleniyor…' : 'Kaydet'}</Button>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={subDialog === 'post-payment'} onOpenChange={o => !o && setSubDialog(null)}>
-        <DialogContent>
+        <DialogContent className="z-[100]" overlayClassName="z-[90]">
           <DialogHeader>
             <DialogTitle>Ödeme Ekle</DialogTitle>
           </DialogHeader>
@@ -741,7 +774,7 @@ th{background:#f5f5f5}
               method: v
             })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-[110]">
                   <SelectItem value="cash">Nakit</SelectItem>
                   <SelectItem value="card">Kredi Kartı</SelectItem>
                   <SelectItem value="bank_transfer">Banka Havalesi</SelectItem>
@@ -762,7 +795,7 @@ th{background:#f5f5f5}
               reference: e.target.value
             })} />
             </div>
-            <Button type="submit" disabled={writing} className="w-full">{writing ? 'İşleniyor…' : 'Kaydet'}</Button>
+            <Button type="submit" disabled={writing || !canWrite} className="w-full">{writing ? 'İşleniyor…' : 'Kaydet'}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -773,7 +806,7 @@ th{background:#f5f5f5}
         setVoidReason('');
       }
     }}>
-        <DialogContent>
+        <DialogContent className="z-[100]" overlayClassName="z-[90]">
           <DialogHeader>
             <DialogTitle>Ödeme İadesi</DialogTitle>
             <DialogDescription>
@@ -795,7 +828,7 @@ th{background:#f5f5f5}
             }}>
                 Vazgeç
               </Button>
-              <Button type="button" onClick={handleVoidPayment} disabled={voidLoading || !voidReason.trim()} className="bg-red-600 hover:bg-red-700">
+              <Button type="button" onClick={handleVoidPayment} disabled={!canWrite || voidLoading || !voidReason.trim()} className="bg-red-600 hover:bg-red-700">
                 {voidLoading ? 'İşleniyor...' : 'İadeyi Onayla'}
               </Button>
             </div>
@@ -804,7 +837,7 @@ th{background:#f5f5f5}
       </Dialog>
 
       <Dialog open={subDialog === 'proforma'} onOpenChange={o => !o && setSubDialog(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="z-[100] max-w-4xl max-h-[90vh] overflow-y-auto" overlayClassName="z-[90]">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Proforma Fatura</span>
@@ -950,7 +983,7 @@ th{background:#f5f5f5}
       </Dialog>
 
       <Dialog open={subDialog === 'transfer'} onOpenChange={o => !o && setSubDialog(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="z-[100] max-w-2xl max-h-[90vh] overflow-y-auto" overlayClassName="z-[90]">
           <DialogHeader>
             <DialogTitle>İşlem Aktar</DialogTitle>
             <DialogDescription>
@@ -962,9 +995,9 @@ th{background:#f5f5f5}
               <Label className="text-sm font-semibold text-gray-700 mb-2 block">Hedef Folio *</Label>
               <Select value={transferTargetId} onValueChange={setTransferTargetId}>
                 <SelectTrigger className="h-14 bg-gray-50 border-gray-200"><SelectValue placeholder="Aktarım yapılacak folio'yu seçin" /></SelectTrigger>
-                <SelectContent className="max-w-xl">
+                <SelectContent className="z-[110] max-w-xl">
                   {openFolios.length === 0 ? <SelectItem value="__none__" disabled>Aktarılabilir açık folio yok</SelectItem> : openFolios.map(f => <SelectItem key={f.id} value={f.id} className="py-3 px-4 cursor-pointer focus:bg-gray-50">
-                      <div className="flex items-center justify-between w-full min-w-[400px]">
+                      <div className="flex flex-wrap items-center justify-between gap-3 w-full min-w-0">
                         <div className="flex flex-col text-left">
                           <span className="font-bold text-gray-800 text-base">{f.folio_number}</span>
                           <span className="text-sm text-gray-600">{f.guest_name || 'Misafir'} · Oda {f.room_number || 'atanmamış'} · {f.currency}</span>
@@ -1006,7 +1039,7 @@ th{background:#f5f5f5}
             </div>
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setSubDialog(null)}>Vazgeç</Button>
-              <Button type="button" onClick={handleTransferSubmit} disabled={transferLoading || !transferTargetId || transferChargeIds.length === 0 || !transferReason.trim()}>
+              <Button type="button" onClick={handleTransferSubmit} disabled={!canWrite || transferLoading || !transferTargetId || transferChargeIds.length === 0 || !transferReason.trim()}>
                 {transferLoading ? 'Aktarılıyor…' : 'Aktar'}
               </Button>
             </div>
@@ -1015,7 +1048,7 @@ th{background:#f5f5f5}
       </Dialog>
 
       <Dialog open={subDialog === 'operations'} onOpenChange={o => !o && setSubDialog(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="z-[100] max-w-3xl max-h-[80vh] overflow-y-auto" overlayClassName="z-[90]">
           <DialogHeader>
             <DialogTitle>Transfer Geçmişi</DialogTitle>
             <DialogDescription>{operations?.folio_number} ({operations?.count || 0} kayıt)</DialogDescription>
@@ -1051,7 +1084,7 @@ th{background:#f5f5f5}
       <Dialog open={pinGate.open} onOpenChange={v => {
       if (!v) closePinGate();
     }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="z-[120] max-w-sm" overlayClassName="z-[110]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyRound className="w-5 h-5" /> PIN doğrulama
