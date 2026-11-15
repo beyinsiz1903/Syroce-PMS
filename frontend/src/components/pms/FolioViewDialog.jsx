@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
+import POSRoomChargeReversal from '@/components/folio/POSRoomChargeReversal';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
@@ -605,6 +606,10 @@ th{background:#f5f5f5}
                                     </div>}
                                 </div>
                               </div>
+                              {charge.source_pos_order_id && !charge.voided && Number(charge.total ?? charge.total_amount ?? charge.amount) > 0 && <div className="mt-3">
+                                <POSRoomChargeReversal key={`${selectedFolio.id}:${charge.source_pos_order_id}`} orderId={charge.source_pos_order_id} disabled={!canWrite || writing}
+                                  onChanged={() => refreshAfterWrite(onChargePosted)} />
+                              </div>}
                               {isExpanded && hasLineItems && <div className="mt-3 pt-3 border-t space-y-1">
                                   {charge.line_items.map((li, i) => <div key={li.id || i} className="flex justify-between text-xs text-gray-600">
                                       <span>{li.name || li.description} x{li.quantity}</span>
