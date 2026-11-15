@@ -88,20 +88,39 @@ async def test_excel_preserves_row_currency_and_never_sums_mixed_currency(report
 async def test_pdf_uses_row_currency_and_discloses_partial_report(report_rows, monkeypatch):
     rendered = []
 
+    class URLFetcher:
+        def __init__(self, *, allowed_protocols):
+            assert allowed_protocols == {"https"}
+
     class HTML:
-        def __init__(self, string, **_kwargs):
+        def __init__(self, string, *, url_fetcher):
+            assert isinstance(url_fetcher, URLFetcher)
             rendered.append(string)
 
         def write_pdf(self):
             return b"%PDF-test-renderer"
 
-    monkeypatch.setitem(sys.modules, "weasyprint", SimpleNamespace(HTML=HTML, default_url_fetcher=lambda *_: None))
+    # WeasyPrint 70 no longer exports default_url_fetcher.
+    monkeypatch.setitem(sys.modules, "weasyprint", SimpleNamespace(HTML=HTML))
+    monkeypatch.setitem(sys.modules, "weasyprint.urls", SimpleNamespace(URLFetcher=URLFetcher))
     config = builder.ReportConfig(data_source="reservations", columns=["total_amount"])
     response = await builder.export_report_pdf(config, SimpleNamespace(tenant_id="A", role="admin"))
     assert response.media_type == "application/pdf"
     html = rendered[0]
     assert "100.10 EUR" in html and "200.00 USD" in html
     assert "TRY" not in html and "SINIRLI RAPOR" in html
+
+
+async def test_pdf_export_with_real_installed_renderer(report_rows):
+    try:
+        __import__("weasyprint")
+    except (ImportError, OSError):
+        pytest.skip("WeasyPrint and its native libraries are required")
+    config = builder.ReportConfig(data_source="reservations", columns=["total_amount"])
+    response = await builder.export_report_pdf(config, SimpleNamespace(tenant_id="A", role="admin"))
+    content = b"".join([chunk async for chunk in response.body_iterator])
+    assert response.media_type == "application/pdf"
+    assert content.startswith(b"%PDF-") and len(content) > 500
 
 
 @pytest.mark.parametrize("value", ["invalid", "2026-13-01", "2026-10-01junk", "2026-02-30"])

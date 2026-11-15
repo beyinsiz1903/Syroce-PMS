@@ -137,6 +137,8 @@ const ReportBuilder = () => {
   const [filters, setFilters] = useState([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const dateFromInput = useRef(null);
+  const dateToInput = useRef(null);
   const [datePreset, setDatePreset] = useState('');
   const [sortBy, setSortBy] = useState('');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -257,10 +259,23 @@ const ReportBuilder = () => {
     decimals: 2,
     compactDecimals: false
   });
+  const validateDateRange = () => {
+    // Safari exposes a partially typed date as an empty value with badInput.
+    // Treating it as an omitted boundary would export a different period.
+    if ([dateFromInput, dateToInput].some(input => input.current && !input.current.validity.valid)) {
+      toast.error('Başlangıç ve bitiş tarihlerini gün, ay ve yıl olarak tamamlayın.');
+      return false;
+    }
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      toast.error('Başlangıç tarihi bitiş tarihinden sonra olamaz');
+      return false;
+    }
+    return true;
+  };
   const generateReport = async (override = {}) => {
     if (!selectedSource) return toast.error(t('reportBuilder.selectSource'));
     if (selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
-    if (dateFrom && dateTo && dateFrom > dateTo) return toast.error('Başlangıç tarihi bitiş tarihinden sonra olamaz');
+    if (!validateDateRange()) return;
     setLoading(true);
     setReportData(null);
     setColumnLabels({});
@@ -305,6 +320,7 @@ const ReportBuilder = () => {
   };
   const exportFile = async format => {
     if (!selectedSource || selectedColumns.length === 0) return;
+    if (!validateDateRange()) return;
     setExporting(true);
     try {
       const res = await fetchWithRetry(`/api/reports/builder/export/${format}`, {
@@ -588,14 +604,14 @@ const ReportBuilder = () => {
             <div className="grid grid-cols-2 gap-3 max-w-md">
               <div>
                 <Label className="text-xs text-gray-500">Başlangıç</Label>
-                <Input type="date" value={dateFrom} onChange={e => {
+                <Input ref={dateFromInput} type="date" value={dateFrom} onChange={e => {
               setDateFrom(e.target.value);
               setDatePreset('');
             }} className="mt-1 h-9" data-testid="date-from-input" />
               </div>
               <div>
                 <Label className="text-xs text-gray-500">Bitiş</Label>
-                <Input type="date" value={dateTo} onChange={e => {
+                <Input ref={dateToInput} type="date" value={dateTo} onChange={e => {
               setDateTo(e.target.value);
               setDatePreset('');
             }} className="mt-1 h-9" data-testid="date-to-input" />

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ReportBuilder from '../ReportBuilder';
 import { fetchJsonWithRetry, fetchWithRetry } from '@/lib/fetchRetry';
+import { toast } from 'sonner';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key, i18n: { language: 'tr' } }) }));
 vi.mock('@/lib/fetchRetry', () => ({ fetchJsonWithRetry: vi.fn(), fetchWithRetry: vi.fn() }));
@@ -33,6 +34,36 @@ async function configure() {
 }
 
 describe('Report Builder financial integrity', () => {
+  it.each(['date-from-input', 'date-to-input'])('blocks a partial native %s in reports and both exports', async inputId => {
+    await configure();
+    const input = screen.getByTestId(inputId);
+    // Native Safari date segments can be incomplete while input.value is empty.
+    Object.defineProperty(input, 'validity', { configurable: true, value: { valid: false, badInput: true } });
+    for (const action of ['generate-report-btn', 'export-excel-btn', 'export-pdf-btn']) {
+      fireEvent.click(screen.getByTestId(action));
+    }
+    expect(fetchWithRetry).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith('Başlangıç ve bitiş tarihlerini gün, ay ve yıl olarak tamamlayın.');
+
+    Object.defineProperty(input, 'validity', { configurable: true, value: { valid: true, badInput: false } });
+    fireEvent.change(input, { target: { value: '2026-11-10' } });
+    fireEvent.click(screen.getByTestId('generate-report-btn'));
+    await screen.findByTestId('report-table');
+    const config = JSON.parse(fetchWithRetry.mock.calls[0][1].body);
+    expect(config[inputId === 'date-from-input' ? 'date_from' : 'date_to']).toBe('2026-11-10');
+  });
+
+  it('blocks inverted dates for generation and exports', async () => {
+    await configure();
+    fireEvent.change(screen.getByTestId('date-from-input'), { target: { value: '2026-11-11' } });
+    fireEvent.change(screen.getByTestId('date-to-input'), { target: { value: '2026-11-10' } });
+    for (const action of ['generate-report-btn', 'export-excel-btn', 'export-pdf-btn']) {
+      fireEvent.click(screen.getByTestId(action));
+    }
+    expect(fetchWithRetry).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith('Başlangıç tarihi bitiş tarihinden sonra olamaz');
+  });
+
   it('shows server-added currencies, currency-specific summaries and bounded report notice', async () => {
     await configure();
     fireEvent.click(screen.getByTestId('generate-report-btn'));

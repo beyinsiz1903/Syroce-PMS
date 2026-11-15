@@ -71,7 +71,7 @@ USER appuser
 # WeasyPrint 70 also loads HarfBuzz Subset. Verify a real PDF in the final
 # non-root image, so missing shared libraries fail the build before rollout.
 # https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#debian-11
-RUN python -c "from weasyprint import HTML; document = HTML(string='<p>Syroce PDF: Çığ Şölen 123,45 TRY</p>').write_pdf(); assert document.startswith(b'%PDF-') and len(document) > 500"
+RUN python -c "from weasyprint import HTML; from weasyprint.urls import URLFetcher; document = HTML(string='<p>Syroce PDF: Çığ Şölen 123,45 TRY</p>', url_fetcher=URLFetcher(allowed_protocols={'https'})).write_pdf(); assert document.startswith(b'%PDF-') and len(document) > 500"
 
 EXPOSE 8001
 
