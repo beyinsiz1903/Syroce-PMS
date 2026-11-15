@@ -36,8 +36,11 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
   }, [booking]);
 
   const currentRoomType = room?.room_type || '';
+  const currentRoomNumber = booking?.room_number || room?.room_number || '-';
   const selectedTypeData = roomTypes.find(rt => rt.type === selectedType);
   const nights = Math.max(1, reservationNights(booking?.check_in, booking?.check_out));
+  const hasBookedPrice = booking?.total_amount !== null && booking?.total_amount !== undefined
+    && String(booking.total_amount).trim() !== '' && Number.isFinite(Number(booking.total_amount));
   const currentNightlyPrice = Number(booking?.total_amount || 0) / nights;
   const selectedNightlyPrice = Number(selectedTypeData?.base_price || 0);
   const isDifferentRoomType = Boolean(selectedType && currentRoomType && selectedType !== currentRoomType);
@@ -68,10 +71,10 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       <div className="border rounded-lg p-4 bg-blue-50/50">
         <div className="text-xs font-semibold text-blue-600 uppercase mb-2">{t('cm.pages_reservationdetail_OperationTabs.mevcut_oda')}</div>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">{booking?.room_number || '-'}</div>
+          <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">{currentRoomNumber}</div>
           <div>
-            <div className="text-sm font-semibold">{room?.room_type || 'Oda'} - {booking?.room_number || '-'}</div>
-            <div className="text-xs text-gray-500">Kat: {room?.floor || '-'} | Fiyat: {fmtCurrency(room?.base_price, currency)}/gece</div>
+            <div className="text-sm font-semibold">{room?.room_type || 'Oda'} - {currentRoomNumber}</div>
+            <div className="text-xs text-gray-500">Kat: {room?.floor ?? '-'} | Kayıtlı ortalama gecelik fiyat: {hasBookedPrice ? fmtCurrency(currentNightlyPrice, currency) : 'Belirtilmemiş'}</div>
           </div>
         </div>
       </div>
