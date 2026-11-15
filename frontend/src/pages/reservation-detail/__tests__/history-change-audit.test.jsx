@@ -14,6 +14,18 @@ import { HistoryTab } from '@/pages/reservation-detail/GuestServiceTabs';
 afterEach(() => cleanup());
 
 describe('reservation change audit history', () => {
+  it('keeps zero-value cancellations and source refund amounts readable', () => {
+    render(<HistoryTab currency="TRY" history={[
+      { id: 'void', action: 'extra_charge_voided', details: { amount: 0, reason: 'İkram kaydı iptali' } },
+      { id: 'refund', action: 'deposit_refunded', details: { refund_amount: 100, currency: 'USD' } },
+      { id: 'receipt', action: 'deposit_recorded', details: { amount: 100, method: 'cash', currency: 'USD' } },
+    ]} />);
+    expect(screen.getByText('Ekstra ücret iptal edildi')).toBeInTheDocument();
+    expect(screen.getByText('Tutar: 0 TL')).toBeInTheDocument();
+    expect(screen.getAllByText('Tutar: 100 USD')).toHaveLength(2);
+    expect(screen.getByText('Yöntem: Nakit')).toBeInTheDocument();
+    expect(screen.getByText('Sebep: İkram kaydı iptali')).toBeInTheDocument();
+  });
   it('shows concession explanation, operator, native-currency amount and affected service', () => {
     render(<HistoryTab history={[{ id: 'audit-comp', action: 'concession_applied', actor: 'Ayşe Yılmaz',
       created_at: '2026-10-24T10:00:00Z', details: { amount_minor: 110000, currency: 'EUR', folio_id: 'F-2',
