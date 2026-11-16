@@ -46,12 +46,26 @@ def source_tax_components(source):
     vat_amount and OTHER tax in tax_amount. An explicit breakdown must match
     the identified schema; an unexplained difference is never forgiven.
     """
-    if source.get("tax_amount") is None:
-        raise OperationalValuationError("Unknown source tax must be resolved, not assumed zero: " + str(source.get("id")))
-    aggregate = minor(source["tax_amount"])
     breakdown = source.get("tax_breakdown") or {}
     if not isinstance(breakdown, dict) or set(breakdown) - {"vat", "accommodation_tax"}:
         raise OperationalValuationError("Unsupported or inconsistent source tax breakdown")
+    aggregate_value = source.get("tax_amount")
+    if aggregate_value is None:
+        # A complete explicit source breakdown is evidence, unlike an absent
+        # scalar or a partial VAT-only breakdown. Never fill missing components
+        # with zero or persist an inferred tax amount back to the source.
+        if set(breakdown) == {"vat", "accommodation_tax"} and all(value is not None for value in breakdown.values()):
+            aggregate = minor(breakdown["vat"]) + minor(breakdown["accommodation_tax"])
+        else:
+            context = {key: source.get(key) for key in (
+                "id", "booking_id", "folio_id", "description", "charge_category",
+                "category", "date", "charge_date", "currency", "amount", "total",
+                "vat_amount", "tax_amount", "tax_breakdown") if source.get(key) is not None}
+            raise OperationalValuationError(
+                "Unknown source tax must be resolved, not assumed zero: "
+                + json.dumps(context, ensure_ascii=False, sort_keys=True, default=str))
+    else:
+        aggregate = minor(aggregate_value)
     accommodation = minor(breakdown.get("accommodation_tax"))
     if breakdown:
         vat = minor(breakdown.get("vat"))
