@@ -165,3 +165,31 @@ async def test_concurrent_real_mongo_delivery_is_one_notification_and_preserves_
     await notices.deliver_notification(local_mongo, "tenant", version["version_identity"])
     assert (await local_mongo.notifications.find_one({"tenant_id": "tenant"}))["read"] is True
     assert (await local_mongo.exely_reservation_versions.find_one({"tenant_id": "tenant"}))["reservation_notification_state"] == "SENT"
+
+
+async def test_modified_notice_persists_old_new_money_without_repeating_side_effects(fake_db):
+    await _import(fake_db)
+    _, incoming = await _persist(fake_db, _canonical('2030-01-01T11:00:00Z', rooms=[_room(amount=125)]), payload_hash='changed-price')
+    assert (await pms_lifecycle.process_reservation_version('tenant', incoming))['success']
+    notice = fake_db.notifications.documents[-1]
+    assert {'label': 'Rezervasyon toplamı', 'from': '100.00 USD', 'to': '125.00 USD'} in notice['metadata']['changes']
+    original = deepcopy(notice)
+    await pms_lifecycle.process_reservation_version('tenant', incoming)
+    assert fake_db.notifications.documents[-1] == original
+    assert len(fake_db.notifications.documents) == 2
+
+
+def test_change_records_are_room_stable_private_and_explicit_about_missing_baselines():
+    from domains.channel_manager.providers.exely.reservation_changes import reservation_changes
+    before = {'total': 100, 'currency': 'USD', 'note': 'private old note', 'guest_email': 'private@example.invalid',
+        'rooms': [{**_room('1'), 'daily_rates': [{'date':'2030-01-01','amount':50}]}, _room('2')]}
+    after = deepcopy(before)
+    after['rooms'].reverse()
+    assert reservation_changes(before, after) == []
+    after['note'] = 'private new note'
+    after['guest_email'] = 'secret@example.invalid'
+    after['rooms'][1]['daily_rates'][0]['amount'] = 55
+    changes = reservation_changes(before, after)
+    assert {'label':'Oda 1 · 2030-01-01 gecelik fiyat','from':'50.00 USD','to':'55.00 USD'} in changes
+    assert 'private' not in str(changes) and 'secret' not in str(changes)
+    assert reservation_changes(None, after) == []

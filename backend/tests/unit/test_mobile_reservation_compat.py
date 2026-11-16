@@ -46,12 +46,16 @@ class Cursor:
 async def test_both_routes_return_the_same_authorized_financial_account(monkeypatch, path):
     booking = {"id": "booking-a", "tenant_id": "tenant-a", "guest_name": "Örnek Misafir", "status": "confirmed", "currency": "TRY", "total_amount": 100, "check_in": "2026-10-27", "check_out": "2026-10-28"}
     rows = {
+        "exely_reservation_versions": [{"version_identity": "change-v2", "pms_durable_at": "2026-10-26T10:00:00Z",
+            "reservation_notification_kind": "reservation_modified",
+            "operator_changes_v1": [{"label": "Rezervasyon toplamı", "from": "90.00 TRY", "to": "100.00 TRY"}]}],
         "folios": [{"id": "folio-a", "booking_id": "booking-a", "tenant_id": "tenant-a", "currency": "TRY", "status": "open"}],
         "folio_charges": [{"id": "charge-a", "folio_id": "folio-a", "amount": 100, "total": 100, "currency": "TRY", "charge_category": "room"}],
         "payments": [{"id": "payment-a", "folio_id": "folio-a", "amount": 25, "currency": "TRY", "method": "cash", "status": "paid"}],
     }
-    fields = ["folios", "folio_charges", "payments", "extra_charges", "reservation_notes", "reservation_activity_log", "audit_logs", "room_move_history", "daily_rates", "booking_guests", "communication_logs", "deposits"]
+    fields = ["folios", "folio_charges", "payments", "extra_charges", "reservation_notes", "reservation_activity_log", "audit_logs", "room_move_history", "daily_rates", "booking_guests", "communication_logs", "deposits", "exely_reservation_versions"]
     collections = {field: SimpleNamespace(find=lambda *_args, field=field: Cursor(rows.get(field, []))) for field in fields}
+    collections["exely_reservation_versions"].find = Mock(return_value=Cursor(rows["exely_reservation_versions"]))
     collections["bookings"] = SimpleNamespace(find_one=AsyncMock(return_value=booking))
     monkeypatch.setattr(reservation_detail, "db", SimpleNamespace(**collections))
     monkeypatch.setattr(reservation_detail, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-25"}))
@@ -68,6 +72,11 @@ async def test_both_routes_return_the_same_authorized_financial_account(monkeypa
     assert body["booking"]["id"] == "booking-a"
     assert body["folios"][0]["id"] == "folio-a"
     assert body["payments"][0]["amount"] == 25
+    event = next(row for row in body["history"] if row["id"] == "exely-version-change-v2")
+    assert event["actor"] == "Exely"
+    assert event["details"]["external_changes"][0]["to"] == "100.00 TRY"
+    assert collections["exely_reservation_versions"].find.call_args.args[0] == {
+        "tenant_id": "tenant-a", "processing_state": "PMS_DURABLE", "ack_confirmations.pms_booking_id": "booking-a"}
     assert body["summary"]["gross_total"] == 100
     assert body["summary"]["reservation_total_due"] == 75
     collections["bookings"].find_one.assert_awaited_once_with({"id": "booking-a", "tenant_id": "tenant-a"}, {"_id": 0})

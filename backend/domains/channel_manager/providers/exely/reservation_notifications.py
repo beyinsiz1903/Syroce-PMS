@@ -48,6 +48,8 @@ def build_notification(current, version, confirmations, expectations, created_at
         "related_entity": "booking",
         "related_id": booking_ids[0],
         "metadata": {
+            "changes": list(version.get("operator_changes_v1") or []),
+            "changes_recorded": "operator_changes_v1" in version,
             "booking_id": booking_ids[0],
             "booking_ids": booking_ids,
             "provider": "exely",
