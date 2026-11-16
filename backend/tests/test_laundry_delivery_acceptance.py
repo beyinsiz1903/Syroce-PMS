@@ -33,6 +33,7 @@ async def test_delivery_and_concurrent_retry_create_one_visible_charge(acceptanc
     assert all(r.status_code == 200 for r in results), [r.text for r in results]
     assert await a.db.folio_ledger.count_documents({}) == 1
     assert await a.db.folio_charges.count_documents({"charge_type": "laundry"}) == 1
+    assert (await a.db.folio_charges.find_one({"charge_type": "laundry"}))["tax_amount"] == 0
     assert await a.db.audit_logs.count_documents({"action": "laundry_delivered"}) == 1
     response = await a.api.get("/api/frontdesk/folio/synthetic-stay")
     assert response.json()["balance"] == 575

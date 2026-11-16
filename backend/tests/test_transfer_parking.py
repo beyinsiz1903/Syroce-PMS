@@ -219,7 +219,7 @@ async def test_parking_booking_charges_open_folio_server_total(_patch):
     _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
 
     res = await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=3),
+        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=3, vat_rate=20),
         _user("front_desk"),
     )
     # 50 * 3 days = 150
@@ -228,6 +228,7 @@ async def test_parking_booking_charges_open_folio_server_total(_patch):
     assert _patch.folio_charges.insert_calls == 1
     c = _patch.folio_charges.docs[0]
     assert c["charge_category"] == "parking"
+    assert c["total"] == 150 and c["amount"] == 125 and c["vat_amount"] == 25 and c["tax_amount"] == 0
     assert c["total"] == 150.0
     assert c["line_no"] == 0
     # 3 day slots locked.

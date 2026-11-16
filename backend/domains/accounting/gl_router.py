@@ -888,6 +888,16 @@ class OperationalValuationIn(BaseModel):
     realised_fx_accounts: dict[Literal["gain", "loss"], str] | None = Field(default=None, max_length=2)
 
 
+class DepartmentTaxReviewIn(BaseModel):
+    source_id: str = Field(min_length=1, max_length=80)
+    vat_rate: Decimal = Field(ge=0, le=100, max_digits=5, decimal_places=2)
+    reference: str = Field(min_length=10, max_length=240)
+
+
+class DepartmentTaxReviewPostIn(DepartmentTaxReviewIn):
+    expected_preview_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class OperationalValuationPostIn(OperationalValuationIn):
     expected_preview_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
@@ -2476,6 +2486,21 @@ async def retry_night_audit_gl_bridge(run_id: str, current_user: User = Depends(
         )
     except OperationalGLBridgeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/integrations/operational/night-audit/{run_id}/tax-review/preview")
+async def preview_department_tax(run_id: str, payload: DepartmentTaxReviewIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    from core.integrations.department_tax_review import preview
+    result, _ = await preview(db, _tenant_of(current_user), run_id, payload.source_id, payload.vat_rate, payload.reference)
+    return result
+
+
+@router.post("/integrations/operational/night-audit/{run_id}/tax-review/apply")
+async def apply_department_tax(run_id: str, payload: DepartmentTaxReviewPostIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    from core.integrations.department_tax_review import apply
+    return await apply(db, _tenant_of(current_user), run_id, payload.model_dump(mode="json"), _actor_id(current_user))
 
 
 @router.post("/integrations/operational/night-audit/{run_id}/valuation/preview")

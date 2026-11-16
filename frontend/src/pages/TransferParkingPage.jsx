@@ -33,7 +33,7 @@ const KIND_LABELS = Object.fromEntries(KIND_OPTIONS.map((k) => [k.value, k.label
 const EMPTY_RESOURCE = { name: '', kind: 'transfer_vehicle', price: '', capacity: 1, active: true };
 const EMPTY_BOOKING = {
   resource_id: '', room_number: '', guest_name: '', booking_id: '',
-  start_date: '', num_days: 1, pickup_at: '', note: '',
+  start_date: '', num_days: 1, pickup_at: '', note: '', vat_rate: '',
 };
 const EMPTY_VALET = { plate: '', guest_name: '', room_number: '', vehicle_info: '', parking_spot: '', note: '' };
 const EMPTY_LPR = { plate: '', direction: 'in', camera: '', confidence: '' };
@@ -247,7 +247,12 @@ const TransferParkingPage = () => {
       toast.error('Oda numarası gerekli');
       return;
     }
+    if (!/^\d+(\.\d{1,2})?$/.test(String(bookingForm.vat_rate).replace(',', '.')) || Number(String(bookingForm.vat_rate).replace(',', '.')) > 100) {
+      toast.error('Toplama dahil KDV oranını belirtin; vergisiz ise açıkça 0 girin');
+      return;
+    }
     const payload = {
+      vat_rate: Number(String(bookingForm.vat_rate).replace(',', '.')),
       resource_id: bookingForm.resource_id,
       room_number: bookingForm.room_number.trim(),
       guest_name: bookingForm.guest_name.trim() || undefined,
@@ -724,7 +729,8 @@ const TransferParkingPage = () => {
               </div>
             )}
 
-            <div>
+            <div className="space-y-2"><Label htmlFor="transport-vat-rate">Toplama dahil KDV (%)</Label><Input id="transport-vat-rate" inputMode="decimal" value={bookingForm.vat_rate} onChange={(e) => setBookingForm(f => ({ ...f, vat_rate: e.target.value }))} placeholder="Vergi oranını girin" /></div>
+              <div>
               <Label>Not (ops.)</Label>
               <Input
                 value={bookingForm.note}
