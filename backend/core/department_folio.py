@@ -8,7 +8,7 @@ recalculates balances from the ledger rather than incrementing cached money.
 import hashlib
 import json
 from datetime import UTC, date, datetime
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException

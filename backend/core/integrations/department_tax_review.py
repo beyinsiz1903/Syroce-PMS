@@ -5,7 +5,7 @@ explicit inclusive-VAT instruction are sealed in the audit in one transaction.
 No receipt, service, fiscal invoice or GL journal is created here.
 """
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
