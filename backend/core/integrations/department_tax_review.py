@@ -17,7 +17,7 @@ from modules.pms_core.reporting_financials import report_payment_period_match
 
 
 def tax_plan(source, rate, reference):
-    field = {'parking': 'source_transport_booking_id', 'concierge': 'source_concierge_request_id'}.get(source.get('charge_category'))
+    field = {'parking': 'source_transport_booking_id', 'transfer': 'source_transport_booking_id', 'concierge': 'source_concierge_request_id'}.get(source.get('charge_category'))
     if not field or not source.get(field):
         raise HTTPException(409, 'Yalnız desteklenen hizmetin kaynak bağlantısı olan masrafı incelenebilir')
     if source.get('tax_amount') is not None or source.get('vat_amount') is not None or source.get('tax_breakdown'):
@@ -65,10 +65,10 @@ async def preview(db, tenant, run_id, source_id, rate, reference, session=None):
             raise HTTPException(409, 'Concierge kaynağı ve folyo masrafı eşleşmiyor')
     else:
         linked = await db.transport_bookings.find_one({'tenant_id': tenant, 'id': source.get('source_transport_booking_id')}, {'_id': 0}, **kw)
-        if (not linked or linked.get('kind') != 'parking_spot' or linked.get('status') == 'cancelled'
+        if (not linked or linked.get('kind') != ('transfer_vehicle' if category == 'transfer' else 'parking_spot') or linked.get('status') == 'cancelled'
             or linked.get('currency') != source.get('currency') or minor(linked.get('total')) != minor(source.get('total'))
             or (linked.get('booking_id') and linked['booking_id'] != source.get('booking_id'))):
-            raise HTTPException(409, 'Otopark kaynağı ve folyo masrafı eşleşmiyor')
+            raise HTTPException(409, 'Transfer/otopark kaynağı ve folyo masrafı eşleşmiyor')
     plan = tax_plan(source, rate, reference)
     plan.update(run_id=run_id, business_date=run['business_date'], linked_source_hash=digest(linked))
     plan['preview_hash'] = digest(plan)

@@ -193,6 +193,17 @@ def build_plan(charges, payments, mapping, valuation, security=()):
     """Deterministic source/FX/account snapshot; no access to a clock or DB."""
     from core.integrations.operational_gl_bridge import _payment_account
 
+    missing_tax = []
+    prefix = "Unknown source tax must be resolved, not assumed zero: "
+    for charge in charges:
+        try:
+            source_tax_components(charge)
+        except OperationalValuationError as exc:
+            if not str(exc).startswith(prefix):
+                raise
+            missing_tax.append(json.loads(str(exc)[len(prefix):]))
+    if missing_tax:
+        raise OperationalValuationError(prefix + json.dumps(missing_tax, ensure_ascii=False, sort_keys=True, default=str))
     rates = valuation["rates_to_try"]
     rows, charge_groups, payment_groups = [], {}, {}
     payment_base_groups, adjustment_groups, fx_groups = {}, {}, {}
