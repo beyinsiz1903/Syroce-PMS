@@ -31,6 +31,7 @@ class PassportScanRequest(BaseModel):
 
 class WalkInBookingRequest(BaseModel):
     guest_name: str
+    currency: str = Field(default="TRY", pattern=r"^[A-Z]{3}$")
     guest_email: str | None = None
     guest_phone: str
     guest_id_number: str | None = None

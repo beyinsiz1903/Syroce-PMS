@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/api/axios';
 import { Card } from '@/components/ui/card';
@@ -120,6 +120,8 @@ export default function WalkinPage({ user, tenant, onLogout }) {
   const nav = useNavigate();
   const currency = tenant?.currency || cachedTenantCurrency();
   const [step, setStep] = useState(1);
+  const operationKey = useRef(crypto.randomUUID());
+  const [businessDate, setBusinessDate] = useState('');
   const [done, setDone] = useState(false);
   const [nights, setNights] = useState(1);
   const [rooms, setRooms] = useState([]);
@@ -136,6 +138,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
     try {
       const { data } = await api.get('/pms/walkin/available-rooms', { params: { nights: n } });
       setRooms(data.rooms || []);
+      setBusinessDate(data.business_date || '');
     } catch (e) { toast.error('Oda yükleme hatası'); }
     finally { setLoadingRooms(false); }
   }, [nights]);
@@ -165,13 +168,13 @@ export default function WalkinPage({ user, tenant, onLogout }) {
       adults: form.adults,
       children: form.children,
       totalAmount: form.total_amount,
-      paymentAmount: form.payment_amount,
+      paymentAmount: 0,
       paymentMethod: form.payment_method,
     });
     if (validationError) return toast.error(validationError);
     setSubmitting(true);
     try {
-      const { data } = await api.post('/pms/walkin/checkin', { ...form, total_amount: parseMoneyInput(form.total_amount), payment_amount: parseMoneyInput(form.payment_amount), nights });
+      const { data } = await api.post('/pms/walkin/checkin', { ...form, currency, total_amount: parseMoneyInput(form.total_amount), payment_amount: 0, nights }, { headers: { 'Idempotency-Key': operationKey.current } });
       toast.success(`Check-in tamam — Oda ${data.room_number}`);
       setDone(true);
       setTimeout(() => nav(`/reservations/${data.booking_id}`), 1200);
@@ -222,6 +225,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
             <p className="text-sm text-slate-500 mt-1">{t('cm.pages_WalkinPage.yeni_misafir_kaydi_oda_atama_check_in')}</p>
           </div>
           <Stepper step={done ? 4 : step} />
+          {businessDate && <p className="text-sm text-slate-600">Giriş iş günü: {businessDate}</p>}
         </div>
 
         {/* Sticky özet */}
@@ -322,20 +326,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                     <Label className="text-xs">{t('cm.pages_WalkinPage.toplam_tutar')} <span className="text-rose-500">*</span></Label>
                     <Input {...moneyInputProps} placeholder="Örn. 150,74" value={form.total_amount} onChange={e => setForm({ ...form, total_amount: e.target.value })} className="h-9" />
                   </div>
-                  <div>
-                    <Label className="text-xs">{t('cm.pages_WalkinPage.simdi_odenen')}</Label>
-                    <Input {...moneyInputProps} placeholder="Örn. 150,74" value={form.payment_amount} onChange={e => setForm({ ...form, payment_amount: e.target.value })} className="h-9" />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label className="text-xs">{t('cm.pages_WalkinPage.odeme_turu')}</Label>
-                    <select value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}
-                      className="h-9 w-full border border-slate-200 rounded-md px-2 text-sm bg-white">
-                      <option value="cash">Nakit</option>
-                      <option value="credit_card">{t('cm.pages_WalkinPage.kredi_karti')}</option>
-                      <option value="bank_transfer">Havale</option>
-                      <option value="none">Sonra</option>
-                    </select>
-                  </div>
+                  <p className="md:col-span-3 text-sm text-slate-600">Giriş tamamlandıktan sonra ön ödeme ve tahsilatları misafir kartındaki Ödeme / Folyo alanından alabilirsiniz.</p>
                   <div className="md:col-span-4">
                     <Label className="text-xs">Not</Label>
                     <Input value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} className="h-9" />
