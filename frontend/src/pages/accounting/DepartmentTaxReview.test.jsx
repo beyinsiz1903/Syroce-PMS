@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import axios from 'axios';
-import DepartmentTaxReview, { missingParkingSource } from './DepartmentTaxReview';
+import DepartmentTaxReview, { missingDepartmentSource } from './DepartmentTaxReview';
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
 const source = { id: 'source', charge_category: 'parking', description: 'Otopark', total: 150, currency: 'TRY' };
 beforeEach(() => axios.post.mockReset());
@@ -22,7 +22,9 @@ it('requires explicit inputs and binds apply to the reviewed payload; edits inva
   });
 });
 it('only offers parking review for a structured missing-tax rejection', () => {
-  expect(missingParkingSource('Unknown source tax must be resolved, not assumed zero: ' + JSON.stringify(source))).toEqual(source);
-  expect(missingParkingSource('Other error ' + JSON.stringify(source))).toBeNull();
-  expect(missingParkingSource('Unknown source tax must be resolved, not assumed zero: invalid')).toBeNull();
+  expect(missingDepartmentSource('Unknown source tax must be resolved, not assumed zero: ' + JSON.stringify(source))).toEqual(source);
+  const tour = { ...source, charge_category: 'concierge', total: 600 };
+  expect(missingDepartmentSource('Unknown source tax must be resolved, not assumed zero: ' + JSON.stringify(tour))).toEqual(tour);
+  expect(missingDepartmentSource('Other error ' + JSON.stringify(source))).toBeNull();
+  expect(missingDepartmentSource('Unknown source tax must be resolved, not assumed zero: invalid')).toBeNull();
 });

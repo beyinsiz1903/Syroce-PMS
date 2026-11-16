@@ -92,3 +92,29 @@ async def test_audit_failure_rolls_back_tax_completion(ledger_db, monkeypatch):
         await review.apply(db, 'hotel', 'run', {'source_id': SOURCE['id'], 'vat_rate': '20', 'reference': REF, 'expected_preview_hash': plan['preview_hash']}, 'operator')
     assert (await db.folio_charges.find_one({'id': SOURCE['id']}))['amount'] == 150
     assert await db.department_tax_reviews.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_concierge_review_requires_completed_exact_source_and_preserves_600_gross(ledger_db, monkeypatch):
+    db = ledger_db
+    from core import audit_chain
+    monkeypatch.setattr(audit_chain, '_system_db', lambda: db)
+    source = {**SOURCE, 'id': 'tour-charge', 'charge_category': 'concierge', 'total': 600, 'amount': 600,
+              'source_concierge_request_id': 'tour'}
+    source.pop('source_transport_booking_id')
+    linked = {'_id': 'tour', 'tenant_id': 'hotel', 'status': 'completed', 'booking_id': 'stay',
+              'folio_id': 'folio', 'folio_charge_id': 'tour-charge', 'amount': 600, 'currency': 'TRY'}
+    await db.night_audit_runs.insert_one({'tenant_id': 'hotel', 'id': 'run', 'business_date': '2026-11-10', 'status': 'completed'})
+    await db.folio_charges.insert_one(deepcopy(source))
+    await db.concierge_requests.insert_one(linked)
+    plan, _ = await review.preview(db, 'hotel', 'run', 'tour-charge', '20', REF)
+    assert (plan['net'], plan['vat'], plan['gross']) == (500, 100, 600)
+    payload = {'source_id': 'tour-charge', 'vat_rate': '20', 'reference': REF, 'expected_preview_hash': plan['preview_hash']}
+    await db.concierge_requests.update_one({'_id': 'tour'}, {'$set': {'amount': 601}})
+    with pytest.raises(HTTPException):
+        await review.apply(db, 'hotel', 'run', payload, 'operator')
+    await db.concierge_requests.update_one({'_id': 'tour'}, {'$set': {'amount': 600}})
+    assert (await review.apply(db, 'hotel', 'run', payload, 'operator'))['status'] == 'applied'
+    assert (await db.folio_charges.find_one({'id': 'tour-charge'}))['total'] == 600
+    assert (await db.concierge_requests.find_one({'_id': 'tour'}))['amount'] == 600
+    assert await db.payments.count_documents({}) == await db.gl_journal_entries.count_documents({}) == 0
