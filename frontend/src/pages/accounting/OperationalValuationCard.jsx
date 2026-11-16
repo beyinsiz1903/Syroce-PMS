@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import DepartmentTaxReview, { missingParkingSource } from './DepartmentTaxReview';
+import DepartmentTaxReview, { missingDepartmentSource } from './DepartmentTaxReview';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -162,8 +162,8 @@ export default function OperationalValuationCard({ runs = [], requestedRunId, on
           </details>
           <Button type="submit" variant="outline" disabled={busy}>Aktarımı Önizle</Button>
         </form>}
-        {error && !missingParkingSource(error) && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        {run && missingParkingSource(error) && <DepartmentTaxReview key={`${run.id}:${missingParkingSource(error).id}`} runId={run.id} source={missingParkingSource(error)} onApplied={async () => { clearReview(); await onPosted?.(); }} />}
+        {error && !missingDepartmentSource(error) && <p role="alert" className="text-sm text-red-700">{error}</p>}
+        {run && missingDepartmentSource(error) && <DepartmentTaxReview key={`${run.id}:${missingDepartmentSource(error).id}`} runId={run.id} source={missingDepartmentSource(error)} onApplied={async () => { clearReview(); await onPosted?.(); }} />}
         {currentReview && <div className="space-y-3 rounded-lg border p-3">
           <p className="text-sm font-medium">{currentReview.data.business_date} · {PREVIEW_LABELS[currentReview.data.action]}</p>
           <p className="text-sm">Kaynak hareketi: {currentReview.data.manifest?.sources?.length || 0} · {currentReview.payload.reference}</p>

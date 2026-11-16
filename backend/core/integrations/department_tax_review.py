@@ -1,4 +1,4 @@
-"""Reviewed completion of missing parking tax, preserving the gross receivable.
+"""Reviewed completion of missing department tax, preserving the gross receivable.
 
 Only an unposted source can be completed. The original row and operator's
 explicit inclusive-VAT instruction are sealed in the audit in one transaction.
@@ -17,8 +17,9 @@ from modules.pms_core.reporting_financials import report_payment_period_match
 
 
 def tax_plan(source, rate, reference):
-    if source.get('charge_category') != 'parking' or not source.get('source_transport_booking_id'):
-        raise HTTPException(409, 'Yalnız kaynak bağlantısı olan otopark masrafı incelenebilir')
+    field = {'parking': 'source_transport_booking_id', 'concierge': 'source_concierge_request_id'}.get(source.get('charge_category'))
+    if not field or not source.get(field):
+        raise HTTPException(409, 'Yalnız desteklenen hizmetin kaynak bağlantısı olan masrafı incelenebilir')
     if source.get('tax_amount') is not None or source.get('vat_amount') is not None or source.get('tax_breakdown'):
         raise HTTPException(409, 'Mevcut vergi kanıtının üzerine yazılamaz')
     gross = minor(source.get('total'))
@@ -55,13 +56,21 @@ async def preview(db, tenant, run_id, source_id, rate, reference, session=None):
     if await db.gl_journal_entries.find_one({'tenant_id': tenant, 'status': 'posted',
             '$or': [{'source_manifest.sources.id': source_id}, {'source_ref': run_id}]}, **kw):
         raise HTTPException(409, 'Muhasebeleşmiş kaynak için bağlı mali düzeltme gerekir')
-    transport = await db.transport_bookings.find_one({'tenant_id': tenant, 'id': source.get('source_transport_booking_id')}, {'_id': 0}, **kw)
-    if (not transport or transport.get('kind') != 'parking_spot' or transport.get('status') == 'cancelled'
-        or transport.get('currency') != source.get('currency') or minor(transport.get('total')) != minor(source.get('total'))
-        or (transport.get('booking_id') and transport['booking_id'] != source.get('booking_id'))):
-        raise HTTPException(409, 'Otopark kaynağı ve folyo masrafı eşleşmiyor')
+    category = source.get('charge_category')
+    if category == 'concierge':
+        linked = await db.concierge_requests.find_one({'tenant_id': tenant, '_id': source.get('source_concierge_request_id')}, **kw)
+        if (not linked or linked.get('status') != 'completed' or linked.get('booking_id') != source.get('booking_id')
+            or (linked.get('folio_id') and linked['folio_id'] != source.get('folio_id')) or linked.get('folio_charge_id') != source['id']
+            or linked.get('currency') != source.get('currency') or minor(linked.get('amount')) != minor(source.get('total'))):
+            raise HTTPException(409, 'Concierge kaynağı ve folyo masrafı eşleşmiyor')
+    else:
+        linked = await db.transport_bookings.find_one({'tenant_id': tenant, 'id': source.get('source_transport_booking_id')}, {'_id': 0}, **kw)
+        if (not linked or linked.get('kind') != 'parking_spot' or linked.get('status') == 'cancelled'
+            or linked.get('currency') != source.get('currency') or minor(linked.get('total')) != minor(source.get('total'))
+            or (linked.get('booking_id') and linked['booking_id'] != source.get('booking_id'))):
+            raise HTTPException(409, 'Otopark kaynağı ve folyo masrafı eşleşmiyor')
     plan = tax_plan(source, rate, reference)
-    plan.update(run_id=run_id, business_date=run['business_date'], transport_hash=digest(transport))
+    plan.update(run_id=run_id, business_date=run['business_date'], linked_source_hash=digest(linked))
     plan['preview_hash'] = digest(plan)
     return plan, source
 
