@@ -566,3 +566,33 @@ async def test_adjustment_mapping_accepts_separate_contra_sales_account_and_logs
     result = await gl.update_operational_gl_mapping(gl.OperationalMappingIn(adjustment_account_code="611"), SimpleNamespace(tenant_id="hotel", role="finance", id="u"))
     assert result["mapping"]["adjustment_account_code"] == "611" and result["mapping"]["enabled"]
     assert gl.log_audit_event.await_args.kwargs["after_value"]["adjustment_account_code"] == "611"
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_complete_explicit_breakdown_does_not_require_redundant_aggregate(direction):
+    source = {"id": "legacy", "currency": "TRY", "total": 112 * direction,
+              "tax_breakdown": {"vat": 10 * direction, "accommodation_tax": 2 * direction}}
+    original = deepcopy(source)
+    result = v.source_tax_components(source)
+    assert result == (1200 * direction, 200 * direction)
+    assert source == original
+    assert result == v.source_tax_components({**source, "tax_amount": 12 * direction})
+
+
+@pytest.mark.parametrize("breakdown", [{}, {"vat": 10}, {"accommodation_tax": 2},
+                                      {"vat": None, "accommodation_tax": 2}])
+def test_partial_tax_evidence_stays_blocked_with_actionable_source_context(breakdown):
+    source = {"id": "legacy", "folio_id": "folio", "description": "Service",
+              "currency": "TRY", "total": 112, "tax_breakdown": breakdown}
+    with pytest.raises(v.OperationalValuationError, match="Unknown source tax") as failure:
+        v.source_tax_components(source)
+    assert '"folio_id": "folio"' in str(failure.value)
+    assert '"total": 112' in str(failure.value)
+
+
+def test_complete_breakdown_cannot_hide_conflicting_vat_or_invalid_signed_tax():
+    source = {"id": "legacy", "total": 112, "tax_breakdown": {"vat": 10, "accommodation_tax": 2}}
+    for change in ({"vat_amount": 9}, {"total": 11},
+                   {"tax_breakdown": {"vat": -1, "accommodation_tax": 2}}):
+        with pytest.raises(v.OperationalValuationError):
+            v.source_tax_components({**source, **change})
