@@ -128,11 +128,35 @@ def normalized_valuation(business_date, valuation):
     return result
 
 
+async def resolve_laundry_tax_evidence(db, tenant_id, charges):
+    """Read explicit tax from an exact original laundry ledger; do not patch history."""
+    result = []
+    for charge in charges:
+        if charge.get("tax_amount") is not None or not charge.get("source_laundry_order_id") or not charge.get("source_ledger_entry_id"):
+            result.append(charge)
+            continue
+        ledger = await db.folio_ledger.find_one({"tenant_id": tenant_id, "id": charge["source_ledger_entry_id"]}, {"_id": 0})
+        matches = ledger and ledger.get("tax_amount") is not None and not ledger.get("is_voided") and ledger.get("entry_type") == "charge"
+        matches = matches and all(ledger.get(key) == charge.get(key) and charge.get(key) is not None
+                                  for key in ("booking_id", "folio_id", "currency", "business_date"))
+        matches = matches and ledger.get("idempotency_key") == "laundry:" + str(charge["source_laundry_order_id"])
+        matches = matches and minor(ledger.get("amount")) == minor(charge.get("total", charge.get("amount")))
+        if not matches:
+            result.append(charge)
+            continue
+        evidence = {key: ledger.get(key) for key in ("id", "tenant_id", "booking_id", "folio_id", "currency", "business_date",
+                    "entry_type", "idempotency_key", "amount", "tax_amount", "is_voided")}
+        result.append({**charge, "tax_amount": ledger["tax_amount"],
+                       "tax_evidence": {"kind": "linked_laundry_ledger", "id": ledger["id"], "source_hash": digest(evidence)}})
+    return result
+
+
 async def daily_sources(db, tenant_id, business_date):
     charges = await db.folio_charges.find({"tenant_id": tenant_id, "voided": {"$ne": True},
         **report_payment_period_match(business_date, business_date, date_fields=("date", "charge_date", "posted_at", "created_at"))}, {"_id": 0}).to_list(None)
     charges.extend(await db.extra_charges.find({'tenant_id': tenant_id, 'source': 'spa_external', 'voided': {'$ne': True},
         **report_payment_period_match(business_date, business_date, date_fields=('date', 'posted_at'))}, {'_id': 0}).to_list(None))
+    charges = await resolve_laundry_tax_evidence(db, tenant_id, charges)
     payments = await db.payments.find({"tenant_id": tenant_id, "voided": {"$ne": True},
         **report_payment_period_match(business_date, business_date)}, {"_id": 0}).to_list(None)
     from modules.pms_core.settlement_instruments import exclude_direct_cheques
@@ -199,6 +223,8 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                 rows.append(row)
                 continue
             if kind == "charge":
+                if source.get("tax_evidence"):
+                    row["tax_evidence"] = source["tax_evidence"]
                 gross = minor(source.get("total", source.get("amount")))
                 tax, accommodation = source_tax_components(source)
                 if accommodation and not mapping.get("accommodation_tax_account_code"):

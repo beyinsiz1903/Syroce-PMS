@@ -147,8 +147,9 @@ async def post_night_audit_daily_to_gl(
     payments = await _require_try_source_rows(db, tenant_id, payments)
 
     charge_total = sum((_minor(row.get("total", row.get("amount"))) for row in charges), 0)
-    from core.integrations.operational_gl_valuation import OperationalValuationError, source_tax_components
+    from core.integrations.operational_gl_valuation import OperationalValuationError, resolve_laundry_tax_evidence, source_tax_components
     try:
+        charges = await resolve_laundry_tax_evidence(db, tenant_id, charges)
         components = [source_tax_components(row) for row in charges]
     except OperationalValuationError as exc:
         raise OperationalGLBridgeError(str(exc)) from exc

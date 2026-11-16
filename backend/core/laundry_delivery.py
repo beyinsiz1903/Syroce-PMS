@@ -76,7 +76,8 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
             "source_ledger_entry_id": ledger["id"], "source_laundry_order_id": order_id,
             "description": ledger["description"], "charge_type": "laundry", "charge_category": "laundry",
             "quantity": 1, "amount": float(amount), "unit_price": float(amount), "total": float(amount),
-            "currency": currency, "business_date": day, "posted_at": ledger["posted_at"], "posted_by": ledger["posted_by"], "voided": False}
+            "currency": currency, "tax_amount": ledger.get("tax_amount"),
+            "business_date": day, "posted_at": ledger["posted_at"], "posted_by": ledger["posted_by"], "voided": False}
         charge.update(entered)
         await db.folio_charges.update_one({"id": charge_id, "tenant_id": tenant_id}, {"$setOnInsert": charge}, upsert=True, **kw)
         await db.tenant_settings.update_one({"tenant_id": tenant_id, "laundry_orders.id": order_id}, {"$set": {

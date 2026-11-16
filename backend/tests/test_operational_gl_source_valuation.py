@@ -596,3 +596,22 @@ def test_complete_breakdown_cannot_hide_conflicting_vat_or_invalid_signed_tax():
                    {"tax_breakdown": {"vat": -1, "accommodation_tax": 2}}):
         with pytest.raises(v.OperationalValuationError):
             v.source_tax_components({**source, **change})
+
+
+@pytest.mark.asyncio
+async def test_linked_laundry_ledger_tax_is_bound_without_rewriting_charge():
+    charge = {"id": "charge", "source_laundry_order_id": "wash", "source_ledger_entry_id": "ledger",
+              "booking_id": "stay", "folio_id": "folio", "currency": "TRY", "business_date": DAY, "total": 150}
+    ledger = {"id": "ledger", "tenant_id": "hotel", "booking_id": "stay", "folio_id": "folio", "currency": "TRY",
+              "business_date": DAY, "entry_type": "charge", "idempotency_key": "laundry:wash", "amount": 150, "tax_amount": 0}
+    db = SimpleNamespace(folio_ledger=SimpleNamespace(find_one=AsyncMock(return_value=ledger)))
+    original = deepcopy(charge)
+    resolved = (await v.resolve_laundry_tax_evidence(db, "hotel", [charge]))[0]
+    assert charge == original and "tax_amount" not in charge
+    assert resolved["tax_amount"] == 0
+    assert plan([resolved])["manifest"]["sources"][0]["tax_evidence"]["id"] == "ledger"
+    db.folio_ledger.find_one.assert_awaited_with({"tenant_id": "hotel", "id": "ledger"}, {"_id": 0})
+    for change in ({"tax_amount": None}, {"is_voided": True}, {"currency": "USD"}, {"business_date": "2026-09-30"},
+                   {"folio_id": "other"}, {"booking_id": "other"}, {"amount": 149}, {"idempotency_key": "other"}):
+        db.folio_ledger.find_one.return_value = {**ledger, **change}
+        assert await v.resolve_laundry_tax_evidence(db, "hotel", [charge]) == [charge]
