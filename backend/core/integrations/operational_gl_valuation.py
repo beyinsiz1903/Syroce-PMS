@@ -223,6 +223,8 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                 rows.append(row)
                 continue
             if kind == "charge":
+                if source.get("tax_review_id"):
+                    row["tax_review_id"] = source["tax_review_id"]
                 if source.get("tax_evidence"):
                     row["tax_evidence"] = source["tax_evidence"]
                 gross = minor(source.get("total", source.get("amount")))

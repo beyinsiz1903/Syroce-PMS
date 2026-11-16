@@ -336,6 +336,7 @@ async def deactivate_resource(
 # ─────────────────────────────────────────────────────────────────────
 class BookingIn(BaseModel):
     resource_id: str = Field(..., min_length=1)
+    vat_rate: float | None = Field(None, ge=0, le=100, allow_inf_nan=False)
     guest_name: str | None = Field(None, max_length=200)
     room_number: str | None = Field(None, max_length=40)
     booking_id: str | None = Field(None, max_length=64)
@@ -568,6 +569,7 @@ async def create_booking(
         "slots": slots,
         "schedule": sched,
         "total": total,
+        "vat_rate": payload.vat_rate,
         "note": (payload.note or "").strip() or None,
         "idempotency_key": payload.idempotency_key,
         "status": "reserved",

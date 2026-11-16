@@ -8,7 +8,7 @@ recalculates balances from the ledger rather than incrementing cached money.
 import hashlib
 import json
 from datetime import UTC, date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
@@ -263,6 +263,15 @@ async def post_transport_charge(db, tenant_id, booking_doc, actor_id):
     """Keep the service timestamp separate from the current open ledger day."""
     schedule = booking_doc.get("schedule") or {}
     pickup = str(schedule.get("pickup_at") or "")
+    rate = booking_doc.get("vat_rate")
+    tax = None
+    if rate is not None:
+        rate = Decimal(str(rate))
+        if not rate.is_finite() or rate < 0 or rate > 100 or rate != rate.quantize(Decimal('.01')):
+            raise HTTPException(422, "KDV oranı geçersiz")
+        gross = money(booking_doc["total"])
+        net = (gross / (1 + rate / 100)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+        tax = gross - net
     source = {
         "kind": "transfer" if booking_doc.get("kind") == "transfer_vehicle" else "parking",
         "id": booking_doc["id"],
@@ -270,7 +279,7 @@ async def post_transport_charge(db, tenant_id, booking_doc, actor_id):
         "folio_id": booking_doc.get("folio_id"),
         "currency": booking_doc["currency"],
         "gross": booking_doc["total"],
-        "tax": None,
+        "tax": float(tax) if tax is not None else None,
         "description": ("Transfer — " if pickup else "Otopark — ") + str(booking_doc.get("resource_name") or "Hizmet"),
         "service_date": pickup[:10] or schedule.get("start_date"),
         "service_time": pickup[11:16] or None,
