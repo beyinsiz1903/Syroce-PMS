@@ -21,7 +21,7 @@ from core.booking_atomicity import (
     is_replica_set_unavailable,
     standalone_fallback_allowed,
 )
-from core.business_date_service import stamp_open_business_date
+from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import db
 from core.security import (
@@ -1037,7 +1037,11 @@ async def create_walk_in_booking(
             await guard.release()
             raise HTTPException(status_code=404, detail="Room not found")
 
-        if room.get("status") not in ["available", "inspected"]:
+        if room.get("is_active") is False or room.get("is_virtual") is True:
+            await guard.release()
+            raise HTTPException(400, "Walk-in requires an active physical room")
+
+        if room.get("status") not in ["available", "inspected", "clean"]:
             # Pre-write validation failure -> release so the key can be retried.
             await guard.release()
             raise HTTPException(status_code=400, detail=f"Room {room.get('room_number')} is not available (status: {room.get('status')})")
@@ -1074,7 +1078,7 @@ async def create_walk_in_booking(
         existing_guest = await db.guests.find_one(
             {
                 "tenant_id": current_user.tenant_id,
-                "$or": guest_pii_or_conditions("phone", req.guest_phone) + guest_pii_or_conditions("email", guest_email),
+                "$or": (guest_pii_or_conditions("phone", req.guest_phone) if req.guest_phone else []) + guest_pii_or_conditions("email", guest_email),
             }
         )
 
@@ -1113,7 +1117,8 @@ async def create_walk_in_booking(
             guest_id = new_guest.id
 
         # 3. Calculate dates and amount
-        check_in = datetime.now(UTC).replace(hour=14, minute=0, second=0, microsecond=0)
+        day = await ensure_business_date_initialized(db, current_user.tenant_id)
+        check_in = datetime.fromisoformat(day["business_date"]).replace(hour=14, tzinfo=UTC)
         check_out = check_in + timedelta(days=nights)
 
         # 4. Create booking
@@ -1128,6 +1133,7 @@ async def create_walk_in_booking(
             children_ages=[],
             guests_count=req.adults + req.children,
             total_amount=total_amount,
+            currency=req.currency,
             status=BookingStatus.CONFIRMED,
             channel=ChannelType.DIRECT,
             special_requests=req.special_requests,
