@@ -118,3 +118,18 @@ async def test_concierge_review_requires_completed_exact_source_and_preserves_60
     assert (await db.folio_charges.find_one({'id': 'tour-charge'}))['total'] == 600
     assert (await db.concierge_requests.find_one({'_id': 'tour'}))['amount'] == 600
     assert await db.payments.count_documents({}) == await db.gl_journal_entries.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_transfer_review_matches_vehicle_source_and_preserves_inclusive_gross(ledger_db):
+    db = ledger_db
+    source = {**SOURCE, 'charge_category': 'transfer', 'total': 850, 'amount': 850}
+    await db.night_audit_runs.insert_one({'tenant_id': 'hotel', 'id': 'run', 'business_date': '2026-11-10', 'status': 'completed'})
+    await db.folio_charges.insert_one(source)
+    await db.transport_bookings.insert_one({'tenant_id': 'hotel', 'id': 'parking', 'kind': 'transfer_vehicle',
+        'status': 'reserved', 'currency': 'TRY', 'total': 850, 'booking_id': 'stay'})
+    plan, _ = await review.preview(db, 'hotel', 'run', SOURCE['id'], '20', REF)
+    assert (plan['net'], plan['vat'], plan['gross']) == (708.33, 141.67, 850)
+    await db.transport_bookings.update_one({'id': 'parking'}, {'$set': {'kind': 'parking_spot'}})
+    with pytest.raises(HTTPException):
+        await review.preview(db, 'hotel', 'run', SOURCE['id'], '20', REF)

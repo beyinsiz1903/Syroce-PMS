@@ -615,3 +615,13 @@ async def test_linked_laundry_ledger_tax_is_bound_without_rewriting_charge():
                    {"folio_id": "other"}, {"booking_id": "other"}, {"amount": 149}, {"idempotency_key": "other"}):
         db.folio_ledger.find_one.return_value = {**ledger, **change}
         assert await v.resolve_laundry_tax_evidence(db, "hotel", [charge]) == [charge]
+
+
+def test_tax_preflight_reports_all_missing_sources_before_building_any_journal():
+    import json
+    charges = [{"id": "parking", "currency": "TRY", "total": 150}, {"id": "transfer", "currency": "TRY", "total": 850}]
+    with pytest.raises(v.OperationalValuationError) as failure:
+        plan(charges)
+    rows = json.loads(str(failure.value).split(': ', 1)[1])
+    assert [row['id'] for row in rows] == ['parking', 'transfer']
+    assert [row['total'] for row in rows] == [150, 850]

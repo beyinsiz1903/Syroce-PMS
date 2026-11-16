@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import axios from 'axios';
-import DepartmentTaxReview, { missingDepartmentSource } from './DepartmentTaxReview';
+import DepartmentTaxReview, { missingDepartmentSource, missingTaxSources } from './DepartmentTaxReview';
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
 const source = { id: 'source', charge_category: 'parking', description: 'Otopark', total: 150, currency: 'TRY' };
 beforeEach(() => axios.post.mockReset());
@@ -27,4 +27,11 @@ it('only offers parking review for a structured missing-tax rejection', () => {
   expect(missingDepartmentSource('Unknown source tax must be resolved, not assumed zero: ' + JSON.stringify(tour))).toEqual(tour);
   expect(missingDepartmentSource('Other error ' + JSON.stringify(source))).toBeNull();
   expect(missingDepartmentSource('Unknown source tax must be resolved, not assumed zero: invalid')).toBeNull();
+});
+
+it('reads all missing tax sources and chooses a supported transfer without losing the list', () => {
+  const transfer = { ...source, id: 'transfer', charge_category: 'transfer', total: 850 };
+  const message = 'Unknown source tax must be resolved, not assumed zero: ' + JSON.stringify([{ id: 'other', charge_category: 'unknown' }, transfer]);
+  expect(missingTaxSources(message)).toHaveLength(2);
+  expect(missingDepartmentSource(message)).toEqual(transfer);
 });

@@ -4,12 +4,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/currency';
 
-export function missingDepartmentSource(message) {
-  if (!message?.startsWith('Unknown source tax must be resolved, not assumed zero: ')) return null;
+export function missingTaxSources(message) {
+  const prefix = 'Unknown source tax must be resolved, not assumed zero: ';
+  if (!message?.startsWith(prefix)) return [];
   try {
-    const source = JSON.parse(message.slice(message.indexOf('{')));
-    return source?.id && ['parking', 'concierge'].includes(source.charge_category) ? source : null;
-  } catch { return null; }
+    const parsed = JSON.parse(message.slice(prefix.length));
+    return (Array.isArray(parsed) ? parsed : [parsed]).filter(source => source && typeof source.id === 'string');
+  } catch { return []; }
+}
+
+export function missingDepartmentSource(message) {
+  return missingTaxSources(message).find(source => ['parking', 'transfer', 'concierge'].includes(source.charge_category)) || null;
 }
 
 export default function DepartmentTaxReview({ runId, source, onApplied }) {

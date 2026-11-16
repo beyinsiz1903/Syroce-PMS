@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import DepartmentTaxReview, { missingDepartmentSource } from './DepartmentTaxReview';
+import DepartmentTaxReview, { missingDepartmentSource, missingTaxSources } from './DepartmentTaxReview';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -162,8 +162,12 @@ export default function OperationalValuationCard({ runs = [], requestedRunId, on
           </details>
           <Button type="submit" variant="outline" disabled={busy}>Aktarımı Önizle</Button>
         </form>}
-        {error && !missingDepartmentSource(error) && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        {run && missingDepartmentSource(error) && <DepartmentTaxReview key={`${run.id}:${missingDepartmentSource(error).id}`} runId={run.id} source={missingDepartmentSource(error)} onApplied={async () => { clearReview(); await onPosted?.(); }} />}
+        {missingTaxSources(error).length > 0 && <div className="rounded-lg border p-3 text-sm" role="alert">
+          <p>Vergi bilgisi incelenmesi gereken {missingTaxSources(error).length} hizmet kaydı var. Toplam borçlar değiştirilmeden her kaynak ayrı doğrulanır.</p>
+          <ul className="list-disc pl-5">{missingTaxSources(error).map(source => <li key={source.id}>{source.description || source.charge_category} · {formatCurrency(source.total, source.currency)}</li>)}</ul>
+        </div>}
+        {error && missingTaxSources(error).length === 0 && <p role="alert" className="text-sm text-red-700">{error}</p>}
+        {run && missingDepartmentSource(error) && <DepartmentTaxReview key={`${run.id}:${missingDepartmentSource(error).id}`} runId={run.id} source={missingDepartmentSource(error)} onApplied={async () => { clearReview(); await onPosted?.(); await previewValuation({ preventDefault() {} }); }} />}
         {currentReview && <div className="space-y-3 rounded-lg border p-3">
           <p className="text-sm font-medium">{currentReview.data.business_date} · {PREVIEW_LABELS[currentReview.data.action]}</p>
           <p className="text-sm">Kaynak hareketi: {currentReview.data.manifest?.sources?.length || 0} · {currentReview.payload.reference}</p>
