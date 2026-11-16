@@ -23,6 +23,11 @@ MALFORMED = "MALFORMED"
 PMS_DURABLE = "PMS_DURABLE"
 PMS_FAILED = "PMS_FAILED"
 
+CHANGE_BASELINE_FIELDS = (
+    "checkin_date", "checkout_date", "total_rooms", "total_guests", "guest_name",
+    "guest_email", "guest_phone", "total", "currency", "rooms", "services", "prepayment", "note",
+)
+
 ACK_NOT_READY = "NOT_READY"
 ACK_PENDING = "PENDING"
 ACK_SENDING = "SENDING"
@@ -191,6 +196,7 @@ async def persist_exely_event(
             "provider_version_identity": 1,
             "provider_payload_hash": 1,
             "state": 1,
+            **{field: 1 for field in CHANGE_BASELINE_FIELDS},
             "pms_booking_ids": 1,
             "pms_booking_id": 1,
         },
@@ -205,6 +211,7 @@ async def persist_exely_event(
                 "provider_version_identity": 1,
                 "provider_payload_hash": 1,
                 "state": 1,
+                **{field: 1 for field in CHANGE_BASELINE_FIELDS},
                 "pms_booking_ids": 1,
                 "pms_booking_id": 1,
             },
@@ -228,6 +235,9 @@ async def persist_exely_event(
         pms_status = "updated"
 
     now = datetime.now(UTC).isoformat()
+    from .reservation_changes import reservation_changes
+
+    operator_changes = reservation_changes(current, _reservation_document(tenant_id, canonical, event_id, payload_hash, identity))
     version_doc = {
         "tenant_id": tenant_id,
         "property_id": property_id,
@@ -239,6 +249,7 @@ async def persist_exely_event(
         "provider_payload_hash": payload_hash,
         "version_identity": identity,
         "event_type": "cancellation" if is_cancellation else event_type,
+        "operator_changes_v1": operator_changes,
         "reservation_notification_kind": (
             "reservation_cancelled" if is_cancellation else
             "reservation_modified" if current and (current.get("pms_booking_ids") or current.get("pms_booking_id")) else "reservation"

@@ -1377,6 +1377,19 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
             if correlation_id and str(correlation_id) in activity_correlations:
                 continue
             history.append(_audit_log_to_reservation_history_entry(audit_entry))
+        # Durable provider versions are the immutable source of import changes.
+        # Read-only projection: do not mutate a booking or replay an old import.
+        async for version in db.exely_reservation_versions.find(
+            {"tenant_id": tid, "processing_state": "PMS_DURABLE", "ack_confirmations.pms_booking_id": booking_id},
+            {"_id": 0, "version_identity": 1, "pms_durable_at": 1, "reservation_notification_kind": 1,
+             "operator_changes_v1": 1},
+        ):
+            if version.get("reservation_notification_kind") not in {"reservation_modified", "reservation_cancelled"}:
+                continue
+            history.append({"id": "exely-version-" + version["version_identity"],
+                "action": "exely_reservation_updated", "actor": "Exely", "created_at": version.get("pms_durable_at"),
+                "details": {"source": "Exely", "external_changes": version.get("operator_changes_v1") or [],
+                            "changes_recorded": "operator_changes_v1" in version}})
         history.sort(key=lambda entry: str(entry.get("created_at") or ""), reverse=True)
 
         # Room move history

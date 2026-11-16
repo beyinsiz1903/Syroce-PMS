@@ -1,3 +1,4 @@
+import ReservationChanges from '@/components/ReservationChanges';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -158,6 +159,7 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
   ].sort((a, b) => (hotelEventEpoch(b.created_at) ?? -Infinity) - (hotelEventEpoch(a.created_at) ?? -Infinity));
 
   const labels = {
+    exely_reservation_updated: 'Exely rezervasyon değişikliği',
     payment_recorded: 'Ödeme kaydedildi', transferred_to_cari: 'Cariye aktarildi', agency_payment_recorded: 'Acente ödemesi',
     charge_split: 'Masraf bölündü', note_added: 'Not eklendi', room_changed: 'Oda değiştirildi',
     early_checkin: 'Erken giriş', late_checkout: 'Gec çıkış', marked_noshow: 'No-show',
@@ -215,6 +217,7 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
                 </div>
                 {ev.actor && <div className="text-xs text-gray-500">Yapan: {ev.actor}</div>}
                 {ev.details?.source && <div className="text-xs text-gray-500">Kaynak: {ev.details.source}{ev.details.channel ? ` · ${ev.details.channel}` : ''}</div>}
+                {ev.action === 'exely_reservation_updated' && <ReservationChanges changes={ev.details?.external_changes} recorded={ev.details?.changes_recorded} />}
                 {visibleChanges(ev.details).length > 0 && (
                   <div className="mt-2 space-y-1 rounded bg-slate-50 px-2 py-1.5 text-xs text-slate-700">
                     {visibleChanges(ev.details).map(([field, value]) => (

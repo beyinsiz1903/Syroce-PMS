@@ -1,3 +1,4 @@
+import ReservationChanges from '@/components/ReservationChanges';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -224,6 +225,9 @@ const NotificationBell = ({ user } = {}) => {
                       <p className={`text-xs mt-1 ${notif.read ? 'text-gray-500' : 'text-gray-700'}`}>
                         {notif.message}
                       </p>
+                      {notif.metadata?.provider === 'exely' && ['reservation_modified', 'reservation_cancelled'].includes(notif.type) && (
+                        <ReservationChanges changes={notif.metadata.changes} recorded={notif.metadata.changes_recorded} limit={4} />
+                      )}
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-gray-400">
                           {notif.created_at ? new Date(notif.created_at).toLocaleString('tr-TR', {
