@@ -77,7 +77,30 @@ async def _validate_group(database, tenant_id, source, property_id, external):
 
 
 def _public(request):
-    return {key: request.get(key) for key in ("state", "requested_at", "updated_at", "confirmed_at", "code")}
+    return {**{key: request.get(key) for key in ("state", "requested_at", "updated_at", "confirmed_at", "code")},
+            "attempt": request.get("attempt", 1), "provider_codes": request.get("provider_codes", [])}
+
+
+def _pending_filter(request, state="PENDING"):
+    # A worker from an older attempt must never claim or overwrite a newer one.
+    return {"_id": request["_id"], "tenant_id": request["tenant_id"],
+            "state": state, "echo_token": request["echo_token"]}
+
+
+async def _queue_request(database, request):
+    attempt = request.get("attempt", 1)
+    key = f"exely-cancel-v1:{request['_id']}"
+    if attempt > 1:
+        key += f":attempt:{attempt}"
+    await enqueue_outbox_event(database, tenant_id=request["tenant_id"], event_type=EXELY_RESERVATION_CANCEL,
+        provider="exely", property_id=request["property_id"], entity_type="exely_cancellation", entity_id=request["_id"],
+        idempotency_key=key, payload={"request_id": request["_id"], "attempt": attempt})
+
+
+async def _validate_retry_source(database, tenant_id, source, property_id, external, request):
+    ids, version = await _validate_group(database, tenant_id, source, property_id, external)
+    if ids != request["booking_ids"] or version != request["provider_version_key"]:
+        raise ValueError("EXELY_SOURCE_CHANGED")
 
 
 async def status(database, tenant_id, booking_id):
@@ -86,7 +109,14 @@ async def status(database, tenant_id, booking_id):
         "_id": _request_id(tenant_id, property_id, external), "tenant_id": tenant_id,
     })
     if request:
-        return {**_public(request), "can_send": False}
+        can_retry = False
+        if request["state"] == "REJECTED":
+            try:
+                await _validate_retry_source(database, tenant_id, source, property_id, external, request)
+                can_retry = True
+            except ValueError:
+                pass
+        return {**_public(request), "can_send": False, "can_retry": can_retry}
     if source.get("pms_status") == "cancellation_done":
         return {"state": "REMOTE_CANCELLED", "can_send": False}
     try:
@@ -94,6 +124,29 @@ async def status(database, tenant_id, booking_id):
     except ValueError as exc:
         return {"state": "BLOCKED", "code": str(exc), "can_send": False}
     return {"state": "NOT_REQUESTED", "can_send": booking.get("status") == "cancelled"}
+
+
+async def retry_rejected(database, tenant_id, booking_id, actor, reason, expected_attempt):
+    """Only an operator can retry an explicit rejection, never an uncertain write."""
+    if not actor or not reason.strip():
+        raise ValueError("EXELY_OPERATOR_INTENT_REQUIRED")
+    _, source, property_id, external = await _source(database, tenant_id, booking_id)
+    request = await database.exely_cancel_requests.find_one({
+        "_id": _request_id(tenant_id, property_id, external), "tenant_id": tenant_id})
+    if not request or request["state"] != "REJECTED" or request.get("attempt", 1) != expected_attempt:
+        return await status(database, tenant_id, booking_id)
+    await _validate_retry_source(database, tenant_id, source, property_id, external, request)
+    previous = {**_public(request), "actor": request["actor"], "reason": request["reason"],
+                "echo_token": request["echo_token"]}
+    updated = {"state": "PENDING", "attempt": expected_attempt + 1, "echo_token": str(uuid.uuid4()),
+        "actor": actor, "reason": reason.strip()[:500], "requested_at": _now(), "updated_at": _now(),
+        "code": None, "provider_codes": [], "confirmed_at": None,
+        "previous_attempts": [*(request.get("previous_attempts") or []), previous]}
+    saved = await database.exely_cancel_requests.update_one(_pending_filter(request, "REJECTED"), {"$set": updated})
+    if saved.modified_count == 1:
+        # Persist first. If enqueue fails, recover_pending resumes this exact attempt.
+        await _queue_request(database, {**request, **updated})
+    return await status(database, tenant_id, booking_id)
 
 
 async def enqueue(database, tenant_id, booking_id):
@@ -111,16 +164,14 @@ async def enqueue(database, tenant_id, booking_id):
         "_id": request_id, "tenant_id": tenant_id, "property_id": property_id, "external_id": external,
         "booking_id": booking_id, "booking_ids": ids, "provider_version_key": version,
         "actor": intent["actor"], "reason": intent["reason"], "echo_token": str(uuid.uuid4()),
-        "state": "PENDING", "requested_at": intent["requested_at"], "updated_at": _now(),
+        "state": "PENDING", "attempt": 1, "requested_at": intent["requested_at"], "updated_at": _now(),
     }
     try:
         await database.exely_cancel_requests.insert_one(request)
     except DuplicateKeyError:
         request = await database.exely_cancel_requests.find_one({"_id": request_id, "tenant_id": tenant_id})
     if request["state"] == "PENDING":
-        await enqueue_outbox_event(database, tenant_id=tenant_id, event_type=EXELY_RESERVATION_CANCEL,
-            provider="exely", property_id=property_id, entity_type="exely_cancellation", entity_id=request_id,
-            idempotency_key=f"exely-cancel-v1:{request_id}", payload={"request_id": request_id})
+        await _queue_request(database, request)
     await database.bookings.update_one({"tenant_id": tenant_id, "id": booking_id,
         "exely_cancel_intent.requested_at": intent["requested_at"]},
         {"$set": {"exely_cancel_intent.state": "QUEUED"}})
@@ -140,6 +191,10 @@ async def queue_after_local_cancel(database, tenant_id, booking_id):
 
 async def recover_pending(database, tenant_id, property_id):
     """Recover only explicit new operator intents; never backfill historical cancels."""
+    pending = await database.exely_cancel_requests.find({"tenant_id": tenant_id, "property_id": property_id,
+        "state": "PENDING"}).sort("requested_at", 1).to_list(50)
+    for request in pending:
+        await _queue_request(database, request)
     now = _now()
     rows = await database.bookings.find({"tenant_id": tenant_id, "property_id": property_id,
         "status": "cancelled", "exely_cancel_intent.state": "PENDING",
@@ -152,12 +207,14 @@ async def recover_pending(database, tenant_id, property_id):
         await queue_after_local_cancel(database, tenant_id, row["id"])
 
 
-async def _save_outcome(database, request, state, code=None):
-    fields = {"state": state, "code": code, "updated_at": _now()}
+async def _save_outcome(database, request, state, code=None, provider_codes=()):
+    # Only numeric provider codes are public; error text may contain private data.
+    codes = [str(value) for value in provider_codes if str(value).isascii()
+             and str(value).isdigit() and len(str(value)) <= 6][:10]
+    fields = {"state": state, "code": code, "provider_codes": codes, "updated_at": _now()}
     if state == "CONFIRMED":
         fields["confirmed_at"] = fields["updated_at"]
-    await database.exely_cancel_requests.update_one({"_id": request["_id"],
-        "tenant_id": request["tenant_id"], "state": "SENDING"}, {"$set": fields})
+    await database.exely_cancel_requests.update_one(_pending_filter(request, "SENDING"), {"$set": fields})
 
 
 async def deliver(database, event):
@@ -171,6 +228,8 @@ async def deliver(database, event):
     request = await database.exely_cancel_requests.find_one({"_id": request_id, "tenant_id": tenant_id})
     if not request or event.get("property_id") != request["property_id"]:
         return False, "permanent: EXELY_CANCEL_SOURCE_INVALID"
+    if (event.get("payload") or {}).get("attempt", 1) != request.get("attempt", 1):
+        return False, "permanent: EXELY_CANCEL_ATTEMPT_SUPERSEDED"
     if request["state"] == "CONFIRMED":
         return True, "Exely cancellation confirmed"
     if request["state"] != "PENDING":
@@ -183,8 +242,8 @@ async def deliver(database, event):
             raise ValueError("EXELY_SOURCE_CHANGED")
     except ValueError:
         # Nothing was sent. Do not expose credentials/provider exception contents.
-        await database.exely_cancel_requests.update_one({"_id": request_id, "tenant_id": tenant_id,
-            "state": "PENDING"}, {"$set": {"state": "BLOCKED", "code": "EXELY_CANCEL_SOURCE_OR_CONNECTION_INVALID",
+        await database.exely_cancel_requests.update_one(_pending_filter(request),
+            {"$set": {"state": "BLOCKED", "code": "EXELY_CANCEL_SOURCE_OR_CONNECTION_INVALID",
                                          "updated_at": _now()}})
         return False, "permanent: EXELY_CANCEL_SOURCE_OR_CONNECTION_INVALID"
     try:
@@ -195,12 +254,12 @@ async def deliver(database, event):
     except Exception:
         # Provider I/O has not started; connection resolution can safely retry.
         exhausted = event.get("attempt_count", 0) >= event.get("max_attempts", 5)
-        await database.exely_cancel_requests.update_one({"_id": request_id, "tenant_id": tenant_id,
-            "state": "PENDING"}, {"$set": {"state": "BLOCKED" if exhausted else "PENDING",
+        await database.exely_cancel_requests.update_one(_pending_filter(request),
+            {"$set": {"state": "BLOCKED" if exhausted else "PENDING",
                 "code": "EXELY_CANCEL_CONNECTION_UNAVAILABLE", "updated_at": _now()}})
         return False, f"{'permanent' if exhausted else 'retryable'}: EXELY_CANCEL_CONNECTION_UNAVAILABLE"
-    claimed = await database.exely_cancel_requests.update_one({"_id": request_id, "tenant_id": tenant_id,
-        "state": "PENDING"}, {"$set": {"state": "SENDING", "updated_at": _now()}})
+    claimed = await database.exely_cancel_requests.update_one(_pending_filter(request),
+        {"$set": {"state": "SENDING", "updated_at": _now()}})
     if claimed.modified_count != 1:
         return False, "permanent: EXELY_CANCEL_ALREADY_CLAIMED"
     try:
@@ -219,7 +278,8 @@ async def deliver(database, event):
         return False, "retryable: EXELY_CANCEL_NOT_ACCEPTED"
     definitive = classification in {"AUTH_FAILED", "REJECTED", "RATE_LIMITED"} or writes == 0
     await _save_outcome(database, request, "REJECTED" if definitive else "UNKNOWN",
-                        "EXELY_CANCEL_REJECTED" if definitive else "EXELY_CANCEL_DELIVERY_UNKNOWN")
+                        "EXELY_CANCEL_REJECTED" if definitive else "EXELY_CANCEL_DELIVERY_UNKNOWN",
+                        metadata.get("provider_codes") or [])
     return False, "permanent: EXELY_CANCEL_REVIEW_REQUIRED"
 
 

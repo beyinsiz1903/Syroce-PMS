@@ -42,11 +42,14 @@ function CancellationStatus({ booking }) {
   if (!eligible) return null;
 
   const send = async () => {
-    if (!await confirmDialog({ message: 'PMS’de iptal edilen bu rezervasyonun tamamı için Exely’ye iptal gönderilsin mi?', variant: 'danger' })) return;
     setBusy(true);
     try {
+      if (!await confirmDialog({ message: delivery?.can_retry
+        ? 'Önceki iptal Exely tarafından reddedildi. Sorunu giderdiyseniz bu rezervasyonun tamamı için iptal yeniden gönderilsin mi?'
+        : 'PMS’de iptal edilen bu rezervasyonun tamamı için Exely’ye iptal gönderilsin mi?', variant: 'danger' })) return;
       const { data } = await axios.post(`/pms-core/bookings/${booking.id}/exely-cancellation`, {
         reason: booking.cancellation_reason?.trim() || 'Cancelled by hotel operator',
+        ...(delivery?.can_retry ? { retry_attempt: delivery.attempt } : {}),
       });
       setDelivery(data);
       setError('');
@@ -63,9 +66,11 @@ function CancellationStatus({ booking }) {
   return <section data-testid="exely-cancellation-status" className={`rounded-lg border p-4 space-y-2 ${confirmed ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
     <h3 className="font-semibold text-sm">Exely iptal bildirimi</h3>
     <p className="text-sm">{text}</p>
+    {delivery?.provider_codes?.length > 0 && <p className="text-sm">Exely hata kodu: {delivery.provider_codes.join(', ')}</p>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     <div className="flex gap-2">
       {delivery?.can_send && <Button type="button" size="sm" disabled={busy} onClick={send}>İptali Exely’ye gönder</Button>}
+      {delivery?.can_retry && <Button type="button" size="sm" disabled={busy} onClick={send}>İptali yeniden gönder</Button>}
       <Button type="button" size="sm" variant="outline" disabled={busy} onClick={load}>Durumu yenile</Button>
     </div>
   </section>;

@@ -79,7 +79,7 @@ def build_cancel_rq(username: str, password: str, hotel_code: str,
         raise ValueError("Reservation ID, reason and echo token are required")
     rq = etree.Element(f"{{{OTA_NS}}}OTA_CancelRQ", Version="1.17", EchoToken=echo_token)
     etree.SubElement(rq, f"{{{OTA_NS}}}UniqueID", ID=reservation_id,
-                     ID_Context="PMSCONNECT", Reason=reason)
+                     ID_Context="PMSConnect", Reason=reason)
     return _soap_envelope(username, password, hotel_code, rq)
 
 

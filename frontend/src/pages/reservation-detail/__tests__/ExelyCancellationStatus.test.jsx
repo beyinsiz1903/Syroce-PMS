@@ -91,4 +91,27 @@ describe('Exely cancellation delivery', () => {
     expect(screen.queryByText('Exely iptali onayladı.')).not.toBeInTheDocument();
     expect(screen.getByText(/kontrol ediliyor/)).toBeInTheDocument();
   });
+  it('allows an explicit rejected-attempt retry and shows the provider code', async () => {
+    axios.get.mockResolvedValue({ data: { state: 'REJECTED', can_retry: true, attempt: 1, provider_codes: ['321'] } });
+    render(<ExelyCancellationStatus booking={booking} />);
+    const retry = await screen.findByRole('button', { name: 'İptali yeniden gönder' });
+    expect(screen.getByText('Exely hata kodu: 321')).toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    await screen.findByText(/Exely’ye gönderim bekleniyor/);
+    expect(axios.post).toHaveBeenCalledWith('/pms-core/bookings/synthetic-cancel/exely-cancellation', {
+      reason: 'Guest request', retry_attempt: 1,
+    });
+    expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('reddedildi') }));
+    expect(screen.queryByRole('button', { name: 'İptali yeniden gönder' })).not.toBeInTheDocument();
+  });
+
+  it.each(['UNKNOWN', 'SENDING', 'CONFIRMED', 'BLOCKED', 'REJECTED'])('does not offer retry for %s without eligibility', async state => {
+    axios.get.mockResolvedValue({ data: { state, can_retry: false, can_send: false, attempt: 1 } });
+    render(<ExelyCancellationStatus booking={booking} />);
+    await waitFor(() => expect(screen.queryByText(/kontrol ediliyor…/)).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'İptali yeniden gönder' })).not.toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
 });

@@ -443,6 +443,7 @@ async def api_cancel_booking(req: CancellationRequest, current_user: User = Depe
 
 class ExelyCancellationRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
+    retry_attempt: int | None = Field(default=None, ge=1)
 
 
 @router.get("/bookings/{booking_id}/exely-cancellation", tags=["reservation"])
@@ -461,10 +462,17 @@ async def api_send_exely_cancellation(booking_id: str, req: ExelyCancellationReq
                                       current_user: User = Depends(get_current_user)):
     """Explicitly send a historical local cancellation; never cancel extra rooms."""
     perm_svc.enforce_user_permission(current_user, "cancel_booking")
-    from domains.channel_manager.providers.exely.reservation_cancellation import enqueue, operator_intent, status
+    from domains.channel_manager.providers.exely.reservation_cancellation import (
+        enqueue,
+        operator_intent,
+        retry_rejected,
+        status,
+    )
 
     tenant_id = current_user.tenant_id
     try:
+        if req.retry_attempt is not None:
+            return await retry_rejected(db, tenant_id, booking_id, current_user.id, req.reason, req.retry_attempt)
         delivery = await status(db, tenant_id, booking_id)
         if not delivery.get("can_send"):
             return delivery
