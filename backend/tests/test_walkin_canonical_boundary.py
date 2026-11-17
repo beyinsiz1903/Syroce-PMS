@@ -53,7 +53,10 @@ async def test_room_search_uses_open_day_full_fourteen_nights_and_physical_readi
 
 
 @pytest.mark.asyncio
-async def test_canonical_walkin_uses_business_day_atomic_booking_and_checkin(monkeypatch):
+@pytest.mark.parametrize("nights", [1, 2, 14])
+async def test_canonical_walkin_uses_business_day_atomic_booking_and_checkin(monkeypatch, nights):
+    from datetime import date, timedelta
+
     from core import atomic_booking, atomic_checkin_checkout
     from shared_kernel import idempotency
     guard = SimpleNamespace(release=AsyncMock(), complete=AsyncMock())
@@ -63,15 +66,20 @@ async def test_canonical_walkin_uses_business_day_atomic_booking_and_checkin(mon
         guests=SimpleNamespace(find_one=AsyncMock(return_value={'id':'g'})))
     monkeypatch.setattr(frontdesk, 'db', db)
     monkeypatch.setattr(frontdesk, 'ensure_business_date_initialized', AsyncMock(return_value={'business_date':'2026-11-12'}))
-    create = AsyncMock()
+    async def assert_atomic_date_contract(**kwargs):
+        booking = kwargs['booking_doc']
+        # Exercise the real downstream parser instead of accepting any mock payload.
+        assert atomic_booking._night_dates(booking['check_in'], booking['check_out']) == [(date(2026, 11, 12) + timedelta(days=n)).isoformat() for n in range(nights)]
+
+    create = AsyncMock(side_effect=assert_atomic_date_contract)
     checkin = AsyncMock(return_value={'checked_in_at':'2026-11-16T15:00:00Z'})
     monkeypatch.setattr(atomic_booking, 'create_booking_atomic', create)
     monkeypatch.setattr(atomic_checkin_checkout, 'check_in_booking_atomic', checkin)
     user=SimpleNamespace(tenant_id='hotel',id='operator',name='Operator')
-    payload=frontdesk.WalkInBookingRequest(guest_name='Deniz Aksoy',guest_email='deniz@example.invalid',guest_phone='',room_id='r',nights=2,rate_per_night=450)
+    payload=frontdesk.WalkInBookingRequest(guest_name='Deniz Aksoy',guest_email='deniz@example.invalid',guest_phone='',room_id='r',nights=nights,rate_per_night=450)
     result=await frontdesk.create_walk_in_booking(payload,request(),user)
     booking=create.await_args.kwargs['booking_doc']
-    assert (booking['check_in'].date().isoformat(),booking['check_out'].date().isoformat(),booking['total_amount']) == ('2026-11-12','2026-11-14',900)
+    assert (booking['check_in'],booking['check_out'],booking['total_amount']) == ('2026-11-12',(date(2026, 11, 12) + timedelta(days=nights)).isoformat(),450 * nights)
     assert checkin.await_args.kwargs['booking_id'] == result['booking_id']
     # Empty phone must not select an unrelated anonymous guest.
     assert len(db.guests.find_one.await_args.args[0]['$or']) == 2
