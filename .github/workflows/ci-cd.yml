@@ -283,6 +283,8 @@ jobs:
             tests/test_exely_compatibility_mount.py \
             tests/test_exely_concurrent_current_upsert.py \
             tests/test_exely_reservation_lifecycle.py \
+            tests/test_exely_outbound_cancellation.py \
+            tests/test_exely_hotel_avail_version.py \
             tests/test_exely_ari_delivery.py \
             tests/test_exely_provider_quota_parser.py \
             tests/test_exely_batch_change_budget.py \
@@ -330,6 +332,8 @@ jobs:
             tests/test_exely_compatibility_mount.py \
             tests/test_exely_concurrent_current_upsert.py \
             tests/test_exely_reservation_lifecycle.py \
+            tests/test_exely_outbound_cancellation.py \
+            tests/test_exely_hotel_avail_version.py \
             tests/test_exely_ari_delivery.py \
             tests/test_exely_pilot_import.py \
             tests/test_exely_provider_quota_parser.py \

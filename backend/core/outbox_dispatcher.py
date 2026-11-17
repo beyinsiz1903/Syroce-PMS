@@ -53,7 +53,12 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
     if not tenant_id:
         return False, "permanent: missing tenant_id"
 
-    from core.outbox_service import EXELY_RESERVATION_INVENTORY
+    from core.outbox_service import EXELY_RESERVATION_CANCEL, EXELY_RESERVATION_INVENTORY
+
+    if event_type == EXELY_RESERVATION_CANCEL:
+        from domains.channel_manager.providers.exely.reservation_cancellation import dispatch
+
+        return await dispatch(event)
 
     if event_type == EXELY_RESERVATION_INVENTORY:
         from domains.channel_manager.providers.exely.reservation_inventory import dispatch

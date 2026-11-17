@@ -24,6 +24,7 @@ SEC_NS = "https://www.hopenapi.com/Api/PMSConnect"
 
 # SOAPAction URIs from WSDL
 SOAP_ACTIONS = {
+    "OTA_CancelRQ": "https://www.hopenapi.com/Api/PMSConnect/CancelRQ",
     "OTA_HotelAvailRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelAvailRQ",
     "OTA_ReadRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelReadReservationRQ",
     "OTA_HotelAvailNotifRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelAvailNotifRQ",
@@ -71,6 +72,17 @@ def _soap_envelope(username: str, password: str, hotel_code: str, body_element: 
     return etree.tostring(env, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode("utf-8")
 
 
+def build_cancel_rq(username: str, password: str, hotel_code: str,
+                    reservation_id: str, reason: str, echo_token: str) -> str:
+    """PMSConnect 1.17 whole-reservation cancellation; never override penalties."""
+    if not all(isinstance(value, str) and value.strip() for value in (reservation_id, reason, echo_token)):
+        raise ValueError("Reservation ID, reason and echo token are required")
+    rq = etree.Element(f"{{{OTA_NS}}}OTA_CancelRQ", Version="1.17", EchoToken=echo_token)
+    etree.SubElement(rq, f"{{{OTA_NS}}}UniqueID", ID=reservation_id,
+                     ID_Context="PMSCONNECT", Reason=reason)
+    return _soap_envelope(username, password, hotel_code, rq)
+
+
 def build_read_rq(
     username: str,
     password: str,
@@ -114,7 +126,7 @@ def build_hotel_avail_rq(
     rq = etree.Element(
         f"{{{OTA_NS}}}OTA_HotelAvailRQ",
         attrib={
-            "Version": "1.0",
+            "Version": "1.17",
             "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
     )

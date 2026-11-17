@@ -66,6 +66,12 @@ async def cancel_reservation(
         )
         update_data["noshow_charge"] = body.noshow_charge_amount
 
+    from domains.channel_manager.providers.exely.reservation_cancellation import operator_intent, queue_after_local_cancel
+
+    if not body.apply_noshow:
+        if (booking.get("source") or {}).get("provider") == "exely":
+            _role_permissions.enforce_user_permission(current_user, "cancel_booking")
+        update_data.update(operator_intent(booking, current_user.id, body.reason))
     await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": update_data})
 
     # Inventory release: iptal/no-show sonrası odanın gece kilitleri serbest bırakılır.
@@ -122,7 +128,11 @@ async def cancel_reservation(
         }
     )
 
-    return {"success": True, "status": update_data["status"], "message": "Rezervasyon iptal edildi"}
+    exely_delivery = None
+    if "exely_cancel_intent" in update_data:
+        exely_delivery = await queue_after_local_cancel(db, tid, booking_id)
+    return {"success": True, "status": update_data["status"], "message": "Rezervasyon iptal edildi",
+            **({"exely_cancellation": exely_delivery} if exely_delivery else {})}
 
 
 # ═══════════════════════════════════════════════════

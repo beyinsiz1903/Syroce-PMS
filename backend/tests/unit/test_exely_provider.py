@@ -5,23 +5,20 @@ Exely Provider — Unit Tests
 Tests the production-grade Exely SOAP provider adapter.
 Covers: errors, retry, validators, observability, client, provider facade.
 """
-import asyncio
-import pytest
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+
+import pytest
 
 # ── Error Hierarchy ──────────────────────────────────────────────────
-
 from domains.channel_manager.providers.exely.errors import (
-    ExelyError,
     ExelyAuthError,
+    ExelyError,
+    ExelyMappingError,
+    ExelyParseError,
+    ExelyPayloadError,
+    ExelyRateLimitError,
     ExelySOAPFaultError,
     ExelyTemporaryError,
-    ExelyRateLimitError,
-    ExelyPayloadError,
-    ExelyParseError,
-    ExelyMappingError,
     ExelyValidationError,
 )
 
@@ -182,9 +179,9 @@ class TestExelyRetry:
 # ── Validators ───────────────────────────────────────────────────────
 
 from domains.channel_manager.providers.exely.validators import (
-    validate_credentials,
     extract_credentials,
     validate_ari_payload,
+    validate_credentials,
     validate_date_range,
 )
 
@@ -325,6 +322,9 @@ class TestSoapBuilder:
     def test_build_hotel_avail_rq(self):
         xml = build_hotel_avail_rq("u", "p", "H1", "2025-06-01", "2025-06-02")
         assert "OTA_HotelAvailRQ" in xml
+        from xml.etree import ElementTree
+        request = ElementTree.fromstring(xml).find(".//{http://www.opentravel.org/OTA/2003/05}OTA_HotelAvailRQ")
+        assert request.attrib["Version"] == "1.17"
         assert "2025-06-01" in xml
         assert "HotelRef" in xml
 
@@ -413,11 +413,11 @@ class TestSoapBuilder:
 # ── Response Parser ──────────────────────────────────────────────────
 
 from domains.channel_manager.providers.exely.response_parser import (
-    parse_soap_response,
-    parse_read_rs,
+    parse_ari_update_rs,
     parse_hotel_avail_rs,
     parse_notif_report_rs,
-    parse_ari_update_rs,
+    parse_read_rs,
+    parse_soap_response,
 )
 
 # Sample SOAP response XMLs for testing
@@ -753,9 +753,9 @@ class TestExelyProvider:
 
 # ── Client (Transport) ──────────────────────────────────────────────
 
+
 from domains.channel_manager.providers.exely.client import ExelySoapTransport
 from domains.channel_manager.providers.exely.security import EXELY_TEST_ENDPOINT_URL
-import httpx
 
 
 class TestExelySoapTransport:

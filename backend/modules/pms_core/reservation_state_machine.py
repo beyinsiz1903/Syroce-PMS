@@ -93,6 +93,10 @@ class ReservationStateMachine:
             "updated_at": now.isoformat(),
         }
 
+        from domains.channel_manager.providers.exely.reservation_cancellation import operator_intent, queue_after_local_cancel
+
+        update_fields.update(operator_intent(booking, cancelled_by, reason))
+
         await db.bookings.update_one({"id": booking["id"], "tenant_id": tenant_id}, {"$set": update_fields})
 
         # Release room-night locks for overbooking prevention (INV-6: audit trail)
@@ -196,7 +200,11 @@ class ReservationStateMachine:
         except Exception as cancel_outbox_err:
             logger.warning("Outbox enqueue failed for cancellation %s: %s", booking["id"], cancel_outbox_err)
 
-        return {"success": True, "booking_id": booking["id"], "previous_status": current_status}
+        exely_delivery = None
+        if "exely_cancel_intent" in update_fields:
+            exely_delivery = await queue_after_local_cancel(db, tenant_id, booking["id"])
+        return {"success": True, "booking_id": booking["id"], "previous_status": current_status,
+                **({"exely_cancellation": exely_delivery} if exely_delivery else {})}
 
     async def handle_no_show(self, tenant_id: str, booking: dict, marked_by: str) -> dict:
         """Mark a reservation as no-show. Only confirmed/guaranteed bookings can be no-showed."""

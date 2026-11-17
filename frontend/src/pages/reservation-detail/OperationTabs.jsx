@@ -226,7 +226,8 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
           reason: reason
         });
       }
-      toast.success(applyNoshow ? 'No-show olarak işaretlendi' : 'Rezervasyon iptal edildi');
+      toast.success(applyNoshow ? 'No-show olarak işaretlendi' : booking?.source?.provider === 'exely'
+        ? 'PMS’de iptal edildi. Exely teslimatını Genel Bilgiler bölümünden takip edebilirsiniz.' : 'Rezervasyon iptal edildi');
       onRefresh?.();
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
