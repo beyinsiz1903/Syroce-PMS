@@ -35,7 +35,7 @@ def test_documented_request_preserves_original_id_and_escapes_reason():
     rq = root.find(f"{{{SOAP}}}Body/{{{OTA}}}OTA_CancelRQ")
     assert rq.attrib == {"Version": "1.17", "EchoToken": "echo"}
     assert len(rq) == 1
-    assert rq[0].attrib == {"ID": "provider-original", "ID_Context": "PMSCONNECT", "Reason": 'Guest & hotel "agreed"'}
+    assert rq[0].attrib == {"ID": "provider-original", "ID_Context": "PMSConnect", "Reason": 'Guest & hotel "agreed"'}
     assert "CancellationOverrides" not in xml
     assert get_soap_action_uri("OTA_CancelRQ") == "https://www.hopenapi.com/Api/PMSConnect/CancelRQ"
 
@@ -442,3 +442,161 @@ async def test_factory_selects_requested_property_and_rejects_credential_mismatc
     resolver.return_value["hotel_code"] = "wrong-property"
     with pytest.raises(RuntimeError, match="EXELY_PROPERTY_MISMATCH"):
         await factory.get_exely_provider("tenant", property_id="property")
+
+
+async def rejected(db, provider, *, legacy=False):
+    event = await queued(db)
+    if legacy:
+        db.exely_cancel_requests.rows[0].pop("attempt")
+        event["payload"].pop("attempt")
+    provider.cancel_reservation.return_value = ProviderResult(success=False,
+        metadata={"classification": "REJECTED", "provider_codes": ["321", "private error details"]})
+    assert not (await cancel.deliver(db, event))[0]
+    return event
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_explicit_rejected_retry_preserves_history_and_uses_new_event_and_token(scenario, legacy):
+    db, provider, _ = scenario
+    old_event = await rejected(db, provider, legacy=legacy)
+    old_token = db.exely_cancel_requests.rows[0]["echo_token"]
+    result = await cancel.status(db, "tenant", "room-0")
+    assert result["can_retry"] and result["attempt"] == 1 and result["provider_codes"] == ["321"]
+    # Recovery does not automatically retry a rejected request.
+    await cancel.recover_pending(db, "tenant", "property")
+    assert len(db.outbox_events.rows) == 1
+    result = await cancel.retry_rejected(db, "tenant", "room-0", "operator2", "Corrected context", 1)
+    assert result["state"] == "PENDING" and result["attempt"] == 2 and not result["can_retry"]
+    request = db.exely_cancel_requests.rows[0]
+    assert request["echo_token"] != old_token
+    assert request["previous_attempts"][0]["echo_token"] == old_token
+    assert request["previous_attempts"][0]["provider_codes"] == ["321"]
+    assert request["previous_attempts"][0]["actor"] == "operator"
+    assert request["actor"] == "operator2"
+    assert len(db.outbox_events.rows) == 2
+    assert db.outbox_events.rows[0]["idempotency_key"] != db.outbox_events.rows[1]["idempotency_key"]
+    assert "SUPERSEDED" in (await cancel.deliver(db, old_event))[1]
+    provider.cancel_reservation.assert_awaited_once()
+    provider.cancel_reservation.return_value = ProviderResult(success=True)
+    assert (await cancel.deliver(db, db.outbox_events.rows[1]))[0]
+    assert provider.cancel_reservation.await_count == 2
+    assert provider.cancel_reservation.call_args.args == ("original-provider-booking", "Corrected context", request["echo_token"])
+
+
+@pytest.mark.asyncio
+async def test_duplicate_clicks_and_stale_retry_do_not_create_extra_attempts(scenario):
+    db, provider, _ = scenario
+    await rejected(db, provider)
+    await asyncio.gather(*(cancel.retry_rejected(db, "tenant", f"room-{index}", "operator", "Fixed", 1)
+                           for index in range(2)))
+    assert len(db.outbox_events.rows) == 2
+    assert not (await cancel.deliver(db, db.outbox_events.rows[1]))[0]
+    assert db.exely_cancel_requests.rows[0]["state"] == "REJECTED"
+    # A stale UI retry for attempt 1 cannot retry the new rejection (attempt 2).
+    assert (await cancel.retry_rejected(db, "tenant", "room-0", "operator", "Fixed", 1))["attempt"] == 2
+    assert len(db.outbox_events.rows) == 2
+    assert (await cancel.retry_rejected(db, "tenant", "room-0", "operator", "Fixed again", 2))["attempt"] == 3
+    assert len(db.outbox_events.rows) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["PENDING", "SENDING", "UNKNOWN", "CONFIRMED", "BLOCKED"])
+async def test_manual_retry_never_reopens_non_rejected_delivery(scenario, state):
+    db, provider, _ = scenario
+    await queued(db)
+    db.exely_cancel_requests.rows[0]["state"] = state
+    before = deepcopy(db.exely_cancel_requests.rows)
+    result = await cancel.retry_rejected(db, "tenant", "room-0", "operator", "Try again", 1)
+    assert not result["can_retry"]
+    assert db.exely_cancel_requests.rows == before and len(db.outbox_events.rows) == 1
+    provider.cancel_reservation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["source_version", "room_reopened", "remote_cancelled", "other_tenant"])
+async def test_retry_revalidates_source_and_tenant_before_mutation(scenario, change):
+    db, provider, _ = scenario
+    await rejected(db, provider)
+    tenant = "tenant"
+    if change == "source_version":
+        db.exely_reservations.rows[0].update(provider_version_key="new", durable_version_key="new")
+        for row in db.bookings.rows:
+            row["provider_version_key"] = "new"
+    elif change == "room_reopened":
+        db.bookings.rows[1]["status"] = "confirmed"
+    elif change == "remote_cancelled":
+        db.exely_reservations.rows[0]["pms_status"] = "cancellation_done"
+    else:
+        tenant = "other-tenant"
+    before = deepcopy(db.exely_cancel_requests.rows)
+    with pytest.raises(ValueError):
+        await cancel.retry_rejected(db, tenant, "room-0", "operator", "Retry", 1)
+    assert db.exely_cancel_requests.rows == before and len(db.outbox_events.rows) == 1
+    if change != "other_tenant":
+        assert not (await cancel.status(db, tenant, "room-0"))["can_retry"]
+
+
+@pytest.mark.asyncio
+async def test_retry_survives_enqueue_failure_without_losing_intent(scenario, monkeypatch):
+    db, provider, _ = scenario
+    await rejected(db, provider)
+    enqueue = cancel.enqueue_outbox_event
+    monkeypatch.setattr(cancel, "enqueue_outbox_event", AsyncMock(side_effect=RuntimeError("queue unavailable")))
+    with pytest.raises(RuntimeError, match="queue unavailable"):
+        await cancel.retry_rejected(db, "tenant", "room-0", "operator", "Fixed", 1)
+    assert db.exely_cancel_requests.rows[0]["attempt"] == 2
+    assert db.exely_cancel_requests.rows[0]["state"] == "PENDING"
+    monkeypatch.setattr(cancel, "enqueue_outbox_event", enqueue)
+    await cancel.recover_pending(db, "tenant", "property")
+    await cancel.recover_pending(db, "tenant", "property")
+    assert len(db.outbox_events.rows) == 2
+    assert db.outbox_events.rows[1]["payload"]["attempt"] == 2
+
+
+@pytest.mark.asyncio
+async def test_old_worker_cannot_claim_or_overwrite_new_retry(scenario):
+    db, provider, resolver = scenario
+    event = await queued(db)
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def resolve(*_args, **_kwargs):
+        entered.set()
+        await release.wait()
+        return provider, {"auto_sync_reservations": True}
+    resolver.side_effect = resolve
+    slow_worker = asyncio.create_task(cancel.deliver(db, event))
+    await entered.wait()
+    resolver.side_effect = None
+    provider.cancel_reservation.return_value = ProviderResult(success=False, metadata={"classification": "REJECTED"})
+    assert not (await cancel.deliver(db, event))[0]
+    old_request = deepcopy(db.exely_cancel_requests.rows[0])
+    await cancel.retry_rejected(db, "tenant", "room-0", "operator", "Fixed", 1)
+    release.set()
+    assert "ALREADY_CLAIMED" in (await slow_worker)[1]
+    provider.cancel_reservation.assert_awaited_once()
+    db.exely_cancel_requests.rows[0]["state"] = "SENDING"
+    await cancel._save_outcome(db, old_request, "UNKNOWN")
+    assert db.exely_cancel_requests.rows[0]["state"] == "SENDING"
+
+
+@pytest.mark.asyncio
+async def test_retry_endpoint_requires_explicit_attempt_and_permission(scenario, monkeypatch):
+    from fastapi import HTTPException
+    from routers import pms_hardening as route
+    db, provider, _ = scenario
+    await rejected(db, provider)
+    monkeypatch.setattr(route, "db", db)
+    monkeypatch.setattr(route.perm_svc, "enforce_user_permission", lambda *_: None)
+    user = SimpleNamespace(id="operator2", tenant_id="tenant")
+    plain = route.ExelyCancellationRequest(reason="Fixed")
+    assert (await route.api_send_exely_cancellation("room-0", plain, user))["state"] == "REJECTED"
+    req = route.ExelyCancellationRequest(reason="Fixed", retry_attempt=1)
+    def deny(*_):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    monkeypatch.setattr(route.perm_svc, "enforce_user_permission", deny)
+    with pytest.raises(HTTPException) as denied:
+        await route.api_send_exely_cancellation("room-0", req, user)
+    assert denied.value.status_code == 403 and len(db.outbox_events.rows) == 1
+    monkeypatch.setattr(route.perm_svc, "enforce_user_permission", lambda *_: None)
+    assert (await route.api_send_exely_cancellation("room-0", req, user))["state"] == "PENDING"
+    assert len(db.outbox_events.rows) == 2
