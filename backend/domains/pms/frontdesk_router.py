@@ -1140,6 +1140,10 @@ async def create_walk_in_booking(
         )
 
         booking_dict = new_booking.model_dump()
+        # Booking validates dates as datetime objects; the atomic inventory
+        # boundary and overlap queries require ISO calendar-date strings.
+        booking_dict["check_in"] = new_booking.check_in.date().isoformat()
+        booking_dict["check_out"] = new_booking.check_out.date().isoformat()
         booking_dict["created_at"] = booking_dict["created_at"].isoformat()
         from core.atomic_booking import BookingConflictError, create_booking_atomic
 
