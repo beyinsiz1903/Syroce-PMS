@@ -177,7 +177,10 @@ export default function WalkinPage({ user, tenant, onLogout }) {
       const { data } = await api.post('/pms/walkin/checkin', { ...form, currency, total_amount: parseMoneyInput(form.total_amount), payment_amount: 0, nights }, { headers: { 'Idempotency-Key': operationKey.current } });
       toast.success(`Check-in tamam — Oda ${data.room_number}`);
       setDone(true);
-      setTimeout(() => nav(`/reservations/${data.booking_id}`), 1200);
+      setTimeout(() => nav('/app/reservation-calendar', {
+        replace: true,
+        state: { openBookingId: data.booking_id },
+      }), 1200);
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     finally { setSubmitting(false); }
   };
