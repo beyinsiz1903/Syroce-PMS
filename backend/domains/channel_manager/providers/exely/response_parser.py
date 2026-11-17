@@ -577,6 +577,31 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
             "services": parse_service_inventory(body)}
 
 
+def parse_cancel_rs(xml_bytes: bytes, echo_token: str) -> dict[str, Any]:
+    """A cancellation is accepted only by the matching, explicit OTA_CancelRS."""
+    invalid = {"success": False, "result_class": AMBIGUOUS,
+               "error": "Cancellation response requires reconciliation", "provider_codes": []}
+    try:
+        root = safe_ET.fromstring(xml_bytes)
+        body = root.find(_ns("Body", SOAP_NS))
+        if root.tag != _ns("Envelope", SOAP_NS) or body is None or len(body) != 1:
+            return invalid
+        response = body[0]
+        if response.tag != _ns("OTA_CancelRS"):
+            return invalid
+        if response.get("EchoToken") != echo_token:
+            return invalid
+        errors = response.find(_ns("Errors"))
+        if errors is not None:
+            return _provider_error(errors, error="Provider rejected cancellation")
+        if response.find(_ns("Success")) is None:
+            return invalid
+        return {"success": True, "result_class": SUCCESS,
+                "provider_codes": [], "warning_codes": _safe_warning_codes(response)}
+    except Exception:
+        return invalid
+
+
 def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
     """Parse OTA_NotifReportRS for delivery confirmation."""
     envelope = parse_soap_response(xml_bytes)

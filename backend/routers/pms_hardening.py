@@ -441,6 +441,46 @@ async def api_cancel_booking(req: CancellationRequest, current_user: User = Depe
     return result
 
 
+class ExelyCancellationRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.get("/bookings/{booking_id}/exely-cancellation", tags=["reservation"])
+async def api_exely_cancellation_status(booking_id: str, current_user: User = Depends(get_current_user)):
+    perm_svc.enforce_user_permission(current_user, "cancel_booking")
+    from domains.channel_manager.providers.exely.reservation_cancellation import status
+
+    try:
+        return await status(db, current_user.tenant_id, booking_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/bookings/{booking_id}/exely-cancellation", tags=["reservation"])
+async def api_send_exely_cancellation(booking_id: str, req: ExelyCancellationRequest,
+                                      current_user: User = Depends(get_current_user)):
+    """Explicitly send a historical local cancellation; never cancel extra rooms."""
+    perm_svc.enforce_user_permission(current_user, "cancel_booking")
+    from domains.channel_manager.providers.exely.reservation_cancellation import enqueue, operator_intent, status
+
+    tenant_id = current_user.tenant_id
+    try:
+        delivery = await status(db, tenant_id, booking_id)
+        if not delivery.get("can_send"):
+            return delivery
+        booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id})
+        marker = operator_intent(booking, current_user.id, req.reason)
+        if not marker or not req.reason.strip():
+            raise ValueError("EXELY_OPERATOR_INTENT_REQUIRED")
+        saved = await db.bookings.update_one({"tenant_id": tenant_id, "id": booking_id, "status": "cancelled",
+            "provider_version_key": booking.get("provider_version_key")}, {"$set": marker})
+        if saved.matched_count != 1:
+            raise ValueError("EXELY_SOURCE_CHANGED")
+        return await enqueue(db, tenant_id, booking_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/no-show", tags=["reservation"])
 async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_current_user)):
     """Mark a reservation as no-show."""

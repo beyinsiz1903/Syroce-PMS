@@ -45,6 +45,7 @@ from .response_parser import (
     RATE_LIMITED,
     REJECTED,
     parse_ari_update_rs,
+    parse_cancel_rs,
     parse_hotel_avail_rs,
     parse_notif_report_rs,
     parse_read_rs,
@@ -53,6 +54,7 @@ from .retry import ExelyRetryPolicy
 from .soap_builder import (
     build_ari_update_rq,
     build_availability_batch_rq,
+    build_cancel_rq,
     build_hotel_avail_rq,
     build_notif_report_rq,
     build_rate_amount_batch_rq,
@@ -661,6 +663,35 @@ class ExelyProvider:
                 mutation=True,
                 provider_write_count=provider_write_count,
             )
+
+    async def cancel_reservation(self, reservation_id: str, reason: str, echo_token: str) -> ProviderResult:
+        """Send once. Timeouts/malformed responses never justify a blind retry."""
+        start = time.time()
+        writes = 0
+        operation = "OTA_CancelRQ"
+        block = reservation_sync_block_reason()
+        if block:
+            return ProviderResult(success=False, error=block, error_type=block,
+                                  metadata={"provider_write_count": 0, "provider_status_class": "NOT_SENT"})
+        try:
+            if not all(isinstance(value, str) and value.strip() for value in (reservation_id, reason, echo_token)):
+                raise ExelyValidationError("Cancellation identity and reason are required")
+            xml = build_cancel_rq(self._username, self._password, self._hotel_code,
+                                  reservation_id, reason, echo_token)
+            await self._reserve_quota("reservation_cancel")
+            writes = 1
+            raw = await self._transport.send_soap(xml, get_soap_action_uri(operation))
+            result = parse_cancel_rs(raw, echo_token)
+            await self._record_provider_limit(result)
+            duration = int((time.time() - start) * 1000)
+            obs.record_provider_call(soap_action=operation, duration_ms=duration,
+                                     success=result["success"], connection_id=self._connection_id)
+            return ProviderResult(success=result["success"], duration_ms=duration,
+                                  error=None if result["success"] else result["error"],
+                                  error_type=None if result["success"] else result["result_class"],
+                                  metadata={**_parser_metadata(result), "provider_write_count": writes})
+        except ExelyError as exc:
+            return self._handle_error(exc, start, operation, mutation=True, provider_write_count=writes)
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 

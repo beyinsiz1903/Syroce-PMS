@@ -7,13 +7,13 @@ from .provider import ExelyProvider
 from .security import exely_connection_projection, resolve_exely_credentials
 
 
-async def get_exely_provider(tenant_id: str):
+async def get_exely_provider(tenant_id: str, *, property_id: str | None = None, actor: str = "exely_ari_delivery"):
     runtime_block = provider_io_block_reason()
     if runtime_block:
         raise RuntimeError(runtime_block)
 
     connection = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True},
+        {"tenant_id": tenant_id, "is_active": True, **({"hotel_code": property_id} if property_id else {})},
         exely_connection_projection(),
     )
     if not connection:
@@ -22,12 +22,14 @@ async def get_exely_provider(tenant_id: str):
     credentials = await resolve_exely_credentials(
         tenant_id,
         connection,
-        actor="exely_ari_delivery",
+        actor=actor,
     )
     if not credentials:
         raise RuntimeError("EXELY_CREDENTIALS_UNAVAILABLE")
 
     hotel_code = credentials["hotel_code"]
+    if property_id and hotel_code != property_id:
+        raise RuntimeError("EXELY_PROPERTY_MISMATCH")
     provider = ExelyProvider(
         username=credentials["username"],
         password=credentials["password"],

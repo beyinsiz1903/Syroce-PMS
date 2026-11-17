@@ -17,6 +17,7 @@ import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
 import ReservationOccupancyEditor from './ReservationOccupancyEditor';
 import ReservationAccountOverview from './ReservationAccountOverview';
+import ExelyCancellationStatus from './ExelyCancellationStatus';
 import { exelyReservationDetails } from '@/utils/exelyReservation';
 import { reservationPaymentSummary } from './paymentSummary';
 import { latestCollectionPayment, paymentMethod } from '@/lib/folioPayments';
@@ -185,6 +186,7 @@ export function GeneralInfoTab({
   const recentNotes = (notes || []).slice(0, 2);
   const recentHistory = (history || []).slice(0, 3);
   return <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="general-info-tab">
+      {booking?.status === 'cancelled' && exelySource && <div className="lg:col-span-3"><ExelyCancellationStatus booking={booking} /></div>}
       {exelySource && <div className="min-w-0 lg:col-span-3"><ReservationAccountOverview booking={booking} summary={summary} onSwitchTab={onSwitchTab} /></div>}
       <div className="lg:col-span-2 space-y-5">
         {highlights?.has_alerts && <div className="space-y-1.5" data-testid="guest-highlights-banner">

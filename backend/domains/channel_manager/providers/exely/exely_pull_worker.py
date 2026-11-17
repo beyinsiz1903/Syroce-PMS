@@ -170,6 +170,12 @@ class ExelyPullScheduler:
                     _transient_tracker.reset(key)
                     continue
 
+                from .reservation_cancellation import recover_pending
+
+                try:
+                    await recover_pending(db, tenant_id, creds["hotel_code"])
+                except Exception:
+                    logger.exception("Exely cancellation recovery deferred; continuing reservation pull")
                 await self.pull_for_tenant(
                     tenant_id=tenant_id,
                     username=creds["username"],
