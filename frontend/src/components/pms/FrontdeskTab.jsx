@@ -113,6 +113,9 @@ const FrontdeskTab = ({
     return { expectedRevenue, expectedCollections, inhouseOutstanding, occupancyPct, occRooms, totalRooms };
   }, [arrivals, departures, effectiveBookingBalance, inhouse, rooms, tenantCurrency]);
 
+  const completedArrivals = arrivals.filter(b => ['checked_in', 'checked_out'].includes(b.status)).length;
+  const pendingArrivals = arrivals.filter(b => !['checked_in', 'checked_out', 'cancelled', 'no_show', 'presentation_archived'].includes(b.status)).length;
+
   // VIP & special-request alerts: scan today's arrivals + in-house
   const guestById = useMemo(() => {
     const m = new Map();
@@ -141,8 +144,8 @@ const FrontdeskTab = ({
         source, // 'arrival' | 'inhouse'
       });
     };
-    (arrivals || []).forEach(b => addBooking(b, 'arrival'));
     (inhouse || []).forEach(b => addBooking(b, 'inhouse'));
+    (arrivals || []).forEach(b => addBooking(b, b.status === 'checked_in' ? 'inhouse' : 'arrival'));
     return items.slice(0, 12); // cap to prevent overflow
   }, [arrivals, inhouse, guestById, tf]);
 
@@ -388,7 +391,7 @@ const FrontdeskTab = ({
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{arrivals.length}</div>
-            <p className="text-xs text-gray-500">{t('pms.expectedCheckins')}</p>
+            <p className="text-xs text-gray-500">{tf('arrivalProgress', { pending: pendingArrivals, completed: completedArrivals, defaultValue: `${pendingArrivals} beklenen · ${completedArrivals} giriş yapıldı` })}</p>
           </CardContent>
         </Card>
         <Card
@@ -606,6 +609,7 @@ const FrontdeskTab = ({
               {attentionList.map(item => (
                 <button
                   key={item.id}
+                  data-testid={`attention-${item.id}`}
                   type="button"
                   onClick={() => setReservationDetailId?.(item.bookingId)}
                   className="text-left rounded-md border bg-white border-amber-200 p-2 hover:shadow-md hover:border-amber-400 transition"

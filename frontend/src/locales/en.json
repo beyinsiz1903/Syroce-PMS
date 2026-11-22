@@ -2796,7 +2796,8 @@
       "inhouseNow": "In-house",
       "loyaltyPoints": "{{points}} pts",
       "clickToOpenBooking": "Click to open booking",
-      "emailOptional": "Email (optional)"
+      "emailOptional": "Email (optional)",
+      "arrivalProgress": "{{pending}} expected · {{completed}} checked in"
     },
     "housekeeping": {
       "loading": "Loading housekeeping data...",
