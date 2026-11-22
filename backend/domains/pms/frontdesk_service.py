@@ -19,6 +19,7 @@ from core.kbs_auto_enqueue import auto_enqueue_kbs
 from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
 from modules.pms_core.operational_snapshot_service import build_operational_snapshot
+from modules.pms_core.report_money import currency_code
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,7 @@ class FrontdeskService:
                     "booking_id": booking_id,
                     "folio_number": folio_number,
                     "folio_type": "guest",
+                    "currency": currency_code(booking.get("currency")),
                     "guest_id": booking.get("guest_id"),
                     "status": "open",
                     "balance": 0.0,

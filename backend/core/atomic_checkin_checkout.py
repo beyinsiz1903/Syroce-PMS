@@ -24,6 +24,7 @@ from pymongo.write_concern import WriteConcern
 from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import client, db
 from core.tenant_db import tenant_context
+from modules.pms_core.report_money import currency_code
 from shared_kernel.audit_helper import audit_log
 
 logger = logging.getLogger("core.atomic_checkin_checkout")
@@ -143,6 +144,7 @@ async def check_in_booking_atomic(
                 "booking_id": booking_id,
                 "folio_number": folio_number,
                 "folio_type": "guest",
+                "currency": currency_code(booking.get("currency")),
                 "status": "open",
                 "guest_id": booking.get("guest_id"),
                 "balance": 0.0,
