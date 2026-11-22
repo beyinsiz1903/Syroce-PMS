@@ -238,3 +238,19 @@ it('ignores a stale refresh response after a newer list has arrived', async () =
   expect(screen.getByText('Güncel Misafir')).toBeInTheDocument();
   expect(screen.queryByText('Eski Yanıt')).not.toBeInTheDocument();
 });
+
+
+it('keeps an explicit service day in the immutable retry payload', async () => {
+  await open(); get.mockResolvedValue(found('Deniz', 'b117', 'f117')); await lookup('117');
+  fireEvent.change(screen.getByLabelText('Hizmet günü (isteğe bağlı)'), { target: { value: '2026-11-13' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  post.mockRejectedValueOnce(new Error('connection lost')).mockResolvedValueOnce({ data: {} });
+  fireEvent.click(submit());
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(submit()).toBeEnabled());
+  expect(screen.getByLabelText('Hizmet günü (isteğe bağlı)')).toBeDisabled();
+  fireEvent.click(submit());
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+  expect(post.mock.calls[0][1].service_date).toBe('2026-11-13');
+  expect(post.mock.calls[1]).toEqual(post.mock.calls[0]);
+});

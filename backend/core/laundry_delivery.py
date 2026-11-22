@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from core.audit_chain import append_audit_log
 from core.laundry_money import laundry_currency, laundry_delivery_money
+from core.laundry_service_date import validate_laundry_stay_day
 from core.tenant_db import tenant_context
 
 
@@ -28,6 +29,8 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
             raise HTTPException(409, "Teslim için aynı rezervasyona bağlı açık folyo ve içeride misafir gereklidir")
         if order.get("status") not in {"pending", "in_progress", "ready"}:
             raise HTTPException(409, "İptal veya tamamlanmış sipariş tekrar teslim edilemez")
+        service = ({"service_date": validate_laundry_stay_day(order["service_date"], booking)}
+                   if "service_date" in order else {})
         room = await db.rooms.find_one({"tenant_id": tenant_id, "room_number": order.get("room_number")}, **kw)
         if not room or (booking.get("room_id") and booking["room_id"] != room.get("id")) or (not booking.get("room_id") and booking.get("room_number") != order.get("room_number")):
             raise HTTPException(409, "Sipariş odası ve güncel konaklama eşleşmiyor; kaynak incelemesi gereklidir")
@@ -62,6 +65,8 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         now = datetime.now(UTC).isoformat()
         description = "Çamaşırhane - Oda " + str(order.get("room_number") or "-") + " (" + ", ".join(f"{i.get('name', '?')} x{i.get('quantity', 1)}" for i in order.get("items", [])) + ")"
         if ledger:
+            if service and ledger.get("service_date") != service["service_date"]:
+                raise HTTPException(409, "Önceki çamaşırhane hizmet günü kaynakla uyuşmuyor")
             if ledger.get("business_date") != day or ledger.get("currency") != currency or ledger.get("is_voided") or Decimal(str(ledger.get("amount"))) != amount:
                 raise HTTPException(409, "Önceki çamaşırhane mali kaydı güncel siparişle uyuşmuyor; kaynak incelemesi gereklidir")
         else:
@@ -70,7 +75,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
                 "sequence_number": (last or {}).get("sequence_number", 0) + 1, "entry_type": "charge", "amount": float(amount),
                 "currency": currency, "description": description, "charge_code": "LAUNDRY", "tax_amount": 0,
                 "idempotency_key": key, "posted_at": now, "posted_by": actor.email, "business_date": day, "is_voided": False,
-                "metadata": {"laundry_order_id": order_id, **entered}}
+                "metadata": {"laundry_order_id": order_id, **entered}, **service}
             await db.folio_ledger.insert_one({**ledger}, **kw)
         charge = {"id": charge_id, "tenant_id": tenant_id, "folio_id": folio_id, "booking_id": booking_id,
             "source_ledger_entry_id": ledger["id"], "source_laundry_order_id": order_id,
@@ -79,6 +84,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
             "currency": currency, "tax_amount": ledger.get("tax_amount"),
             "business_date": day, "posted_at": ledger["posted_at"], "posted_by": ledger["posted_by"], "voided": False}
         charge.update(entered)
+        charge.update(service)
         await db.folio_charges.update_one({"id": charge_id, "tenant_id": tenant_id}, {"$setOnInsert": charge}, upsert=True, **kw)
         await db.tenant_settings.update_one({"tenant_id": tenant_id, "laundry_orders.id": order_id}, {"$set": {
             "laundry_orders.$.status": "delivered", "laundry_orders.$.folio_charged": True,

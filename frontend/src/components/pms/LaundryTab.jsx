@@ -30,7 +30,7 @@ const SERVICE_TYPES = [{
   name: 'Express (3 Saat)',
   multiplier: 2
 }];
-const emptyOrder = (currency = 'TRY') => ({ room_number: '', guest_name: '', booking_id: '', folio_id: '', service_type: 'wash_iron', items: [], notes: '', priority: 'normal', input_currency: currency, exchange_rate: '' });
+const emptyOrder = (currency = 'TRY') => ({ room_number: '', guest_name: '', booking_id: '', folio_id: '', service_type: 'wash_iron', items: [], notes: '', priority: 'normal', input_currency: currency, exchange_rate: '', service_date: '' });
 const errorMessage = (error, fallback) => typeof error?.response?.data?.detail === 'string' ? error.response.data.detail : fallback;
 const money = raw => {
   const value = Number(raw);
@@ -67,6 +67,7 @@ const LaundryTab = () => {
   const lookupVersion = useRef(0);
   const request = useRef(null);
   const submitting = useRef(false);
+  const serviceDateInput = useRef(null);
   const locked = loading || Boolean(request.current);
   useEffect(() => () => { lookupVersion.current += 1; ordersVersion.current += 1; itemsVersion.current += 1; }, []);
   const changeDialog = open => {
@@ -207,6 +208,10 @@ const LaundryTab = () => {
   };
   const submitOrder = async () => {
     if (submitting.current) return;
+    if (serviceDateInput.current && !serviceDateInput.current.validity.valid) {
+      setOrderError('Hizmet gününü gün, ay ve yıl olarak tamamlayın.');
+      return;
+    }
     if (!request.current && (itemsError || roomLookupBusy || roomError || conversionError || !orderForm.booking_id || !orderForm.folio_id || orderForm.items.length === 0)) {
       toast.error('Aktif konaklama, açık folyo ve en az bir ürün gereklidir');
       return;
@@ -214,6 +219,7 @@ const LaundryTab = () => {
     submitting.current = true;
     setOrderError('');
     request.current ||= { key: crypto.randomUUID(), payload: { ...structuredClone(orderForm), folio_currency: folioCurrency, exchange_rate: orderForm.input_currency === folioCurrency ? 1 : Number(orderForm.exchange_rate) } };
+    if (!request.current.payload.service_date) delete request.current.payload.service_date;
     setLoading(true);
     try {
       await axios.post('/laundry/orders', request.current.payload, { headers: { 'Idempotency-Key': request.current.key } });
@@ -467,6 +473,7 @@ const LaundryTab = () => {
                           <p className="text-xs text-gray-400">
                             {order.items?.map(i => `${i.name} x${i.quantity}`).join(', ')}
                           </p>
+                          {order.service_date && <p className="text-xs text-muted-foreground">Hizmet günü: {String(order.service_date).split('-').reverse().join('.')}</p>}
                           {order.folio_currency && order.folio_currency !== order.currency && <p className="text-xs text-muted-foreground">Folyoya: {formatCurrency(order.folio_total, order.folio_currency)} · 1 {order.currency} = {order.exchange_rate} {order.folio_currency}</p>}
                         </div>
                       </div>
@@ -565,6 +572,11 @@ const LaundryTab = () => {
             <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> {t('cm.components_pms_LaundryTab.yeni_camasir_siparisi')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="laundry-service-date">Hizmet günü (isteğe bağlı)</Label>
+              <Input ref={serviceDateInput} id="laundry-service-date" type="date" disabled={locked} value={orderForm.service_date} onChange={e => setOrderForm(p => ({ ...p, service_date: e.target.value }))} />
+              <p className="text-xs text-muted-foreground">Hizmetin gerçekleştiği gün. Muhasebe kaydı teslim anındaki açık iş gününe işlenir.</p>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="laundry-room">{t('cm.components_pms_LaundryTab.oda_no')}</Label>
