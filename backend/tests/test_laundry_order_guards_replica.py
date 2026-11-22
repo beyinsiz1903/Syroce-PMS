@@ -274,3 +274,40 @@ async def test_missing_folio_currency_is_not_assumed_from_hotel_or_service(accep
     assert (await create(a)).status_code == 409
     assert (await a.api.patch("/api/laundry/orders/wash", json={"status": "delivered"})).status_code == 409
     assert await a.db.folio_ledger.count_documents({}) == 0
+
+@pytest.mark.parametrize('service_day', ['2026-10-21', '2026-10-22', '2026-10-26'])
+async def test_service_day_survives_delivery_without_changing_posting_day(acceptance, service_day):
+    a = acceptance
+    response = await create(a, payload(service_date=service_day), key='dated-source')
+    assert response.status_code == 200, response.text
+    order = response.json()
+    assert order['service_date'] == service_day
+    assert (await create(a, payload(service_date=service_day), key='dated-source')).json()['id'] == order['id']
+    changed = await create(a, payload(service_date='2026-10-23' if service_day != '2026-10-23' else '2026-10-24'), key='dated-source')
+    assert changed.status_code == 409
+    url = '/api/laundry/orders/' + order['id']
+    assert (await a.api.patch(url, json={'status': 'delivered'})).status_code == 200
+    charge = await a.db.folio_charges.find_one({'source_laundry_order_id': order['id']})
+    ledger = await a.db.folio_ledger.find_one({'id': charge['source_ledger_entry_id']})
+    assert charge['service_date'] == ledger['service_date'] == service_day
+    assert charge['business_date'] == ledger['business_date'] == '2026-10-26'
+    assert (await a.api.patch(url, json={'status': 'delivered'})).json()['folio_charge']['replayed']
+    assert await a.db.folio_charges.count_documents({'source_laundry_order_id': order['id']}) == 1
+
+@pytest.mark.parametrize('value', ['2026-10-20', '2026-10-27', '2026-02-30', '20261021', '', None, 123])
+async def test_invalid_or_outside_stay_service_day_leaves_no_source(acceptance, value):
+    result = await create(acceptance, payload(service_date=value))
+    assert result.status_code in {400, 409, 422}, result.text
+    rows = (await acceptance.db.tenant_settings.find_one({'tenant_id': 'qa'}))['laundry_orders']
+    assert len(rows) == 1
+
+
+async def test_changed_stay_cannot_deliver_an_outside_service_day(acceptance):
+    a = acceptance
+    response = await create(a, payload(service_date='2026-10-26'))
+    assert response.status_code == 200
+    order = response.json()
+    await a.db.bookings.update_one({'id': 'synthetic-stay'}, {'$set': {'check_out': '2026-10-25'}})
+    assert (await a.api.patch('/api/laundry/orders/' + order['id'], json={'status': 'delivered'})).status_code == 409
+    assert await a.db.folio_charges.count_documents({'source_laundry_order_id': order['id']}) == 0
+    assert await a.db.folio_ledger.count_documents({'idempotency_key': 'laundry:' + order['id']}) == 0

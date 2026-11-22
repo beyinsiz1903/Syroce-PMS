@@ -14,6 +14,7 @@ from core.business_date_service import ensure_business_date_initialized, stamp_o
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
 from core.laundry_money import laundry_currency, laundry_money_snapshot
+from core.laundry_service_date import laundry_service_date, validate_laundry_stay_day
 from core.security import get_current_user
 from core.tenant_db import get_current_tenant_id, get_system_db
 from models.schemas import User
@@ -1171,6 +1172,8 @@ def _laundry_input(body):
         lines.append({"code": line["code"].strip().lower(), "quantity": int(quantity)})
     data = {"room_number": room, "service_type": service, "priority": priority, "items": lines,
             "notes": str(body.get("notes") or "").strip(), "booking_id": body.get("booking_id") or "", "folio_id": body.get("folio_id") or ""}
+    if "service_date" in body:
+        data["service_date"] = laundry_service_date(body["service_date"])
     # Keep the exact old fingerprint when legacy clients omit the new fields.
     if "input_currency" in body:
         if body["input_currency"] is None:
@@ -1226,7 +1229,9 @@ async def create_laundry_order(
     folio_currency = laundry_currency(folio.get("currency"))
     if data.get("folio_currency") and data["folio_currency"] != folio_currency:
         raise HTTPException(409, "Hedef folyo para birimi değişmiş; kur ve tutarı yeniden kontrol edin")
-    booking = await db.bookings.find_one({"tenant_id": current_user.tenant_id, "id": booking_id}, {"_id": 0, "currency": 1}) or {}
+    booking = await db.bookings.find_one({"tenant_id": current_user.tenant_id, "id": booking_id}, {"_id": 0, "currency": 1, "check_in": 1, "check_out": 1}) or {}
+    if "service_date" in data:
+        validate_laundry_stay_day(data["service_date"], booking)
     if folio_currency != laundry_currency(booking.get("currency") or None, folio_currency):
         raise HTTPException(409, "Hedef folyo konaklamanın para biriminde olmalıdır")
     folio_id = folio["id"]
@@ -1251,6 +1256,7 @@ async def create_laundry_order(
         "total": total,
         "currency": currency,
         **snapshot,
+        **({"service_date": data["service_date"]} if "service_date" in data else {}),
         "request_key": key,
         "request_hash": fingerprint,
         "notes": data["notes"],
