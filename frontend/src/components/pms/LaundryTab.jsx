@@ -88,12 +88,12 @@ const LaundryTab = () => {
   const [newItem, setNewItem] = useState({
     code: '',
     name: '',
-    price: '', currency
+    price: '', vat_rate: '', currency
   });
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({
     name: '',
-    price: '', currency
+    price: '', vat_rate: '', currency
   });
   const activeItems = items.filter(i => i.active !== false && (i.currency || currency) === orderForm.input_currency);
   const currencies = [...new Set([currency, 'TRY', 'USD', 'EUR', 'GBP', ...items.map(i => i.currency).filter(Boolean)])];
@@ -277,6 +277,8 @@ const LaundryTab = () => {
     const code = newItem.code.trim().toLowerCase();
     const name = newItem.name.trim();
     const price = money(newItem.price);
+    const vatRate = newItem.vat_rate === '' ? null : Number(newItem.vat_rate);
+    if (vatRate !== null && (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100)) { toast.error('Geçerli KDV oranı girin'); return; }
     if (!code || !name || price === null) {
       toast.error('Kod, ad ve geçerli fiyat zorunludur');
       return;
@@ -285,13 +287,13 @@ const LaundryTab = () => {
       await axios.post('/laundry/items', {
         code,
         name,
-        price, currency: newItem.currency
+        price, currency: newItem.currency, vat_rate: vatRate
       });
       toast.success('Ürün eklendi');
       setNewItem({
         code: '',
         name: '',
-        price: '', currency
+        price: '', vat_rate: '', currency
       });
       loadItems();
     } catch (e) {
@@ -302,11 +304,13 @@ const LaundryTab = () => {
     setEditingId(it.id);
     setEditDraft({
       name: it.name,
-      price: String(it.price), currency: it.currency || currency
+      price: String(it.price), vat_rate: it.vat_rate == null ? '' : String(it.vat_rate), currency: it.currency || currency
     });
   };
   const saveEdit = async id => {
     const price = money(editDraft.price);
+    const vatRate = editDraft.vat_rate === '' ? null : Number(editDraft.vat_rate);
+    if (vatRate !== null && (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100)) { toast.error('Geçerli KDV oranı girin'); return; }
     if (!editDraft.name.trim() || price === null) {
       toast.error('Geçerli ad ve fiyat girin');
       return;
@@ -314,7 +318,7 @@ const LaundryTab = () => {
     try {
       await axios.put(`/laundry/items/${id}`, {
         name: editDraft.name.trim(),
-        price, currency: editDraft.currency
+        price, currency: editDraft.currency, vat_rate: vatRate
       });
       toast.success('Guncellendi');
       setEditingId(null);
@@ -503,7 +507,7 @@ const LaundryTab = () => {
                 <Plus className="w-4 h-4" /> {t('cm.components_pms_LaundryTab.yeni_urun_ekle')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-3">
               <Input placeholder="Kod (orn: shirt)" value={newItem.code} onChange={e => setNewItem(p => ({
               ...p,
               code: e.target.value
@@ -517,6 +521,8 @@ const LaundryTab = () => {
               price: e.target.value
             }))} />
               <select aria-label="Yeni ürün para birimi" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={newItem.currency} onChange={e => setNewItem(p => ({ ...p, currency: e.target.value }))}>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select>
+              <Input aria-label="Yeni ürün KDV oranı (%)" type="number" min="0" max="100" step="0.01" placeholder="KDV % (isteğe bağlı)" value={newItem.vat_rate} onChange={e => setNewItem(p => ({ ...p, vat_rate: e.target.value }))} />
+              <p className="text-xs text-muted-foreground md:col-span-6">Fiyat KDV dahil son tutardır; KDV ayrıca eklenmez. Oran boşsa vergi doğrulanamaz, sıfır kabul edilmez. Değişiklikler yalnız yeni siparişlere uygulanır.</p>
               <Button onClick={createItem}><Plus className="w-4 h-4 mr-1" /> {t('cm.components_pms_LaundryTab.ekle')}</Button>
             </CardContent>
           </Card>
@@ -540,6 +546,7 @@ const LaundryTab = () => {
                       price: e.target.value
                     }))} />
                           <select aria-label="Ürün para birimi" className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={editDraft.currency} onChange={e => setEditDraft(p => ({ ...p, currency: e.target.value }))}>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select>
+                          <Input aria-label="Ürün KDV oranı (%)" type="number" min="0" max="100" step="0.01" className="w-24" value={editDraft.vat_rate} onChange={e => setEditDraft(p => ({ ...p, vat_rate: e.target.value }))} />
                         </div>
                         <div className="flex gap-1 ml-2">
                           <Button size="sm" variant="outline" className="h-8" onClick={() => saveEdit(it.id)}><Check className="w-4 h-4" /></Button>
@@ -549,7 +556,7 @@ const LaundryTab = () => {
                         <div className="flex items-center gap-3 flex-1">
                           <span className="text-xs text-gray-500 font-mono w-20">{it.code}</span>
                           <span className={`text-sm flex-1 ${it.active === false ? 'text-gray-400 line-through' : ''}`}>{it.name}</span>
-                          <span className="text-sm font-bold text-gray-700 w-28 text-right">{formatCurrency(it.price, it.currency || currency)}</span>
+                          <span className="text-sm font-bold text-gray-700 w-28 text-right">{formatCurrency(it.price, it.currency || currency)}<span className="block text-xs font-normal">{it.vat_rate == null ? 'KDV oranı belirtilmemiş' : `KDV dahil · %${it.vat_rate}`}</span></span>
                         </div>
                         <div className="flex gap-1 ml-2">
                           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => toggleActive(it)}>

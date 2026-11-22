@@ -15,6 +15,7 @@ from core.database import db
 from core.folio_ledger_service import FolioLedgerService
 from core.laundry_money import laundry_currency, laundry_money_snapshot
 from core.laundry_service_date import laundry_service_date, validate_laundry_stay_day
+from core.laundry_tax import laundry_tax_snapshot, laundry_vat_rate
 from core.security import get_current_user
 from core.tenant_db import get_current_tenant_id, get_system_db
 from models.schemas import User
@@ -1242,7 +1243,7 @@ async def create_laundry_order(
             raise HTTPException(400, "Ürün aktif katalogda veya aynı para biriminde değil")
         price = Decimal(str(_cashier_number(item.get("price"), "Katalog fiyatı")))
         total = (price * line["quantity"] * _LAUNDRY_MULTIPLIERS[data["service_type"]]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        lines.append({**line, "name": item["name"], "price": float(price), "total": float(total), "currency": currency})
+        lines.append({**line, "name": item["name"], "price": float(price), "total": float(total), "currency": currency, "vat_rate": laundry_vat_rate(item.get("vat_rate"))})
     total = _cashier_number(sum(Decimal(str(line["total"])) for line in lines), "Toplam", positive=True)
     snapshot = laundry_money_snapshot(total, currency, folio_currency, data.get("exchange_rate"))
     now = datetime.utcnow()
@@ -1256,6 +1257,7 @@ async def create_laundry_order(
         "total": total,
         "currency": currency,
         **snapshot,
+        "tax_snapshot": laundry_tax_snapshot(lines, currency),
         **({"service_date": data["service_date"]} if "service_date" in data else {}),
         "request_key": key,
         "request_hash": fingerprint,
@@ -1443,6 +1445,7 @@ async def create_laundry_item(
         "name": name,
         "price": price,
         "currency": item_currency,
+        "vat_rate": laundry_vat_rate(body.get("vat_rate")),
         "active": bool(body.get("active", True)),
         "created_at": datetime.utcnow().isoformat(),
         "created_by": current_user.email,
@@ -1480,6 +1483,8 @@ async def update_laundry_item(
         set_fields["active"] = body["active"]
     if "currency" in body:
         set_fields["currency"] = laundry_currency(body["currency"])
+    if "vat_rate" in body:
+        set_fields["vat_rate"] = laundry_vat_rate(body["vat_rate"])
     if not set_fields:
         raise HTTPException(status_code=400, detail="Guncellenecek alan yok")
     set_fields["updated_at"] = datetime.utcnow().isoformat()

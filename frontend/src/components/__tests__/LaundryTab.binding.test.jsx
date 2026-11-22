@@ -97,9 +97,10 @@ it('lets an operator price a catalogue item in USD explicitly', async () => {
   fireEvent.change(screen.getByPlaceholderText('Ad (örn. Gömlek)'), { target: { value: 'Gömlek USD' } });
   fireEvent.change(screen.getByLabelText('Yeni ürün para birimi'), { target: { value: 'USD' } });
   fireEvent.change(screen.getByPlaceholderText('Fiyat (USD)'), { target: { value: '5' } });
+  fireEvent.change(screen.getByLabelText('Yeni ürün KDV oranı (%)'), { target: { value: '20' } });
   post.mockResolvedValue({ data: {} });
   fireEvent.click(screen.getByRole('button', { name: 'ekle', exact: true }));
-  await waitFor(() => expect(post).toHaveBeenCalledWith('/laundry/items', { code: 'shirt-usd', name: 'Gömlek USD', price: 5, currency: 'USD' }));
+  await waitFor(() => expect(post).toHaveBeenCalledWith('/laundry/items', { code: 'shirt-usd', name: 'Gömlek USD', price: 5, currency: 'USD', vat_rate: 20 }));
 });
 
 it('allows an explicit USD target for a TRY service when the booking is USD and several folios exist', async () => {

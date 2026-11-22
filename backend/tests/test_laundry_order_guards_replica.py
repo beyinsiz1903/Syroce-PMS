@@ -311,3 +311,23 @@ async def test_changed_stay_cannot_deliver_an_outside_service_day(acceptance):
     assert (await a.api.patch('/api/laundry/orders/' + order['id'], json={'status': 'delivered'})).status_code == 409
     assert await a.db.folio_charges.count_documents({'source_laundry_order_id': order['id']}) == 0
     assert await a.db.folio_ledger.count_documents({'idempotency_key': 'laundry:' + order['id']}) == 0
+
+
+async def test_explicit_catalog_vat_is_included_immutable_and_posted_once(acceptance):
+    a = acceptance
+    await a.db.tenant_settings.update_one({'tenant_id': 'qa'}, {'$set': {'laundry_items.0.vat_rate': 20}})
+    created = await create(a, key='tax-included')
+    assert created.status_code == 200, created.text
+    order = created.json()
+    assert (order['total'], order['tax_snapshot']['net'], order['tax_snapshot']['vat']) == (90, 75, 15)
+    # Changing the current catalogue must not reprice an accepted order.
+    await a.db.tenant_settings.update_one({'tenant_id': 'qa'}, {'$set': {'laundry_items.0.vat_rate': 10}})
+    assert (await create(a, key='tax-included')).json()['tax_snapshot'] == order['tax_snapshot']
+    url = '/api/laundry/orders/' + order['id']
+    assert (await a.api.patch(url, json={'status': 'delivered'})).status_code == 200
+    assert (await a.api.patch(url, json={'status': 'delivered'})).status_code == 200
+    charge = await a.db.folio_charges.find_one({'source_laundry_order_id': order['id']})
+    assert (charge['total'], charge['net_amount'], charge['vat_amount']) == (90, 75, 15)
+    assert await a.db.folio_charges.count_documents({'source_laundry_order_id': order['id']}) == 1
+    ledger = await a.db.folio_ledger.find_one({'id': charge['source_ledger_entry_id']})
+    assert ledger['tax_amount'] == charge['tax_amount'] == 15
