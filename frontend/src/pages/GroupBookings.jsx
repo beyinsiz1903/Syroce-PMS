@@ -109,7 +109,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
   const loadGroups = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await axios.get(`/pms/group-bookings`);
+      const res = await axios.get(`/pms/group-bookings`, { params: { nocache: true } });
       setGroups(res.data.groups || []);
     } catch (e) {
       console.error(e);

@@ -13,11 +13,13 @@ import { Home, RefreshCw } from 'lucide-react';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { localIsoDate } from '@/hooks/useBusinessDate';
 
-const FindRoomDialog = ({ open, onClose, findRoomCriteria = {}, setFindRoomCriteria, onRoomSelected, businessDate }) => {
+const FindRoomDialog = ({ open, onClose, findRoomCriteria = {}, setFindRoomCriteria, onRoomSelected, businessDate, rooms = [] }) => {
   const { t } = useTranslation();
   const [availableRooms, setAvailableRooms] = useState([]);
   const [loading, setLoading] = useState(false);
   const requestRef = useRef(0);
+  const roomTypes = [...new Set(rooms.filter(room => room.is_active !== false && !room.deleted_at && !room.is_virtual)
+    .map(room => room.room_type).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   useEffect(() => {
     requestRef.current += 1;
     setAvailableRooms([]);
@@ -46,7 +48,7 @@ const FindRoomDialog = ({ open, onClose, findRoomCriteria = {}, setFindRoomCrite
       }
       const response = await axios.get(`/frontdesk/available-rooms?${params.toString()}`);
       if (request !== requestRef.current) return;
-      const rooms = (response.data.available_rooms || []).filter(room => Number(room.capacity || room.max_occupancy || 2) >= Number(findRoomCriteria.guests || 1));
+      const rooms = (response.data.rooms || []).filter(room => Number(room.capacity || room.max_occupancy || 2) >= Number(findRoomCriteria.guests || 1));
       setAvailableRooms(rooms);
       if (rooms.length === 0) {
         toast.info(t('pms.roomSearchEmpty', 'Seçilen tarihler ve kişi sayısı için müsait oda bulunamadı.'));
@@ -90,13 +92,10 @@ const FindRoomDialog = ({ open, onClose, findRoomCriteria = {}, setFindRoomCrite
             <div>
               <Label>{t('booking.roomType')}</Label>
               <Select value={findRoomCriteria.room_type} onValueChange={(v) => setFindRoomCriteria({...findRoomCriteria, room_type: v})}>
-                <SelectTrigger><SelectValue placeholder={t('pms.anyRoomType', 'Tüm oda tipleri')} /></SelectTrigger>
+                <SelectTrigger aria-label={t('booking.roomType')}><SelectValue placeholder={t('pms.anyRoomType', 'Tüm oda tipleri')} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="any">{t('pms.anyRoomType', 'Tüm oda tipleri')}</SelectItem>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="deluxe">Deluxe</SelectItem>
-                  <SelectItem value="suite">Suite</SelectItem>
-                  <SelectItem value="presidential">Presidential</SelectItem>
+                  {roomTypes.map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

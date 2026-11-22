@@ -5311,6 +5311,23 @@ async def create_group_booking(
     }
 
 
+async def _enrich_group_booking_rooms(bookings: list[dict], tenant_id: str) -> None:
+    """Resolve the current assigned room without exposing another hotel's rooms."""
+    room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
+    rooms = {}
+    if room_ids:
+        rooms = {r["id"]: r async for r in db.rooms.find(
+            {"tenant_id": tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_type": 1},
+        )}
+    for booking in bookings:
+        room = rooms.get(booking.get("room_id"))
+        # Do not retain a stale denormalized number after a room reassignment.
+        booking["room_number"] = room.get("room_number") if room else None
+        if room:
+            booking["room_type"] = room.get("room_type")
+
+
 @router.get("/group-bookings")
 async def list_group_bookings(
     current_user: User = Depends(get_current_user),
@@ -5344,6 +5361,8 @@ async def list_group_bookings(
     if all_booking_ids:
         async for b in db.bookings.find({"id": {"$in": all_booking_ids}, "tenant_id": tid}, {"_id": 0}):
             bookings_by_id[b["id"]] = b
+
+    await _enrich_group_booking_rooms(list(bookings_by_id.values()), tid)
 
     # 3) Bucket: her gruba kendi rezervasyonlarını ata + toplamları hesapla
     for g in groups:
@@ -5384,6 +5403,7 @@ async def get_group_booking_detail(
         b["guest_detail"] = guest
         bookings_list.append(b)
 
+    await _enrich_group_booking_rooms(bookings_list, tid)
     group["bookings"] = bookings_list
     group["total_amount"] = sum(b.get("total_amount", 0) for b in bookings_list)
     group["total_paid"] = sum(b.get("paid_amount", 0) for b in bookings_list)

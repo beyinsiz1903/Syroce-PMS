@@ -85,13 +85,14 @@ describe('global search opens the selected PMS entity', () => {
 
   it('wires room-search dates and the selected room into a reservation draft without creating it', async () => {
     const original = axios.get.getMockImplementation();
-    axios.get.mockImplementation(url => url.startsWith('/frontdesk/available-rooms?') ? Promise.resolve({ data: { available_rooms: [{ id: 'room-104', room_number: '104', capacity: 2, base_price: 112, currency: 'USD' }] } }) : original(url));
+    axios.get.mockImplementation(url => url.startsWith('/frontdesk/available-rooms?') ? Promise.resolve({ data: { rooms: [{ id: 'room-104', room_number: '104', capacity: 2, base_price: 112, currency: 'USD' }] } }) : original(url));
     mount();
     fireEvent.click(await screen.findByRole('button', { name: 'Find room' }));
     fireEvent.change(screen.getByLabelText('booking.checkInDate'), { target: { value: '2026-11-10' } });
     fireEvent.change(screen.getByLabelText('booking.checkOutDate'), { target: { value: '2026-11-12' } });
     fireEvent.click(screen.getByRole('button', { name: 'common.search' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Bu odayla rezervasyon oluştur' }));
+    expect(axios.get).toHaveBeenCalledWith('/frontdesk/available-rooms?check_in=2026-11-10&check_out=2026-11-12');
     expect(await screen.findByRole('dialog', { name: 'Booking draft' })).toHaveTextContent('2026-11-10 2026-11-12 room-104');
     expect(axios.post).not.toHaveBeenCalled();
   });
