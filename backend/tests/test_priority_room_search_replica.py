@@ -73,3 +73,21 @@ async def test_group_list_and_detail_resolve_current_room_without_foreign_data(a
     assert [number async for number in read_group()] == ["QA118", "QA118"]
     a.user.tenant_id = "foreign"
     assert (await a.api.get("/api/pms/group-bookings/group-a")).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('suffix', ['T12:00:00+00:00', 'T12:00:00+03:00', 'T12:00:00Z'])
+async def test_room_search_excludes_checkout_day_even_with_operational_hours(acceptance, monkeypatch, suffix):
+    a = acceptance
+    monkeypatch.setattr(inventory, 'db', a.db)
+    await a.db.rooms.insert_one({'id': 'turnover', 'tenant_id': 'qa', 'room_number': '118', 'room_type': 'Superior', 'status': 'occupied'})
+    await a.db.bookings.insert_one({'id': 'leaving', 'tenant_id': 'qa', 'room_id': 'turnover', 'status': 'checked_in',
+                                  'check_in': '2026-11-12T14:00:00+00:00', 'check_out': '2026-11-14' + suffix})
+    during = await get_available_rooms_for_assignment('2026-11-13', '2026-11-14', 'Superior', a.user)
+    assert during['count'] == 0
+    turnover = await get_available_rooms_for_assignment('2026-11-14', '2026-11-15', 'Superior', a.user)
+    assert [r['room_number'] for r in turnover['rooms']] == ['118']
+    await a.db.bookings.insert_one({'id': 'next', 'tenant_id': 'qa', 'room_id': 'turnover', 'status': 'confirmed',
+                                  'check_in': '2026-11-15T14:00:00+00:00', 'check_out': '2026-11-17T12:00:00+00:00'})
+    assert (await get_available_rooms_for_assignment('2026-11-14', '2026-11-15', 'Superior', a.user))['count'] == 1
+    assert (await get_available_rooms_for_assignment('2026-11-15', '2026-11-16', 'Superior', a.user))['count'] == 0

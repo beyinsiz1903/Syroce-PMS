@@ -5,6 +5,7 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
+from core.stay_overlap import stay_overlap_filter
 
 
 class InventoryRepository:
@@ -22,8 +23,7 @@ class InventoryRepository:
             {
                 "tenant_id": tenant_id,
                 "status": {"$in": ["confirmed", "checked_in", "guaranteed"]},
-                "check_in": {"$lt": check_out},
-                "check_out": {"$gt": check_in},
+                **stay_overlap_filter(check_in, check_out),
             },
             {"_id": 0},
         ).to_list(1000)
