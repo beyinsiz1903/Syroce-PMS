@@ -3,11 +3,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core import booking_payment_state, night_audit_hardened as audit
+from core import booking_payment_state
+from core import night_audit_hardened as audit
 from tests.test_pos_final_consistency_replica import db  # noqa: F401
 
 
-async def seed(db, monkeypatch):
+async def seed(db, monkeypatch):  # noqa: F811 - pytest fixture injection
     monkeypatch.setattr(audit, 'db', db)
     monkeypatch.setattr(audit, 'client', db.client)
     for name in ('night_audit_run_items', 'pms_audit_trail', 'folios', 'bookings', 'folio_charges'):
@@ -25,7 +26,7 @@ async def seed(db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_room_post_updates_balance_projection_in_same_transaction(db, monkeypatch):
+async def test_room_post_updates_balance_projection_in_same_transaction(db, monkeypatch):  # noqa: F811 - pytest fixture injection
     item = await seed(db, monkeypatch)
     assert await audit._post_room_charge_item('t', item, 'r')
     row = await db.bookings.find_one({'id': 'b'})
@@ -36,7 +37,7 @@ async def test_room_post_updates_balance_projection_in_same_transaction(db, monk
 
 
 @pytest.mark.asyncio
-async def test_projection_failure_cannot_leave_acknowledged_room_debt(db, monkeypatch):
+async def test_projection_failure_cannot_leave_acknowledged_room_debt(db, monkeypatch):  # noqa: F811 - pytest fixture injection
     item = await seed(db, monkeypatch)
     monkeypatch.setattr(booking_payment_state, 'refresh_booking_payment_state', AsyncMock(side_effect=RuntimeError('projection unavailable')))
     assert not await audit._post_room_charge_item('t', item, 'r')
@@ -46,7 +47,7 @@ async def test_projection_failure_cannot_leave_acknowledged_room_debt(db, monkey
 
 
 @pytest.mark.asyncio
-async def test_mixed_currency_simulation_never_returns_nominal_money_sum(db):
+async def test_mixed_currency_simulation_never_returns_nominal_money_sum(db):  # noqa: F811 - pytest fixture injection
     from tests.test_night_audit_hardening import BD, PROPERTY, TENANT, _call_engine, _seed_booking
     await _call_engine('ensure_night_audit_indexes', db.client, db)
     await _seed_booking(db, room_rate=1000)
@@ -57,3 +58,21 @@ async def test_mixed_currency_simulation_never_returns_nominal_money_sum(db):
     assert result['success'] and result['projected_total_by_currency'] == {'TRY': 1000, 'EUR': 100}
     assert result['projected_total'] is result['total_room_revenue'] is result['total_tax_amount'] is None
     assert await db.folio_charges.count_documents({'tenant_id': TENANT}) == 0
+
+
+@pytest.mark.asyncio
+async def test_new_room_night_routes_without_moving_existing_receipt(db, monkeypatch):  # noqa: F811 - pytest fixture injection
+    item = await seed(db, monkeypatch)
+    await db.folios.update_one({'id': 'f'}, {'$set': {'currency': 'TRY'}})
+    await db.tenant_settings.update_one({'tenant_id': 't'}, {'$set': {'business_date': '2026-10-18'}})
+    await db.folios.insert_one({'tenant_id': 't', 'id': 'target', 'booking_id': 'b', 'status': 'open', 'currency': 'TRY', 'balance': 0})
+    await db.folio_routing.insert_one({'tenant_id': 't', 'id': 'rule', 'source_folio_id': 'f', 'dest_folio_id': 'target',
+        'active': True, 'apply_to_future': True, 'charge_codes': ['ROOM']})
+    assert await audit._post_room_charge_item('t', item, 'r')
+    charge = await db.folio_charges.find_one({'run_item_id': 'i'})
+    assert charge['folio_id'] == 'target' and charge['routing_source_folio_id'] == 'f'
+    assert (await db.folios.find_one({'id': 'f'}))['balance'] == -50
+    assert (await db.folios.find_one({'id': 'target'}))['balance'] == 100
+    assert (await db.payments.find_one({'id': 'p'}))['folio_id'] == 'f'
+    assert not await audit._post_room_charge_item('t', item, 'r')
+    assert await db.folio_charges.count_documents({}) == 1

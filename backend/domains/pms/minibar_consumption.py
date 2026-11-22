@@ -72,7 +72,15 @@ async def consume_to_folio(database, payload, current_user):
         folios = await database.folios.find({'tenant_id': tid, 'booking_id': booking['id'],
             'folio_type': 'guest', 'status': 'open'}, session=session).to_list(2)
         if len(folios) > 1:
-            raise HTTPException(409, 'Birden fazla misafir folyosu var; hedef pencere önce uzlaştırılmalı')
+            # An explicit unique automatic source is the only safe implicit choice.
+            rules = await database.folio_routing.find({'tenant_id': tid,
+                'source_folio_id': {'$in': [f['id'] for f in folios]}, 'active': True,
+                'apply_to_future': True}, session=session).to_list(501)
+            source_ids = {r['source_folio_id'] for r in rules
+                if not r.get('charge_codes') or 'MINIBAR' in r['charge_codes']}
+            if len(source_ids) != 1:
+                raise HTTPException(409, 'Birden fazla misafir folyosu var; hedef pencere önce uzlaştırılmalı')
+            folios = [f for f in folios if f['id'] in source_ids]
         folio = folios[0] if folios else None
         if folio and str(folio.get('currency') or code).upper() != code:
             raise HTTPException(409, 'Minibar rezervasyonu ve folyo para birimi uyuşmuyor')
@@ -81,6 +89,7 @@ async def consume_to_folio(database, payload, current_user):
         items = {item['id']: item for item in catalog}
         now = datetime.now(UTC).isoformat()
         lines, charge_ids = [], []
+        affected_folios = {}
         comp = booking.get('is_complimentary') and booking.get('complimentary_scope') == 'full'
         for number, row in enumerate(payload.lines):
             item = items.get(row.item_id)
@@ -108,6 +117,10 @@ async def consume_to_folio(database, payload, current_user):
                 await stamp_open_business_date(database, tid, charge)
                 # A conflicting unrelated index is NOT proof that this line
                 # posted. Abort the transaction instead of acknowledging loss.
+                from modules.pms_core.automatic_folio_routing import route_new_charge
+
+                target = await route_new_charge(database, tid, charge, session=session) or folio
+                affected_folios[target['id']] = target
                 await database.folio_charges.insert_one(dict(charge), session=session)
                 charge_ids.append(cid)
         doc = {'id': log_id, 'tenant_id': tid, 'room_id': payload.room_id, 'room_number': room.get('room_number'),
@@ -130,6 +143,15 @@ async def consume_to_folio(database, payload, current_user):
             doc['folio_id'] = (latest or {}).get('id')
             await database.minibar_late_charges.update_one({'tenant_id': tid, 'source_minibar_log_id': log_id},
                 {'$set': {**doc, 'source_minibar_log_id': log_id, 'status': 'pending_review', 'updated_at': now}}, upsert=True, session=session)
+        for target in affected_folios.values():
+            target_snap = (await folio_snapshots(database, tid, [target], fallback_currency=code, session=session))[target['id']]
+            await database.folios.update_one({'tenant_id': tid, 'id': target['id']},
+                {'$set': {'balance': float(target_snap['balance_by_currency'].get(code, 0))}}, session=session)
+        if len(affected_folios) == 1:
+            posted_target = next(iter(affected_folios))
+            doc.update(source_folio_id=doc.get('folio_id'), folio_id=posted_target)
+            posted_window = await database.folios.find_one({'tenant_id': tid, 'id': posted_target}, session=session)
+            doc['folio_balance'] = posted_window['balance']
         await database.minibar_consumptions.insert_one(dict(doc), session=session)
         await audit_log(actor_id=actor, tenant_id=tid, entity_type='reservation', entity_id=booking['id'],
             action='minibar_consumed' if folio else 'minibar_late_charge', metadata={'room_number': room.get('room_number'),

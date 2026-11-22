@@ -64,7 +64,7 @@ describe('in-card merge and routing', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Kuralı kaydet' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Kuralı kaydet' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
-    expect(axios.post).toHaveBeenCalledWith('/folio-routing', { source_folio_id: 'f1', dest_folio_id: 'f2', charge_codes: ['ROOM'], from_date: '2026-11-15', to_date: '2026-11-17', note: 'Misafir isteği' });
+    expect(axios.post).toHaveBeenCalledWith('/folio-routing', { source_folio_id: 'f1', dest_folio_id: 'f2', apply_to_future: true, charge_codes: ['ROOM'], from_date: '2026-11-15', to_date: '2026-11-17', note: 'Misafir isteği' });
   });
   it('preserves custom routing codes and never treats an empty custom selection as all charges', async () => {
     render(<FolioCardTools booking={booking} folios={folios} onClose={vi.fn()} />);
@@ -210,4 +210,16 @@ it.each(['Proforma Fatura', 'İşlem Aktar'])('ignores a late %s response after 
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(screen.queryByRole('dialog', { name: action === 'İşlem Aktar' ? 'İşlem Aktar' : 'Proforma Fatura' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Proforma Fatura' })).toBeEnabled();
+});
+
+
+it('can opt out of automatic future posting while preserving manual rule behavior', async () => {
+  render(<FolioCardTools booking={booking} folios={folios} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Masrafları yönlendir' }));
+  chooseMerge();
+  fireEvent.click(screen.getByLabelText('Yeni masrafları otomatik yönlendir'));
+  fireEvent.click(screen.getByLabelText('Kaynak, hedef ve işlem kapsamını kontrol ettim.'));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Kuralı kaydet' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Kuralı kaydet' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/folio-routing', expect.objectContaining({ apply_to_future: false })));
 });

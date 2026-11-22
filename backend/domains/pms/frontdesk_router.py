@@ -594,6 +594,9 @@ async def _post_charge_allocations(
         if split_group_id:
             charge_doc["split_group_id"] = split_group_id
             charge_doc["split_total_amount"] = net_amount
+        from modules.pms_core.automatic_folio_routing import route_new_charge
+
+        folio = await route_new_charge(db, tenant_id, charge_doc, session=session) or folio
         await db.folio_charges.insert_one(dict(charge_doc), session=session)
         await db.folios.update_one(
             {"id": folio["id"], "tenant_id": tenant_id},

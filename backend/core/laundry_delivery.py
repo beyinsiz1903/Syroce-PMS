@@ -58,6 +58,12 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         closed = await db.night_audit_runs.find_one({"tenant_id": tenant_id, "business_date": day, "status": {"$in": ["completed", "completed_with_exceptions"]}}, **kw)
         if closed:
             raise HTTPException(409, "Kapanmış iş gününe çamaşırhane ücreti işlenemez")
+        from modules.pms_core.automatic_folio_routing import route_new_charge
+
+        routing = {"folio_id": folio_id, "booking_id": booking_id, "currency": currency,
+            "charge_category": "laundry", "business_date": day}
+        folio = await route_new_charge(db, tenant_id, routing, session=session) or folio
+        folio_id = folio["id"]
         # Serialize sequence allocation for two different deliveries on one folio.
         await db.folios.update_one({"id": folio_id, "tenant_id": tenant_id}, {"$inc": {"laundry_post_revision": 1}}, **kw)
         key = f"laundry:{order_id}"
@@ -83,6 +89,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
             "quantity": 1, "amount": float(amount), "unit_price": float(amount), "total": float(amount),
             "currency": currency, "tax_amount": ledger.get("tax_amount"),
             "business_date": day, "posted_at": ledger["posted_at"], "posted_by": ledger["posted_by"], "voided": False}
+        charge.update({key: value for key, value in routing.items() if key.startswith("routing_")})
         charge.update(entered)
         charge.update(service)
         await db.folio_charges.update_one({"id": charge_id, "tenant_id": tenant_id}, {"$setOnInsert": charge}, upsert=True, **kw)
@@ -90,6 +97,15 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
             "laundry_orders.$.status": "delivered", "laundry_orders.$.folio_charged": True,
             "laundry_orders.$.folio_entry_id": ledger["id"], "laundry_orders.$.folio_charge_id": charge_id,
             "laundry_orders.$.updated_at": now}}, **kw)
+        if charge.get("routing_rule_id"):
+            from core.booking_payment_state import refresh_booking_payment_state
+            from modules.pms_core.receivable_reporting import folio_snapshots
+
+            snap = (await folio_snapshots(db, tenant_id, [folio], fallback_currency=currency,
+                include_booking_extras=True, session=session))[folio_id]
+            await db.folios.update_one({"tenant_id": tenant_id, "id": folio_id},
+                {"$set": {"balance": snap["balance_by_currency"].get(currency, 0)}}, **kw)
+            await refresh_booking_payment_state(db, tenant_id, booking_id, session=session, strict=True)
         if not previous:
             await append_audit_log(db, {"id": str(uuid.uuid4()), "tenant_id": tenant_id, "user_id": actor.id,
                 "action": "laundry_delivered", "entity_type": "laundry_order", "entity_id": order_id,

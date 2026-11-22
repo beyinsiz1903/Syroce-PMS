@@ -27,6 +27,7 @@ class RoutingInstructionCreate(BaseModel):
     from_date: date | None = None
     to_date: date | None = None
     note: str | None = Field(default=None, max_length=500)
+    apply_to_future: bool = False
 
     @model_validator(mode="after")
     def valid_range(self):
@@ -101,6 +102,14 @@ async def create_routing(body: RoutingInstructionCreate, user: User = Depends(ge
     booking = await db.bookings.find_one({"tenant_id": user.tenant_id, "id": src["booking_id"]}, {"currency": 1})
     if not booking or currency(src.get("currency") or booking.get("currency")) != currency(dst.get("currency") or booking.get("currency")):
         raise HTTPException(409, "Folyo para birimleri aynı olmalı")
+    if body.apply_to_future:
+        existing = await db.folio_routing.find({"tenant_id": user.tenant_id,
+            "source_folio_id": body.source_folio_id, "active": True, "apply_to_future": True}).to_list(501)
+        start, end = body.from_date.isoformat() if body.from_date else "0001-01-01", body.to_date.isoformat() if body.to_date else "9999-12-31"
+        for rule in existing:
+            codes_overlap = not body.charge_codes or not rule.get("charge_codes") or bool(set(body.charge_codes).intersection(rule["charge_codes"]))
+            if codes_overlap and start <= (rule.get("to_date") or "9999-12-31") and end >= (rule.get("from_date") or "0001-01-01"):
+                raise HTTPException(409, "Aynı masraf ve iş gününde otomatik yönlendirme kuralı zaten var")
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": user.tenant_id,

@@ -1259,12 +1259,15 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                     "voided": False,
                     "created_at": now,
                 }
+                from modules.pms_core.automatic_folio_routing import route_new_charge
+
+                await route_new_charge(db, tenant_id, charge_doc, session=session)
                 await db.folio_charges.insert_one({**charge_doc}, session=session)
 
                 # 3. Update folio balance
-                if item["folio_id"]:
+                if charge_doc["folio_id"]:
                     await db.folios.update_one(
-                        {"id": item["folio_id"], "tenant_id": tenant_id},
+                        {"id": charge_doc["folio_id"], "tenant_id": tenant_id},
                         {"$inc": {"balance": item["total"]}},
                         session=session,
                     )
@@ -1303,6 +1306,7 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                         "$set": {
                             "status": IS_POSTED,
                             "journal_entry_id": journal_id,
+                            "posted_folio_id": charge_doc["folio_id"],
                             "updated_at": now,
                         }
                     },

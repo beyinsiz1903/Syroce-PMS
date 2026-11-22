@@ -2934,7 +2934,9 @@ async def early_checkin(
             "created_at": datetime.now(UTC).isoformat(),
         }
         await stamp_open_business_date(db, tid, charge)
-        await db.extra_charges.insert_one({**charge})
+        from modules.pms_core.automatic_folio_routing import insert_booking_extra
+
+        charge = await insert_booking_extra(db, tid, charge)
         invalidate_financial_report_caches(tid)
 
     await _log_activity(
@@ -3006,7 +3008,9 @@ async def late_checkout(
             "created_at": datetime.now(UTC).isoformat(),
         }
         await stamp_open_business_date(db, tid, charge)
-        await db.extra_charges.insert_one({**charge})
+        from modules.pms_core.automatic_folio_routing import insert_booking_extra
+
+        charge = await insert_booking_extra(db, tid, charge)
         invalidate_financial_report_caches(tid)
 
     await _log_activity(
@@ -3262,7 +3266,9 @@ async def add_extra_charge_detail(
         charge["service_date"] = data.service_date.isoformat()
         charge["service_time"] = data.service_time
         charge["service_timing_source"] = "manual_entry"
-    await db.extra_charges.insert_one({**charge})
+    from modules.pms_core.automatic_folio_routing import insert_booking_extra
+
+    charge = await insert_booking_extra(db, tid, charge)
 
     invalidate_financial_report_caches(tid)
 
