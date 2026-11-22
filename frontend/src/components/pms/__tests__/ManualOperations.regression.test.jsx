@@ -42,6 +42,19 @@ describe('PMS manually discovered operation regressions', () => {
     handleCheckIn={vi.fn()} handleCheckOut={vi.fn()} loadFolio={vi.fn()} loading={false} {...props}
   /></Tabs></MemoryRouter>);
 
+  it('distinguishes completed arrivals from expected arrivals and prioritizes current in-house alerts', () => {
+    const open = vi.fn();
+    const checkedIn = { id: 'present', guest_name: 'Deniz Karaca', status: 'checked_in', special_requests: 'Sessiz oda' };
+    const expected = { id: 'expected', guest_name: 'Eren Aydın', status: 'confirmed', special_requests: 'Geç giriş' };
+    mountFrontdesk({ arrivals: [checkedIn, expected], inhouse: [checkedIn], setReservationDetailId: open });
+    expect(screen.getByTestId('kpi-arrivals')).toHaveTextContent('1 beklenen · 1 giriş yapıldı');
+    expect(screen.getByTestId('attention-present')).toHaveTextContent('pmsComponents.frontdesk.inhouseNow');
+    expect(screen.getByTestId('attention-present')).not.toHaveTextContent('pmsComponents.frontdesk.arrivalToday');
+    expect(screen.getByTestId('attention-expected')).toHaveTextContent('pmsComponents.frontdesk.arrivalToday');
+    fireEvent.click(screen.getByTestId('attention-present'));
+    expect(open).toHaveBeenCalledWith('present');
+  });
+
   it('keeps TRY, EUR and USD amounts separate in every financial pulse card', () => {
     const rows = [{ id: 'try', currency: 'TL', total_amount: 1000.25, balance: 900.25 },
       { id: 'usd', currency: 'USD', total_amount: 560, balance: 638.8 },
