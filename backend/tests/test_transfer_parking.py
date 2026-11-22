@@ -112,6 +112,7 @@ class _FakeDB:
             unique_keys=("tenant_id", "resource_id", "slot_key")
         )
         self.transport_late_charges = _Coll()
+        self.folio_routing = _Coll()
         self.folios = _Coll()
         self.folio_charges = _Coll(
             unique_keys=("tenant_id", "source_transport_booking_id", "line_no")

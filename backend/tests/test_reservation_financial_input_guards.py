@@ -461,6 +461,7 @@ async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance
             )
         ),
         extra_charges=extra_charges,
+        folio_routing=SimpleNamespace(find_one=AsyncMock(return_value=None)),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -497,6 +498,7 @@ async def test_extra_charge_converts_entered_currency_to_booking_currency(monkey
             find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a", "currency": "EUR"})
         ),
         extra_charges=extra_charges,
+        folio_routing=SimpleNamespace(find_one=AsyncMock(return_value=None)),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -615,6 +617,7 @@ async def test_mark_full_comp_zeroes_open_extras_and_preserves_original_values(m
         invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
         daily_rates=daily_rates,
         extra_charges=extra_charges,
+        folio_routing=SimpleNamespace(find_one=AsyncMock(return_value=None)),
         client=SimpleNamespace(start_session=AsyncMock(return_value=FakeSession())),
     )
     monkeypatch.setattr(reservation_detail, "db", database)

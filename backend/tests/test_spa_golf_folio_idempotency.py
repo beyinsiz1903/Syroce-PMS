@@ -142,6 +142,7 @@ class _FakeDB:
         self.folio_charges = _Coll(unique_keys=("_id",))
         self.bookings = _Coll()
         self.bookings.docs.append({'id': 'RES1', 'tenant_id': TENANT, 'status': 'checked_in', 'currency': 'TRY'})
+        self.folio_routing = _Coll()
         self.folios = _Coll()
         self.folios.docs.append({'id': 'F1', 'booking_id': 'RES1', 'tenant_id': TENANT, 'status': 'open', 'currency': 'TRY', 'balance': 0})
         self.payments = _Coll()

@@ -116,6 +116,7 @@ class _FakeDB:
         self.minibar_items = _Coll()
         self.minibar_consumptions = _Coll(unique_keys=("tenant_id", "idempotency_key"))
         self.minibar_late_charges = _Coll()
+        self.folio_routing = _Coll()
         self.folios = _Coll()
         self.folio_charges = _Coll(
             unique_keys=("tenant_id", "source_minibar_log_id", "line_no")

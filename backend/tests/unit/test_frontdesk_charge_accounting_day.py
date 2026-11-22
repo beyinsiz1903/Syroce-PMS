@@ -15,6 +15,7 @@ async def test_every_routed_charge_retains_open_day_currency_and_session(monkeyp
     charges = SimpleNamespace(insert_one=AsyncMock())
     folios = SimpleNamespace(update_one=AsyncMock())
     database = SimpleNamespace(folio_charges=charges, folios=folios,
+        folio_routing=SimpleNamespace(find=lambda *args, **kwargs: SimpleNamespace(to_list=AsyncMock(return_value=[]))),
         tenant_settings=SimpleNamespace(find_one=AsyncMock(return_value={"business_date": "2026-10-02"})))
     monkeypatch.setattr(api, "db", database)
     guest = {"id": "guest", "currency": code}
