@@ -95,6 +95,10 @@ jobs:
             bash deploy/pull-ci-images.sh
             unset REGISTRY_TOKEN
 
+            # Pull the patched proxy before any service replacement. The stack
+            # starts with --pull never, so an image pin alone is insufficient.
+            docker compose -f docker-compose.prod.yml -f deploy/docker-compose.registry.yml pull nginx
+
             # Keep the host monitor versioned with the deployment and derive
             # expected containers from Compose service identities. This avoids
             # stale hard-coded backend-2/worker-2 alarms after capacity changes.
@@ -125,6 +129,13 @@ jobs:
             # host file changed, so validate and reload it explicitly. This is a
             # zero-downtime reload and makes proxy/cache policy changes effective
             # in the deployment that introduced them.
+            # Verify the binary actually running, not only the configured tag.
+            for service in nginx frontend; do
+              version=$(docker compose -f docker-compose.prod.yml exec -T "$service" nginx -v 2>&1)
+              test "$version" = "nginx version: nginx/1.30.7" || { echo "Unexpected NGINX binary in $service: $version"; exit 1; }
+              container=$(docker compose -f docker-compose.prod.yml ps -q "$service")
+              docker inspect --format '{{.Name}} running image ID={{.Image}}' "$container"
+            done
             docker compose -f docker-compose.prod.yml exec -T nginx nginx -t
             docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload
 
