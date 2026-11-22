@@ -37,8 +37,8 @@ def test_rejected_candidate_preflight_never_reaches_rollout(tmp_path, preflight_
         if step.get("name") == "Deploy to Server"
     )
     script = deploy["with"]["script"]
-    candidate_start = script.index(
-        "docker compose -f docker-compose.prod.yml -f deploy/docker-compose.registry.yml"
+    candidate_start = script.rfind(
+        "docker compose", 0, script.index("python scripts/verify_exely_whitelist.py")
     )
     # Execute the real candidate-preflight/rollout tail with a fake Docker CLI.
     # Exclude SSH/checkout/install setup so this never touches a host or stack.

@@ -115,3 +115,16 @@ def test_healthwatch_uses_compose_services_and_single_replica_defaults():
     assert "HEALTHWATCH_WORKER_REPLICAS:-1" in script
     assert "backend-2" not in script
     assert "worker-2" not in script
+
+
+def test_patched_nginx_is_pulled_before_rollout_and_running_binary_is_checked():
+    workflow = (REPO_ROOT / ".github/workflows/deploy.yml").read_text()
+    assert workflow.index("pull nginx") < workflow.index("up -d --no-build --pull never")
+    assert 'for service in nginx frontend; do' in workflow
+    assert 'nginx version: nginx/1.30.7' in workflow
+    assert 'running image ID={{.Image}}' in workflow
+    for name in ("frontend/Dockerfile", "docker-compose.prod.yml",
+                 "deploy/docker-compose.production.yml", "infra/docker-compose.full-stack.yml"):
+        content = (REPO_ROOT / name).read_text()
+        assert "nginx:1.25-alpine" not in content
+        assert "nginx:1.30.7-alpine@sha256:" in content
