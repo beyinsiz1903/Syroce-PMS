@@ -108,6 +108,7 @@ class _FakeDB:
         self.tenant_settings.docs.append({"tenant_id": TENANT, "business_date": "2026-07-01"})
         self.transport_resources = _Coll()
         self.transport_bookings = _Coll()
+        self.transport_payments = _Coll()
         self.transport_slot_locks = _Coll(
             unique_keys=("tenant_id", "resource_id", "slot_key")
         )
