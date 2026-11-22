@@ -1227,7 +1227,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <HKTaskDialog open={openDialog === 'hktask'} onClose={() => setOpenDialog(null)} rooms={rooms} newHKTask={newHKTask} setNewHKTask={setNewHKTask} onSubmit={handleCreateHKTask} />
         <RoomBlockCreateDialog open={openDialog === 'roomblock'} onClose={() => { setOpenDialog(null); setSelectedRoom(null); }} rooms={rooms} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} newRoomBlock={newRoomBlock} setNewRoomBlock={setNewRoomBlock} onSubmit={createRoomBlock} />
         <RoomBlockViewDialog open={openDialog === 'roomblock-view'} onClose={() => setOpenDialog(null)} roomBlocks={roomBlocks} onCancel={cancelRoomBlock} />
-        <FindRoomDialog open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} findRoomCriteria={findRoomCriteria} setFindRoomCriteria={setFindRoomCriteria} businessDate={businessDate} onRoomSelected={canCreateBooking ? (room) => {
+        <FindRoomDialog rooms={rooms} open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} findRoomCriteria={findRoomCriteria} setFindRoomCriteria={setFindRoomCriteria} businessDate={businessDate} onRoomSelected={canCreateBooking ? (room) => {
           const adults = Math.max(1, Number(findRoomCriteria.guests) || 1);
           setNewBooking((current) => ({ ...current, check_in: findRoomCriteria.check_in, check_out: findRoomCriteria.check_out, room_id: room.id, adults, children: 0, children_ages: [], guests_count: adults }));
           setMultiRoomBooking([{ room_id: room.id, adults, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);

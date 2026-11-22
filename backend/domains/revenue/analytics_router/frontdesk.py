@@ -9,7 +9,7 @@ Domain Router: Analytics
 
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -17,6 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
+from modules.inventory.services.availability_read_service import AvailabilityReadService
 from modules.pms_core.role_permission_service import require_module_role  # v89 DW
 from modules.pms_core.role_permission_service import require_role as _require_role
 
@@ -134,30 +135,27 @@ async def search_bookings(
 
 # ── GET /frontdesk/available-rooms ──
 @router.get("/frontdesk/available-rooms", dependencies=[_FD_READ])
-@cached(ttl=120, key_prefix="frontdesk_available_rooms")  # Cache for 2 min
 async def get_available_rooms_for_assignment(
     check_in: str | None = None,
     check_out: str | None = None,
     room_type: str | None = None,
-    current_user=Depends(get_current_user),  # v67 Bug DD2 (architect): tenant-scoped cache key garanti.
+    current_user=Depends(get_current_user),
 ):
-    """Get available rooms for a specific date range. Varsayılan: bugün/yarın."""
-    from datetime import UTC as _UTC
-    from datetime import datetime as _dt
-    from datetime import timedelta as _td
-
-    if not check_in:
-        check_in = _dt.now(_UTC).date().isoformat()
-    if not check_out:
-        check_out = (_dt.now(_UTC).date() + _td(days=1)).isoformat()
-    query = {"tenant_id": current_user.tenant_id, "status": {"$in": ["available", "inspected"]}, "is_active": True}
-
-    if room_type:
-        query["room_type"] = room_type
-
-    available_rooms = []
-    async for room in db.rooms.find(query).sort("room_number", 1):
-        room.pop("_id", None)
-        available_rooms.append(room)
+    """Return physical rooms free for every requested night, using current inventory."""
+    try:
+        arrival = date.fromisoformat(check_in) if check_in else datetime.now(UTC).date()
+        departure = date.fromisoformat(check_out) if check_out else arrival + timedelta(days=1)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Tarihler YYYY-MM-DD biçiminde olmalı") from exc
+    if departure <= arrival:
+        raise HTTPException(status_code=422, detail="Çıkış tarihi giriş tarihinden sonra olmalı")
+    check_in, check_out = arrival.isoformat(), departure.isoformat()
+    rooms = await AvailabilityReadService().get_availability(current_user.tenant_id, check_in, check_out, room_type)
+    # Current occupancy/housekeeping state does not establish future availability.
+    # Dated bookings and blocks do; permanently unsellable rooms remain excluded.
+    available_rooms = sorted(
+        (room for room in rooms if room["available"] and str(room.get("status", "")).lower() not in {"out_of_order", "out_of_service", "maintenance", "ooo", "oos"}),
+        key=lambda room: str(room.get("room_number", "")),
+    )
 
     return {"rooms": available_rooms, "count": len(available_rooms), "check_in": check_in, "check_out": check_out}
