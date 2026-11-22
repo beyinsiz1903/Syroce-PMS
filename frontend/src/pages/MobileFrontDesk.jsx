@@ -10,6 +10,7 @@ import { performCheckin } from '@/utils/offlineCheckin';
 import { performCheckout } from '@/utils/offlineCheckout';
 import { RESERVATION_EDIT_LOCK_HEADER, withReservationEditLock } from '@/lib/reservationEditLockManager';
 import { getCheckoutErrorMessage } from '@/utils/pmsCheckout';
+import { bookingRef } from '@/pages/reservation-detail/helpers';
 import { 
   ArrowLeft, 
   Users, 
@@ -104,7 +105,15 @@ const MobileFrontDesk = ({ user }) => {
 
       const bookings = bookingsRes?.data;
       const rows = Array.isArray(bookings) ? bookings : bookings?.bookings;
-      setAllBookings(Array.isArray(rows) ? rows : null);
+      // The default historical page can be filled by far-future test stays.
+      // Always retain the server's current operation context, without refetching or duplicating bookings.
+      const currentRows = [...(inHouseRes?.data?.in_house || []),
+        ...(businessDayRes?.data?.arrivals || []), ...(businessDayRes?.data?.departures || [])];
+      const current = new Map();
+      for (const row of [...currentRows, ...(Array.isArray(rows) ? rows : [])]) {
+        if (row.id) current.set(row.id, { ...row, ...(current.get(row.id) || {}) });
+      }
+      setAllBookings(Array.isArray(rows) ? [...current.values()] : null);
       
       const snapshot = businessDayRes?.data;
       setBusinessDay(snapshot?.business_date ? snapshot : null);
@@ -229,6 +238,13 @@ const MobileFrontDesk = ({ user }) => {
   // NEW FEATURE 1: RESERVATION SEARCH
   const handleSearch = async () => {
     try {
+      const exactReference = searchQuery.trim().toUpperCase();
+      const localMatches = (allBookings || []).filter(row => bookingRef(row).toUpperCase() === exactReference);
+      if (exactReference && localMatches.length) {
+        setSearchResults(localMatches);
+        toast.success(`${localMatches.length} rezervasyon bulundu`);
+        return;
+      }
       const params = new URLSearchParams();
       if (searchQuery) params.append('query', searchQuery);
       
@@ -771,6 +787,7 @@ const MobileFrontDesk = ({ user }) => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
+            <p className="text-xs text-slate-600">Güncel konaklayanlar, iş günü giriş/çıkışları ve son yüklenen rezervasyon sayfası. Tüm geçmiş değildir; diğer kayıtlar için Arama'yı kullanın.</p>
             {!allBookings && <p role="alert" className="text-sm text-amber-800">Rezervasyonlar yüklenemedi. Ana ekrandan yenileyip tekrar deneyin.</p>}
             {allBookings?.length === 0 && <p className="text-sm text-slate-600">Rezervasyon bulunamadı.</p>}
             {allBookings?.map((booking) => (
@@ -1047,6 +1064,7 @@ const MobileFrontDesk = ({ user }) => {
               </Button>
             </div>
             
+            <p className="text-xs text-slate-600">Kısa RES numarası güncel listedeki kaydı bulur. Eski rezervasyonlar için misafir adı veya kanal rezervasyon numarasıyla arayın.</p>
             <div className="space-y-2">
               {searchResults.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">Arama yapın veya sonuç bulunamadı</p>

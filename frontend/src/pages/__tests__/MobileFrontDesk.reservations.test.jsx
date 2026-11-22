@@ -61,7 +61,7 @@ describe('mobile front desk reservations', () => {
   it('displays a PMS reservation when the endpoint returns a bare list', async () => {
     renderFrontDesk();
     fireEvent.click(await screen.findByRole('button', { name: 'Rezervasyonlar' }));
-    const dialog = screen.getByRole('dialog', { name: 'Rezervasyonlar (1)' });
+    const dialog = screen.getByRole('dialog', { name: 'Rezervasyonlar (3)' });
     expect(within(dialog).getByText('Hakan Arslan')).toBeVisible();
     expect(within(dialog).getByText('Oda: 127')).toBeVisible();
   });
@@ -75,6 +75,27 @@ describe('mobile front desk reservations', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Rezervasyonlar' }));
     expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent('Rezervasyonlar yüklenemedi');
     expect(screen.queryByText('Rezervasyonlar (0)')).not.toBeInTheDocument();
+  });
+
+  it('retains a current stay outside the default historical page and searches its displayed short reference', async () => {
+    const currentStay = { ...reservation, id: '01800000-0000-4000-8000-00000071c939', guest_name: 'Ece Aksoy', room_number: '102' };
+    const baseGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation(async path => {
+      if (path === '/pms/bookings') return { data: [{ ...reservation, id: 'future', check_in: '2042-09-27' }] };
+      if (path === '/unified/in-house') return { data: { in_house: [currentStay], count: 1 } };
+      return baseGet(path);
+    });
+    renderFrontDesk();
+    fireEvent.click(await screen.findByRole('button', { name: 'Rezervasyonlar' }));
+    expect(within(screen.getByRole('dialog')).getByText('Ece Aksoy')).toBeVisible();
+    expect(screen.getByText(/Tüm geçmiş değildir/)).toBeVisible();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape', code: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Arama' }));
+    fireEvent.change(screen.getByPlaceholderText('Ad, Soyad, Tel, Email veya Rezervasyon No'), { target: { value: 'res-71c939' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ara' }));
+    expect(await screen.findByText('Ece Aksoy')).toBeVisible();
+    expect(axios.get.mock.calls.some(([path]) => path.startsWith('/reservations/search'))).toBe(false);
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   it('opens the existing walk-in workflow from the quick action', async () => {

@@ -16,11 +16,29 @@ import {
   Shield
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import axios from 'axios';
 
 const MobileDashboard = ({ user, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
+  const [operations, setOperations] = useState({ loading: true, day: null, dirty: null, arrivals: null });
+  useEffect(() => {
+    let active = true;
+    setOperations({ loading: true, day: null, dirty: null, arrivals: null });
+    Promise.allSettled([axios.get('/frontdesk/business-day'), axios.get('/housekeeping/room-status')]).then(([day, rooms]) => {
+      if (!active) return;
+      const snapshot = day.status === 'fulfilled' ? day.value.data : null;
+      const dirty = rooms.status === 'fulfilled' ? rooms.value.data?.status_counts?.dirty : null;
+      setOperations({ loading: false,
+        day: /^\d{4}-\d{2}-\d{2}$/.test(snapshot?.business_date || '') ? snapshot.business_date : null,
+        arrivals: Array.isArray(snapshot?.arrivals) ? snapshot.arrivals.length : null,
+        dirty: Number.isInteger(dirty) && dirty >= 0 ? dirty : null,
+      });
+    });
+    return () => { active = false; };
+  }, [user?.tenant_id]);
+  const unavailable = operations.loading ? 'Yükleniyor…' : 'Doğrulanamadı';
 
   const departments = [
     {
@@ -151,8 +169,8 @@ const MobileDashboard = ({ user, onLogout }) => {
                 <p className="text-sm text-blue-600">{user?.role || 'Role'}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-gray-500">{t('mobileDashboard.today')}</p>
-                <p className="text-sm font-semibold">{new Date().toLocaleDateString('tr-TR')}</p>
+                <p className="text-xs text-gray-500">PMS iş günü</p>
+                <p className="text-sm font-semibold">{operations.day ? new Date(`${operations.day}T12:00:00`).toLocaleDateString('tr-TR') : unavailable}</p>
               </div>
             </div>
           </CardContent>
@@ -199,14 +217,14 @@ const MobileDashboard = ({ user, onLogout }) => {
         <Card className="mb-4 border-amber-200 bg-amber-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              {t('mobileDashboard.todaysAlerts')}
+              İş günü ve güncel oda durumu
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between p-2 bg-white rounded">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                <span className="text-sm">{t('mobileDashboard.roomsNeedCleaning', { count: 12 })}</span>
+                <span className="text-sm">{operations.dirty == null ? `Temizlik bekleyen oda: ${unavailable}` : t('mobileDashboard.roomsNeedCleaning', { count: operations.dirty })}</span>
               </div>
               <Button size="sm" variant="ghost" onClick={() => navigate('/mobile/housekeeping')}>
                 {t('mobileDashboard.view')}
@@ -215,7 +233,7 @@ const MobileDashboard = ({ user, onLogout }) => {
             <div className="flex items-center justify-between p-2 bg-white rounded">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span className="text-sm">{t('mobileDashboard.arrivalsExpected', { count: 8 })}</span>
+                <span className="text-sm">{operations.arrivals == null || !operations.day ? `Beklenen girişler: ${unavailable}` : t('mobileDashboard.arrivalsExpected', { count: operations.arrivals })}</span>
               </div>
               <Button size="sm" variant="ghost" onClick={() => navigate('/mobile/frontdesk')}>
                 {t('mobileDashboard.view')}
@@ -224,7 +242,7 @@ const MobileDashboard = ({ user, onLogout }) => {
             <div className="flex items-center justify-between p-2 bg-white rounded">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-sm">{t('mobileDashboard.pendingRequests', { count: 5 })}</span>
+                <span className="text-sm">Teknik talepleri görüntüle</span>
               </div>
               <Button size="sm" variant="ghost" onClick={() => navigate('/mobile/maintenance')}>
                 {t('mobileDashboard.view')}
