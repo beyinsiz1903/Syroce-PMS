@@ -32,6 +32,7 @@ from domains.pms.folio_routing_split import split_kurus
 from domains.pms.frontdesk_service import frontdesk_service
 from models.enums import BookingStatus, ChannelType, ChargeCategory, PaymentMethod, PaymentType
 from models.schemas import Booking, Guest, User
+from modules.pms_core.report_money import currency_code
 from modules.pms_core.reporting_financials import stamp_reporting_values
 from modules.pms_core.role_permission_service import (
     require_module_role,  # v97 DW
@@ -268,12 +269,16 @@ async def _ensure_open_folio(tenant_id: str, booking_id: str, guest_id: str | No
     )
     if folio:
         return folio
+    booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0, "currency": 1})
+    if not booking:
+        raise HTTPException(404, "Rezervasyon bulunamadı")
     folio = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "booking_id": booking_id,
         "folio_number": await generate_folio_number(tenant_id),
         "folio_type": "guest",
+        "currency": currency_code(booking.get("currency")),
         "status": "open",
         "guest_id": guest_id,
         "company_id": None,
