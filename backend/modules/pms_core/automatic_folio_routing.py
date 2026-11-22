@@ -141,9 +141,14 @@ async def insert_booking_extra(database, tenant_id, charge):
             raise HTTPException(409, 'Ek ücret için yönlendirme kaynakları çakışıyor; ücret işlenmedi')
         posted = dict(charge)
         target = None
-        if matched:
-            posted.update(folio_id=matched[0]['source_folio_id'], currency=charge.get('currency') or booking.get('currency'))
+        source_ids = {r['source_folio_id'] for r in rules}
+        source_id = matched[0]['source_folio_id'] if matched else next(iter(source_ids)) if len(source_ids) == 1 else None
+        if rules and not source_id:
+            raise HTTPException(409, 'Eşleşmeyen ek ücret için kaynak hesap belirsiz; ücret işlenmedi')
+        if source_id:
+            posted.update(folio_id=source_id, currency=charge.get('currency') or booking.get('currency'))
             target = await route_new_charge(database, tenant_id, posted, session=session)
+            target = target or next(f for f in folios if f['id'] == source_id)
         await database.extra_charges.insert_one(dict(posted), session=session)
         if target:
             snap = (await folio_snapshots(database, tenant_id, [target], fallback_currency=posted['currency'], include_booking_extras=True, session=session))[target['id']]

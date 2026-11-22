@@ -169,3 +169,15 @@ async def test_guest_card_charge_api_uses_rule_before_first_insert(acceptance):
     assert charge['folio_id'] == 'company-window'
     assert (await a.db.folios.find_one({'id': 'company-window'}))['balance'] == 15
     assert (await a.db.folios.find_one({'id': 'synthetic-folio'}))['balance'] == 560
+
+
+async def test_unmatched_guest_card_extra_stays_on_unique_routing_source(acceptance):
+    from modules.pms_core.automatic_folio_routing import insert_booking_extra
+    a = acceptance
+    charge = await setup(a)
+    charge.pop('folio_id')
+    charge.update(category='minibar', charge_category='minibar', charge_amount=15)
+    result = await insert_booking_extra(a.db, 'qa', charge)
+    assert result['folio_id'] == 'synthetic-folio'
+    assert (await a.db.folios.find_one({'id': 'synthetic-folio'}))['balance'] == 575
+    assert (await a.db.folios.find_one({'id': 'company-window'}))['balance'] == 0
