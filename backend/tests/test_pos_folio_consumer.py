@@ -156,6 +156,7 @@ class _Coll:
 
 class _FakeDB:
     def __init__(self):
+        self.folio_routing = _Coll()
         self.folios = _Coll()
         self.folio_charges = _Coll(unique_pos_source=True)
         self.payments = _Coll()

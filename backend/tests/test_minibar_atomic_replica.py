@@ -130,3 +130,19 @@ async def test_reservation_projection_failure_rolls_back_consumption(wired, monk
         await router.consume(payload(), user())
     assert not await wired.folio_charges.count_documents({}) and not await wired.minibar_consumptions.count_documents({})
     assert (await wired.folios.find_one({}))['balance'] == 0
+
+
+async def test_automatic_minibar_routes_each_line_once_to_same_booking_window(wired):
+    await wired.folios.insert_one({'id': 'company', 'tenant_id': 't', 'booking_id': 'b',
+        'currency': 'TRY', 'folio_type': 'guest', 'status': 'open', 'balance': 0})
+    await wired.folio_routing.insert_one({'id': 'rule', 'tenant_id': 't', 'source_folio_id': 'f',
+        'dest_folio_id': 'company', 'active': True, 'apply_to_future': True, 'charge_codes': ['MINIBAR']})
+    first = await router.consume(payload(), user())
+    replay = await router.consume(payload(), user())
+    assert replay['idempotent']
+    assert first['consumption']['folio_id'] == 'company'
+    assert await wired.folio_charges.count_documents({'folio_id': 'company'}) == 2
+    assert await wired.folio_charges.count_documents({'folio_id': 'f'}) == 0
+    assert (await wired.folios.find_one({'id': 'f'}))['balance'] == 0
+    assert (await wired.folios.find_one({'id': 'company'}))['balance'] == 170
+    assert await wired.payments.count_documents({}) == 0

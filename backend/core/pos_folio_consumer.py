@@ -205,6 +205,21 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
             return await _apply_reversed({'tenant_id': tenant_id, 'payload': {**reversal.get('payload', {}), 'folio_id': folio_id, 'source_pos_order_id': order_id}})
         return True, (f"late-charge: folio {folio_id} not open (status={folio_status}); routed order {order_id} to AR/late-charge")
 
+    automatic_rule = await db.folio_routing.find_one({'tenant_id': tenant_id, 'source_folio_id': folio_id,
+        'active': True, 'apply_to_future': True})
+    routed_previous = await db.folio_charges.find_one({'tenant_id': tenant_id, 'source_pos_order_id': order_id,
+        'routing_execution': 'automatic_new_charge'})
+    if automatic_rule or routed_previous:
+        from modules.pms_core.automatic_folio_routing import post_automatic_pos_charges
+
+        await post_automatic_pos_charges(db, tenant_id, folio, order_id, charges)
+        reversal = await db.outbox_events.find_one({'tenant_id': tenant_id, 'entity_id': order_id, 'event_type': POS_CHARGE_REVERSED})
+        if reversal:
+            return await _apply_reversed({'tenant_id': tenant_id, 'payload': {**reversal.get('payload', {}),
+                'folio_id': folio_id, 'source_pos_order_id': order_id}})
+        invalidate_financial_report_caches(tenant_id)
+        return True, f'POS order {order_id} posted with automatic routing'
+
     inserted = 0
     for cdoc in charges:
         try:

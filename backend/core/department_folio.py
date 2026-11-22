@@ -62,7 +62,7 @@ async def post_source_charge(db, tenant_id, source, actor_id, *, session):
         source_query = {"$or": [{source_field: sid}, {"upsell_offer_id": sid}]}
     prior = await db.folio_charges.find_one({"tenant_id": tenant_id, **source_query}, session=session)
     if prior:
-        if (prior.get("id"), prior.get("source_fingerprint"), prior.get("booking_id"), prior.get("folio_id"), prior.get("currency"), prior.get("total"), bool(prior.get("voided"))) != (
+        if (prior.get("id"), prior.get("source_fingerprint"), prior.get("booking_id"), prior.get("routing_source_folio_id") or prior.get("folio_id"), prior.get("currency"), prior.get("total"), bool(prior.get("voided"))) != (
             cid,
             fingerprint,
             bid,
@@ -127,6 +127,9 @@ async def post_source_charge(db, tenant_id, source, actor_id, *, session):
         charge["upsell_offer_id"] = sid
     if source.get("external_reference"):
         charge["external_reference"] = source["external_reference"]
+    from modules.pms_core.automatic_folio_routing import route_new_charge
+
+    folio = await route_new_charge(db, tenant_id, charge, session=session) or folio
     await db.folio_charges.insert_one(dict(charge), session=session)
     if kind == "mice":
         legacy = await db.folio_postings.find_one({"tenant_id": tenant_id, "source": "mice_module", "reference": sid, "posting_type": "CHARGE"}, session=session)

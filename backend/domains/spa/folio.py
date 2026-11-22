@@ -50,8 +50,10 @@ async def post_charge(database, tenant_id, appt, actor_id, actor_name, *, sessio
     cid = str(uuid5(NAMESPACE_URL, identity))
     existing = await database.folio_charges.find_one({'tenant_id': tenant_id, 'id': cid}, {'_id': 0}, session=session)
     if existing:
-        if any(existing.get(k) != value for k, value in {'booking_id': booking_id, 'folio_id': folio['id'],
-                'currency': code, 'total': float(gross), 'amount': float(net), 'vat_amount': float(vat)}.items()):
+        expected = {'booking_id': booking_id, 'folio_id': folio['id'],
+            'currency': code, 'total': float(gross), 'amount': float(net), 'vat_amount': float(vat)}
+        comparable = {**existing, 'folio_id': existing.get('routing_source_folio_id') or existing.get('folio_id')}
+        if any(comparable.get(k) != value for k, value in expected.items()):
             raise HTTPException(409, 'SPA kaynak kaydı mevcut folyo tutarıyla uyuşmuyor')
         return {'charge': existing, 'replayed': True}
     charge = {'_id': identity, 'id': cid, 'tenant_id': tenant_id, 'booking_id': booking_id, 'folio_id': folio['id'],
@@ -62,6 +64,9 @@ async def post_charge(database, tenant_id, appt, actor_id, actor_name, *, sessio
         'posted_by': actor_name, 'posted_by_id': actor_id, 'date': appt['completed_at'], 'posted_at': appt['completed_at'],
         'is_complimentary': gross == 0, 'complimentary_original_amount': float(original) if gross == 0 else None}
     await stamp_open_business_date(database, tenant_id, charge)
+    from modules.pms_core.automatic_folio_routing import route_new_charge
+
+    folio = await route_new_charge(database, tenant_id, charge, session=session) or folio
     await database.folio_charges.insert_one(dict(charge), session=session)
     posting = {'_id': identity, 'id': cid, 'tenant_id': tenant_id, 'reservation_id': booking_id,
         'folio_id': folio['id'], 'transaction_code': 'SPA', 'description': charge['description'],
