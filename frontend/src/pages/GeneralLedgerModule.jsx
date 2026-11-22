@@ -15,6 +15,7 @@ import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
 import { GeneralLedgerNavigation } from '@/pages/accounting/GeneralLedgerNavigation';
 import { GeneralLedgerOverview } from '@/pages/accounting/GeneralLedgerOverview';
+import { JournalSourceDetails } from '@/pages/accounting/JournalSourceDetails';
 import { VoucherPolicyControls } from '@/pages/accounting/VoucherPolicyControls';
 import OperationalValuationCard from '@/pages/accounting/OperationalValuationCard';
 import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText, Send, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
@@ -1485,6 +1486,7 @@ const GeneralLedgerModule = () => {
                         <span className="font-bold text-gray-900">{fmtMoney(j.total_debit)}</span>
                       </div>
                       <p className="text-sm text-gray-600 truncate">{j.memo}</p>
+                      <JournalSourceDetails journal={j} accounts={accounts} currency={ledgerCurrency} />
                       {j.reversal_status === 'reversed' && <p className="text-xs text-amber-700 mt-2">Bu fiş için ters kayıt oluşturuldu.</p>}
                       {journalReversalBlocker(j, journalReversalControls[j.id]) ? <p className="mt-2 text-xs text-slate-600">{journalReversalBlocker(j, journalReversalControls[j.id])}</p> : (
                         <Button size="sm" variant="outline" className="w-full mt-3" disabled={reversalBusy === j.id} onClick={() => requestJournalReversal(j)}>
