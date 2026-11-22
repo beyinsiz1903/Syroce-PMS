@@ -17,6 +17,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
 import { confirmDialog } from '@/lib/dialogs';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import {
@@ -32,7 +33,7 @@ const KIND_LABELS = Object.fromEntries(KIND_OPTIONS.map((k) => [k.value, k.label
 
 const EMPTY_RESOURCE = { name: '', kind: 'transfer_vehicle', price: '', capacity: 1, active: true };
 const EMPTY_BOOKING = {
-  resource_id: '', room_number: '', guest_name: '', booking_id: '',
+  customer_type: 'hotel_guest', resource_id: '', room_number: '', guest_name: '', booking_id: '',
   start_date: '', num_days: 1, pickup_at: '', note: '', vat_rate: '',
 };
 const EMPTY_VALET = { plate: '', guest_name: '', room_number: '', vehicle_info: '', parking_spot: '', note: '' };
@@ -46,6 +47,9 @@ const STATUS_VARIANTS = {
 const TransferParkingPage = () => {
   useTranslation();
   const [tab, setTab] = useState('bookings');
+  const businessDate = useBusinessDate();
+  const [paymentDay, setPaymentDay] = useState('');
+  const analyticsDay = paymentDay || businessDate;
   const tenantCurrency = cachedTenantCurrency();
   const money = (amount, currency) => formatCurrency(amount, currency || tenantCurrency);
 
@@ -68,6 +72,11 @@ const TransferParkingPage = () => {
   const [showLprDialog, setShowLprDialog] = useState(false);
   const [lprForm, setLprForm] = useState(EMPTY_LPR);
   const pendingKeyRef = useRef(null);
+  const [settlement, setSettlement] = useState(null);
+  const [settlementMethod, setSettlementMethod] = useState('cash');
+  const [settlementReference, setSettlementReference] = useState('');
+  const settlementKey = useRef(null);
+  const settlementBusy = useRef(false);
 
   const activeResources = resources.filter((r) => r.active);
   const selectedResource = activeResources.find((r) => r.id === bookingForm.resource_id);
@@ -133,10 +142,10 @@ const TransferParkingPage = () => {
 
   const loadAnalytics = useCallback(async () => {
     try {
-      const res = await axios.get('/transfer-parking/analytics');
+      const res = await axios.get('/transfer-parking/analytics', { params: { business_date: analyticsDay } });
       setAnalytics(res.data);
     } catch { setAnalytics(null); }
-  }, []);
+  }, [analyticsDay]);
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
@@ -229,6 +238,25 @@ const TransferParkingPage = () => {
     }
   };
 
+  const openSettlement = (booking, refund = false) => {
+    settlementKey.current = crypto.randomUUID(); setSettlement({ booking, refund });
+    setSettlementMethod(refund ? booking.payment_method : 'cash'); setSettlementReference('');
+  };
+  const saveSettlement = async () => {
+    if (!settlement || settlementBusy.current || settlementReference.trim().length < 3) return;
+    settlementBusy.current = true; setSubmitting(true);
+    try {
+      const { booking, refund } = settlement;
+      await axios.post(`/transfer-parking/bookings/${booking.id}/settlement${refund ? '/refund' : ''}`, {
+        request_id: settlementKey.current, amount: booking.total, currency: booking.currency || tenantCurrency,
+        method: settlementMethod, reference: settlementReference.trim(),
+      });
+      toast.success(refund ? 'Otopark iadesi kaydedildi' : 'Otopark ödemesi kaydedildi');
+      setSettlement(null); await loadBookings(); await loadAnalytics();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Sonuç doğrulanamadı. Kaydı yenileyip kontrol edin.'); }
+    finally { settlementBusy.current = false; setSubmitting(false); }
+  };
+
   // ── Rezervasyon ──
   const openBookingDialog = () => {
     setBookingForm(EMPTY_BOOKING);
@@ -243,7 +271,7 @@ const TransferParkingPage = () => {
       toast.error('Kaynak seçin');
       return;
     }
-    if (!bookingForm.room_number.trim()) {
+    if (bookingForm.customer_type === 'hotel_guest' && !bookingForm.room_number.trim()) {
       toast.error('Oda numarası gerekli');
       return;
     }
@@ -251,12 +279,16 @@ const TransferParkingPage = () => {
       toast.error('Toplama dahil KDV oranını belirtin; vergisiz ise açıkça 0 girin');
       return;
     }
+    if (bookingForm.customer_type === 'external' && (selectedKind !== 'parking_spot' || !bookingForm.guest_name.trim())) {
+      toast.error('Dış müşteri için otopark kaynağı ve müşteri adı gerekli'); return;
+    }
     const payload = {
+      customer_type: bookingForm.customer_type,
       vat_rate: Number(String(bookingForm.vat_rate).replace(',', '.')),
       resource_id: bookingForm.resource_id,
-      room_number: bookingForm.room_number.trim(),
+      room_number: bookingForm.customer_type === 'hotel_guest' ? bookingForm.room_number.trim() : undefined,
       guest_name: bookingForm.guest_name.trim() || undefined,
-      booking_id: bookingForm.booking_id.trim() || undefined,
+      booking_id: bookingForm.customer_type === 'hotel_guest' ? bookingForm.booking_id.trim() || undefined : undefined,
       note: bookingForm.note.trim() || undefined,
       idempotency_key: pendingKeyRef.current,
     };
@@ -378,7 +410,7 @@ const TransferParkingPage = () => {
                     <th className="p-3">Misafir</th>
                     <th className="p-3">Plan</th>
                     <th className="p-3 text-right">Tutar</th>
-                    <th className="p-3">Folyo</th>
+                    <th className="p-3">Hesap / Ödeme</th>
                     <th className="p-3">Durum</th>
                     <th className="p-3" />
                   </tr>
@@ -391,12 +423,12 @@ const TransferParkingPage = () => {
                     <tr key={bk.id} className="border-b last:border-0">
                       <td className="p-3">{KIND_LABELS[bk.kind] || bk.kind}</td>
                       <td className="p-3">{bk.resource_name}</td>
-                      <td className="p-3">{bk.room_number || '-'}</td>
+                      <td className="p-3">{bk.customer_type === 'external' ? 'Dış müşteri' : bk.room_number || '-'}</td>
                       <td className="p-3">{bk.guest_name || '-'}</td>
                       <td className="p-3">{formatSchedule(bk)}</td>
                       <td className="p-3 text-right">{money(bk.total, bk.currency)}</td>
                       <td className="p-3">
-                        {bk.folio_charged
+                        {bk.customer_type === 'external' ? <Badge variant="outline">{bk.payment_status === 'paid' ? 'Ödendi' : bk.payment_status === 'refunded' ? 'İade edildi' : 'Ödeme bekliyor'}</Badge> : bk.folio_charged
                           ? <Badge variant="default">İşlendi</Badge>
                           : <Badge variant="outline">Geç tahakkuk</Badge>}
                       </td>
@@ -404,6 +436,11 @@ const TransferParkingPage = () => {
                         <Badge variant={STATUS_VARIANTS[bk.status] || 'outline'}>{bk.status}</Badge>
                       </td>
                       <td className="p-3 text-right">
+                        {bk.status === 'reserved' && bk.customer_type === 'external' && bk.payment_status !== 'refunded' && (
+                          <Button size="sm" variant="outline" onClick={() => openSettlement(bk, bk.payment_status === 'paid')}>
+                            {bk.payment_status === 'paid' ? 'Ödemeyi iade et' : 'Ödeme kaydet'}
+                          </Button>
+                        )}
                         {bk.status === 'reserved' && (
                           <Button size="sm" variant="ghost" onClick={() => cancelBooking(bk)}>
                             <Trash2 className="h-4 w-4" />
@@ -568,13 +605,14 @@ const TransferParkingPage = () => {
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
+          <div><Label htmlFor="parking-analytics-day">Dış müşteri ödemelerinin iş günü</Label><Input id="parking-analytics-day" type="date" value={analyticsDay} onChange={e => setPaymentDay(e.target.value)} /></div>
           {!analytics ? <Card><CardContent className="p-8 text-center text-muted-foreground">Analiz verisi yüklenemedi</CardContent></Card> : <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 ['Aktif Rezervasyon', analytics.bookings?.active || 0],
                 ['Folyo Tahakkuku', analytics.bookings?.folio_charged || 0],
                 ['Vale Kuyruğu', analytics.valet?.active || 0],
-                ['Rezervasyon Geliri', formatCurrencyBreakdown(
+                ['Aktif hizmet tutarı', formatCurrencyBreakdown(
                   analytics.bookings?.revenue_by_currency,
                   analytics.bookings?.revenue || 0,
                   analytics.bookings?.currency || tenantCurrency,
@@ -584,6 +622,12 @@ const TransferParkingPage = () => {
                 <div className="text-2xl font-bold mt-2">{value}</div>
               </CardContent></Card>)}
             </div>
+            <Card><CardContent className="p-5 space-y-2"><h3 className="font-semibold">Dış müşteri ödeme defteri · {analytics.external_payment_business_date || 'Tüm günler'}</h3>
+              {Object.entries(analytics.external_payments_by_currency || {}).length === 0 ? <p>Kayıtlı dış müşteri ödemesi yok.</p> : Object.entries(analytics.external_payments_by_currency || {}).map(([code, values]) => <div key={code} className="grid gap-2 md:grid-cols-5 text-sm">
+                <p>Ödeme: <strong>{money(values.receipts, code)}</strong></p><p>İade: <strong>{money(values.refunds, code)}</strong></p>
+                <p>Kalan tahsilat: <strong>{money(values.net_receipts, code)}</strong></p><p>Hizmet bedeli: <strong>{money(values.net_revenue, code)}</strong></p><p>KDV: <strong>{money(values.vat, code)}</strong></p>
+              </div>)}
+            </CardContent></Card>
             <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>Park yeri <strong>{analytics.resources?.parking_spots || 0}</strong></div>
               <div>Transfer aracı <strong>{analytics.resources?.transfer_vehicles || 0}</strong></div>
@@ -657,6 +701,19 @@ const TransferParkingPage = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(settlement)} onOpenChange={open => { if (!open && !submitting) setSettlement(null); }}>
+        <DialogContent><DialogHeader><DialogTitle>{settlement?.refund ? 'Otopark ödemesini iade et' : 'Dış müşteri otopark ödemesi'}</DialogTitle></DialogHeader>
+          <p>{settlement?.booking.guest_name} · {money(settlement?.booking.total, settlement?.booking.currency)}</p>
+          <p className="text-sm">Bu kayıt otopark hesabında tutulur; oda folyosuna yazılmaz. Kart ve banka işlemleri ayrıca kendi ödeme sisteminizde yapılır.</p>
+          <Label htmlFor="parking-payment-method">Ödeme yöntemi</Label><select id="parking-payment-method" value={settlementMethod} disabled={submitting || settlement?.refund}
+            onChange={e => setSettlementMethod(e.target.value)}><option value="cash">Nakit</option><option value="card">Kart</option><option value="bank_transfer">Banka havalesi</option></select>
+          <Label htmlFor="parking-payment-reference">Ödeme / iade açıklaması</Label><Input id="parking-payment-reference" value={settlementReference} disabled={submitting}
+            maxLength={240} onChange={e => setSettlementReference(e.target.value)} />
+          <DialogFooter><Button variant="outline" disabled={submitting} onClick={() => setSettlement(null)}>Vazgeç</Button>
+            <Button disabled={submitting || settlementReference.trim().length < 3} onClick={saveSettlement}>{settlement?.refund ? 'İadeyi kaydet' : 'Ödemeyi kaydet'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Rezervasyon Dialog ── */}
       <Dialog open={showBookingDialog} onOpenChange={setShowBookingDialog}>
         <DialogContent>
@@ -680,10 +737,15 @@ const TransferParkingPage = () => {
                 </SelectContent>
               </Select>
             </div>
+            <div><Label htmlFor="parking-customer-type">Müşteri türü</Label><select id="parking-customer-type" className="border rounded p-2 w-full" value={bookingForm.customer_type}
+              onChange={e => setBookingForm(f => ({ ...f, customer_type: e.target.value, room_number: '', booking_id: '' }))}>
+              <option value="hotel_guest">Otelde konaklayan</option><option value="external" disabled={selectedKind !== 'parking_spot'}>Dış müşteri (otopark)</option>
+            </select></div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Oda No</Label>
                 <Input
+                  disabled={bookingForm.customer_type === 'external'}
                   value={bookingForm.room_number}
                   onChange={(e) => setBookingForm((f) => ({ ...f, room_number: e.target.value }))}
                 />

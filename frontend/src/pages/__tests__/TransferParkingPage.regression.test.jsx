@@ -4,14 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import TransferParkingPage from '@/pages/TransferParkingPage';
 
-const { get, deleteRequest, confirmDialog } = vi.hoisted(() => ({
+const { get, post, deleteRequest, confirmDialog } = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
   deleteRequest: vi.fn(),
   confirmDialog: vi.fn(),
 }));
 
 vi.mock('axios', () => ({
-  default: { get, delete: deleteRequest },
+  default: { get, post, delete: deleteRequest },
 }));
 
 vi.mock('@/lib/dialogs', () => ({ confirmDialog }));
@@ -31,7 +32,7 @@ afterEach(() => cleanup());
 
 describe('Transfer and parking regressions', () => {
   beforeEach(() => {
-    get.mockReset();
+    get.mockReset(); post.mockReset(); post.mockResolvedValue({ data: {} });
     deleteRequest.mockReset();
     confirmDialog.mockReset();
     confirmDialog.mockResolvedValue(true);
@@ -62,4 +63,31 @@ describe('Transfer and parking regressions', () => {
       expect(get.mock.calls.filter(([url]) => url === '/transfer-parking/late-charges')).toHaveLength(2);
     });
   });
+});
+
+
+it('records an external parking payment once without posting to PMS', async () => {
+  get.mockImplementation(url => {
+    if (url === '/transfer-parking/resources') return Promise.resolve({ data: { resources: [] } });
+    if (url === '/transfer-parking/bookings') return Promise.resolve({ data: { bookings: [{
+      id: 'external', kind: 'parking_spot', resource_name: 'Dış otopark', customer_type: 'external',
+      guest_name: 'Selin Acar', total: 150, currency: 'TRY', status: 'reserved', payment_status: 'unpaid',
+      schedule: { start_date: '2026-11-12', num_days: 1 },
+    }] } });
+    return Promise.resolve({ data: {} });
+  });
+  post.mockReset();
+  let resolve;
+  post.mockReturnValue(new Promise(done => { resolve = done; }));
+  render(<MemoryRouter><TransferParkingPage /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ödeme kaydet' }));
+  expect(screen.getByText(/oda folyosuna yazılmaz/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Ödeme / iade açıklaması'), { target: { value: 'Otopark nakit kaydı' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ödemeyi kaydet' }));
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledWith('/transfer-parking/bookings/external/settlement', {
+    request_id: expect.any(String), amount: 150, currency: 'TRY', method: 'cash', reference: 'Otopark nakit kaydı',
+  });
+  resolve({ data: {} });
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Ödemeyi kaydet' })).not.toBeInTheDocument());
 });

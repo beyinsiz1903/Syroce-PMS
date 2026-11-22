@@ -25,6 +25,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -33,11 +34,13 @@ from pymongo.errors import DuplicateKeyError
 from core.database import db
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
+from core.external_parking_settlement import ParkingSettlement, record_parking_settlement
 from core.pos_folio_consumer import _recalc_folio_balance
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from domains.pms.pos_extensions._idem import ensure_compound_unique
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import claim_idempotency, complete_idempotency, get_idempotency_key, release_idempotency
 
 logger = logging.getLogger("domains.pms.transfer_parking")
@@ -335,6 +338,7 @@ async def deactivate_resource(
 # Rezervasyon → folio
 # ─────────────────────────────────────────────────────────────────────
 class BookingIn(BaseModel):
+    customer_type: Literal["hotel_guest", "external"] = "hotel_guest"
     resource_id: str = Field(..., min_length=1)
     vat_rate: float | None = Field(None, ge=0, le=100, allow_inf_nan=False)
     guest_name: str | None = Field(None, max_length=200)
@@ -510,6 +514,7 @@ async def create_booking(
     tenant_currency, _ = await get_tenant_currency(tenant_id)
     actor = _actor_id(current_user)
 
+    external_fingerprint = hashlib.sha256(json.dumps(payload.model_dump(mode="json", exclude={"idempotency_key"}), sort_keys=True).encode()).hexdigest()
     # Idempotency: aynı anahtarla önceki rezervasyonu dön.
     if payload.idempotency_key:
         prior = await db.transport_bookings.find_one(
@@ -517,6 +522,8 @@ async def create_booking(
             {"_id": 0},
         )
         if prior:
+            if (payload.customer_type == "external" or prior.get("customer_type") == "external") and prior.get("external_fingerprint") != external_fingerprint:
+                raise HTTPException(409, "Rezervasyon anahtarı farklı bir dış müşteri kaydı için kullanılmış")
             return {"booking": prior, "idempotent": True}
 
     resource = await db.transport_resources.find_one({"id": payload.resource_id, "tenant_id": tenant_id})
@@ -525,6 +532,11 @@ async def create_booking(
     if not resource.get("active", True):
         raise HTTPException(status_code=400, detail="Kaynak pasif")
 
+    if payload.customer_type == "external":
+        if resource.get("kind") != _KIND_PARKING or payload.room_number or payload.booking_id or payload.folio_id:
+            raise HTTPException(422, "Dış otopark müşterisi oda/folyo ile bağlanamaz")
+        if not payload.guest_name or not payload.guest_name.strip() or payload.vat_rate is None:
+            raise HTTPException(422, "Dış müşteri adı ve toplama dahil KDV oranı gerekli")
     slots, total, sched = _compute_slots(resource, payload)
 
     booking_id = _stable_booking_id(tenant_id, payload.idempotency_key) if payload.idempotency_key else str(uuid.uuid4())
@@ -560,6 +572,9 @@ async def create_booking(
         "tenant_id": tenant_id,
         "resource_id": payload.resource_id,
         "resource_name": resource.get("name"),
+        "customer_type": payload.customer_type,
+        "external_fingerprint": external_fingerprint if payload.customer_type == "external" else None,
+        "payment_status": "unpaid" if payload.customer_type == "external" else None,
         "kind": resource.get("kind"),
         "currency": str(resource.get("currency") or tenant_currency).upper(),
         "guest_name": (payload.guest_name or "").strip() or None,
@@ -581,14 +596,20 @@ async def create_booking(
 
     # Folio faturalama (kaynak rezerve edildikten sonra).
     try:
-        folio_charge = await _post_booking_to_folio(tenant_id, actor, doc)
+        folio_charge = ({"charged": False, "reason": "external_customer"} if payload.customer_type == "external"
+            else await _post_booking_to_folio(tenant_id, actor, doc))
     except Exception as exc:  # noqa: BLE001 — faturalama hatası rezervasyonu bozmaz
         logger.exception("Transport folio post hata booking=%s tenant=%s", booking_id, tenant_id)
         folio_charge = {"charged": False, "error": str(exc)[:120]}
     doc["folio_charged"] = bool(folio_charge and folio_charge.get("charged"))
     doc["folio_id"] = folio_charge.get("folio_id") if folio_charge else None
 
-    await db.transport_bookings.insert_one(dict(doc))
+    try:
+        await db.transport_bookings.insert_one(dict(doc))
+    except Exception:
+        if payload.customer_type == "external":
+            await db.transport_slot_locks.delete_many({"tenant_id": tenant_id, "booking_id": booking_id})
+        raise
     return {"booking": _serialize(doc), "folio_charge": folio_charge}
 
 
@@ -603,8 +624,16 @@ async def cancel_booking(
     bk = await db.transport_bookings.find_one({"id": transport_booking_id, "tenant_id": tenant_id})
     if not bk:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    if bk.get("customer_type") == "external" and bk.get("payment_status") == "paid":
+        raise HTTPException(409, "Ödenmiş otopark kaydını iptal etmeden önce modül içinden iadesini kaydedin")
     if bk.get("status") == "cancelled":
         return {"ok": True, "status": "cancelled"}
+    if bk.get("customer_type") == "external":
+        changed = await db.transport_bookings.update_one({"id": transport_booking_id, "tenant_id": tenant_id,
+            "status": "reserved", "payment_status": {"$ne": "paid"}},
+            {"$set": {"status": "cancelled", "updated_at": _now_iso()}})
+        if changed.matched_count != 1:
+            raise HTTPException(409, "Otopark ödeme durumu değişti; kaydı yenileyin")
     # Kilitleri serbest bırak.
     for slot_key in bk.get("slots", []):
         await db.transport_slot_locks.delete_one(
@@ -795,7 +824,7 @@ async def create_lpr_event(payload: LPREventIn, current_user: User = Depends(get
 
 
 @router.get("/analytics", dependencies=[Depends(require_feature("parking", "parking_analytics"))])
-async def parking_analytics(current_user: User = Depends(get_current_user)):
+async def parking_analytics(current_user: User = Depends(get_current_user), business_date: date | None = None):
     tenant_id = _tenant_of(current_user)
     tenant_currency, _ = await get_tenant_currency(tenant_id)
     resources = await db.transport_resources.find({"tenant_id": tenant_id, "active": True}, {"_id": 0}).to_list(1000)
@@ -807,6 +836,18 @@ async def parking_analytics(current_user: User = Depends(get_current_user)):
     for row in active_bookings:
         currency = str(row.get("currency") or tenant_currency).upper()
         revenue_by_currency[currency] = round(revenue_by_currency.get(currency, 0) + float(row.get("total", 0) or 0), 2)
+    receipt_query = {"tenant_id": tenant_id, **({"business_date": business_date.isoformat()} if business_date else {})}
+    receipts = await db.transport_payments.find(receipt_query, {"_id": 0}).to_list(None)
+    external_payments = {}
+    for receipt in receipts:
+        code = receipt["currency"]
+        bucket = external_payments.setdefault(code, {"receipts": 0, "refunds": 0, "net_receipts": 0, "net_revenue": 0, "vat": 0})
+        sign = -1 if receipt["kind"] == "refund" else 1
+        bucket["refunds" if sign == -1 else "receipts"] += receipt["amount"]
+        bucket["net_receipts"] += sign * receipt["amount"]
+        bucket["net_revenue"] += sign * receipt["net"]
+        bucket["vat"] += sign * receipt["vat_amount"]
+    external_payments = {code: {key: round(value, 2) for key, value in amounts.items()} for code, amounts in external_payments.items()}
     completed_valet = [row for row in valet if row.get("status") == "delivered"]
     return {
         "resources": {
@@ -822,6 +863,26 @@ async def parking_analytics(current_user: User = Depends(get_current_user)):
             "revenue_by_currency": revenue_by_currency,
             "currency": tenant_currency,
         },
+        "external_payments_by_currency": external_payments,
+        "external_payment_business_date": business_date.isoformat() if business_date else None,
         "valet": {"active": sum(1 for row in valet if row.get("status") in {"waiting", "parked", "requested"}), "delivered": len(completed_valet)},
         "lpr": {"events": len(lpr), "entries": sum(1 for row in lpr if row.get("direction") == "in"), "exits": sum(1 for row in lpr if row.get("direction") == "out")},
     }
+
+
+
+
+@router.post("/bookings/{transport_booking_id}/settlement")
+async def settle_external_parking(transport_booking_id: str, payload: ParkingSettlement,
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("post_payment"))):
+    _require_role(current_user, _BOOK_ROLES)
+    return await record_parking_settlement(db, _tenant_of(current_user), transport_booking_id,
+        _actor_id(current_user), payload)
+
+
+@router.post("/bookings/{transport_booking_id}/settlement/refund")
+async def refund_external_parking(transport_booking_id: str, payload: ParkingSettlement,
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("post_payment"))):
+    _require_role(current_user, {"super_admin", "admin", "supervisor"})
+    return await record_parking_settlement(db, _tenant_of(current_user), transport_booking_id,
+        _actor_id(current_user), payload, refund=True)
