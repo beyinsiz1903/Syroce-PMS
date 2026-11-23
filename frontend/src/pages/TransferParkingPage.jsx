@@ -59,6 +59,8 @@ const TransferParkingPage = () => {
   const [valetTickets, setValetTickets] = useState([]);
   const [lprEvents, setLprEvents] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [glBusy, setGlBusy] = useState(null);
+  const glLock = useRef(false);
   const [loading, setLoading] = useState(true);
 
   const [showResourceDialog, setShowResourceDialog] = useState(false);
@@ -146,6 +148,18 @@ const TransferParkingPage = () => {
       setAnalytics(res.data);
     } catch { setAnalytics(null); }
   }, [analyticsDay]);
+
+  const postParkingGL = async payment => {
+    if (glLock.current) return;
+    glLock.current = true;
+    setGlBusy(payment.id);
+    try {
+      await axios.post(`/transfer-parking/external-payments/${encodeURIComponent(payment.id)}/post-to-gl`);
+      toast.success('Otopark muhasebe fişi kaydedildi');
+      await loadAnalytics();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Muhasebe kaydı doğrulanamadı; aynı kaydın durumunu yenileyin'); }
+    finally { glLock.current = false; setGlBusy(null); }
+  };
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
@@ -626,6 +640,15 @@ const TransferParkingPage = () => {
               {Object.entries(analytics.external_payments_by_currency || {}).length === 0 ? <p>Kayıtlı dış müşteri ödemesi yok.</p> : Object.entries(analytics.external_payments_by_currency || {}).map(([code, values]) => <div key={code} className="grid gap-2 md:grid-cols-5 text-sm">
                 <p>Ödeme: <strong>{money(values.receipts, code)}</strong></p><p>İade: <strong>{money(values.refunds, code)}</strong></p>
                 <p>Kalan tahsilat: <strong>{money(values.net_receipts, code)}</strong></p><p>Hizmet bedeli: <strong>{money(values.net_revenue, code)}</strong></p><p>KDV: <strong>{money(values.vat, code)}</strong></p>
+              </div>)}
+            </CardContent></Card>
+            <Card><CardContent className="p-5 space-y-3">
+              <h3 className="font-semibold">Otopark muhasebe aktarımı</h3>
+              <p className="text-sm text-muted-foreground">Tahsilat ve iadeler ayrı fişlerle aktarılır. Önce tahsilatı, sonra bağlı iadeyi aktarın. Yeni para tahsil edilmez; oda hesabı değişmez.</p>
+              {(analytics.external_payment_entries || []).map(payment => <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm">
+                <span>{payment.kind === 'refund' ? 'İade' : 'Tahsilat'} · {payment.reference} · {money(payment.amount, payment.currency)}</span>
+                {payment.gl?.status === 'posted' ? <span>{payment.gl.entry_no}</span> : payment.gl?.status === 'conflict' ? <span role="alert">{payment.gl.error}</span> :
+                  <Button disabled={Boolean(glBusy)} onClick={() => postParkingGL(payment)}>{glBusy === payment.id ? 'Aktarılıyor…' : 'Muhasebeye aktar'}</Button>}
               </div>)}
             </CardContent></Card>
             <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

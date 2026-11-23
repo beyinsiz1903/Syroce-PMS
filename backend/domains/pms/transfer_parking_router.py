@@ -848,6 +848,15 @@ async def parking_analytics(current_user: User = Depends(get_current_user), busi
         bucket["net_revenue"] += sign * receipt["net"]
         bucket["vat"] += sign * receipt["vat_amount"]
     external_payments = {code: {key: round(value, 2) for key, value in amounts.items()} for code, amounts in external_payments.items()}
+    from core.external_parking_gl import linked_journal
+    payment_entries = []
+    for receipt in receipts:
+        try:
+            journal = await linked_journal(db, tenant_id, receipt)
+            gl = {'status': 'posted' if journal else 'pending', 'entry_no': journal['entry_no'] if journal else None}
+        except HTTPException as exc:
+            gl = {'status': 'conflict', 'error': exc.detail}
+        payment_entries.append({**receipt, 'gl': gl})
     completed_valet = [row for row in valet if row.get("status") == "delivered"]
     return {
         "resources": {
@@ -864,6 +873,7 @@ async def parking_analytics(current_user: User = Depends(get_current_user), busi
             "currency": tenant_currency,
         },
         "external_payments_by_currency": external_payments,
+        "external_payment_entries": payment_entries,
         "external_payment_business_date": business_date.isoformat() if business_date else None,
         "valet": {"active": sum(1 for row in valet if row.get("status") in {"waiting", "parked", "requested"}), "delivered": len(completed_valet)},
         "lpr": {"events": len(lpr), "entries": sum(1 for row in lpr if row.get("direction") == "in"), "exits": sum(1 for row in lpr if row.get("direction") == "out")},
@@ -886,3 +896,10 @@ async def refund_external_parking(transport_booking_id: str, payload: ParkingSet
     _require_role(current_user, {"super_admin", "admin", "supervisor"})
     return await record_parking_settlement(db, _tenant_of(current_user), transport_booking_id,
         _actor_id(current_user), payload, refund=True)
+
+
+@router.post("/external-payments/{payment_id}/post-to-gl")
+async def post_external_parking_gl(payment_id: str, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, {"super_admin", "admin", "finance"})
+    from core.external_parking_gl import post_parking_payment_to_gl
+    return await post_parking_payment_to_gl(db, _tenant_of(current_user), payment_id, _actor_id(current_user))
