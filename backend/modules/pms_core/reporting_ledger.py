@@ -74,6 +74,9 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         "tax_amount": 1,
         "tax_breakdown": 1,
         "tax_inclusive": 1,
+        # Preserve verified inclusive-tax evidence for read-only normalization.
+        "net_amount": 1,
+        "tax_snapshot": 1,
         "posted_by": 1,
         "demo_reconstruction": 1,
         'pos_financial_version': 1,

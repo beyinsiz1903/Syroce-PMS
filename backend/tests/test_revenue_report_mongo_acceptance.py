@@ -89,3 +89,22 @@ async def test_flash_distinguishes_pending_room_prices_from_posted_revenue(ledge
     assert data["revenue"]["operational_adr_by_currency"] == {"TRY": 5500}
     assert data["revenue"]["category_revenue_by_currency"]["minibar"] == {"TRY": 20}
     assert data["revenue"]["fb_revenue_by_currency"] == {}
+
+
+@pytest.mark.parametrize("collection", ["folio_charges", "extra_charges"])
+@pytest.mark.parametrize("city_tax", [0, 25])
+async def test_inclusive_laundry_evidence_survives_ledger_projection(ledger_db, monkeypatch, city_tax, collection):
+    """Exercise Mongo projection and endpoint, not just the breakdown helper."""
+    monkeypatch.setattr(folio, "db", ledger_db)
+    charge = {"tenant_id": "A", "id": "inclusive-laundry",
+        "business_date": DAY, "charge_category": "laundry", "currency": "TRY",
+        "amount": 150, "total": 150, "net_amount": 125, "vat_amount": 25,
+        "tax_amount": city_tax, "tax_inclusive": True,
+        "tax_snapshot": {"status": "verified"}}
+    await ledger_db[collection].insert_one(charge)
+    before = await ledger_db[collection].find_one({"id": charge["id"]})
+    data = await folio.revenue_by_category.__wrapped__(DAY, DAY, USER, None)
+    laundry = next(row for row in data["rows"] if row["category"] == "laundry")
+    assert (laundry["total"], laundry["net"], laundry["vat"], laundry["city_tax"], laundry["difference"]) == (150, 125, 25, 0, 0)
+    assert data["reconciliation"]["issue_count"] == 0
+    assert await ledger_db[collection].find_one({"id": charge["id"]}) == before
