@@ -1012,25 +1012,19 @@ th{background:#f5f5f5}
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-sm font-semibold text-gray-700 mb-2 block">Hedef Folio *</Label>
-              <Select value={transferTargetId} onValueChange={setTransferTargetId}>
-                <SelectTrigger className="h-auto min-h-14 bg-gray-50 border-gray-200 text-left"><SelectValue placeholder="Aktarım yapılacak folio'yu seçin">{transferTargetId ? (() => { const f = openFolios.find(row => row.id === transferTargetId); return f ? `${f.folio_number} · ${f.guest_name || 'Misafir'} · Oda ${f.room_number || 'atanmamış'} · ${f.currency}` : null; })() : undefined}</SelectValue></SelectTrigger>
-                <SelectContent className="z-[110] max-w-xl">
-                  {openFolios.length === 0 ? <SelectItem value="__none__" disabled>Aktarılabilir açık folio yok</SelectItem> : openFolios.map(f => <SelectItem key={f.id} value={f.id} className="py-3 px-4 cursor-pointer focus:bg-gray-50">
-                      <div className="flex flex-wrap items-center justify-between gap-3 w-full min-w-0">
-                        <div className="flex flex-col text-left">
-                          <span className="font-bold text-gray-800 text-base">{f.folio_number}</span>
-                          <span className="text-sm text-gray-600">{f.guest_name || 'Misafir'} · Oda {f.room_number || 'atanmamış'} · {f.currency}</span>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{folioPayorLabel(f)} hesabı</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Güncel Bakiye</span>
-                          <span className={`font-bold tabular-nums text-sm ${f.balance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>{money(f.balance)}</span>
-                        </div>
-                      </div>
-                    </SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="transfer-target-folio" className="text-sm font-semibold text-gray-700 mb-2 block">Hedef Folio *</Label>
+              {/* Keep the picker inside the active dialog. A body-portaled menu
+                  can lose selection to the guest-card's nested modal layers. */}
+              <select id="transfer-target-folio" value={transferTargetId}
+                onChange={event => setTransferTargetId(event.target.value)}
+                className="w-full min-h-14 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+                disabled={transferLoading || openFolios.length === 0}>
+                <option value="">Aktarım yapılacak folio'yu seçin</option>
+                {openFolios.map(f => <option key={f.id} value={f.id}>
+                  {f.folio_number} · {f.guest_name || 'Misafir'} · Oda {f.room_number || 'atanmamış'} · {f.currency} · {folioPayorLabel(f)} hesabı · Bakiye {money(f.balance)}
+                </option>)}
+              </select>
+              {openFolios.length === 0 && <p className="mt-2 text-sm text-muted-foreground">Aktarılabilir açık folio yok</p>}
             </div>
             <div>
               <Label className="text-sm font-semibold text-gray-700 mb-2 block flex items-center justify-between">
