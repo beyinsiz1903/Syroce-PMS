@@ -848,11 +848,14 @@ async def parking_analytics(current_user: User = Depends(get_current_user), busi
         bucket["net_revenue"] += sign * receipt["net"]
         bucket["vat"] += sign * receipt["vat_amount"]
     external_payments = {code: {key: round(value, 2) for key, value in amounts.items()} for code, amounts in external_payments.items()}
-    from core.external_parking_gl import linked_journal
+    from core.external_parking_gl import validate_linked_journal
+    journal_rows = await db.gl_journal_entries.find({'tenant_id': tenant_id,
+        'idempotency_key': {'$in': ['external-parking-gl:' + row['id'] for row in receipts]}}, {'_id': 0}).to_list(None) if receipts else []
+    journals = {row['idempotency_key']: row for row in journal_rows}
     payment_entries = []
     for receipt in receipts:
         try:
-            journal = await linked_journal(db, tenant_id, receipt)
+            journal = validate_linked_journal(journals.get('external-parking-gl:' + receipt['id']), receipt)
             gl = {'status': 'posted' if journal else 'pending', 'entry_no': journal['entry_no'] if journal else None}
         except HTTPException as exc:
             gl = {'status': 'conflict', 'error': exc.detail}

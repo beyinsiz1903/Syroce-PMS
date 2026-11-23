@@ -102,3 +102,27 @@ async def test_accounting_role_boundary_and_no_generic_reversal(ledger_db, monke
     assert denied.value.status_code == 403
     assert _journal_reversal_blocker({'source': 'external_parking_payment'}, False)
     assert await ledger_db.gl_journal_entries.count_documents({}) == 0
+
+
+async def test_analytics_distinguishes_pending_posted_and_changed_source(ledger_db, monkeypatch):  # noqa: F811
+    from datetime import date
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from domains.pms import transfer_parking_router as parking
+    await seed(ledger_db)
+    monkeypatch.setattr(parking, 'db', ledger_db)
+    monkeypatch.setattr(parking, 'get_tenant_currency', AsyncMock(return_value=('TRY', None)))
+    actor = SimpleNamespace(tenant_id='t')
+    async def statuses():
+        report = await parking.parking_analytics(actor, business_date=date(2026, 11, 12))
+        assert report['external_payments_by_currency']['TRY']['net_receipts'] == 0
+        return {row['id']: row['gl'] for row in report['external_payment_entries']}
+    assert {v['status'] for v in (await statuses()).values()} == {'pending'}
+    receipt = await post_parking_payment_to_gl(ledger_db, 't', 'receipt', 'manager')
+    rows = await statuses()
+    assert rows['receipt'] == {'status': 'posted', 'entry_no': receipt['journal']['entry_no']}
+    assert rows['refund']['status'] == 'pending'
+    # A source change must not be presented as a valid posting just because a key exists.
+    await ledger_db.transport_payments.update_one({'id': 'receipt'}, {'$set': {'reference': 'changed'}})
+    assert (await statuses())['receipt']['status'] == 'conflict'

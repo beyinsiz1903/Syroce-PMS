@@ -30,6 +30,10 @@ def _minor(value):
 async def linked_journal(db, tenant_id, payment):
     entry = await db.gl_journal_entries.find_one({'tenant_id': tenant_id,
         'idempotency_key': 'external-parking-gl:' + payment['id']}, {'_id': 0})
+    return validate_linked_journal(entry, payment)
+
+
+def validate_linked_journal(entry, payment):
     if entry and (entry.get('status') != 'posted' or not verify_journal_entry_hash(entry)
             or entry.get('source') != 'external_parking_payment' or entry.get('source_ref') != payment['id']
             or entry.get('reversal_status') or entry.get('source_manifest', {}).get('payment') != payment_snapshot(payment)):
