@@ -1646,6 +1646,8 @@ async def list_journal(
 
 
 def _journal_reversal_blocker(original, allocated):
+    if original.get("source") == "external_parking_payment":
+        return "Otopark tahsilatı yalnız özgün otopark iadesi üzerinden ters kaydedilir"
     if original.get("source") in {"billing_settlement", "billing_settlement_reversal"}:
         return "Kaynaklı mahsup genel muhasebeden bağımsız çevrilemez; rezervasyondaki özgün mahsuba bağlı ters kayıt akışını kullanın"
     if allocated:

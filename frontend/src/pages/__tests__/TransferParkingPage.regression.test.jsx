@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import TransferParkingPage from '@/pages/TransferParkingPage';
 
-const { get, post, deleteRequest, confirmDialog } = vi.hoisted(() => ({
+const { get, post, deleteRequest, confirmDialog, feature } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   deleteRequest: vi.fn(),
   confirmDialog: vi.fn(),
+  feature: vi.fn(() => false),
 }));
 
 vi.mock('axios', () => ({
@@ -24,7 +25,7 @@ vi.mock('sonner', () => ({
 vi.mock('@/context/EntitlementContext', () => ({
   useEntitlements: () => ({
     getLimit: () => 10,
-    hasFeature: () => false,
+    hasFeature: feature,
   }),
 }));
 
@@ -90,4 +91,26 @@ it('records an external parking payment once without posting to PMS', async () =
   });
   resolve({ data: {} });
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Ödemeyi kaydet' })).not.toBeInTheDocument());
+});
+
+
+it('posts a parking source once and shows its linked journal after refresh', async () => {
+  feature.mockReturnValue(true);
+  let posted = false;
+  get.mockImplementation(url => Promise.resolve({ data: url === '/transfer-parking/analytics' ? {
+    external_payment_entries: [{ id: 'parking:t:receipt:1', kind: 'receipt', reference: 'Receipt 001', amount: 150,
+      currency: 'TRY', gl: posted ? { status: 'posted', entry_no: 'YEV-148' } : { status: 'pending' } }],
+  } : {} }));
+  let finish;
+  post.mockReset().mockImplementation(() => new Promise(resolve => { finish = () => { posted = true; resolve({ data: {} }); }; }));
+  render(<MemoryRouter><TransferParkingPage /></MemoryRouter>);
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Analiz' }), { button: 0, ctrlKey: false });
+  const submit = await screen.findByRole('button', { name: 'Muhasebeye aktar' });
+  fireEvent.click(submit); fireEvent.click(submit);
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledWith('/transfer-parking/external-payments/parking%3At%3Areceipt%3A1/post-to-gl');
+  finish();
+  expect(await screen.findByText('YEV-148')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Muhasebeye aktar' })).not.toBeInTheDocument();
+  feature.mockReturnValue(false);
 });
