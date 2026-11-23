@@ -6,6 +6,7 @@ reported, never repaired by inventing a discount or using today's tax rules.
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
+from core.laundry_tax import has_inclusive_laundry_evidence
 from modules.pms_core.report_money import currency_code, money, rounded, single_amount
 from modules.pms_core.reporting_ledger import charge_amount, charge_category
 from modules.pms_core.revenue_categories import LABELS, is_revenue_charge, revenue_department
@@ -53,6 +54,9 @@ def charge_breakdown(row):
             city = signed(row.get("tax_amount") or 0)
     elif tax:
         other = sum((signed(value) for key, value in tax.items() if key not in {"vat", "accommodation_tax", "city_tax"}), Decimal(0))
+    inclusive_laundry = has_inclusive_laundry_evidence(row)
+    if inclusive_laundry:
+        city = Decimal(0)
     discount = signed(row.get("discount_amount") or 0)
     # Extra charge_amount/amount is commonly a gross UNIT price, not a net
     # line amount. Derive net only from evidence, not the collection name.
@@ -63,7 +67,7 @@ def charge_breakdown(row):
         tax_known, net, vat, city, other = True, Decimal(0), Decimal(0), total, Decimal(0)
     difference = Decimal(0)
     if category != "city_tax" and tax_known and row.get("report_source") == "folio" and row.get("amount") is not None:
-        net = signed(row["amount"])
+        net = signed(row["net_amount"] if inclusive_laundry else row["amount"])
         difference = total - net - (vat or 0) - (city or 0) - (other or 0)
     elif row.get("report_source") == "folio" and row.get("amount") is not None and total < money(rounded(row["amount"])) and total >= 0:
         # A smaller gross than an explicitly stored net cannot be explained

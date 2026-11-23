@@ -330,4 +330,5 @@ async def test_explicit_catalog_vat_is_included_immutable_and_posted_once(accept
     assert (charge['total'], charge['net_amount'], charge['vat_amount']) == (90, 75, 15)
     assert await a.db.folio_charges.count_documents({'source_laundry_order_id': order['id']}) == 1
     ledger = await a.db.folio_ledger.find_one({'id': charge['source_ledger_entry_id']})
-    assert ledger['tax_amount'] == charge['tax_amount'] == 15
+    assert ledger['tax_amount'] == charge['tax_amount'] == 0
+    assert charge['amount'] == 75
