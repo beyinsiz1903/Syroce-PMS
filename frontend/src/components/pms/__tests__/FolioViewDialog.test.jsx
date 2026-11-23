@@ -49,6 +49,15 @@ describe('guest-card account detail parity', () => {
     expect(screen.getByText(/Kayıt:/)).toHaveTextContent('14');
     expect(screen.getByText(/KDV \(oran belirtilmemiş\)/)).toBeInTheDocument();
   });
+  it('does not duplicate verified inclusive laundry VAT as city tax', () => {
+    render(<FolioViewDialog {...baseProps} selectedFolio={folio} folioCharges={[{
+      id: 'laundry', charge_category: 'laundry', description: 'Ceket', total: 150,
+      amount: 150, net_amount: 125, vat_amount: 25, tax_amount: 25,
+      tax_inclusive: true, tax_snapshot: { status: 'verified' },
+    }]} />);
+    expect(screen.getByText(/KDV \(tutara dahil\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/Şehir vergisi:/)).not.toBeInTheDocument();
+  });
   it('offers a refund only for eligible receipts and labels offsets and refunds correctly', () => {
     const rows = [
       { id: 'cash', method: 'cash', amount: 100 },

@@ -571,7 +571,11 @@ th{background:#f5f5f5}
                   const isExpanded = expandedChargeItems[charge.id];
                   const hasDiscount = (charge.discount_amount || 0) > 0;
                   const hasVat = (charge.vat_amount || 0) > 0;
-                  const hasCity = (charge.tax_amount || 0) > 0;
+                  const inclusiveLaundry = charge.charge_category === 'laundry' && charge.tax_inclusive && charge.tax_snapshot?.status === 'verified'
+                    && Number.isFinite(Number(charge.net_amount)) && charge.net_amount != null
+                    && Math.abs(Number(charge.net_amount) + Number(charge.vat_amount) - Number(charge.total ?? charge.total_amount ?? charge.amount)) < 0.005
+                    && [0, Number(charge.vat_amount)].includes(Number(charge.tax_amount || 0));
+                  const hasCity = !inclusiveLaundry && (charge.tax_amount || 0) > 0;
                   return <Card key={charge.id} className={charge.voided ? 'opacity-50 bg-gray-50' : ''}>
                             <CardContent className="p-4">
                               <div className={`flex justify-between items-start ${isPOSCharge && hasLineItems ? 'cursor-pointer hover:bg-gray-50' : ''}`} onClick={() => {
@@ -601,7 +605,7 @@ th{background:#f5f5f5}
                                   <div className="font-bold">{money(charge.total ?? charge.total_amount ?? charge.amount)}</div>
                                   {(hasVat || hasCity) && <div className="text-[11px] text-gray-500 leading-tight mt-0.5">
                                       {hasDiscount && <div>Net: {money(charge.amount)}</div>}
-                                      {hasVat && <div>KDV{charge.vat_rate != null ? ` %${charge.vat_rate}` : ' (oran belirtilmemiş)'}: {money(charge.vat_amount)}</div>}
+                                      {hasVat && <div>KDV{charge.vat_rate != null ? ` %${charge.vat_rate}` : inclusiveLaundry ? ' (tutara dahil)' : ' (oran belirtilmemiş)'}: {money(charge.vat_amount)}</div>}
                                       {hasCity && <div>Şehir vergisi: {money(charge.tax_amount)}</div>}
                                     </div>}
                                 </div>

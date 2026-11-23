@@ -41,5 +41,21 @@ def laundry_delivery_tax(order, money):
         return {'tax_amount': None, 'vat_amount': None, 'net_amount': None, 'tax_evidence_status': 'missing', 'tax_snapshot': snapshot}
     vat = (Decimal(str(snapshot['vat'])) * Decimal(str(money['exchange_rate']))).quantize(CENT, rounding=ROUND_HALF_UP)
     net = Decimal(str(money['folio_total'])) - vat
-    return {'tax_amount': float(vat), 'vat_amount': float(vat), 'net_amount': float(net),
+    # Folio tax_amount is the separate city/accommodation tax, not total VAT.
+    return {'tax_amount': 0.0, 'vat_amount': float(vat), 'net_amount': float(net),
         'tax_inclusive': True, 'tax_evidence_status': 'verified', 'tax_snapshot': snapshot}
+
+
+def has_inclusive_laundry_evidence(row):
+    """Read-only compatibility for VAT snapshots; never rewrite a posted source."""
+    snapshot = row.get('tax_snapshot') or {}
+    if str(row.get('charge_category') or row.get('charge_code') or '').lower() != 'laundry' or not row.get('tax_inclusive') or snapshot.get('status') != 'verified':
+        return False
+    try:
+        gross = Decimal(str(row.get('total', row.get('amount'))))
+        vat = Decimal(str(row['vat_amount']))
+        net = Decimal(str(row['net_amount']))
+        city = Decimal(str(row.get('tax_amount') or 0))
+        return all(x.is_finite() for x in (gross, vat, net, city)) and net + vat == gross and city in (Decimal(0), vat)
+    except (KeyError, InvalidOperation, TypeError):
+        return False

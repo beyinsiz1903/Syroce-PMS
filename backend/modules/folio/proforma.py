@@ -1,6 +1,7 @@
 """Read-only proforma projection using the same effective ledger as receivables."""
 from decimal import Decimal
 
+from core.laundry_tax import has_inclusive_laundry_evidence
 from modules.pms_core.report_money import money
 from modules.pms_core.reporting_financials import effective_collection
 
@@ -18,6 +19,9 @@ def proforma_amounts(snapshot):
         row = dict(source)
         gross = money(row["total"])
         vat, city, discount = (money(row.get(key) or 0) for key in ("vat_amount", "tax_amount", "discount_amount"))
+        if has_inclusive_laundry_evidence(row):
+            city = Decimal(0)
+            row["tax_amount"] = 0.0  # projection only; immutable source remains intact
         net = gross - vat - city
         subtotal = net + discount
         rate = float(row["vat_rate"]) if row.get("vat_rate") is not None else None

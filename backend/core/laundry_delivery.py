@@ -88,7 +88,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         charge = {"id": charge_id, "tenant_id": tenant_id, "folio_id": folio_id, "booking_id": booking_id,
             "source_ledger_entry_id": ledger["id"], "source_laundry_order_id": order_id,
             "description": ledger["description"], "charge_type": "laundry", "charge_category": "laundry",
-            "quantity": 1, "amount": float(amount), "unit_price": float(amount), "total": float(amount),
+            "quantity": 1, "amount": ledger.get("net_amount") if ledger.get("net_amount") is not None else float(amount), "unit_price": float(amount), "total": float(amount),
             "currency": currency, **{key: ledger[key] for key in ("tax_amount", "vat_amount", "net_amount", "tax_inclusive", "tax_evidence_status", "tax_snapshot") if key in ledger},
             "business_date": day, "posted_at": ledger["posted_at"], "posted_by": ledger["posted_by"], "voided": False}
         charge.update({key: value for key, value in routing.items() if key.startswith("routing_")})
