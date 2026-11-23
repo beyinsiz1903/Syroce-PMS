@@ -272,11 +272,12 @@ describe('FolioViewDialog transfer intent', () => {
       folioCharges={[{ id: 'parking', description: 'Otopark', total: 150, currency: 'TRY', date: '2026-11-10' }]} />);
     fireEvent.click(screen.getByRole('button', { name: 'İşlem Aktar' }));
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/folio/list', expect.any(Object)));
-    fireEvent.click(screen.getByRole('combobox', { name: '' }));
-    const targetOption = await screen.findByRole('option', { name: /F-TARGET/ });
+    const picker = await screen.findByRole('combobox', { name: 'Hedef Folio *' });
+    const targetOption = within(picker).getByRole('option', { name: /F-TARGET/ });
     expect(targetOption).toHaveTextContent('Barış Kaya');
     expect(screen.queryByRole('option', { name: /F-USD/ })).toBeNull();
-    fireEvent.click(targetOption);
+    fireEvent.change(picker, { target: { value: target.id } });
+    expect(picker).toHaveValue(target.id);
     fireEvent.click(screen.getByLabelText(/Otopark/));
     fireEvent.change(screen.getByPlaceholderText(/misafir oda değişikliği/), { target: { value: 'Oda hesabının ayrılması' } });
   };
