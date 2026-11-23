@@ -11,6 +11,8 @@ from __future__ import annotations
 import calendar
 from datetime import UTC, date, datetime
 
+from pymongo.errors import DuplicateKeyError
+
 
 class GLPeriodError(ValueError):
     """Posting date cannot be accepted by the fiscal-period policy."""
@@ -70,11 +72,20 @@ def calendar_periods(tenant_id: str, fiscal_year: int, *, actor: str = "system")
 
 async def ensure_calendar_year_periods(db, tenant_id: str, fiscal_year: int, *, actor: str = "system") -> None:
     for period in calendar_periods(tenant_id, fiscal_year, actor=actor):
-        await db.gl_periods.update_one(
-            {"_id": period["_id"], "tenant_id": tenant_id},
-            {"$setOnInsert": period},
-            upsert=True,
-        )
+        try:
+            await db.gl_periods.update_one(
+                {"_id": period["_id"], "tenant_id": tenant_id},
+                {"$setOnInsert": period},
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            # Concurrent first posts can both miss the period before upsert.
+            # Accept only the exact period another writer just initialized;
+            # never overwrite its status (it may already have been closed).
+            existing = await db.gl_periods.find_one({"_id": period["_id"], "tenant_id": tenant_id})
+            if not existing or any(existing.get(key) != period[key]
+                    for key in ("id", "fiscal_year", "period_no", "start_date", "end_date")):
+                raise
 
 
 async def get_period_for_date(db, tenant_id: str, posting_date: str, *, actor: str = "system") -> dict:
