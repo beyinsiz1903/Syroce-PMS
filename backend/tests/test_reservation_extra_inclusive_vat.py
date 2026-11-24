@@ -30,6 +30,15 @@ async def test_entered_gross_stays_fixed_with_explicit_vat_evidence(ledger_db, m
         assert row['tax_inclusive']
     assert row['entered_amount'] == 150 and row['entered_total'] == total
     assert await ledger_db.extra_charges.count_documents({}) == 1
+    from modules.folio.proforma import proforma_amounts
+    snapshot = {'currency': 'TRY', 'charges': [row], 'payments': [], 'payments_by_currency': {}, 'opening_by_currency': {}}
+    _, _, totals = proforma_amounts(snapshot)
+    assert totals['grand_total'] == totals['balance_due'] == total
+    assert totals['net_total'] == net and totals['vat_total'] == vat
+    if rate is not None:
+        from core.integrations.operational_gl_valuation import source_tax_components
+        assert source_tax_components(row) == (round(vat * 100), 0)
+
 
 
 @pytest.mark.parametrize('rate', [-1, 101, float('nan'), float('inf')])
