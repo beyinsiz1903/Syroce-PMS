@@ -1059,8 +1059,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <tab.icon className="w-3.5 h-3.5 mr-1.5" />{tab.label}
                   </TabsTrigger>
                 ))}
-                {/* Daha Fazla menüsü */}
-                <DropdownMenu>
+                {/* Keep the workspace accessible while switching its mounted panels. */}
+                <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
@@ -1076,7 +1076,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     {moreTabs.map(tab => (
                       <DropdownMenuItem
                         key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
+                        onSelect={() => setActiveTab(tab.id)}
                         className={`text-xs cursor-pointer ${activeTab === tab.id ? 'bg-amber-50 text-amber-700' : ''}`}
                       >
                         <tab.icon className="w-3.5 h-3.5 mr-2" />{tab.label}
