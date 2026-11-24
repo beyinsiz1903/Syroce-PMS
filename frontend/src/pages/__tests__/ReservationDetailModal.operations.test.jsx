@@ -70,6 +70,19 @@ describe('ReservationDetailModal operation URLs', () => {
 
   afterEach(() => cleanup());
 
+  it('keeps the workspace accessible while the overflow menu switches panels', async () => {
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    const more = await screen.findByRole('button', { name: 'Daha Fazla' });
+    fireEvent.keyDown(more, { key: 'ArrowDown', code: 'ArrowDown' });
+    const item = await screen.findByRole('menuitem', { name: 'Günlük Fiyatlar' });
+    const workspace = screen.getByTestId('reservation-detail-modal');
+    expect(workspace.closest('[aria-hidden="true"]')).toBeNull();
+    fireEvent.click(item);
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    expect(await screen.findByTestId('daily-rates-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('daily-rates-tab').closest('[aria-hidden="true"]')).toBeNull();
+  });
+
   it('opens the real reservation workspace with a structured agency cancellation policy', async () => {
     get.mockResolvedValue({ data: { ...detail, booking: { ...detail.booking, cancellation_policy: {
       free_until_days_before: 7, penalty_pct: 50, no_show_penalty_pct: 100,
