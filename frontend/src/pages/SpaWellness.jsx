@@ -80,6 +80,8 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const [loadError, setLoadError] = useState(null);
   const [showBook, setShowBook] = useState(false);
   const [settlementAppointment, setSettlementAppointment] = useState(null);
+  const statusLock = useRef(false);
+  const [statusBusy, setStatusBusy] = useState(false);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showTherapistForm, setShowTherapistForm] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
@@ -139,7 +141,9 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
         if (version !== loadVersion.current) return;
         try {
           // The server resolves both the configured hotel timezone and its day.
-          const sum = await axios.get('/spa/daily-summary');
+          const sum = filter.date_from
+            ? await axios.get('/spa/daily-summary', { params: { date: filter.date_from } })
+            : await axios.get('/spa/daily-summary');
           if (version === loadVersion.current) setSummary(sum.data);
         } catch { if (version === loadVersion.current) setSummary(null); }
         finally { if (version === loadVersion.current) setClockPending(false); }
@@ -184,11 +188,20 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   };
 
   const updateStatus = async (id, status) => {
+    if (statusLock.current) return;
+    statusLock.current = true;
+    setStatusBusy(true);
     try {
+      if (status === 'completed' && !await confirmDialog({
+        title: 'SPA hizmetini tamamla',
+        message: 'Hizmet gerçekten tamamlandı mı? Bu işlem oda hesabına ücret veya dış misafir satış kaydı oluşturur. Para tahsil etmez.',
+        confirmText: 'Hizmeti tamamla',
+      })) return;
       await axios.post(`/spa/appointments/${id}/status`, { status });
       toast.success('Durum güncellendi');
       await load();
     } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
+    finally { statusLock.current = false; setStatusBusy(false); }
   };
 
   const remove = async (id) => {
@@ -285,7 +298,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Stat label={t('cm.pages_SpaWellness.bugun_toplam')} value={summary.total} />
+          <Stat label={filter.date_from ? 'Seçilen gün toplamı' : t('cm.pages_SpaWellness.bugun_toplam')} value={summary.total} />
           <Stat label="Tamamlanan" value={summary.by_status?.completed || 0} cls="text-emerald-600" />
           <Stat label="Planlanan" value={summary.by_status?.scheduled || 0} cls="text-sky-600" />
           <SpaRevenueSummary summary={summary} money={money} />
@@ -351,21 +364,21 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                         <td className="p-2 text-right space-x-1">
                           {canSettle && a.status === 'completed' && a.external_charge_id && !a.charge_to_room && <Button size="sm" variant="outline" onClick={() => setSettlementAppointment(a)}>Ödeme / makbuz</Button>}
                           {a.status === 'scheduled' && (
-                            <Button size="sm" variant="ghost" title={t('cm.pages_SpaWellness.baslat')}
+                            <Button size="sm" variant="ghost" title={t('cm.pages_SpaWellness.baslat')} aria-label={`${a.guest_name} — Hizmeti başlat`} disabled={statusBusy}
                                     onClick={() => updateStatus(a.id, 'in_progress')}>
-                              <PlayCircle className="w-4 h-4" />
+                              <PlayCircle className="w-4 h-4 mr-1" />Başlat
                             </Button>
                           )}
                           {(a.status === 'scheduled' || a.status === 'in_progress') && (
-                            <Button size="sm" variant="ghost" title="Tamamla"
+                            <Button size="sm" variant="ghost" title="Tamamla" aria-label={`${a.guest_name} — Hizmeti tamamla`} disabled={statusBusy}
                                     onClick={() => updateStatus(a.id, 'completed')}>
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 mr-1" />Tamamla
                             </Button>
                           )}
-                          {a.status === 'scheduled' && (
-                            <Button size="sm" variant="ghost" title={t('cm.pages_SpaWellness.iptal')}
+                          {(a.status === 'scheduled' || a.status === 'in_progress') && (
+                            <Button size="sm" variant="ghost" title={t('cm.pages_SpaWellness.iptal')} aria-label={`${a.guest_name} — Randevuyu iptal et`} disabled={statusBusy}
                                     onClick={() => updateStatus(a.id, 'cancelled')}>
-                              <XCircle className="w-4 h-4 text-red-500" />
+                              <XCircle className="w-4 h-4 text-red-500 mr-1" />İptal
                             </Button>
                           )}
                           {canDeleteSpaAppointment(a) && <Button size="sm" variant="ghost" title="Randevuyu sil" onClick={() => remove(a.id)}>
