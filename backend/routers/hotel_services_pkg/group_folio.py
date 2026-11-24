@@ -146,6 +146,16 @@ async def merge_group_folios(
     if not requested_booking_ids.issubset(group_booking_ids):
         raise HTTPException(status_code=400, detail="Rezervasyonlardan biri bu gruba ait degil")
 
+    # This endpoint copies legacy flat charge rows. Modern folios are account
+    # headers, not charges: copying their balance loses owned source rows and
+    # can count an existing payment twice. Their supported transfer/merge flow
+    # is the guest card, which moves the original ledger sources atomically.
+    candidate_folios = await db.folios.find(
+        {"tenant_id": tid, "booking_id": {"$in": list(requested_booking_ids)}}, {"_id": 0},
+    ).to_list(None)
+    if any(f.get("status") or f.get("folio_type") for f in candidate_folios):
+        raise HTTPException(409, "Yeni folyo hesaplarını grup kopyalama yoluyla birleştiremezsiniz; ilgili misafir kartındaki folyo aktarım/birleştirme işlemini kullanın")
+
     master = await db.bookings.find_one({"id": data.master_booking_id, "tenant_id": tid}, {"_id": 0})
     if not master:
         raise HTTPException(status_code=404, detail="Ana rezervasyon bulunamadi")

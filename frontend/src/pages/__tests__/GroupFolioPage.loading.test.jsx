@@ -84,3 +84,17 @@ it('opens the selected group member in the shared guest card without submitting 
   expect(axios.get).toHaveBeenCalledWith('/pms/group-folio/a');
   expect(axios.post).not.toHaveBeenCalled();
 });
+
+it('uses member guest cards instead of legacy copies when the group has account windows', async () => {
+  const modern = detail('a', 'TRY');
+  modern.bookings[1].uses_account_windows = true;
+  axios.get.mockImplementation(url => Promise.resolve({ data: url === '/pms/group-bookings'
+    ? { groups } : url === '/pms/group-folio-summary' ? {} : modern }));
+  render(<GroupFolioPage />);
+  fireEvent.click(await screen.findByTestId('group-card-a'));
+  expect(await screen.findByTestId('merge-btn')).toBeDisabled();
+  expect(screen.getByRole('note')).toHaveTextContent('Misafir kartı');
+  fireEvent.click(screen.getByTestId('guest-card-a2'));
+  expect(await screen.findByRole('dialog')).toHaveTextContent('Guest card a2');
+  expect(axios.post).not.toHaveBeenCalled();
+});
