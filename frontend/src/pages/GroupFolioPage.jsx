@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { runIdle } from '@/lib/idle';
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Merge, Users, DollarSign, FileText, Check, AlertTriangle, RefreshCw, ArrowRight, Lock, Search, ChevronDown, ChevronRight, CreditCard, Banknote, TrendingUp, Layers, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
+const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 const API = "";
 const fmtTL = (v, locale = 'tr-TR') => Number(v || 0).toLocaleString(locale, { minimumFractionDigits: 2 });
 const fmtMoney = (v, currency) => formatCurrency(v, currency || cachedTenantCurrency());
@@ -135,6 +136,7 @@ const GroupFolioPage = ({
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedBooking, setExpandedBooking] = useState(null);
+  const [guestCardBookingId, setGuestCardBookingId] = useState(null);
 
   // Merge dialog state
   const [showMerge, setShowMerge] = useState(false);
@@ -211,6 +213,7 @@ const GroupFolioPage = ({
   };
   const handleSelectGroup = group => {
     selectedGroupIdRef.current = group.id;
+    setGuestCardBookingId(null);
     setSelectedGroup(group);
     loadGroupDetail(group.id);
   };
@@ -306,6 +309,12 @@ const GroupFolioPage = ({
   const groupBalance = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).reduce((s, b) => s + (b.balance || 0), 0);
   const unmergedCount = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).length;
   return <>
+      {guestCardBookingId && <Suspense fallback={<div role="status">Misafir kartı yükleniyor...</div>}>
+        <ReservationDetailModal bookingId={guestCardBookingId} onClose={() => {
+          setGuestCardBookingId(null);
+          handleRefresh();
+        }} onOperationComplete={handleRefresh} />
+      </Suspense>}
       <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto" data-testid="group-folio-page">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -434,6 +443,12 @@ const GroupFolioPage = ({
                                 </div>
                               </div>
                               <div className="flex items-center gap-4">
+                                <Button size="sm" variant="outline" aria-label={`${b.guest_name} misafir kartını aç`} onClick={event => {
+                                  event.stopPropagation();
+                                  setGuestCardBookingId(b.booking_id);
+                                }} data-testid={`guest-card-${b.booking_id}`}>
+                                  Misafir kartı
+                                </Button>
                                 <div className="grid grid-cols-3 gap-4 text-center">
                                   <div>
                                     <div className="text-[11px] text-gray-500">Konaklama</div>
