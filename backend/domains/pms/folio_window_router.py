@@ -26,7 +26,6 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.security import get_current_user
@@ -265,62 +264,56 @@ async def open_window(
     user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),
 ):
-    """Yeni window aç (auto-numbering 1-8). Race-safe: unique index + 3x retry."""
+    """Open an account without orphaning extras from the sole existing account."""
     await _ensure_indexes()
-    booking = await db.bookings.find_one({"id": body.booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1, "currency": 1})
-    if not booking:
-        raise HTTPException(404, "Rezervasyon bulunamadı")
-
     payor = await _validate_payor(body, user.tenant_id)
-
     folio_type = _payor_to_folio_type(body.payor_type)
-    last_err: Exception | None = None
-    for _attempt in range(3):
-        window_no = await _next_window_number(user.tenant_id, body.booking_id)
-        folio_no = await generate_folio_number(user.tenant_id)
-        doc: dict[str, Any] = {
-            "id": str(_uuid.uuid4()),
-            "tenant_id": user.tenant_id,
-            "booking_id": body.booking_id,
-            "folio_number": folio_no,
-            "folio_type": folio_type.value,
-            "status": FolioStatus.OPEN.value,
+    folio_no = await generate_folio_number(user.tenant_id)
+    from core.booking_atomicity import with_resource_locks
+
+    async def commit(session):
+        booking = await db.bookings.find_one({"id": body.booking_id, "tenant_id": user.tenant_id}, session=session)
+        if not booking:
+            raise HTTPException(404, "Rezervasyon bulunamadı")
+        # Serialize account topology with concurrent extra posting, which also
+        # refreshes the booking projection in its transaction.
+        await db.bookings.update_one({"id": body.booking_id, "tenant_id": user.tenant_id},
+            {"$inc": {"folio_window_revision": 1}}, session=session)
+        windows = await db.folios.find({"tenant_id": user.tenant_id, "booking_id": body.booking_id}, session=session).to_list(None)
+        used = {_resolve_window_number(f, windows) for f in windows}
+        window_no = next((n for n in range(1, MAX_WINDOWS + 1) if n not in used), None)
+        if window_no is None:
+            raise HTTPException(409, f"Window limiti doldu (en fazla {MAX_WINDOWS} window)")
+        unbound = {"tenant_id": user.tenant_id, "booking_id": body.booking_id,
+            "voided": {"$ne": True}, "folio_id": {"$in": [None, ""]}}
+        bound_count = 0
+        if await db.extra_charges.find_one(unbound, session=session):
+            if len(windows) != 1 or windows[0].get("status") != "open":
+                raise HTTPException(409, "Eski ek ücretlerin folyo hedefi belirsiz; yeni hesap açmadan önce hesapları uzlaştırın")
+            bound = await db.extra_charges.update_many(unbound,
+                {"$set": {"folio_id": windows[0]["id"]}}, session=session)
+            bound_count = bound.modified_count
+        doc = {
+            "id": str(_uuid.uuid4()), "tenant_id": user.tenant_id, "booking_id": body.booking_id,
+            "folio_number": folio_no, "folio_type": folio_type.value, "status": FolioStatus.OPEN.value,
             "guest_id": body.payor_id if body.payor_type == "guest" else None,
             "company_id": body.payor_id if body.payor_type == "company" else None,
-            "balance": 0.0,
-            "notes": body.notes,
-            "created_at": datetime.now(UTC).isoformat(),
-            "closed_at": None,
-            "window_number": window_no,
-            "payor_type": body.payor_type,
-            "payor_id": body.payor_id,
-            **payor,
-            "currency": booking.get("currency"),
+            "balance": 0.0, "notes": body.notes, "created_at": datetime.now(UTC).isoformat(),
+            "closed_at": None, "window_number": window_no, "payor_type": body.payor_type,
+            "payor_id": body.payor_id, **payor, "currency": booking.get("currency"),
         }
-        try:
-            await db.folios.insert_one(doc)
-            break
-        except DuplicateKeyError as exc:
-            last_err = exc
-            continue
-    else:
-        raise HTTPException(409, f"Window numarası ataması başarısız (race): {last_err}")
+        await db.folios.insert_one(doc, session=session)
+        await audit_log(actor_id=user.id, tenant_id=user.tenant_id, property_id=user.tenant_id,
+            entity_type="folio", entity_id=doc["id"], action="folio_window_opened",
+            metadata={"booking_id": body.booking_id, "window_number": window_no,
+                "payor_type": body.payor_type, "payor_id": body.payor_id,
+                "legacy_extras_bound": bound_count,
+                "legacy_owner_folio_id": windows[0]["id"] if bound_count else None},
+            session=session, require_chain=True)
+        return doc, window_no
 
-    await audit_log(
-        actor_id=user.id,
-        tenant_id=user.tenant_id,
-        property_id=user.tenant_id,
-        entity_type="folio",
-        entity_id=doc["id"],
-        action="folio_window_opened",
-        metadata={
-            "booking_id": body.booking_id,
-            "window_number": window_no,
-            "payor_type": body.payor_type,
-            "payor_id": body.payor_id,
-        },
-    )
-
+    doc, window_no = await with_resource_locks(client=db.client, db=db, tenant_id=user.tenant_id,
+        locks_collection="reservation_financial_locks", resources=[("booking", body.booking_id)], callback=commit)
     doc.pop("_id", None)
     return WindowSummary(
         folio_id=doc["id"],
