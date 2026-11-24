@@ -111,7 +111,7 @@ describe('Versioned commercial workflows', () => {
     expect(screen.getByText('İndirim (−)')).toBeInTheDocument();
     expect(screen.getByText('Servis (+)')).toBeInTheDocument();
     expect(screen.getByText('Vergi (+)')).toBeInTheDocument();
-    expect(screen.getByText('Ödenecek toplam').nextSibling).toHaveTextContent('118,80');
+    expect(screen.getByText('Etkinlik satış toplamı').nextSibling).toHaveTextContent('118,80');
   });
   it('issues a version with concurrency revision and a replay key', async () => {
     axios.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/documents') ? { documents: [] } : { id: 'event', status: 'definite', updated_at: 'revision-a' } }));
