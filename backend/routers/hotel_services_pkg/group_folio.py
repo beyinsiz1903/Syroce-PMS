@@ -79,52 +79,51 @@ async def _load_group_booking_rows(tenant_id: str, booking_ids: list[str]) -> li
         ).to_list(len(room_ids))
         room_map = {room["id"]: room.get("room_number") or "-" for room in rooms}
 
-    folio_totals = dict.fromkeys(ordered_ids, 0)
-    folios = await db.folios.find(
-        {
-            "booking_id": {"$in": ordered_ids},
-            "tenant_id": tenant_id,
-            "type": {"$ne": "payment"},
-        },
-        {"_id": 0, "booking_id": 1, "amount": 1},
-    ).to_list(100000)
-    for folio in folios:
-        booking_id = folio.get("booking_id")
-        if booking_id in folio_totals:
-            folio_totals[booking_id] += folio.get("amount") or 0
+    from modules.pms_core.reporting_financials import deduplicate_report_payments
+    from routers.reservation_detail import _build_financial_summary
 
-    payment_totals = dict.fromkeys(ordered_ids, 0)
-    payments = await db.payments.find(
-        {"booking_id": {"$in": ordered_ids}, "tenant_id": tenant_id},
-        {"_id": 0, "booking_id": 1, "amount": 1},
-    ).to_list(100000)
-    for payment in payments:
-        booking_id = payment.get("booking_id")
-        if booking_id in payment_totals:
-            payment_totals[booking_id] += payment.get("amount") or 0
+    folios = await db.folios.find({"booking_id": {"$in": ordered_ids}, "tenant_id": tenant_id}, {"_id": 0}).to_list(None)
+    owners = {f["id"]: f["booking_id"] for f in folios if f.get("id")}
+    scope = {"tenant_id": tenant_id, "$or": [{"booking_id": {"$in": ordered_ids}}, {"folio_id": {"$in": list(owners)}}]}
+    sources = {bid: {"charges": [], "payments": [], "extra_charges": [], "deposits": [], "folios": []} for bid in ordered_ids}
+    for folio in folios:
+        sources[folio["booking_id"]]["folios"].append(folio)
+        # Old folios were charge documents. Modern folios are account headers
+        # and their projected balance must never be added as another service.
+        if folio.get("type") != "payment" and folio.get("amount") is not None and not folio.get("status"):
+            sources[folio["booking_id"]]["charges"].append({**folio, "total": folio["amount"], "charge_category": folio.get("category") or "legacy_extra"})
+    for collection, key in ((db.folio_charges, "charges"), (db.payments, "payments"), (db.extra_charges, "extra_charges"), (db.deposits, "deposits")):
+        async for row in collection.find(scope, {"_id": 0}):
+            owner = owners.get(row.get("folio_id")) or row.get("booking_id")
+            if owner in sources:
+                sources[owner][key].append(row)
 
     rows = []
     for booking_id in ordered_ids:
         booking = booking_map.get(booking_id)
         if not booking:
             continue
-        accommodation_total = booking.get("total_amount") or 0
-        folio_total = folio_totals[booking_id]
-        payment_total = payment_totals[booking_id]
-        rows.append(
-            {
-                "booking": booking,
-                "booking_id": booking_id,
-                "guest_name": _guest_display_name(guest_map.get(booking.get("guest_id")), booking),
-                "room_number": booking.get("room_number") or room_map.get(booking.get("room_id"), "-"),
-                "accommodation_total": accommodation_total,
-                "folio_charges": folio_total,
-                "payments": payment_total,
-                "balance": accommodation_total + folio_total - payment_total,
-                "currency": str(booking.get("currency") or "TRY").upper(),
-                "folio_merged_to": booking.get("folio_merged_to"),
-            }
-        )
+        data = sources[booking_id]
+        code = str(booking.get("currency") or "TRY").upper().replace("TL", "TRY")
+        for row in data["charges"] + data["payments"] + data["extra_charges"]:
+            row_code = str(row.get("currency") or code).upper().replace("TL", "TRY")
+            if not row.get("voided") and row_code != code:
+                raise HTTPException(409, "Grup rezervasyonunda farklı para birimleri var; önce misafir kartında uzlaştırın")
+        charges = data["charges"]
+        mirrored = {row.get("source_extra_charge_id") for row in charges if row.get("source_extra_charge_id")}
+        extras = [row for row in data["extra_charges"] if row.get("id") not in mirrored]
+        summary = _build_financial_summary(booking, charges, deduplicate_report_payments(data["payments"]), extras, data["deposits"])
+        rows.append({"booking": booking, "booking_id": booking_id,
+            "guest_name": _guest_display_name(guest_map.get(booking.get("guest_id")), booking),
+            "room_number": booking.get("room_number") or room_map.get(booking.get("room_id"), "-"),
+            "accommodation_total": summary["accommodation_total"], "folio_charges": summary["additional_charge_total"],
+            "payments": round(summary["total_payments"] + summary["total_discounts"], 2),
+            "cash_collection_total": summary["cash_collection_total"], "balance": summary["reservation_total_due"],
+            "gross_total": summary["gross_total"], "posted_folio_balance": summary["folio_balance"],
+            "unposted_room_amount": summary["unposted_room_amount"], "currency": code,
+            "folio_merged_to": booking.get("folio_merged_to"),
+            "uses_account_windows": any(f.get("status") for f in data["folios"]),
+            "_sources": {**data, "extra_charges": extras}})
     return rows
 
 
@@ -338,7 +337,13 @@ async def get_group_folio_status(
     bookings_data = await _load_group_booking_rows(tid, group.get("booking_ids", []))
     for row in bookings_data:
         row.pop("booking", None)
+        row.pop("_sources", None)
     group_currencies = {row.get("currency") or "TRY" for row in bookings_data}
+
+    totals_by_currency = {}
+    for row in bookings_data:
+        if not row.get("folio_merged_to"):
+            totals_by_currency[row["currency"]] = round(totals_by_currency.get(row["currency"], 0) + row["balance"], 2)
 
     # Check merge logs
     merge_logs = []
@@ -349,6 +354,7 @@ async def get_group_folio_status(
         "group": group,
         "bookings": bookings_data,
         "merge_logs": merge_logs,
+        "totals_by_currency": totals_by_currency,
         "currency": next(iter(group_currencies), "TRY") if len(group_currencies) == 1 else None,
     }
 
@@ -368,27 +374,21 @@ async def get_group_booking_folio_detail(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
+    group = await db.group_bookings.find_one({"id": group_id, "tenant_id": tid}, {"_id": 0})
+    if not group or booking_id not in (group.get("booking_ids") or []):
+        raise HTTPException(404, "Rezervasyon bu grupta bulunamadı")
     booking_rows = await _load_group_booking_rows(tid, [booking_id])
     if not booking_rows:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+        raise HTTPException(404, "Rezervasyon bulunamadi")
     booking_row = booking_rows[0]
     booking = booking_row["booking"]
-
-    charges = []
-    async for c in db.folio_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        charges.append(c)
-
+    data = booking_row["_sources"]
+    charges, payments, extra_charges = data["charges"], data["payments"], data["extra_charges"]
+    from modules.pms_core.service_timing import project_service_times
+    await project_service_times(db, tid, charges + extra_charges)
+    # Account headers are not charge lines. Legacy flat charges were already
+    # normalized above, so returning headers again would duplicate them.
     folios = []
-    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        folios.append(f)
-
-    payments = []
-    async for p in db.payments.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        payments.append(p)
-
-    extra_charges = []
-    async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        extra_charges.append(ec)
 
     return {
         "booking_id": booking_id,
@@ -553,7 +553,7 @@ async def get_group_folio_summary(
         if bid and bid not in seen:
             seen.add(bid)
             unique_booking_ids.append(bid)
-    total_bookings = len(all_booking_ids)
+    total_bookings = len(unique_booking_ids)
 
     if not unique_booking_ids:
         merge_log_count = await db.folio_merge_logs.count_documents({"tenant_id": tid})
@@ -566,51 +566,14 @@ async def get_group_folio_summary(
             "merge_operations": merge_log_count,
         }
 
-    # Bulk fetch all bookings (1 query)
-    bookings_map: dict[str, dict] = {}
-    async for b in db.bookings.find(
-        {"id": {"$in": unique_booking_ids}, "tenant_id": tid},
-        {"_id": 0, "id": 1, "total_amount": 1, "folio_merged_to": 1, "currency": 1},
-    ):
-        bookings_map[b["id"]] = b
-
-    # Bulk-aggregate folio totals (excluding payments) (1 query)
-    folio_totals: dict[str, float] = {}
-    folio_pipeline = [
-        {
-            "$match": {
-                "booking_id": {"$in": unique_booking_ids},
-                "tenant_id": tid,
-                "type": {"$ne": "payment"},
-            }
-        },
-        {"$group": {"_id": "$booking_id", "total": {"$sum": "$amount"}}},
-    ]
-    async for doc in db.folios.aggregate(folio_pipeline):
-        folio_totals[doc["_id"]] = doc.get("total") or 0
-
-    # Bulk-aggregate payment totals (1 query)
-    payment_totals: dict[str, float] = {}
-    payment_pipeline = [
-        {"$match": {"booking_id": {"$in": unique_booking_ids}, "tenant_id": tid}},
-        {"$group": {"_id": "$booking_id", "total": {"$sum": "$amount"}}},
-    ]
-    async for doc in db.payments.aggregate(payment_pipeline):
-        payment_totals[doc["_id"]] = doc.get("total") or 0
-
-    total_balance = 0.0
+    rows = await _load_group_booking_rows(tid, unique_booking_ids)
     totals_by_currency: dict[str, float] = {}
-    merged_count = 0
-    for bid in all_booking_ids:
-        booking = bookings_map.get(bid)
-        if not booking:
+    merged_count = sum(bool(row.get("folio_merged_to")) for row in rows)
+    for row in rows:
+        if row.get("folio_merged_to"):
             continue
-        if booking.get("folio_merged_to"):
-            merged_count += 1
-        balance = (booking.get("total_amount") or 0) + folio_totals.get(bid, 0) - payment_totals.get(bid, 0)
-        total_balance += balance
-        currency = str(booking.get("currency") or "TRY").upper()
-        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + balance
+        totals_by_currency[row["currency"]] = totals_by_currency.get(row["currency"], 0) + row["balance"]
+    total_balance = round(sum(totals_by_currency.values()), 2) if len(totals_by_currency) <= 1 else None
 
     merge_log_count = await db.folio_merge_logs.count_documents({"tenant_id": tid})
 

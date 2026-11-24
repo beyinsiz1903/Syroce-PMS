@@ -68,9 +68,9 @@ const BookingFolioDetail = ({
   const allItems = [...(detail.charges || []).map(c => ({
     type: 'charge',
     desc: c.description || c.category || 'Masraf',
-    amount: c.total || c.amount || 0,
+    amount: c.total ?? c.amount ?? 0,
     currency: c.currency || detail.currency,
-    date: c.created_at,
+    date: c.service_date || c.created_at,
     voided: c.voided
   })), ...(detail.folios || []).map(f => ({
     type: f.type === 'payment' ? 'payment' : 'folio',
@@ -82,9 +82,9 @@ const BookingFolioDetail = ({
   })), ...(detail.extra_charges || []).map(ec => ({
     type: 'extra',
     desc: ec.description || ec.category || 'Ekstra',
-    amount: ec.charge_amount || ec.amount || 0,
+    amount: ec.total ?? ec.charge_amount ?? ec.amount ?? 0,
     currency: ec.currency || detail.currency,
-    date: ec.created_at,
+    date: ec.service_date || ec.created_at,
     voided: ec.voided
   })), ...(detail.payments || []).map(p => ({
     type: 'payment',
@@ -303,7 +303,7 @@ const GroupFolioPage = ({
     }
   };
   const filteredGroups = groups.filter(g => !searchTerm || (g.group_name || '').toLowerCase().includes(searchTerm.toLowerCase()));
-  const groupBalance = (groupDetail?.bookings || []).reduce((s, b) => s + (b.balance || 0), 0);
+  const groupBalance = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).reduce((s, b) => s + (b.balance || 0), 0);
   const unmergedCount = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).length;
   return <>
       <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto" data-testid="group-folio-page">
@@ -483,7 +483,7 @@ const GroupFolioPage = ({
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-violet-700">{t('cm.pages_GroupFolioPage.grup_toplam_bakiye')}</span>
                       <span className={`text-xl font-bold ${groupBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                        {fmtMoney(groupBalance, groupDetail.currency)}
+                        {fmtBreakdown(groupDetail.totals_by_currency, groupBalance, groupDetail.currency)}
                       </span>
                     </div>
                   </CardContent>
@@ -629,7 +629,7 @@ const GroupFolioPage = ({
                 <div className="font-medium mb-1">Grup: {selectedGroup?.group_name}</div>
                 <div className="flex gap-4 text-xs">
                   <span>{unmergedCount} aktif rezervasyon</span>
-                  <span>{t('cm.pages_GroupFolioPage.toplam_bakiye_69741')} <strong>{fmtMoney(groupBalance, groupDetail.currency)}</strong></span>
+                  <span>{t('cm.pages_GroupFolioPage.toplam_bakiye_69741')} <strong>{fmtBreakdown(groupDetail.totals_by_currency, groupBalance, groupDetail.currency)}</strong></span>
                 </div>
               </div>
 
@@ -637,7 +637,7 @@ const GroupFolioPage = ({
                 <Label>{t('common.amount')} ({groupDetail.currency})</Label>
                 <Input type="number" min="0" step="0.01" value={bulkAmount} onChange={e => setBulkAmount(e.target.value)} placeholder={groupBalance > 0 ? fmtTL(groupBalance) : '0.00'} className="mt-1" data-testid="bulk-amount-input" />
                 {groupBalance > 0 && <Button variant="link" size="sm" className="text-xs text-blue-600 p-0 h-auto mt-1" onClick={() => setBulkAmount(String(groupBalance > 0 ? groupBalance : 0))} data-testid="fill-balance-btn">
-                    {t('cm.pages_GroupFolioPage.bakiye_tutarini_doldur')}{fmtMoney(groupBalance, groupDetail.currency)})
+                    {t('cm.pages_GroupFolioPage.bakiye_tutarini_doldur')}{fmtBreakdown(groupDetail.totals_by_currency, groupBalance, groupDetail.currency)})
                   </Button>}
               </div>
 
