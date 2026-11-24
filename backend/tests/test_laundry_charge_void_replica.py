@@ -1,6 +1,7 @@
 """Paid-service fee cancellation on disposable LOCAL Mongo; no payment/refund created."""
 import asyncio
 from copy import deepcopy
+from datetime import date
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -132,3 +133,20 @@ async def test_changed_retry_cannot_create_a_second_reversal(acceptance):
     changed = await void(a, {**request, 'reason': 'Başka gerekçe ile ikinci iptal'})
     assert changed.status_code == 409
     assert await a.db.folio_ledger.count_documents({'entry_type': 'void'}) == 1
+
+
+async def test_native_revenue_ledger_removes_only_the_cancelled_fee_and_tax(acceptance):
+    from modules.pms_core.reporting_ledger import posted_revenue_rows
+    from modules.pms_core.revenue_report import build_revenue_report
+    a = acceptance
+    day = date(2026, 10, 26)
+    before = await posted_revenue_rows('qa', day, day, database=a.db, fallback_currency='USD')
+    report = build_revenue_report(before, day, day)
+    assert report['totals_by_currency']['USD']['total'] == 15
+    assert report['totals_by_currency']['USD']['net'] == 12.5
+    assert report['totals_by_currency']['USD']['vat'] == 2.5
+    assert (await void(a, intent())).status_code == 200
+    after = await posted_revenue_rows('qa', day, day, database=a.db, fallback_currency='USD')
+    assert not any(row.get('charge_category') == 'laundry' for row in after)
+    assert (await a.db.folio_charges.find_one({'id': 'synthetic-room-charge'}))['total'] == 560
+    assert await a.db.payments.count_documents({}) == 0
