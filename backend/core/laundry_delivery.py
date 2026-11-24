@@ -25,7 +25,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         charge_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:laundry:{tenant_id}:{order_id}"))
         previous = await db.folio_charges.find_one({"id": charge_id, "tenant_id": tenant_id}, **kw)
         if previous and order.get("folio_charged"):
-            return {"id": order_id, "status": "delivered", "folio_charge": {"charged": True, "amount": previous["total"], "entry_id": order.get("folio_entry_id"), "replayed": True}}
+            return {"id": order_id, "status": "delivered", "folio_charge": {"charged": True, "amount": previous["total"], "entry_id": order.get("folio_entry_id"), "replayed": True, "is_complimentary": bool(previous.get("is_complimentary"))}}
         if not booking or not folio or folio.get("status") != "open" or booking.get("status") not in {"checked_in", "in_house"}:
             raise HTTPException(409, "Teslim için aynı rezervasyona bağlı açık folyo ve içeride misafir gereklidir")
         if order.get("status") not in {"pending", "in_progress", "ready"}:
@@ -53,6 +53,21 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         snapshot = laundry_delivery_money(pricing_order, currency)
         tax = laundry_delivery_tax(order, snapshot)
         amount = Decimal(str(snapshot["folio_total"]))
+        # A concurrent comp-policy update writes the booking too. Touch it in
+        # this transaction so Mongo retries with the new policy rather than
+        # committing a stale priced delivery after full comp was applied.
+        await db.bookings.update_one({"id": booking_id, "tenant_id": tenant_id},
+            {"$inc": {"laundry_post_revision": 1}}, **kw)
+        full_comp = bool(booking.get("is_complimentary") and booking.get("complimentary_scope") == "full")
+        concession = {"is_complimentary": full_comp}
+        if full_comp:
+            concession.update(complimentary_scope="full", complimentary_original_amount=float(amount),
+                complimentary_original_tax_snapshot=tax)
+            amount = Decimal("0")
+            tax = {"net_amount": 0.0, "vat_amount": 0.0, "tax_amount": 0.0,
+                "tax_inclusive": True, "tax_evidence_status": "verified",
+                "tax_snapshot": {"version": 1, "inclusive": True, "status": "verified", "currency": currency,
+                    "gross": 0.0, "net": 0.0, "vat": 0.0, "basis": "booking_full_comp"}}
         entered = {key: snapshot[key] for key in ("entered_total", "entered_currency", "exchange_rate")}
         day = (settings or {}).get("business_date")
         if not day:
@@ -81,7 +96,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
             last = await db.folio_ledger.find_one({"tenant_id": tenant_id, "folio_id": folio_id}, sort=[("sequence_number", -1)], **kw)
             ledger = {"id": str(uuid.uuid4()), "tenant_id": tenant_id, "folio_id": folio_id, "booking_id": booking_id,
                 "sequence_number": (last or {}).get("sequence_number", 0) + 1, "entry_type": "charge", "amount": float(amount),
-                "currency": currency, "description": description, "charge_code": "LAUNDRY", **tax,
+                "currency": currency, "description": description, "charge_code": "LAUNDRY", **tax, **concession,
                 "idempotency_key": key, "posted_at": now, "posted_by": actor.email, "business_date": day, "is_voided": False,
                 "metadata": {"laundry_order_id": order_id, **entered}, **service}
             await db.folio_ledger.insert_one({**ledger}, **kw)
@@ -89,7 +104,7 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
             "source_ledger_entry_id": ledger["id"], "source_laundry_order_id": order_id,
             "description": ledger["description"], "charge_type": "laundry", "charge_category": "laundry",
             "quantity": 1, "amount": ledger.get("net_amount") if ledger.get("net_amount") is not None else float(amount), "unit_price": float(amount), "total": float(amount),
-            "currency": currency, **{key: ledger[key] for key in ("tax_amount", "vat_amount", "net_amount", "tax_inclusive", "tax_evidence_status", "tax_snapshot") if key in ledger},
+            "currency": currency, **concession, **{key: ledger[key] for key in ("tax_amount", "vat_amount", "net_amount", "tax_inclusive", "tax_evidence_status", "tax_snapshot") if key in ledger},
             "business_date": day, "posted_at": ledger["posted_at"], "posted_by": ledger["posted_by"], "voided": False}
         charge.update({key: value for key, value in routing.items() if key.startswith("routing_")})
         charge.update(entered)
@@ -98,8 +113,10 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         await db.tenant_settings.update_one({"tenant_id": tenant_id, "laundry_orders.id": order_id}, {"$set": {
             "laundry_orders.$.status": "delivered", "laundry_orders.$.folio_charged": True,
             "laundry_orders.$.folio_entry_id": ledger["id"], "laundry_orders.$.folio_charge_id": charge_id,
+            "laundry_orders.$.folio_financial_total": float(amount),
+            **{f"laundry_orders.$.{key}": value for key, value in concession.items()},
             "laundry_orders.$.updated_at": now}}, **kw)
-        if charge.get("routing_rule_id"):
+        if charge.get("routing_rule_id") or full_comp:
             from core.booking_payment_state import refresh_booking_payment_state
             from modules.pms_core.receivable_reporting import folio_snapshots
 
@@ -111,8 +128,8 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         if not previous:
             await append_audit_log(db, {"id": str(uuid.uuid4()), "tenant_id": tenant_id, "user_id": actor.id,
                 "action": "laundry_delivered", "entity_type": "laundry_order", "entity_id": order_id,
-                "timestamp": now, "metadata": {"folio_id": folio_id, "charge_id": charge_id, "amount": float(amount), "currency": currency, **entered}}, session=session, require_chain=True)
-        return {"id": order_id, "status": "delivered", "folio_charge": {"charged": True, "amount": float(amount), "entry_id": ledger["id"], "replayed": False}}
+                "timestamp": now, "metadata": {"folio_id": folio_id, "charge_id": charge_id, "amount": float(amount), "currency": currency, **concession, **entered}}, session=session, require_chain=True)
+        return {"id": order_id, "status": "delivered", "folio_charge": {"charged": True, "amount": float(amount), "entry_id": ledger["id"], "replayed": False, "is_complimentary": full_comp}}
 
     with tenant_context(tenant_id):
         async with await db.client.start_session() as session:
