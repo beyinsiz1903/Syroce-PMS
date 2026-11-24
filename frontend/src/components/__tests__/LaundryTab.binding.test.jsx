@@ -255,3 +255,16 @@ it('keeps an explicit service day in the immutable retry payload', async () => {
   expect(post.mock.calls[0][1].service_date).toBe('2026-11-13');
   expect(post.mock.calls[1]).toEqual(post.mock.calls[0]);
 });
+
+it('distinguishes a full-comp delivered service list price from the zero folio charge', async () => {
+  get.mockImplementation(url => Promise.resolve({ data: url === '/laundry/items' ? { items: [] } : { orders: [{
+    id: 'comp-source', room_number: '103', guest_name: 'Aslı Yıldız', status: 'delivered',
+    total: 25, currency: 'TRY', folio_currency: 'TRY', folio_total: 25,
+    folio_financial_total: 0, folio_charged: true, is_complimentary: true, items: [],
+  }] } }));
+  render(<LaundryTab />);
+  expect(await screen.findByText('Folyoya ikram olarak yansıdı')).toBeInTheDocument();
+  expect(screen.getByText('Liste bedeli: 25 · Tam ikram')).toBeInTheDocument();
+  expect(screen.getAllByText('0').length).toBeGreaterThan(0);
+  expect(patch).not.toHaveBeenCalled();
+});

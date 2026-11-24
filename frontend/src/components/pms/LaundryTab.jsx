@@ -249,7 +249,9 @@ const LaundryTab = () => {
       });
       const charge = res.data?.folio_charge;
       if (newStatus === 'delivered') {
-        if (charge?.charged) {
+        if (charge?.charged && charge.is_complimentary) {
+          toast.success('Teslim edildi — tam ikram kapsamında, misafire ücret yazılmadı');
+        } else if (charge?.charged) {
           toast.success(`Teslim edildi — Folyoya ${formatCurrency(charge.amount, charge.currency || currency)} eklendi`);
         } else if (charge && charge.charged === false) {
           if (charge.reason === 'no_active_booking_or_folio') {
@@ -472,18 +474,21 @@ const LaundryTab = () => {
                         <div>
                           <p className="text-sm font-medium text-gray-800">
                             {order.guest_name}
-                            {order.folio_charged && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">Folyoya yansıdı</Badge>}
+                            {order.folio_charged && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">{order.is_complimentary ? 'Folyoya ikram olarak yansıdı' : 'Folyoya yansıdı'}</Badge>}
                           </p>
                           <p className="text-xs text-gray-400">
                             {order.items?.map(i => `${i.name} x${i.quantity}`).join(', ')}
                           </p>
                           {order.service_date && <p className="text-xs text-muted-foreground">Hizmet günü: {String(order.service_date).split('-').reverse().join('.')}</p>}
-                          {order.folio_currency && order.folio_currency !== order.currency && <p className="text-xs text-muted-foreground">Folyoya: {formatCurrency(order.folio_total, order.folio_currency)} · 1 {order.currency} = {order.exchange_rate} {order.folio_currency}</p>}
+                          {order.folio_currency && order.folio_currency !== order.currency && <p className="text-xs text-muted-foreground">Folyoya: {formatCurrency(order.folio_financial_total ?? order.folio_total, order.folio_currency)} · 1 {order.currency} = {order.exchange_rate} {order.folio_currency}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         <Badge className={sc.color}>{sc.label}</Badge>
-                        <span className="text-sm font-bold text-gray-700">{formatCurrency(order.total, order.currency || currency)}</span>
+                        <div className="text-right">
+                          {order.is_complimentary && <p className="text-xs text-muted-foreground">Liste bedeli: {formatCurrency(order.total, order.currency || currency)} · Tam ikram</p>}
+                          <span className="text-sm font-bold text-gray-700">{formatCurrency(order.is_complimentary ? order.folio_financial_total : order.total, order.is_complimentary ? (order.folio_currency || order.currency || currency) : (order.currency || currency))}</span>
+                        </div>
                         <fieldset disabled={ordersStale} className="flex gap-1">
                           {order.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Başla</Button>}
                           {order.status === 'in_progress' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>{t('cm.components_pms_LaundryTab.hazir_04e6f')}</Button>}
