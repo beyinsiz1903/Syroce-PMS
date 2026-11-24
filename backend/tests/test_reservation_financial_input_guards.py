@@ -462,6 +462,8 @@ async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance
         ),
         extra_charges=extra_charges,
         folio_routing=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        # These cases model legacy bookings without modern folio windows.
+        folios=SimpleNamespace(find_one=AsyncMock(return_value=None)),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -499,6 +501,8 @@ async def test_extra_charge_converts_entered_currency_to_booking_currency(monkey
         ),
         extra_charges=extra_charges,
         folio_routing=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        # These cases model legacy bookings without modern folio windows.
+        folios=SimpleNamespace(find_one=AsyncMock(return_value=None)),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
