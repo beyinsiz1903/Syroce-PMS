@@ -61,36 +61,38 @@ async def get_housekeeping_rooms(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
+    from modules.pms_core.stay_night_metrics import is_physical_room
+
     query = {"tenant_id": tid}
-    if status_filter:
-        query["housekeeping_status"] = status_filter
     if floor:
         query["floor"] = floor
-
     rooms = await db.rooms.find(query, {"_id": 0}).sort("room_number", 1).to_list(length=None)
-    room_ids = [r.get("id") for r in rooms if r.get("id")]
-
-    bookings_by_room: dict = {}
+    rooms = [room for room in rooms if is_physical_room(room)]
+    room_ids = [r["id"] for r in rooms if r.get("id")]
+    candidates: dict[str, list[dict]] = {}
     if room_ids:
-        async for b in db.bookings.find(
-            {"room_id": {"$in": room_ids}, "tenant_id": tid, "status": {"$in": ["checked_in", "confirmed"]}},
-            {"_id": 0, "room_id": 1, "guest_name": 1, "check_out": 1, "status": 1},
+        async for booking in db.bookings.find(
+            {"room_id": {"$in": room_ids}, "tenant_id": tid, "status": {"$in": ["checked_in", "in_house"]}},
+            {"_id": 0, "id": 1, "room_id": 1, "guest_name": 1, "check_out": 1, "status": 1},
         ):
-            rid = b.get("room_id")
-            if rid and rid not in bookings_by_room:
-                bookings_by_room[rid] = {k: v for k, v in b.items() if k != "room_id"}
+            candidates.setdefault(booking["room_id"], []).append(booking)
 
-    for r in rooms:
-        r["current_booking"] = bookings_by_room.get(r.get("id"))
-        r["housekeeping_status"] = r.get("housekeeping_status", "clean")
-
-    # Summary counts
-    statuses = {}
-    for r in rooms:
-        s = r.get("housekeeping_status", "clean")
-        statuses[s] = statuses.get(s, 0) + 1
-
-    return {"rooms": rooms, "summary": statuses, "total": len(rooms)}
+    statuses: dict[str, int] = {}
+    for room in rooms:
+        matches = candidates.get(room.get("id"), [])
+        owner = room.get("current_booking_id")
+        if owner:
+            matches = [booking for booking in matches if booking.get("id") == owner]
+        room["current_booking"] = {k: v for k, v in matches[0].items() if k != "room_id"} if len(matches) == 1 else None
+        room["booking_conflict"] = len(matches) > 1 or bool(owner and not matches)
+        status = room.get("housekeeping_status") or room.get("hk_status") or "clean"
+        room["housekeeping_status"] = status
+        statuses[status] = statuses.get(status, 0) + 1
+    inventory_total = len(rooms)
+    if status_filter:
+        rooms = [room for room in rooms if room["housekeeping_status"] == status_filter]
+    return {"rooms": rooms, "summary": statuses, "total": len(rooms),
+            "inventory_total": inventory_total, "inventory_basis": "active_physical_rooms"}
 
 
 @sub_router.put("/housekeeping/rooms/{room_id}/status")

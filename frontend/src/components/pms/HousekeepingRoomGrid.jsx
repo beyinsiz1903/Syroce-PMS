@@ -323,6 +323,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
 
                 <Badge className={`text-xs ${cfg.color} mb-2`}>{cfg.label}</Badge>
 
+                {room.booking_conflict && <div role="status" className="text-xs text-amber-800 bg-amber-50 rounded p-1.5 mb-2">Konaklama eşleşmesi kontrol edilmeli</div>}
                 {hasGuest && (
                   <div className="text-xs text-gray-600 bg-gray-50 rounded p-1.5 mb-2 truncate">
                     {room.current_booking.guest_name}

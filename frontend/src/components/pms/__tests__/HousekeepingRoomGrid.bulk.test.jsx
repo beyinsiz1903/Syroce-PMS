@@ -31,3 +31,11 @@ describe('housekeeping bulk conflict readback', () => {
     expect(mocks.get.mock.calls.length).toBeGreaterThan(1);
   });
 });
+
+it('shows a reconciliation warning instead of inventing the guest for ambiguous occupancy', async () => {
+  mocks.get.mockResolvedValue({ data: { rooms: [
+    { id: 'conflict', room_number: '117', housekeeping_status: 'clean', current_booking: null, booking_conflict: true },
+  ], summary: { clean: 1 } } });
+  render(<HousekeepingRoomGrid />);
+  expect(await screen.findByText('Konaklama eşleşmesi kontrol edilmeli')).toBeInTheDocument();
+});
