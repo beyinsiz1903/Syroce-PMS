@@ -315,6 +315,7 @@ const GroupFolioPage = ({
       setBulkPaying(false);
     }
   };
+  const hasAccountWindows = (groupDetail?.bookings || []).some(b => b.uses_account_windows);
   const filteredGroups = groups.filter(g => !searchTerm || (g.group_name || '').toLowerCase().includes(searchTerm.toLowerCase()));
   const groupBalance = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).reduce((s, b) => s + (b.balance || 0), 0);
   const bulkRows = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).sort((a, b) => a.booking_id.localeCompare(b.booking_id));
@@ -429,11 +430,12 @@ const GroupFolioPage = ({
                     <Button size="sm" onClick={() => {
                   setShowMerge(true);
                   setMasterBookingId(groupDetail.bookings?.find(b => !b.folio_merged_to)?.booking_id || '');
-                }} disabled={!groupDetail.bookings || unmergedCount < 2} className="bg-violet-600 hover:bg-violet-700" data-testid="merge-btn">
+                }} disabled={!groupDetail.bookings || unmergedCount < 2 || hasAccountWindows} className="bg-violet-600 hover:bg-violet-700" data-testid="merge-btn">
                       <Merge className="w-4 h-4 mr-1" /> {t('cm.pages_GroupFolioPage.foliolari_birlestir')}
                     </Button>
                   </div>
                 </div>
+                {hasAccountWindows && <p role="note" className="mt-3 text-sm text-slate-600">Hesap aktarma ve birleştirme için ilgili satırdaki Misafir kartı düğmesini kullanın. Grup özeti mevcut hesapları ikinci kez kopyalamaz.</p>}
 
                 {/* Bookings in Group */}
                 <div className="space-y-2">
