@@ -246,7 +246,8 @@ class TestCariTransferToAgency:
         transfer_data = {
             "amount": 1000.0,
             "cari_account_id": agency_id,
-            "description": "TEST_Acenteye aktarim"
+            "description": "TEST_Acenteye aktarim",
+            "request_id": str(uuid.uuid4())
         }
         
         response = authenticated_client.post(
@@ -272,7 +273,7 @@ class TestCariTransferToAgency:
         
         response = authenticated_client.post(
             f"{BASE_URL}/api/pms/cari-accounts/{company_id}/transfer-to-agency",
-            json={"amount": 100.0, "cari_account_id": "nonexistent-target"}
+            json={"amount": 100.0, "cari_account_id": "nonexistent-target", "request_id": str(uuid.uuid4())}
         )
         assert response.status_code == 404
 

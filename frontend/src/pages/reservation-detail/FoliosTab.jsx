@@ -17,6 +17,7 @@ import { reservationPaymentSummary } from './paymentSummary';
 import { UnpostedRoomBreakdown } from './UnpostedRoomBreakdown';
 import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
 import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
+import { submitCariAgencyIntent } from '@/lib/cariAgencyIntent';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import FolioWindowsPanel from '@/components/folio/FolioWindowsPanel';
 import FolioAllocationPanel from '@/components/folio/FolioAllocationPanel';
@@ -94,6 +95,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [cariForm, setCariForm] = useState({ amount: '', cari_account_id: '', description: '' });
   const [agencyForm, setAgencyForm] = useState({ amount: '', agency_name: '', reference: '' });
   const [cariTransferForm, setCariTransferForm] = useState({ source_id: '', target_id: '', amount: '', description: '' });
+  const cariTransferSource = cariAccounts.find(a => a.id === cariTransferForm.source_id);
+  const cariTransferCurrency = cariTransferSource?.currency ? normalizeCurrency(cariTransferSource.currency) : null;
   const [priceCorrectionForm, setPriceCorrectionForm] = useState({ target_total: '', reason: '' });
   const [showNewCari, setShowNewCari] = useState(false);
   const [newCariForm, setNewCariForm] = useState({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
@@ -690,30 +693,27 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           onSubmit={() => exec(async () => {
             if (!cariTransferForm.source_id || !cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap seçiniz'); return; }
             if (cariTransferForm.source_id === cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap farklı olmalı'); return; }
-            await axios.post(`/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, {
-              amount: (() => {
-                const amount = parseMoney(cariTransferForm.amount);
-                if (!Number.isFinite(amount) || amount <= 0) throw new Error('Tutarı virgül veya nokta ile doğru girin.');
-                return amount;
-              })(),
-              cari_account_id: cariTransferForm.target_id,
-              description: cariTransferForm.description || 'Acenteye aktarım'
-            });
+            const amount = parseMoney(cariTransferForm.amount);
+            if (!Number.isFinite(amount) || amount <= 0) throw new Error('Tutarı virgül veya nokta ile doğru girin.');
+            const payload = { amount, cari_account_id: cariTransferForm.target_id,
+              description: cariTransferForm.description || 'Acenteye aktarım' };
+            await submitCariAgencyIntent(booking.tenant_id, cariTransferForm.source_id, payload,
+              body => axios.post(`/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, body));
             toast.success('Cari bakiye acenteye aktarıldı');
             setShowCariTransfer(false);
             setCariTransferForm({ source_id: '', target_id: '', amount: '', description: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <SelectField label="Kaynak Cari Hesap" value={cariTransferForm.source_id} onChange={v => setCariTransferForm(p => ({ ...p, source_id: v }))}
-              options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
+            <SelectField label="Kaynak Cari Hesap" value={cariTransferForm.source_id} onChange={v => setCariTransferForm(p => ({ ...p, source_id: v, target_id: '' }))}
+              options={[['','Hesap Seçiniz...'], ...cariAccounts.filter(a => a.account_source !== 'city_ledger_accounts' && a.currency && (!a.status || a.status === 'active') && a.is_active !== false).map(a => [a.id, `${a.name} (${normalizeCurrency(a.currency)})`])]} />
             <div>
               <SelectField label="Hedef Acente Hesabı" value={cariTransferForm.target_id} onChange={v => setCariTransferForm(p => ({ ...p, target_id: v }))}
-                options={[['','Acente Seçiniz...'], ...cariAccounts.filter(a => a.account_type === 'agency').map(a => [a.id, a.name])]} />
+                options={[['','Acente Seçiniz...'], ...cariAccounts.filter(a => a.account_type === 'agency' && a.id !== cariTransferForm.source_id && a.currency && normalizeCurrency(a.currency) === cariTransferCurrency && (!a.status || a.status === 'active') && a.is_active !== false).map(a => [a.id, `${a.name} (${normalizeCurrency(a.currency)})`])]} />
               <Button size="sm" variant="ghost" className="h-6 text-xs text-indigo-600 mt-1 px-0" onClick={() => setShowNewCari(true)} data-testid="btn-new-cari"><Plus className="w-3 h-3 mr-1" /> Yeni Cari Oluştur</Button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile iki ondalık basamak." value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${cariTransferCurrency || 'kaynak hesabı seçin'})`} type="text" inputMode="decimal" hint="Yalnız aynı para birimindeki acenteye aktarılır. Bu işlem tahsilat oluşturmaz." value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
             <FormField label="Açıklama" value={cariTransferForm.description} onChange={v => setCariTransferForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
           </div>
         </FormPanel>

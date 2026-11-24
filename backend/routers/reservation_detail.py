@@ -928,6 +928,11 @@ class CariTransfer(BaseModel):
     description: str | None = Field(None, max_length=2000)
 
 
+class CariAgencyTransfer(CariTransfer):
+    amount: Decimal = Field(..., gt=0, le=1e9, max_digits=12, decimal_places=2, allow_inf_nan=False)
+    request_id: UUID
+
+
 class AgencyPaymentRecord(BaseModel):
     amount: float = Field(..., gt=0, le=1e9)
     agency_name: str | None = Field(None, max_length=200)
@@ -4899,6 +4904,7 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
         normalized["transfer_id"] = _cari_transfer_lookup_id(acc)
         normalized["name"] = _canonical_cari_account_name(acc)
         normalized["balance"] = _cari_balance(acc)
+        normalized["account_source"] = "cari_accounts"
         accounts.append(normalized)
 
     # City Ledger hesaplarını da ekle (folyo dropdown'ında görünsün)
@@ -4915,6 +4921,8 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
                 "name": _canonical_cari_account_name(acc),
                 "company_name": acc.get("company_name"),
                 "account_type": "city_ledger",
+                "account_source": "city_ledger_accounts",
+                "currency": acc.get("currency"),
                 "balance": acc.get("current_balance", 0),
                 "credit_limit": acc.get("credit_limit", 0),
                 "tenant_id": tid,
@@ -5032,85 +5040,20 @@ async def reconcile_cari_account(
 @router.post("/cari-accounts/{account_id}/transfer-to-agency")
 async def transfer_cari_to_agency(
     account_id: str,
-    data: CariTransfer,
+    data: CariAgencyTransfer,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Transfer cari balance to an agency cari account."""
     _enforce_perm(current_user, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
-    tid = current_user.tenant_id
 
     if account_id == data.cari_account_id:
         raise HTTPException(status_code=422, detail="Kaynak ve hedef cari hesap farklı olmalı")
 
-    source = await db.cari_accounts.find_one({"id": account_id, "tenant_id": tid}, {"_id": 0})
-    if not source:
-        raise HTTPException(status_code=404, detail="Kaynak cari hesap bulunamadı")
+    from modules.pms_core.cari_agency_transfer import transfer_to_agency
 
-    target = await db.cari_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
-    if not target:
-        raise HTTPException(status_code=404, detail="Hedef cari hesap bulunamadı")
-
-    source_balance = _cari_balance(source)
-    if data.amount > source_balance:
-        raise HTTPException(status_code=422, detail="Aktarım tutarı kaynak cari bakiyeyi aşamaz")
-    target_balance = _cari_balance(target)
-
-    now = datetime.now(UTC).isoformat()
-    actor = current_user.name or current_user.email
-
-    # Debit from source
-    debit_txn = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "cari_account_id": account_id,
-        "booking_id": None,
-        "transaction_type": "transfer_out",
-        "amount": data.amount,
-        "description": data.description or f"{target.get('name', '')} hesabina aktarim",
-        "posted_by": actor,
-        "created_at": now,
-    }
-    await db.cari_transactions.insert_one({**debit_txn})
-    debit_txn.pop("_id", None)
-
-    # Credit to target
-    credit_txn = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "cari_account_id": data.cari_account_id,
-        "booking_id": None,
-        "transaction_type": "transfer_in",
-        "amount": data.amount,
-        "description": data.description or f"{source.get('name', '')} hesabindan aktarim",
-        "posted_by": actor,
-        "created_at": now,
-    }
-    await db.cari_transactions.insert_one({**credit_txn})
-    credit_txn.pop("_id", None)
-
-    # Update balances
-    await db.cari_accounts.update_one(
-        {"id": account_id, "tenant_id": tid},
-        {
-            "$set": {
-                "balance": source_balance - data.amount,
-                "current_balance": source_balance - data.amount,
-            }
-        },
-    )
-    await db.cari_accounts.update_one(
-        {"id": data.cari_account_id, "tenant_id": tid},
-        {
-            "$set": {
-                "balance": target_balance + data.amount,
-                "current_balance": target_balance + data.amount,
-            }
-        },
-    )
-
-    return {"success": True, "debit": debit_txn, "credit": credit_txn}
+    return await transfer_to_agency(db, current_user, account_id, data)
 
 
 # ── Available Rooms Endpoint ──
