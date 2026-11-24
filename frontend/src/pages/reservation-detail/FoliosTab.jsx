@@ -32,6 +32,7 @@ import {
 
 const normalizeCurrency = (value) => String(value || 'TL').toUpperCase() === 'TL' ? 'TRY' : String(value || 'TL').toUpperCase();
 const COMMON_PAYMENT_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF'];
+const CariAccountLedger = lazy(() => import('./CariAccountLedger'));
 const EnterpriseBillingPanel = lazy(() => import('@/components/folio/EnterpriseBillingPanel'));
 
 export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurrency, rates) {
@@ -92,6 +93,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [showPriceCorrection, setShowPriceCorrection] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', reference: '' });
   const [cariAccounts, setCariAccounts] = useState([]);
+  const [showCariLedger, setShowCariLedger] = useState(false);
   const [cariForm, setCariForm] = useState({ amount: '', cari_account_id: '', description: '' });
   const [agencyForm, setAgencyForm] = useState({ amount: '', agency_name: '', reference: '' });
   const [cariTransferForm, setCariTransferForm] = useState({ source_id: '', target_id: '', amount: '', description: '' });
@@ -440,6 +442,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           )}
         </div>
       )}
+      <Button type="button" variant="outline" onClick={() => setShowCariLedger(value => !value)}>Cari hesap hareketlerini göster</Button>
+      {showCariLedger && <Suspense fallback={<p>Hareketler yükleniyor...</p>}><CariAccountLedger /></Suspense>}
       <FolioWindowsPanel key={`windows:${booking.id}`} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio}
         revision={`${windowRevision}:${folioList.map(f => `${f.id}:${f.status}:${f.balance}`).join('|')}`} />
       <Button type="button" variant="outline" disabled={enterpriseLocked} onClick={() => setShowEnterprise(value => !value)}>Kurumsal ödeme / ikram kontrolleri</Button>
