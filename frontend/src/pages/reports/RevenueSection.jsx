@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { validateReportDate } from '@/utils/reportExports';
+import './RevenueSection.css';
 
 const fields = [['subtotal', 'Ara toplam'], ['discount', 'İndirim'], ['net', 'Net (vergi hariç)'], ['vat', 'KDV'], ['city_tax', 'Konaklama vergisi'], ['other_tax', 'Diğer / ayrıştırılmamış vergi'], ['difference', 'Açıklanamayan fark'], ['total', 'Toplam (vergi dahil)']];
 const dayText = day => new Date(`${day}T12:00:00Z`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', timeZone: 'UTC' });
@@ -113,7 +114,7 @@ export default function RevenueSection({ reportDate, reportPeriod = 'monthly' })
         </AreaChart></ResponsiveContainer>
       </CardContent></Card>
       <Card><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2"><CardTitle className="text-sm">Kategori bazlı gelir</CardTitle><label className="text-sm print:hidden"><input type="checkbox" checked={details} onChange={e => setDetails(e.target.checked)} /> Vergi / indirim ayrıntıları</label></CardHeader><CardContent>
-        <div className="overflow-x-auto"><table className="w-full text-sm" aria-label="Kategori bazlı gelir">
+        <div className="revenue-category-scroll overflow-x-auto"><table className="revenue-category-table w-full text-sm" aria-label="Kategori bazlı gelir">
           <thead className="bg-muted"><tr><th className="p-2 text-left">Kategori</th><th className="p-2 text-right">İşlem</th>{visibleFields.map(([key, label]) => <th key={key} className="p-2 text-right">{label}</th>)}</tr></thead>
           <tbody>{rows.length ? rows.map(row => <tr key={row.category} className="border-t"><th scope="row" className="p-2 text-left font-medium" title={(row.source_categories || []).join(', ')}>{row.label}</th><td className="p-2 text-right">{row.count}</td>{visibleFields.map(([key]) => <td key={key} className={`p-2 text-right tabular-nums ${key === 'difference' ? 'text-amber-700' : ''}`}><Amounts values={row.by_currency} field={key === 'net' && !details ? 'verified_net' : key} /></td>)}</tr>) : <tr><td className="p-5 text-center" colSpan={visibleFields.length + 2}>Bu tarih aralığında işlem yok.</td></tr>}</tbody>
           {rows.length > 0 && <tfoot className="border-t bg-muted font-semibold"><tr><th scope="row" className="p-2 text-left">TOPLAM</th><td className="p-2 text-right">{data.totals?.count}</td>{visibleFields.map(([key]) => <td key={key} className="p-2 text-right"><Amounts values={data.totals_by_currency} field={key === 'net' && !details ? 'verified_net' : key} /></td>)}</tr></tfoot>}
