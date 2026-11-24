@@ -244,7 +244,7 @@ const POSReports = ({ outletId }) => {
                   {Object.keys(report.payment_methods || {}).length === 0 ? (
                     <p className="text-center py-8 text-gray-500">{t('cm.components_POSReports.bu_tarihte_odeme_yok')}</p>
                   ) : Object.entries(report.payment_methods || {}).map(([method, amount]) => {
-                    const pct = percentage(amount, report.gross_sales);
+                    const pct = percentage(amount, Object.values(report.payment_methods || {}).reduce((sum, value) => sum + (Number(value) || 0), 0));
                     return (
                       <div key={method} className="border rounded-lg p-3">
                         <div className="flex items-center justify-between mb-1">

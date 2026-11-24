@@ -44,6 +44,19 @@ describe('POSReports financial integrity', () => {
     });
   });
 
+  it('uses net payment methods as the share denominator after comps and refunds', async () => {
+    axios.get.mockImplementation(url => Promise.resolve({ data: url === '/pos/v2/receipts' ? { receipts: [] }
+      : url === '/pos/void-transactions' ? []
+      : { report_date: '2026-09-03', currency: 'TRY', gross_sales: 162.8, net_sales: 66,
+          payment_methods: { cash: 33, card: 33, room_charge: 0 } } }));
+    render(<POSReports />);
+    fireEvent.click(await screen.findByRole('tab', { name: /odeme_dagilimi/ }));
+    const panel = screen.getByRole('tabpanel', { name: /odeme_dagilimi/ });
+    expect(within(panel).getAllByText('%50.0')).toHaveLength(2);
+    expect(within(panel).queryByText('%20.3')).not.toBeInTheDocument();
+    expect(within(panel).getByText('%0.0')).toBeInTheDocument();
+  });
+
   it('hides the previous outlet totals while loading and ignores late responses', async () => {
     const pending = new Map();
     const report = (total) => ({ data: {
