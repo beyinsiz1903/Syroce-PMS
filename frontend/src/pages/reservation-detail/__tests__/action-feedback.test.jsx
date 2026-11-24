@@ -161,9 +161,10 @@ describe('reservation detail action feedback', () => {
     ));
   });
 
-  it('rejects a same-account cari transfer before posting', async () => {
+  it('excludes the source and foreign currency from agency targets', async () => {
     axiosGet.mockResolvedValue({
-      data: { accounts: [{ id: 'agency-a', name: 'Test Acente', account_type: 'agency' }] },
+      data: { accounts: [{ id: 'agency-a', name: 'Test Acente', account_type: 'agency', currency: 'TRY' },
+        { id: 'foreign', name: 'Döviz acentesi', account_type: 'agency', currency: 'USD' }] },
     });
     render(
       <FoliosTab
@@ -183,14 +184,38 @@ describe('reservation detail action feedback', () => {
     await waitFor(() => expect(within(panel).getAllByRole('combobox')).toHaveLength(2));
     const [source, target] = within(panel).getAllByRole('combobox');
     fireEvent.change(source, { target: { value: 'agency-a' } });
-    fireEvent.change(target, { target: { value: 'agency-a' } });
+    expect(within(target).queryByRole('option', { name: /Test Acente/ })).not.toBeInTheDocument();
+    expect(within(target).queryByRole('option', { name: /Döviz acentesi/ })).not.toBeInTheDocument();
     fireEvent.change(within(panel).getAllByRole('textbox')[0], { target: { value: '10' } });
     fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Kaynak ve hedef cari hesap farklı olmalı');
+      expect(toast.error).toHaveBeenCalledWith('Kaynak ve hedef cari hesap seçiniz');
     });
     expect(axiosPost).not.toHaveBeenCalled();
+  });
+
+  it('sends a durable agency transfer ID and uses the source account currency', async () => {
+    axiosGet.mockResolvedValue({ data: { accounts: [
+      { id: 'company-usd', name: 'Şirket USD', account_type: 'company', currency: 'USD' },
+      { id: 'agency-usd', name: 'Acente USD', account_type: 'agency', currency: 'USD' },
+      { id: 'agency-try', name: 'Acente TRY', account_type: 'agency', currency: 'TRY' },
+    ] } });
+    render(<FoliosTab folios={[]} charges={[]} payments={[]} extra_charges={[]} summary={{}}
+      booking={{ id: 'booking-a', tenant_id: 't', currency: 'TRY' }} onRefresh={vi.fn()} onSwitchTab={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('btn-acenteye-aktar'));
+    const panel = await screen.findByTestId('cari-agency-transfer-form');
+    const [source, target] = within(panel).getAllByRole('combobox');
+    await waitFor(() => expect(within(source).getByRole('option', { name: /Şirket USD/ })).toBeInTheDocument());
+    fireEvent.change(source, { target: { value: 'company-usd' } });
+    expect(within(target).queryByRole('option', { name: /Acente TRY/ })).not.toBeInTheDocument();
+    fireEvent.change(target, { target: { value: 'agency-usd' } });
+    fireEvent.change(within(panel).getByLabelText('Tutar (USD)'), { target: { value: '25' } });
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/cari-accounts/company-usd/transfer-to-agency', {
+      amount: 25, cari_account_id: 'agency-usd', description: 'Acenteye aktarım',
+      request_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    }));
   });
 
   it('shows an explicitly zeroed split charge and exposes a named split action', () => {
