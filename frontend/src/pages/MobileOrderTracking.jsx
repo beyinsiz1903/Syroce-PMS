@@ -41,6 +41,10 @@ const MobileOrderTracking = ({ user }) => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [outletFilter, setOutletFilter] = useState('all');
   const [orderHistory, setOrderHistory] = useState([]);
+  const [historyStart, setHistoryStart] = useState('');
+  const [historyEnd, setHistoryEnd] = useState('');
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState('');
 
   useEffect(() => {
     loadActiveOrders();
@@ -97,24 +101,49 @@ const MobileOrderTracking = ({ user }) => {
     }
   };
 
-  const loadOrderHistory = async () => {
+  const validDay = value => /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+
+  const readOrderHistory = async (start, end) => {
+    setOrderHistory([]);
+    setHistoryError('');
+    if (!validDay(start) || !validDay(end) || start > end) {
+      setHistoryError('Geçerli tarih aralığı seçin; başlangıç bitişten sonra olamaz.');
+      return;
+    }
+    setHistoryBusy(true);
     try {
-      const today = new Date();
-      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-      
       const response = await axios.get('/pos/mobile/order-history', {
-        params: {
-          start_date: weekAgo.toISOString().split('T')[0],
-          end_date: today.toISOString().split('T')[0],
-          limit: 50
-        }
+        params: { start_date: start, end_date: end, limit: 50 },
       });
-      
-      setOrderHistory(response.data.orders || []);
-      setHistoryModalOpen(true);
-    } catch (error) {
-      console.error('Failed to load order history:', error);
-      toast.error('Sipariş geçmişi yüklenemedi');
+      if (!Array.isArray(response.data?.orders)) throw new Error('Invalid history response');
+      setOrderHistory(response.data.orders);
+    } catch {
+      setHistoryError('Sipariş geçmişi yüklenemedi; boş liste sonucu olarak değerlendirmeyin.');
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const loadOrderHistory = async () => {
+    if (historyBusy) return;
+    setHistoryModalOpen(true);
+    setHistoryError('');
+    setOrderHistory([]);
+    setHistoryBusy(true);
+    try {
+      const response = await axios.get('/night-audit/business-date');
+      const end = response.data?.business_date;
+      if (!validDay(end)) throw new Error('Invalid PMS business date');
+      const from = new Date(`${end}T00:00:00Z`);
+      from.setUTCDate(from.getUTCDate() - 6);
+      const start = from.toISOString().slice(0, 10);
+      setHistoryStart(start); setHistoryEnd(end);
+      await readOrderHistory(start, end);
+    } catch {
+      setHistoryError('PMS iş günü alınamadı. Tarihleri açıkça seçerek yeniden deneyin.');
+    } finally {
+      setHistoryBusy(false);
     }
   };
 
@@ -128,10 +157,16 @@ const MobileOrderTracking = ({ user }) => {
       pending: { label: 'Bekliyor', color: 'bg-yellow-500', icon: Clock },
       preparing: { label: 'Hazırlanıyor', color: 'bg-blue-500', icon: ChefHat },
       ready: { label: 'Hazır', color: 'bg-green-500', icon: CheckCircle },
-      served: { label: 'Servis Edildi', color: 'bg-gray-500', icon: UtensilsCrossed }
+      served: { label: 'Servis Edildi', color: 'bg-gray-500', icon: UtensilsCrossed },
+      paid: { label: 'Ödendi', color: 'bg-emerald-600', icon: CheckCircle },
+      closed: { label: 'Kapandı', color: 'bg-gray-500', icon: CheckCircle },
+      completed: { label: 'Tamamlandı', color: 'bg-gray-500', icon: CheckCircle },
+      refunded: { label: 'İade Edildi', color: 'bg-orange-600', icon: CheckCircle },
+      cancelled: { label: 'İptal Edildi', color: 'bg-red-600', icon: CheckCircle },
+      canceled: { label: 'İptal Edildi', color: 'bg-red-600', icon: CheckCircle }
     };
     
-    const config = statusConfig[status] || statusConfig.pending;
+    const config = statusConfig[status] || { label: 'Durum bilinmiyor', color: 'bg-gray-500', icon: AlertTriangle };
     const Icon = config.icon;
     
     return (
@@ -489,9 +524,18 @@ const MobileOrderTracking = ({ user }) => {
       <Dialog open={historyModalOpen} onOpenChange={setHistoryModalOpen}>
         <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Sipariş Geçmişi (Son 7 Gün)</DialogTitle>
+            <DialogTitle>Sipariş Geçmişi</DialogTitle>
           </DialogHeader>
           
+          <p className="text-xs text-gray-600">İlk açılışta PMS iş günüyle biten 7 gün gösterilir. Seçilen dönemin en son 50 kaydı listelenir; daha dar tarih aralığı seçebilirsiniz.</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label>Başlangıç<input type="date" aria-label="Sipariş geçmişi başlangıç" value={historyStart} disabled={historyBusy} onChange={event => setHistoryStart(event.target.value)} className="block w-full rounded border p-2" /></label>
+            <label>Bitiş<input type="date" aria-label="Sipariş geçmişi bitiş" value={historyEnd} disabled={historyBusy} onChange={event => setHistoryEnd(event.target.value)} className="block w-full rounded border p-2" /></label>
+          </div>
+          <Button disabled={historyBusy} onClick={() => readOrderHistory(historyStart, historyEnd)}>Dönemi göster</Button>
+          {historyBusy && <p role="status">Sipariş geçmişi yükleniyor…</p>}
+          {historyError && <p role="alert" className="text-red-700">{historyError}</p>}
+          {!historyBusy && !historyError && orderHistory.length === 0 && <p>Seçilen dönemde sipariş bulunamadı.</p>}
           <div className="space-y-2">
             {orderHistory.map((order) => (
               <div key={order.id} className="bg-gray-50 p-3 rounded space-y-2">
@@ -516,6 +560,7 @@ const MobileOrderTracking = ({ user }) => {
       <div className="fixed bottom-4 right-4">
         <Button
           aria-label="Sipariş geçmişi"
+          disabled={historyBusy}
           title="Sipariş geçmişi"
           onClick={loadOrderHistory}
           className="rounded-full w-14 h-14 shadow-lg bg-amber-600 hover:bg-amber-700"
