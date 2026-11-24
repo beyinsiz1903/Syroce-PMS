@@ -86,6 +86,9 @@ class _Collection:
 
 class _Database:
     def __init__(self):
+        self.folio_charges = _Collection([])
+        self.extra_charges = _Collection([])
+        self.deposits = _Collection([])
         self.bookings = _Collection(
             [
                 {
