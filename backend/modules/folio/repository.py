@@ -5,7 +5,6 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
-from core.utils import calculate_folio_balance
 
 
 class FolioRepository:
@@ -47,6 +46,10 @@ class FolioRepository:
         from modules.pms_core.service_timing import project_service_times
 
         charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(None)
+        # Booking extras are separate source documents, not folio_charges.
+        # Project only extras owned by this window; never create ledger copies.
+        snapshot = await self.get_display_snapshot(tenant_id, folio_id)
+        charges.extend(row for row in snapshot["charges"] if row.get("report_source") == "extra")
         await project_service_times(db, tenant_id, charges)
         return charges
 
@@ -54,7 +57,27 @@ class FolioRepository:
         return await db.payments.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(None)
 
     async def get_balance(self, tenant_id: str, folio_id: str) -> float:
-        return await calculate_folio_balance(folio_id, tenant_id)
+        from fastapi import HTTPException
+
+        from modules.pms_core.report_money import single_amount
+
+        snapshot = await self.get_display_snapshot(tenant_id, folio_id)
+        if any(code != snapshot["currency"] and amount for code, amount in snapshot["balance_by_currency"].items()):
+            raise HTTPException(409, "Folyo bakiyesinde farklı para birimleri var; önce döviz hareketlerini uzlaştırın.")
+        return single_amount(snapshot["balance_by_currency"]) or 0.0
+
+    async def get_display_snapshot(self, tenant_id: str, folio_id: str):
+        from fastapi import HTTPException
+
+        from core.tenant_currency import get_tenant_currency
+        from modules.pms_core.receivable_reporting import folio_snapshots
+
+        folio = await self.get_folio(tenant_id, folio_id)
+        if not folio:
+            raise HTTPException(404, "Folio not found")
+        currency, _ = await get_tenant_currency(tenant_id)
+        return (await folio_snapshots(db, tenant_id, [folio], fallback_currency=currency,
+                                     include_booking_extras=True))[folio_id]
 
     async def acquire_idempotency_lock(
         self,

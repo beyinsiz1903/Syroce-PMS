@@ -571,11 +571,11 @@ th{background:#f5f5f5}
                   const isExpanded = expandedChargeItems[charge.id];
                   const hasDiscount = (charge.discount_amount || 0) > 0;
                   const hasVat = (charge.vat_amount || 0) > 0;
-                  const inclusiveLaundry = charge.charge_category === 'laundry' && charge.tax_inclusive && charge.tax_snapshot?.status === 'verified'
+                  const inclusiveCharge = charge.tax_inclusive && charge.tax_snapshot?.status === 'verified'
                     && Number.isFinite(Number(charge.net_amount)) && charge.net_amount != null
                     && Math.abs(Number(charge.net_amount) + Number(charge.vat_amount) - Number(charge.total ?? charge.total_amount ?? charge.amount)) < 0.005
                     && [0, Number(charge.vat_amount)].includes(Number(charge.tax_amount || 0));
-                  const hasCity = !inclusiveLaundry && (charge.tax_amount || 0) > 0;
+                  const hasCity = !inclusiveCharge && (charge.tax_amount || 0) > 0;
                   return <Card key={charge.id} className={charge.voided ? 'opacity-50 bg-gray-50' : ''}>
                             <CardContent className="p-4">
                               <div className={`flex justify-between items-start ${isPOSCharge && hasLineItems ? 'cursor-pointer hover:bg-gray-50' : ''}`} onClick={() => {
@@ -589,6 +589,7 @@ th{background:#f5f5f5}
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2">
                                     <div className="font-semibold">{charge.description}</div>
+                                    {charge.report_source === 'extra' && <span className="text-xs text-blue-700">Ek ücret · Düzenleme ve iptal için Ek Ücretler sekmesini kullanın</span>}
                                     {charge.voided && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">İPTAL</span>}
                                   </div>
                                   <div className="text-xs text-gray-500 capitalize">{folioCategoryLabel(charge)}</div>
@@ -605,7 +606,7 @@ th{background:#f5f5f5}
                                   <div className="font-bold">{money(charge.total ?? charge.total_amount ?? charge.amount)}</div>
                                   {(hasVat || hasCity) && <div className="text-[11px] text-gray-500 leading-tight mt-0.5">
                                       {hasDiscount && <div>Net: {money(charge.amount)}</div>}
-                                      {hasVat && <div>KDV{charge.vat_rate != null ? ` %${charge.vat_rate}` : inclusiveLaundry ? ' (tutara dahil)' : ' (oran belirtilmemiş)'}: {money(charge.vat_amount)}</div>}
+                                      {hasVat && <div>KDV{charge.vat_rate != null ? ` %${charge.vat_rate}` : inclusiveCharge ? ' (tutara dahil)' : ' (oran belirtilmemiş)'}: {money(charge.vat_amount)}</div>}
                                       {hasCity && <div>Şehir vergisi: {money(charge.tax_amount)}</div>}
                                     </div>}
                                 </div>
@@ -1032,10 +1033,10 @@ th{background:#f5f5f5}
                 <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{transferChargeIds.length} seçili</span>
               </Label>
               <div className="border border-gray-200 rounded-lg max-h-[300px] overflow-y-auto divide-y divide-gray-100 bg-white shadow-sm">
-                {folioCharges.filter(c => !c.voided).length === 0 ? <div className="p-8 text-center text-sm text-gray-400 flex flex-col items-center">
+                {folioCharges.filter(c => !c.voided && c.report_source !== 'extra').length === 0 ? <div className="p-8 text-center text-sm text-gray-400 flex flex-col items-center">
                     <AlertTriangle className="w-8 h-8 text-gray-300 mb-2" />
                     Aktarılabilir işlem yok
-                  </div> : folioCharges.filter(c => !c.voided).map(c => <label key={c.id} className="flex items-center gap-4 p-3 hover:bg-blue-50/50 cursor-pointer transition-colors group">
+                  </div> : folioCharges.filter(c => !c.voided && c.report_source !== 'extra').map(c => <label key={c.id} className="flex items-center gap-4 p-3 hover:bg-blue-50/50 cursor-pointer transition-colors group">
                     <input type="checkbox" className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" checked={transferChargeIds.includes(c.id)} onChange={() => toggleTransferCharge(c.id)} />
                     <div className="flex-1">
                       <div className="font-semibold text-gray-800 text-sm group-hover:text-blue-900 transition-colors">{c.description}</div>

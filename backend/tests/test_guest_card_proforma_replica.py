@@ -157,3 +157,44 @@ async def test_voucher_keeps_migrated_receipts_separate_from_current_cash(db, ac
     assert (result["total_amount"], result["paid_amount"], result["balance"]) == (1100, 0, 900)
     assert result["prior_paid_amount"] == 200 and result["non_cash_amount"] == 0
     assert "Önceki sistemden devreden tahsilat: 200,00 TL" in result["voucher_html"]
+
+
+@pytest.mark.asyncio
+async def test_booking_extra_matches_detail_picker_proforma_and_void(db, actor, monkeypatch):
+    await seed(db, monkeypatch)
+    await db.extra_charges.insert_one({"id": "extra", "tenant_id": "t", "booking_id": "b",
+        "charge_amount": 150, "quantity": 1, "currency": "TRY", "net_amount": 125,
+        "subtotal": 125, "vat_amount": 25, "vat_rate": 20, "tax_amount": 0,
+        "tax_inclusive": True, "description": "Minibar", "charge_category": "minibar"})
+    repo = repository.FolioRepository()
+    extra = next(row for row in await repo.get_charges("t", "f") if row["id"] == "extra")
+    assert extra["report_source"] == "extra" and extra["total"] == 150
+    assert await repo.get_balance("t", "f") == 200
+    proforma = await router.generate_folio_proforma("f", actor, None)
+    assert (proforma["totals"]["grand_total"], proforma["totals"]["net_total"], proforma["totals"]["vat_total"]) == (270, 225, 45)
+    picker = await router.list_folios(status="open", p=PaginationParams(offset=0, limit=50), current_user=actor)
+    assert picker["folios"][0]["balance"] == 200
+    assert await db.folio_charges.count_documents({"id": "extra"}) == 0
+    await db.extra_charges.update_one({"id": "extra"}, {"$set": {"voided": True}})
+    assert await repo.get_balance("t", "f") == 50
+    assert not any(row["id"] == "extra" for row in await repo.get_charges("t", "f"))
+    assert (await router.generate_folio_proforma("f", actor, None))["totals"]["grand_total"] == 120
+
+
+@pytest.mark.asyncio
+async def test_extra_window_ownership_and_mirror_deduplication(db, actor, monkeypatch):
+    await seed(db, monkeypatch)
+    await db.folios.insert_one({"id": "second", "tenant_id": "t", "booking_id": "b", "currency": "TRY", "status": "open"})
+    await db.extra_charges.insert_many([
+        {"id": "unbound", "tenant_id": "t", "booking_id": "b", "charge_amount": 999},
+        {"id": "bound", "tenant_id": "t", "booking_id": "b", "folio_id": "second", "charge_amount": 150},
+        {"id": "foreign", "tenant_id": "other", "booking_id": "b", "folio_id": "f", "charge_amount": 999},
+        {"id": "mirrored", "tenant_id": "t", "booking_id": "b", "folio_id": "f", "charge_amount": 20},
+    ])
+    await db.folio_charges.insert_one({"id": "mirror", "source_extra_charge_id": "mirrored", "tenant_id": "t", "folio_id": "f", "total": 20})
+    repo = repository.FolioRepository()
+    assert await repo.get_balance("t", "f") == 70
+    assert await repo.get_balance("t", "second") == 150
+    rows = await repo.get_charges("t", "f")
+    assert not {"unbound", "bound", "foreign", "mirrored"}.intersection(row["id"] for row in rows)
+    assert (await router.generate_folio_proforma("f", actor, None))["totals"]["grand_total"] == 140
