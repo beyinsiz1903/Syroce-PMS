@@ -117,7 +117,9 @@ const POSDashboard = () => {
         ...prev,
         menu_count:    menuList.length,
         today_orders:  zRes.data.sale_count ?? zRes.data.transaction_count ?? 0,
-        today_revenue: zRes.data.gross_sales       || 0,
+        today_revenue: zRes.data.net_sales ?? 0,
+        gross_sales: zRes.data.gross_sales ?? 0,
+        discounts: zRes.data.discounts ?? 0,
         currency:      zRes.data.currency || cachedTenantCurrency(),
       }));
       setSummaryError('');
@@ -201,9 +203,9 @@ const POSDashboard = () => {
               value={summaryError ? '—' : stats.today_orders} color="purple" loading={loadingStats}
             />
             <StatCard
-              icon={TrendingUp}  label={t('posDashboard.todaysRevenue', 'Bugün Ciro')}
+              icon={TrendingUp}  label={t('posDashboard.businessDayNetSales', 'İş Günü Net Satış')}
               value={summaryError ? '—' : formatCurrency(stats.today_revenue, stats.currency || cachedTenantCurrency())}
-              sub={summaryError ? 'Veri doğrulanamadı' : `${stats.today_orders} ${t('posDashboard.transactions', 'işlem')}`}
+              sub={summaryError ? 'Veri doğrulanamadı' : `Brüt ${formatCurrency(stats.gross_sales, stats.currency || cachedTenantCurrency())} · İndirim ${formatCurrency(stats.discounts, stats.currency || cachedTenantCurrency())}`}
               color="blue" loading={loadingStats} testId="stat-revenue"
             />
           </div>
