@@ -416,27 +416,28 @@ async def record_group_payment(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
+    group = await db.group_bookings.find_one({"id": data.group_id, "tenant_id": tid}, {"_id": 0})
+    if not group or data.booking_id not in (group.get("booking_ids") or []):
+        raise HTTPException(404, "Rezervasyon bu grupta bulunamadı")
     booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+        raise HTTPException(404, "Rezervasyon bulunamadı")
+    if booking.get("folio_merged_to"):
+        raise HTTPException(409, "Birleştirilmiş hesap yerine ana rezervasyonun misafir kartından ödeme alın")
 
-    payment = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": data.booking_id,
-        "amount": data.amount,
-        "currency": str(booking.get("currency") or "TRY").upper(),
-        "method": data.method,
-        "payment_type": "group_payment",
-        "reference": data.reference or f"Grup odeme - {data.group_id[:8]}",
-        "recorded_by": current_user.name,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    await stamp_open_business_date(db, tid, payment)
-    await db.payments.insert_one(payment)
-    payment.pop("_id", None)
+    # One payment contract for both entry points: folio ownership, manual
+    # collection method, cashier shift, FX snapshot, references and projection.
+    # Do not append a second booking-only payment or a second cashier row here.
+    from routers.reservation_detail import PaymentRecord, record_payment
 
-    return {"success": True, "payment": payment}
+    return await record_payment(
+        data.booking_id,
+        PaymentRecord(amount=data.amount, method=data.method, folio_id=data.folio_id,
+            reference=data.reference or None, payment_type="interim",
+            notes=f"Grup hesabı ödemesi: {data.group_id}"),
+        current_user=current_user,
+        _perm=_perm,
+    )
 
 
 @sub_router.post("/group-folio/bulk-payment")
