@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
+import { previewGroupCollection } from '@/lib/groupCollectionAllocation';
 import { toast } from 'sonner';
 import { runIdle } from '@/lib/idle';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -157,6 +158,7 @@ const GroupFolioPage = ({
   const [bulkAmount, setBulkAmount] = useState('');
   const [bulkMethod, setBulkMethod] = useState('cash');
   const [bulkRef, setBulkRef] = useState('');
+  const bulkIntent = useRef(null);
   const [bulkDistribution, setBulkDistribution] = useState('proportional');
   const [bulkPaying, setBulkPaying] = useState(false);
   const selectedGroupIdRef = useRef(null);
@@ -201,6 +203,8 @@ const GroupFolioPage = ({
     setPaymentBookingId('');
     setPaymentAmount('');
     setBulkAmount('');
+    setBulkRef('');
+    bulkIntent.current = null;
     setExpandedBooking(null);
     try {
       const res = await axios.get(`/pms/group-folio/${groupId}`);
@@ -284,19 +288,25 @@ const GroupFolioPage = ({
       toast.error('Geçerli bir tutar giriniz');
       return;
     }
+    if (!bulkPreview || groupDetail.currency !== 'TRY') {
+      toast.error('Toplu ödeme açık TRY borcunu aşamaz; döviz ve cari işlemlerini misafir kartından yapın');
+      return;
+    }
+    bulkIntent.current ||= crypto.randomUUID();
     setBulkPaying(true);
     try {
       const res = await axios.post(`/pms/group-folio/bulk-payment`, {
         group_id: selectedGroup.id,
         total_amount: amt,
         method: bulkMethod,
-        reference: bulkRef,
+        reference: bulkRef.trim() || `group-bulk-${bulkIntent.current}`,
         distribution: bulkDistribution
       });
       toast.success(`${res.data?.payments_count || 0} rezervasyona toplam ${fmtMoney(res.data?.total_distributed || 0, res.data?.currency)} dağıtıldı`);
       setShowBulkPayment(false);
       setBulkAmount('');
       setBulkRef('');
+      bulkIntent.current = null;
       loadGroupDetail(selectedGroup.id);
       loadSummary();
     } catch (e) {
@@ -307,6 +317,8 @@ const GroupFolioPage = ({
   };
   const filteredGroups = groups.filter(g => !searchTerm || (g.group_name || '').toLowerCase().includes(searchTerm.toLowerCase()));
   const groupBalance = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).reduce((s, b) => s + (b.balance || 0), 0);
+  const bulkRows = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).sort((a, b) => a.booking_id.localeCompare(b.booking_id));
+  const bulkPreview = previewGroupCollection(bulkAmount, bulkRows.map(b => b.balance || 0), bulkDistribution);
   const unmergedCount = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).length;
   return <>
       {guestCardBookingId && <Suspense fallback={<div role="status">Misafir kartı yükleniyor...</div>}>
@@ -402,7 +414,7 @@ const GroupFolioPage = ({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setShowBulkPayment(true)} disabled={!groupDetail.bookings || unmergedCount === 0} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50" data-testid="bulk-payment-btn">
+                    <Button size="sm" variant="outline" onClick={() => setShowBulkPayment(true)} disabled={!groupDetail.bookings || unmergedCount === 0 || groupDetail.currency !== 'TRY'} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50" data-testid="bulk-payment-btn">
                       <Users className="w-4 h-4 mr-1" /> {t('cm.pages_GroupFolioPage.toplu_odeme')}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => {
@@ -607,7 +619,7 @@ const GroupFolioPage = ({
                     <SelectItem value="cash">Nakit</SelectItem>
                     <SelectItem value="credit_card">{t('cm.pages_GroupFolioPage.kredi_karti')}</SelectItem>
                     <SelectItem value="bank_transfer">Banka Havale</SelectItem>
-                    <SelectItem value="agency">Acenta</SelectItem>
+
                   </SelectContent>
                 </Select>
               </div>
@@ -680,7 +692,7 @@ const GroupFolioPage = ({
                     <SelectItem value="cash">Nakit</SelectItem>
                     <SelectItem value="credit_card">{t('cm.pages_GroupFolioPage.kredi_karti_839d5')}</SelectItem>
                     <SelectItem value="bank_transfer">Banka Havale</SelectItem>
-                    <SelectItem value="agency">Acenta</SelectItem>
+
                   </SelectContent>
                 </Select>
               </div>
@@ -693,27 +705,15 @@ const GroupFolioPage = ({
               {/* Preview distribution */}
               {bulkAmount && parseFloat(bulkAmount) > 0 && <div className="border rounded-lg p-3 bg-gray-50">
                   <div className="text-xs font-semibold text-gray-500 uppercase mb-2">{t('cm.pages_GroupFolioPage.dagitim_onizleme')}</div>
-                  {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => {
-                const amt = parseFloat(bulkAmount) || 0;
-                const totalPos = (groupDetail?.bookings || []).filter(x => !x.folio_merged_to && x.balance > 0).reduce((s, x) => s + x.balance, 0);
-                let share = 0;
-                if (bulkDistribution === 'equal') {
-                  share = amt / unmergedCount;
-                } else if (bulkDistribution === 'balance_only') {
-                  share = b.balance > 0 ? Math.min(b.balance, amt * (b.balance / Math.max(totalPos, 1))) : 0;
-                } else {
-                  share = totalPos > 0 && b.balance > 0 ? amt * (b.balance / totalPos) : amt / unmergedCount;
-                }
-                return <div key={b.booking_id} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
-                        <span className="text-gray-600">{t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name}</span>
-                        <span className="font-medium text-emerald-600">{fmtMoney(share, groupDetail.currency)}</span>
-                      </div>;
-              })}
+                  {bulkPreview ? bulkRows.map((b, index) => <div key={b.booking_id} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                    <span className="text-gray-600">Oda {b.room_number} - {b.guest_name}</span>
+                    <span className="font-medium text-emerald-600">{fmtMoney(bulkPreview[index], groupDetail.currency)}</span>
+                  </div>) : <p role="alert">Tutar açık borcu aşamaz ve en fazla iki ondalık basamak içermelidir.</p>}
                 </div>}
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setShowBulkPayment(false)}>{t('cm.pages_GroupFolioPage.iptal_25174')}</Button>
-                <Button onClick={handleBulkPayment} disabled={bulkPaying || !bulkAmount || parseFloat(bulkAmount) <= 0} className="bg-emerald-600 hover:bg-emerald-700" data-testid="confirm-bulk-payment-btn">
+                <Button onClick={handleBulkPayment} disabled={bulkPaying || !bulkPreview || groupDetail.currency !== 'TRY'} className="bg-emerald-600 hover:bg-emerald-700" data-testid="confirm-bulk-payment-btn">
                   {bulkPaying ? 'Dağıtılıyor...' : 'Toplu Ödemeyi Kaydet'}
                 </Button>
               </div>

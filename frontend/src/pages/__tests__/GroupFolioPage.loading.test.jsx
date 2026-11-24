@@ -84,3 +84,21 @@ it('opens the selected group member in the shared guest card without submitting 
   expect(axios.get).toHaveBeenCalledWith('/pms/group-folio/a');
   expect(axios.post).not.toHaveBeenCalled();
 });
+
+it('retains the bulk intent on a failed request, so a retry cannot collect twice', async () => {
+  axios.get.mockImplementation(url => Promise.resolve({ data: url === '/pms/group-bookings'
+    ? { groups } : url === '/pms/group-folio-summary' ? {} : detail('a', 'TRY') }));
+  axios.post.mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ data: { payments_count: 2, total_distributed: 10, currency: 'TRY' } });
+  render(<GroupFolioPage />);
+  fireEvent.click(await screen.findByTestId('group-card-a'));
+  fireEvent.click(await screen.findByTestId('bulk-payment-btn'));
+  fireEvent.change(screen.getByTestId('bulk-amount-input'), { target: { value: '10' } });
+  fireEvent.click(screen.getByTestId('confirm-bulk-payment-btn'));
+  await act(async () => {});
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  const reference = axios.post.mock.calls[0][1].reference;
+  expect(reference).toMatch(/^group-bulk-/);
+  fireEvent.click(screen.getByTestId('confirm-bulk-payment-btn'));
+  await act(async () => {});
+  expect(axios.post.mock.calls[1][1].reference).toBe(reference);
+});
