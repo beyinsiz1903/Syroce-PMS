@@ -2027,8 +2027,11 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
     mapping = await get_operational_mapping(db, tenant_id)
     failed_night_audits = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
     failed_pos = await db.pos_transactions.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
-    unverified = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "$or": [
-        {"gl_bridge_status": "posted", "gl_valued_entry_id": {"$exists": False}}, {"gl_bridge_status": "valuation_required"}]})
+    completed_scope = {"tenant_id": tenant_id, "status": "completed",
+                       "dry_run": {"$ne": True}, "is_dry_run": {"$ne": True}}
+    legacy_unvalued = {"gl_bridge_status": "posted", "gl_valued_entry_id": {"$exists": False}}
+    unverified = await db.night_audit_runs.count_documents({**completed_scope, "$or": [
+        legacy_unvalued, {"gl_bridge_status": "valuation_required"}]})
     latest = await db.night_audit_runs.find_one(
         {"tenant_id": tenant_id, "status": "completed"},
         {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_status": 1, "gl_entry_no": 1},
@@ -2039,11 +2042,8 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
     if can_value:
         pending_night_audits = await db.night_audit_runs.find(
             {
-                "tenant_id": tenant_id,
-                "status": "completed",
-                "dry_run": {"$ne": True},
-                "is_dry_run": {"$ne": True},
-                "gl_bridge_status": {"$in": ["valuation_required", "failed"]},
+                **completed_scope,
+                "$or": [{"gl_bridge_status": {"$in": ["valuation_required", "failed"]}}, legacy_unvalued],
             },
             {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_error": 1},
         ).sort("business_date", -1).limit(50).to_list(50)
