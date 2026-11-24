@@ -20,6 +20,7 @@ import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
 import { submitCariAgencyIntent } from '@/lib/cariAgencyIntent';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import FolioWindowsPanel from '@/components/folio/FolioWindowsPanel';
+import LegacyExtraOwnership from '@/components/folio/LegacyExtraOwnership';
 import FolioAllocationPanel from '@/components/folio/FolioAllocationPanel';
 import ReservationFolioDetails from '@/components/folio/ReservationFolioDetails';
 import FolioCardTools from '@/components/folio/FolioCardTools';
@@ -446,6 +447,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showCariLedger && <Suspense fallback={<p>Hareketler yükleniyor...</p>}><CariAccountLedger /></Suspense>}
       <FolioWindowsPanel key={`windows:${booking.id}`} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio}
         revision={`${windowRevision}:${folioList.map(f => `${f.id}:${f.status}:${f.balance}`).join('|')}`} />
+      <LegacyExtraOwnership key={`legacy-extras:${booking.id}`} bookingId={booking.id} folios={folioList}
+        extras={extra_charges} currency={currency} readOnly={readOnly || enterpriseLocked} onChanged={onRefresh} />
       <Button type="button" variant="outline" disabled={enterpriseLocked} onClick={() => setShowEnterprise(value => !value)}>Kurumsal ödeme / ikram kontrolleri</Button>
       {showEnterprise && <Suspense fallback={<p>Kontroller yükleniyor…</p>}><EnterpriseBillingPanel key={`enterprise:${booking.id}`} bookingId={booking.id} currency={normalizeCurrency(currency)} folios={folioList} charges={charges || []} readOnly={readOnly} onChanged={onRefresh} onLockChange={setEnterpriseLocked} /></Suspense>}
       {!readOnly && showAllocation && <FolioAllocationPanel key={`allocation:${booking.id}`} bookingId={booking.id} currency={currency} folios={folioList} charges={charges || []}
