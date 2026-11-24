@@ -82,16 +82,23 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
     return { from, to, lastDay };
   }, [calMonth]);
 
+  const requestKey = `${monthRange.from}|${monthRange.to}|${reloadKey}|${revision ?? ''}`;
+  const [loadedKey, setLoadedKey] = useState(null);
+  const loading = loadedKey !== requestKey;
+
   useEffect(() => {
     let current = true;
     axios.get('/mice/diary', { params: { date_from: monthRange.from, date_to: monthRange.to } })
       .then((r) => {
         if (!current) return;
-        setItems(r.data.events || []);
+        if (!Array.isArray(r.data?.events)) throw new Error('Salon takvimi yanıtı doğrulanamadı');
+        setItems(r.data.events);
         setLoadError(null);
+        setLoadedKey(requestKey);
       })
       .catch((e) => {
         if (!current) return;
+        setLoadedKey(requestKey);
         if (e.response && e.response.status === 403) {
           console.warn('Takvim görüntüleme yetkisi yok (403) - Sessizce yoksayılıyor.');
           setLoadError(e);
@@ -101,7 +108,7 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
         toast.error('Takvim şu anda yüklenemedi');
       });
     return () => { current = false; };
-  }, [monthRange.from, monthRange.to, reloadKey, revision]);
+  }, [monthRange.from, monthRange.to, reloadKey, revision, requestKey]);
 
   const eventsByDate = useMemo(() => {
     const map = {};
@@ -252,7 +259,7 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
         </div>
       </div>
 
-      {loadError ? (
+      {loading ? <div role="status" className="p-6 text-sm text-muted-foreground">Salon takvimi doğrulanıyor…</div> : loadError ? (
         <ModuleLoadError
           moduleName="MICE takvimi"
           error={loadError}
