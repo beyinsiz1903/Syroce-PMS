@@ -181,3 +181,56 @@ async def test_unmatched_guest_card_extra_stays_on_unique_routing_source(accepta
     assert result['folio_id'] == 'synthetic-folio'
     assert (await a.db.folios.find_one({'id': 'synthetic-folio'}))['balance'] == 575
     assert (await a.db.folios.find_one({'id': 'company-window'}))['balance'] == 0
+
+
+@pytest.mark.parametrize('other_active_rule', [False, True])
+async def test_extra_after_destination_merge_owns_the_only_open_window(acceptance, other_active_rule):
+    from modules.pms_core.automatic_folio_routing import insert_booking_extra
+    a = acceptance
+    charge = await setup(a)
+    await a.db.folio_routing.update_one({'id': 'route'}, {'$set': {'active': False}})
+    await a.db.folios.update_one({'id': 'company-window'}, {'$set': {'status': 'closed'}})
+    if other_active_rule:
+        await a.db.folio_routing.insert_one({'id': 'elsewhere', 'tenant_id': 'qa', 'source_folio_id': 'unrelated',
+            'dest_folio_id': 'unrelated-target', 'active': True, 'apply_to_future': True})
+    charge.pop('folio_id')
+    charge.update(category='minibar', charge_category='minibar', charge_amount=15)
+    result = await insert_booking_extra(a.db, 'qa', charge)
+    assert result['folio_id'] == 'synthetic-folio'
+    assert await a.db.extra_charges.count_documents({'id': 'new-charge'}) == 1
+    assert (await a.db.folios.find_one({'id': 'synthetic-folio'}))['balance'] == 575
+    assert (await a.db.folios.find_one({'id': 'company-window'}))['balance'] == 0
+    assert 'routing_rule_id' not in result
+
+
+async def test_extra_cannot_fall_back_to_a_closed_modern_window(acceptance):
+    from modules.pms_core.automatic_folio_routing import insert_booking_extra
+    a = acceptance
+    await a.db.folios.update_many({'tenant_id': 'qa'}, {'$set': {'status': 'closed'}})
+    with pytest.raises(HTTPException) as error:
+        await insert_booking_extra(a.db, 'qa', {'id': 'blocked', 'booking_id': 'synthetic-stay', 'total': 15})
+    assert error.value.status_code == 409
+    assert await a.db.extra_charges.count_documents({'id': 'blocked'}) == 0
+
+
+@pytest.mark.parametrize('change', [{'currency': 'TRY'}, {'invoice_id': 'sealed-invoice'}])
+async def test_extra_fallback_does_not_bypass_window_guards(acceptance, change):
+    from modules.pms_core.automatic_folio_routing import insert_booking_extra
+    a = acceptance
+    await a.db.folios.update_one({'id': 'synthetic-folio'}, {'$set': change})
+    with pytest.raises(HTTPException):
+        await insert_booking_extra(a.db, 'qa', {'id': 'guarded', 'booking_id': 'synthetic-stay',
+            'currency': 'USD', 'total': 15, 'charge_amount': 15})
+    assert await a.db.extra_charges.count_documents({'id': 'guarded'}) == 0
+
+
+async def test_unrouted_extra_with_multiple_open_windows_fails_without_writing(acceptance):
+    from modules.pms_core.automatic_folio_routing import insert_booking_extra
+    a = acceptance
+    charge = await setup(a)
+    await a.db.folio_routing.update_one({'id': 'route'}, {'$set': {'active': False}})
+    charge.pop('folio_id')
+    with pytest.raises(HTTPException) as error:
+        await insert_booking_extra(a.db, 'qa', charge)
+    assert error.value.status_code == 409
+    assert await a.db.extra_charges.count_documents({'id': 'new-charge'}) == 0
