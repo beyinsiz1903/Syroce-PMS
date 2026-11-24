@@ -59,7 +59,8 @@ async def test_pending_valuation_details_require_gl_posting_role(monkeypatch, ro
             "status": "completed",
             "dry_run": {"$ne": True},
             "is_dry_run": {"$ne": True},
-            "gl_bridge_status": {"$in": ["valuation_required", "failed"]},
+            "$or": [{"gl_bridge_status": {"$in": ["valuation_required", "failed"]}},
+                    {"gl_bridge_status": "posted", "gl_valued_entry_id": {"$exists": False}}],
         }
     else:
         assert result["pending_night_audits"] == []
