@@ -40,7 +40,7 @@ async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
     if not folio:
         raise HTTPException(404, "Folio not found")
     currency, _ = await get_tenant_currency(tenant_id)
-    snapshots = await folio_snapshots(db, tenant_id, [folio], fallback_currency=currency)
+    snapshots = await folio_snapshots(db, tenant_id, [folio], fallback_currency=currency, include_booking_extras=True)
     snapshot = snapshots[folio_id]
     if any(code != snapshot["currency"] and amount for code, amount in snapshot["balance_by_currency"].items()):
         raise HTTPException(409, "Folyo bakiyesinde farklı para birimleri var; önce döviz hareketlerini uzlaştırın.")

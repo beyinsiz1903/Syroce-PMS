@@ -276,7 +276,7 @@ async def _posted_room_charge_rate_mismatches(
     Once daily rates exist, however, a room charge must equal the stored gross
     rate before another payment may be accepted.
     """
-    if not getattr(db, "daily_rates", None) or not getattr(db, "folio_charges", None):
+    if getattr(db, "daily_rates", None) is None or getattr(db, "folio_charges", None) is None:
         return []
     if expected_rates_by_date is None:
         rate_rows = [

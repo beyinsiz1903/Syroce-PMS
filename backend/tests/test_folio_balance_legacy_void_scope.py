@@ -36,7 +36,8 @@ async def test_folio_balance_includes_legacy_rows_unless_explicitly_voided(monke
     charges = _Collection()
     payments = _Collection()
     monkeypatch.setattr(utils, "db", SimpleNamespace(folio_charges=charges, payments=payments,
-        folios=SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-1", "currency": "TRY"}))))
+        extra_charges=_Collection(),
+        folios=SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-1", "currency": "TRY"}), find=_Collection().find)))
 
     await utils.calculate_folio_balance("folio-1", "tenant-1")
 

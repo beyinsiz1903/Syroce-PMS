@@ -202,11 +202,12 @@ class GroupFolioMerge(BaseModel):
 
 
 class GroupPaymentRequest(BaseModel):
-    group_id: str
-    booking_id: str
-    amount: float
-    method: str = "cash"
-    reference: str = ""
+    group_id: str = Field(..., min_length=1, max_length=100)
+    booking_id: str = Field(..., min_length=1, max_length=100)
+    amount: float = Field(..., gt=0, le=1e9)
+    method: str = Field("cash", min_length=1, max_length=50)
+    reference: str = Field("", max_length=200)
+    folio_id: str | None = Field(None, min_length=1, max_length=100)
 
 
 class GroupBulkPaymentRequest(BaseModel):
