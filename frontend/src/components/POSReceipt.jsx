@@ -1,11 +1,13 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
+import { Input } from './ui/input';
 
-export default function POSReceipt({ orderId }) {
+export default function POSReceipt({ orderId, onRefund }) {
   const [open, setOpen] = useState(false);
   const [receipt, setReceipt] = useState(null);
   const [printers, setPrinters] = useState([]);
@@ -14,6 +16,58 @@ export default function POSReceipt({ orderId }) {
   const [error, setError] = useState('');
   const keyRef = useRef(null);
   const previewRef = useRef(null);
+  const refundRequestRef = useRef(null);
+  const refundBusyRef = useRef(false);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundUncertain, setRefundUncertain] = useState(false);
+  useEffect(() => {
+    refundRequestRef.current = null;
+    setRefundReason(''); setRefundUncertain(false);
+  }, [orderId]);
+  const receiptUrl = `/pos/v2/orders/${encodeURIComponent(orderId)}/receipt`;
+  const refreshRefund = async () => {
+    if (refundBusyRef.current) return;
+    refundBusyRef.current = true; setBusy(true);
+    try {
+      const latest = (await axios.get(receiptUrl)).data;
+      setReceipt(latest);
+      const pending = refundRequestRef.current;
+      if (pending && Math.round(Number(latest.refunded_amount || 0) * 100) !== pending.refundedCents) {
+        // A committed or competing refund must be reviewed before any new write.
+        refundRequestRef.current = null; setRefundReason('');
+      }
+      setRefundUncertain(false); setError('');
+      onRefund?.();
+    } catch { setError('İade durumu okunamadı; yeniden iade göndermeyin.'); }
+    finally { refundBusyRef.current = false; setBusy(false); }
+  };
+  const refund = async () => {
+    if (refundBusyRef.current || refundUncertain || !refundReason.trim()) return;
+    refundBusyRef.current = true; setBusy(true); setError('');
+    let submitted = false;
+    try {
+      const latest = (await axios.get(receiptUrl)).data;
+      setReceipt(latest);
+      const refundedCents = Math.round(Number(latest.refunded_amount || 0) * 100);
+      const amountCents = Math.round(Number(latest.total) * 100) - refundedCents;
+      if (!Number.isFinite(amountCents) || amountCents <= 0) return;
+      let request = refundRequestRef.current;
+      if (request && request.refundedCents !== refundedCents) {
+        refundRequestRef.current = null; setRefundReason('');
+        setError('İade tutarı değişmiş. Güncel fişi inceleyip nedeni yeniden girin.'); return;
+      }
+      if (!request) request = { refundedCents, body: { amount: amountCents / 100, reason: refundReason.trim(), idempotency_key: crypto.randomUUID() } };
+      if (!await confirmDialog({ message: `${latest.order_number || orderId} adisyonunun kalan ${formatCurrency(request.body.amount, latest.currency)} tutarı iade edilsin mi? İşlem özgün ödemeye bağlanır ve kaydedilir.` })) return;
+      refundRequestRef.current = request; submitted = true;
+      await axios.post(`/pos/v2/orders/${encodeURIComponent(orderId)}/refund`, request.body);
+      setReceipt((await axios.get(receiptUrl)).data);
+      refundRequestRef.current = null; setRefundReason('');
+      toast.success('İade kaydedildi'); onRefund?.();
+    } catch {
+      if (submitted) setRefundUncertain(true);
+      setError(submitted ? 'İade sonucu uzlaştırılmalı. Önce iade durumunu yenileyin; tekrar gönderilmedi.' : 'Güncel fiş okunamadı; iade gönderilmedi.');
+    } finally { refundBusyRef.current = false; setBusy(false); }
+  };
   const load = async () => {
     setOpen(true); setBusy(true); setReceipt(null); setError(''); keyRef.current = null;
     try {
@@ -64,6 +118,12 @@ export default function POSReceipt({ orderId }) {
       </div><Button variant="outline" onClick={printBrowser}>Tarayıcıdan yazdır</Button>
       <label className="text-sm">Fiş yazıcısı<select className="mt-1 block w-full rounded border p-2" value={printer} onChange={event => { setPrinter(event.target.value); keyRef.current = null; }}><option value="">Yazıcı seçin</option>{printers.map(row => <option key={row.printer_id} value={row.printer_id}>{row.name || row.printer_id}{row.driver === 'simulator' ? ' · Simülasyon' : ''}</option>)}</select></label>
       <Button onClick={printDevice} disabled={!printer || busy}>{busy ? 'Gönderiliyor…' : 'Yazıcıya gönder / Kopya yazdır'}</Button>
+      <section className="space-y-2 border-t pt-3" aria-label="Adisyon iadesi">
+        <p className="text-sm">Geçmiş adisyonun kalan tutarını özgün ödeme yöntemlerine iade edin. İade için yönetici yetkisi gerekir.</p>
+        <label className="block text-sm">İade nedeni<Input value={refundReason} onChange={event => setRefundReason(event.target.value)} disabled={busy || refundUncertain || Boolean(refundRequestRef.current)} /></label>
+        <Button variant="outline" onClick={refund} disabled={busy || refundUncertain || !refundReason.trim() || Number(receipt.total) <= Number(receipt.refunded_amount || 0)}>Kalan tutarı iade et</Button>
+        {refundUncertain && <Button variant="outline" onClick={refreshRefund} disabled={busy}>İade durumunu yenile</Button>}
+      </section>
       <p className="text-xs text-gray-500">Bu belge mali fiş değildir. Ağ yazıcısına sunucunun erişebilmesi gerekir; simülasyon gerçek baskı yapmaz.</p></>}
     </DialogContent></Dialog>
   </>;
