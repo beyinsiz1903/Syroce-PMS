@@ -58,6 +58,21 @@ describe('guest-card account detail parity', () => {
     expect(screen.getByText(/KDV \(tutara dahil\)/)).toBeInTheDocument();
     expect(screen.queryByText(/Şehir vergisi:/)).not.toBeInTheDocument();
   });
+  it('shows source extras but does not submit their IDs to folio charge transfer', async () => {
+    axios.get.mockResolvedValueOnce({ data: { folios: [{ id: 'target', status: 'open', currency: 'TRY' }] } });
+    render(<FolioViewDialog {...baseProps} selectedFolio={folio} folioCharges={[{
+      id: 'extra', report_source: 'extra', description: 'Minibar servisi', total: 150,
+      net_amount: 125, vat_amount: 25, tax_amount: 0, tax_inclusive: true,
+      tax_snapshot: { status: 'verified' },
+    }]} />);
+    expect(screen.getByText('Minibar servisi')).toBeInTheDocument();
+    expect(screen.getByText(/Düzenleme ve iptal için Ek Ücretler/)).toBeInTheDocument();
+    expect(screen.getByText(/KDV \(tutara dahil\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'İşlem Aktar' }));
+    const dialog = await screen.findByRole('dialog', { name: 'İşlem Aktar' });
+    expect(within(dialog).getByText('Aktarılabilir işlem yok')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+  });
   it('offers a refund only for eligible receipts and labels offsets and refunds correctly', () => {
     const rows = [
       { id: 'cash', method: 'cash', amount: 100 },

@@ -250,7 +250,7 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
 
     from core.tenant_currency import get_tenant_currency
     currency, _ = await get_tenant_currency(current_user.tenant_id)
-    snapshots = await folio_snapshots(db, current_user.tenant_id, folios, fallback_currency=currency)
+    snapshots = await folio_snapshots(db, current_user.tenant_id, folios, fallback_currency=currency, include_booking_extras=True)
 
     room_ids = list({snap["booking"].get("room_id") for snap in snapshots.values() if snap["booking"].get("room_id")})
     rooms = await db.rooms.find({"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}}, {"_id": 0, "id": 1, "room_number": 1}).to_list(len(room_ids)) if room_ids else []
@@ -560,11 +560,12 @@ async def _legacy_get_folio_details(tenant_id: str, folio_id: str):
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
 
-    charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+    from modules.folio.repository import FolioRepository
 
-    payments = await db.payments.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
-
-    balance = await calculate_folio_balance(folio_id, tenant_id)
+    repository = FolioRepository()
+    charges = await repository.get_charges(tenant_id, folio_id)
+    payments = await repository.get_payments(tenant_id, folio_id)
+    balance = await repository.get_balance(tenant_id, folio_id)
     folio["balance"] = balance
 
     return {"folio": folio, "charges": charges, "payments": payments, "balance": balance}
@@ -1628,7 +1629,7 @@ async def generate_folio_proforma(
     from security.encrypted_lookup import decrypt_guest_doc
 
     currency, _ = await get_tenant_currency(current_user.tenant_id)
-    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency))[folio_id]
+    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency, include_booking_extras=True))[folio_id]
     try:
         charges, vat_groups, totals = proforma_amounts(snapshot)
     except ValueError as exc:
