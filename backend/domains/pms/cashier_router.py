@@ -13,6 +13,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
+from core.laundry_charge_void import LaundryChargeVoid
 from core.laundry_money import laundry_currency, laundry_money_snapshot
 from core.laundry_service_date import laundry_service_date, validate_laundry_stay_day
 from core.laundry_tax import laundry_tax_snapshot, laundry_vat_rate
@@ -1281,6 +1282,24 @@ async def create_laundry_order(
             return previous
         raise HTTPException(409, "Sipariş kaydı doğrulanamadı; kaynağı yenileyin")
     return doc
+
+
+@router.post("/laundry/orders/{order_id}/void-charge")
+async def void_delivered_laundry_charge(order_id: str, body: LaundryChargeVoid,
+        current_user: User = Depends(get_current_user), _perm=Depends(require_op("void_charge")),
+        _module=Depends(require_module_role("pos"))):
+    from core.booking_atomicity import is_replica_set_unavailable
+    from core.laundry_charge_void import void_laundry_charge
+    from routers.reservation_detail import invalidate_financial_report_caches
+
+    try:
+        result = await void_laundry_charge(db, current_user.tenant_id, order_id, current_user, body)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Ücret iptali için transaction desteği gerekli") from exc
+        raise
+    invalidate_financial_report_caches(current_user.tenant_id)
+    return result
 
 
 @router.patch("/laundry/orders/{order_id}")

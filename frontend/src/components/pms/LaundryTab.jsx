@@ -65,6 +65,11 @@ const LaundryTab = () => {
   const ordersVersion = useRef(0);
   const itemsVersion = useRef(0);
   const lookupVersion = useRef(0);
+  const [voidOrder, setVoidOrder] = useState(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidBusy, setVoidBusy] = useState(false);
+  const [voidError, setVoidError] = useState('');
+  const voidAttempt = useRef(null);
   const request = useRef(null);
   const submitting = useRef(false);
   const serviceDateInput = useRef(null);
@@ -274,6 +279,22 @@ const LaundryTab = () => {
     }
   };
 
+  const cancelDeliveredFee = async () => {
+    if (!voidOrder || voidBusy || voidReason.trim().length < 3 || ordersStale) return;
+    const payload = { expected_amount: Number(voidOrder.folio_financial_total ?? voidOrder.folio_total ?? voidOrder.total),
+      currency: voidOrder.folio_currency || voidOrder.currency || currency, reason: voidReason.trim() };
+    const fingerprint = JSON.stringify({ order: voidOrder.id, ...payload });
+    if (voidAttempt.current?.fingerprint !== fingerprint) voidAttempt.current = { fingerprint, id: crypto.randomUUID() };
+    setVoidBusy(true); setVoidError('');
+    try {
+      await axios.post(`/laundry/orders/${encodeURIComponent(voidOrder.id)}/void-charge`, { ...payload, request_id: voidAttempt.current.id });
+      toast.success('Hizmetin ücreti iptal edildi; teslim kaydı korundu. Ödeme iadesi oluşturulmadı.');
+      setVoidOrder(null); setVoidReason(''); voidAttempt.current = null;
+      await loadOrders();
+    } catch (error) { setVoidError(errorMessage(error, 'Ücret iptali sonucu doğrulanamadı. Aynı istekle tekrar kontrol edin.')); }
+    finally { setVoidBusy(false); }
+  };
+
   // ───── Ayarlar (laundry_items CRUD) ─────
   const createItem = async () => {
     const code = newItem.code.trim().toLowerCase();
@@ -474,7 +495,8 @@ const LaundryTab = () => {
                         <div>
                           <p className="text-sm font-medium text-gray-800">
                             {order.guest_name}
-                            {order.folio_charged && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">{order.is_complimentary ? 'Folyoya ikram olarak yansıdı' : 'Folyoya yansıdı'}</Badge>}
+                            {order.financial_voided && <Badge className="ml-2 bg-amber-100 text-amber-800 text-[10px]">Ücreti iptal edildi</Badge>}
+                            {order.folio_charged && !order.financial_voided && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">{order.is_complimentary ? 'Folyoya ikram olarak yansıdı' : 'Folyoya yansıdı'}</Badge>}
                           </p>
                           <p className="text-xs text-gray-400">
                             {order.items?.map(i => `${i.name} x${i.quantity}`).join(', ')}
@@ -486,10 +508,11 @@ const LaundryTab = () => {
                       <div className="flex items-center gap-3">
                         <Badge className={sc.color}>{sc.label}</Badge>
                         <div className="text-right">
-                          {order.is_complimentary && <p className="text-xs text-muted-foreground">Liste bedeli: {formatCurrency(order.total, order.currency || currency)} · Tam ikram</p>}
-                          <span className="text-sm font-bold text-gray-700">{formatCurrency(order.is_complimentary ? order.folio_financial_total : order.total, order.is_complimentary ? (order.folio_currency || order.currency || currency) : (order.currency || currency))}</span>
+                          {(order.is_complimentary || order.financial_voided) && <p className="text-xs text-muted-foreground">Liste bedeli: {formatCurrency(order.total, order.currency || currency)} · {order.financial_voided ? 'Ücret iptali' : 'Tam ikram'}</p>}
+                          <span className="text-sm font-bold text-gray-700">{formatCurrency(order.is_complimentary || order.financial_voided ? order.folio_financial_total : order.total, order.is_complimentary || order.financial_voided ? (order.folio_currency || order.currency || currency) : (order.currency || currency))}</span>
                         </div>
                         <fieldset disabled={ordersStale} className="flex gap-1">
+                          {order.status === 'delivered' && order.folio_charged && !order.financial_voided && !order.is_complimentary && Number(order.folio_financial_total ?? order.folio_total ?? order.total) > 0 && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setVoidOrder(order); setVoidReason(''); setVoidError(''); voidAttempt.current = null; }}>Ücreti iptal et</Button>}
                           {order.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Başla</Button>}
                           {order.status === 'in_progress' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>{t('cm.components_pms_LaundryTab.hazir_04e6f')}</Button>}
                           {order.status === 'ready' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'delivered')}>Teslim Et</Button>}
@@ -577,6 +600,21 @@ const LaundryTab = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={Boolean(voidOrder)} onOpenChange={open => { if (!open && !voidBusy) setVoidOrder(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Teslim edilmiş hizmetin ücretini iptal et</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Yalnız tahsilat veya mahsup içermeyen açık hesaptaki, muhasebeye aktarılmamış ücret iptal edilir. Hizmetin teslim kaydı ve liste bedeli korunur. Misafire para iadesi yapılmaz.</p>
+          <p>{voidOrder?.guest_name} · Oda {voidOrder?.room_number} · {formatCurrency(Number(voidOrder?.folio_financial_total ?? voidOrder?.folio_total ?? voidOrder?.total ?? 0), voidOrder?.folio_currency || voidOrder?.currency || currency)}</p>
+          <Label htmlFor="laundry-void-reason">Ücret iptal gerekçesi</Label>
+          <Input id="laundry-void-reason" maxLength={500} disabled={voidBusy} value={voidReason} onChange={e => setVoidReason(e.target.value)} />
+          {voidError && <p role="alert" className="text-sm text-destructive">{voidError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={voidBusy} onClick={() => setVoidOrder(null)}>Vazgeç</Button>
+            <Button disabled={voidBusy || voidReason.trim().length < 3 || ordersStale} onClick={cancelDeliveredFee}>{voidBusy ? 'Kaydediliyor…' : 'Ücret iptalini onayla'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showNewOrder} onOpenChange={changeDialog}>
         <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
