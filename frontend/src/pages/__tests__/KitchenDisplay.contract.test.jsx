@@ -53,3 +53,13 @@ describe('KitchenDisplay order contract', () => {
     expect(apiGet).toHaveBeenNthCalledWith(2, '/fnb/kitchen-display');
   });
 });
+
+
+it('warns when a refund concerns food already being prepared', async () => {
+  apiGet.mockResolvedValue({ data: { orders: [{
+    id: 'refunded-preparing', order_number: 'D866', status: 'preparing', financial_refund_status: 'full',
+    items: [{ name: 'Çay', quantity: 1 }],
+  }] } });
+  render(<MemoryRouter><KitchenDisplay /></MemoryRouter>);
+  expect(await screen.findByText('Adisyonun tamamı iade edildi. Hazırlanan ürün için sorumluya danışın.')).toBeVisible();
+});

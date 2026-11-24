@@ -41,7 +41,10 @@ async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None 
         query["status"] = {"$in": statuses}
     else:
         query["status"] = {"$in": ["pending", "preparing", "ready"]}
-    return await db.kitchen_orders.find(query, {"_id": 0}).sort([("priority", -1), ("ordered_at", 1)]).to_list(200)
+    from domains.pms.pos_fnb.kitchen_refunds import actionable_kitchen_orders
+
+    orders = await db.kitchen_orders.find(query, {"_id": 0}).sort([("priority", -1), ("ordered_at", 1)]).to_list(200)
+    return await actionable_kitchen_orders(db, tenant_id, orders)
 
 
 async def _next_kitchen_order_number(tenant_id: str) -> int:
@@ -639,11 +642,14 @@ async def update_kitchen_order_status_v2(
         raise HTTPException(status_code=422, detail="Geçersiz mutfak siparişi durumu")
     existing = await db.kitchen_orders.find_one(
         {"tenant_id": current_user.tenant_id, "id": order_id},
-        {"_id": 0, "status": 1},
+        {"_id": 0, "status": 1, "order_id": 1},
     )
     if not existing:
         raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
 
+    from domains.pms.pos_fnb.kitchen_refunds import reject_refunded_pending
+
+    await reject_refunded_pending(db, current_user.tenant_id, existing)
     current_status = existing.get("status") or "pending"
     if current_status == status:
         return {"success": True, "order_id": order_id, "status": status, "idempotent": True}
@@ -686,6 +692,11 @@ async def complete_kitchen_order(
     # state (served/cancelled). Stress spec 98-pos-kds-inventory.spec.js B)
     # exposed this: a re-complete on a 'served' ticket reverted it to
     # 'ready'. Reject the transition with 409 and keep the original state.
+    from domains.pms.pos_fnb.kitchen_refunds import reject_refunded_pending
+
+    ticket = await db.kitchen_orders.find_one({"id": order_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if ticket:
+        await reject_refunded_pending(db, current_user.tenant_id, ticket)
     TERMINAL_STATES = {"served", "cancelled", "voided"}
     result = await db.kitchen_orders.update_one(
         {
@@ -720,14 +731,6 @@ async def update_kitchen_order_status(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
-    """Update kitchen order status from KDS"""
-    updates = {"status": new_status}
-
-    if new_status == "ready":
-        updates["ready_at"] = datetime.now(UTC).isoformat()
-    elif new_status == "served":
-        updates["served_at"] = datetime.now(UTC).isoformat()
-
-    await db.kitchen_orders.update_one({"id": order_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
-
+    """Compatibility route with the same tenant and lifecycle guards."""
+    await update_kitchen_order_status_v2(order_id, new_status, current_user, _perm)
     return {"success": True, "order_id": order_id, "new_status": new_status}

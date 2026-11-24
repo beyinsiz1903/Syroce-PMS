@@ -65,6 +65,9 @@ class PosFnbServiceV2:
                 },
                 {"_id": 0},
             ).sort("ordered_at", 1).to_list(length=200)
+            from domains.pms.pos_fnb.kitchen_refunds import actionable_kitchen_orders
+
+            orders = await actionable_kitchen_orders(self._db, tenant_id, orders)
             await broadcast_kitchen_orders(tenant_id, orders)
         except Exception:  # noqa: BLE001 -- realtime is best effort
             logger.warning("Kitchen queue broadcast failed for tenant=%s", tenant_id, exc_info=True)
@@ -1043,6 +1046,7 @@ class PosFnbServiceV2:
                 await run_stock_job(self._db, ctx.tenant_id, order_id, ctx.actor_id, restore=True)
             except Exception:
                 logger.exception("Recipe stock restore failed for refunded order %s", order_id)
+        await self._broadcast_kitchen_queue(ctx.tenant_id)
         return ServiceResult.success({"order_id": order_id, "refund_id": refund_id, "refund_amount": refund_amount, "full_refund": full_refund})
 
     @audited("pos.transfer_order_table", "pos_order", severity=SEVERITY_INFO, capture_before=True)
@@ -1388,6 +1392,14 @@ class PosFnbServiceV2:
                 },
                 session=session,
             )
+            if new_refunded >= paid:
+                # A full refund cancels only food that has not started. The
+                # same transaction as the refund prevents an orphaned KDS task.
+                await self._db.kitchen_orders.update_many(
+                    {"tenant_id": tenant_id, "order_id": order_id, "status": "pending"},
+                    {"$set": {"status": "cancelled", "cancel_reason": refund_doc.get("reason"),
+                              "cancelled_at": refund_doc["created_at"], "cancelled_by": refund_doc.get("processed_by"),
+                              "refund_transaction_id": refund_doc["id"]}}, session=session)
             return updated_sale
 
         try:

@@ -171,6 +171,8 @@ function OrderCard({ order, onReady, onServed, onStart, isUpdating }) {
         )}
       </div>
 
+      {order.financial_refund_status === 'full' && <p role="status" className="px-4 text-sm font-semibold text-amber-300">Adisyonun tamamı iade edildi. Hazırlanan ürün için sorumluya danışın.</p>}
+
       {/* Action button */}
       <div className="p-4 pt-2">
         {status === 'pending' && (

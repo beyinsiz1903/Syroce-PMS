@@ -1,6 +1,7 @@
 """Regression coverage for POS refund write-time protection."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -49,7 +50,7 @@ async def test_refund_write_rejects_amount_that_exceeds_current_remaining_balanc
         [{"id": "sale-1", "tenant_id": "tenant-1", "status": "completed", "refunded_amount": 50.0}]
     )
     orders = _Collection([{"id": "order-1", "tenant_id": "tenant-1", "payment_status": "paid"}])
-    service._db = SimpleNamespace(client=object(), pos_transactions=transactions, pos_orders=orders)
+    service._db = SimpleNamespace(client=object(), pos_transactions=transactions, pos_orders=orders, kitchen_orders=SimpleNamespace(update_many=AsyncMock()))
     monkeypatch.setattr(pos_service_module, "with_resource_locks", _within_transaction)
 
     result = await service._persist_refund_and_state(
@@ -74,7 +75,7 @@ async def test_refund_write_updates_sale_order_and_refund_together(monkeypatch):
         [{"id": "sale-1", "tenant_id": "tenant-1", "status": "completed", "refunded_amount": 40.0}]
     )
     orders = _Collection([{"id": "order-1", "tenant_id": "tenant-1", "payment_status": "paid"}])
-    service._db = SimpleNamespace(client=object(), pos_transactions=transactions, pos_orders=orders)
+    service._db = SimpleNamespace(client=object(), pos_transactions=transactions, pos_orders=orders, kitchen_orders=SimpleNamespace(update_many=AsyncMock()))
     monkeypatch.setattr(pos_service_module, "with_resource_locks", _within_transaction)
 
     result = await service._persist_refund_and_state(
@@ -83,7 +84,7 @@ async def test_refund_write_updates_sale_order_and_refund_together(monkeypatch):
         sale_id="sale-1",
         paid=100.0,
         refund_amount=60.0,
-        refund_doc={"id": "refund-1", "tenant_id": "tenant-1", "payment_type": "refund"},
+        refund_doc={"id": "refund-1", "tenant_id": "tenant-1", "payment_type": "refund", "created_at": "2026-11-12T10:00:00+00:00"},
     )
 
     assert result["refund_status"] == "full"
