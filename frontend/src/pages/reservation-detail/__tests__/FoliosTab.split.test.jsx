@@ -659,3 +659,20 @@ it('split preview uses the source currency and excludes another payer’s extras
   expect(panel).not.toHaveTextContent('₺');
   expect(panel).toHaveTextContent('Kalan hizmetlerin brüt tutarı');
 });
+
+it('defaults cari transfer to the sole posted folio debt, excluding future room charges', async () => {
+  render(<FoliosTab {...singleFolioProps({ summary: { ...summary, reservation_total_due: 1350, unposted_room_amount: 1200 },
+    folios: [{ id: 'f1', folio_number: 'F-001', status: 'open', balance: 150 }] })} />);
+  fireEvent.click(screen.getByText('Diğer hesap işlemleri'));
+  fireEvent.click(screen.getByTestId('btn-cariye-aktar'));
+  expect(await screen.findByTestId('cari-transfer-form')).toBeInTheDocument();
+  expect(screen.getByDisplayValue('150')).toBeInTheDocument();
+  expect(screen.queryByDisplayValue('1350')).not.toBeInTheDocument();
+});
+it('requires an explicit source for cari transfer when several folios are open', async () => {
+  render(<FoliosTab {...multiFolioProps()} />);
+  fireEvent.click(screen.getByText('Diğer hesap işlemleri'));
+  fireEvent.click(screen.getByTestId('btn-cariye-aktar'));
+  expect(screen.queryByTestId('cari-transfer-form')).not.toBeInTheDocument();
+  expect(screen.getByText('Cari aktarımı için açık hedef folyoyu seçin.')).toBeInTheDocument();
+});

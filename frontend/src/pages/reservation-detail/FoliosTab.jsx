@@ -222,8 +222,16 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     setCashierTryRate('');
   };
   const openCariForm = () => {
-    const balance = targetFolio ? Number(targetFolio.balance) || 0 : reservationTotalDue;
-    setCariForm(p => ({ ...p, amount: balance > 0 ? String(balance) : p.amount, cari_account_id: targetFolio?.cari_account_id || p.cari_account_id }));
+    const open = folioList.filter(f => f.status === 'open');
+    const source = targetFolio || (open.length === 1 ? open[0] : null);
+    if (!source) {
+      setActionError('Cari aktarımı için açık hedef folyoyu seçin.');
+      return;
+    }
+    setActionError('');
+    setTargetFolioId(source.id);
+    const balance = Math.max(0, Number(source.balance) || 0);
+    setCariForm(p => ({ ...p, amount: String(balance), cari_account_id: source.cari_account_id || p.cari_account_id }));
     setShowCari(!showCari); loadCari();
   };
   const hasAllocatedPrepayment = pendingRoomAmount > 0.01 && reservationTotalDue <= 0.01 && rawFolioBalance < -0.01;
