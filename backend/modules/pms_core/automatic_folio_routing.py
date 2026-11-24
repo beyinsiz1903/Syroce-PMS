@@ -122,7 +122,14 @@ async def insert_booking_extra(database, tenant_id, charge):
     from core.booking_payment_state import refresh_booking_payment_state
     from modules.pms_core.receivable_reporting import folio_snapshots
 
-    if not await database.folio_routing.find_one({'tenant_id': tenant_id, 'active': True, 'apply_to_future': True}):
+    # Modern sources need an owner even after the last routing destination
+    # was merged. Only historical sources with no windows may stay unassigned.
+    has_routing = await database.folio_routing.find_one({'tenant_id': tenant_id, 'active': True, 'apply_to_future': True})
+    if not has_routing and not await database.folios.find_one({
+        'tenant_id': tenant_id, 'booking_id': charge['booking_id'], 'status': 'open',
+    }):
+        if await database.folios.find_one({'tenant_id': tenant_id, 'booking_id': charge['booking_id'], 'status': {'$exists': True}}):
+            raise HTTPException(409, 'Ek ücret için açık folyo bulunamadı; ücret işlenmedi')
         await database.extra_charges.insert_one(dict(charge))
         return charge
 
@@ -143,10 +150,18 @@ async def insert_booking_extra(database, tenant_id, charge):
         target = None
         source_ids = {r['source_folio_id'] for r in rules}
         source_id = matched[0]['source_folio_id'] if matched else next(iter(source_ids)) if len(source_ids) == 1 else None
+        if not source_id and not rules and len(folios) == 1:
+            source_id = folios[0]['id']
         if rules and not source_id:
             raise HTTPException(409, 'Eşleşmeyen ek ücret için kaynak hesap belirsiz; ücret işlenmedi')
+        if folios and not source_id:
+            raise HTTPException(409, 'Birden fazla açık folyo var. Masrafı ilgili folyonun İşlem Ekle alanından girin; ücret işlenmedi')
         if source_id:
-            posted.update(folio_id=source_id, currency=charge.get('currency') or booking.get('currency'))
+            source = next(f for f in folios if f['id'] == source_id)
+            code = currency_code(charge.get('currency') or booking.get('currency'))
+            if source.get('invoice_id') or currency_code(source.get('currency') or booking.get('currency')) != code:
+                raise HTTPException(409, 'Ek ücretin kaynak folyosu faturasız ve aynı para biriminde olmalı')
+            posted.update(folio_id=source_id, currency=code)
             target = await route_new_charge(database, tenant_id, posted, session=session)
             target = target or next(f for f in folios if f['id'] == source_id)
         await database.extra_charges.insert_one(dict(posted), session=session)
