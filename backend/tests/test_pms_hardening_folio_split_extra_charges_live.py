@@ -8,8 +8,8 @@ akışı GERÇEK MongoDB üzerinde uçtan uca çalıştırır:
     * yeni folio'da normalize edilmiş `folio_charges` kalemi (split_from_extra_charge_id set),
     * orijinal `extra_charges` satırı silindi,
     * bakiyeler GERÇEK `calculate_folio_balance` ($sum aggregation) ile tutarlı:
-      kaynak folio etkilenmez (ekstra masraf zaten bakiyeye dâhil değildi),
-      yeni folio bakiyesi taşınan kalemlerin toplamına eşit.
+      ekstra masraf bölmeden önce kaynak bakiyesine dahildir,
+      kaynak + hedef toplamı bölme öncesi bakiyeye eşittir.
 
 FakeDB'nin yapamadığı şey burada doğrulanır: gerçek find/insert/delete + gerçek
 server-side aggregation. Validator gevşetilmez; ekstra masraf gerçek bir folio
@@ -127,7 +127,7 @@ async def test_live_split_moves_extra_charge_into_new_folio_with_real_balances(l
     # Kaynak folio bakiyesi (gerçek aggregation) split ÖNCESİ.
     from core.utils import calculate_folio_balance
     source_balance_before = await calculate_folio_balance(source_folio_id, tenant_id)
-    assert source_balance_before == 500.0
+    assert source_balance_before == 650.0
 
     res = await FolioHardeningService().split_folio(
         tenant_id, source_folio_id, [extra_id], "guest", "ekstra ayrıştırma", "u1"
@@ -151,11 +151,12 @@ async def test_live_split_moves_extra_charge_into_new_folio_with_real_balances(l
     # Orijinal extra_charges satırı GERÇEKTEN silindi.
     assert await db.extra_charges.find_one({"id": extra_id}) is None
 
-    # Bakiyeler gerçek aggregation ile tutarlı: kaynak etkilenmedi, yeni = 150.
+    # Kaynaktaki 650 TL bölünür: kaynak500 + hedef150 aynı toplamı korur.
     source_balance_after = await calculate_folio_balance(source_folio_id, tenant_id)
     new_balance = await calculate_folio_balance(new_folio_id, tenant_id)
     assert source_balance_after == 500.0
     assert new_balance == 150.0
+    assert source_balance_after + new_balance == source_balance_before
 
     # Persist edilen folio bakiyesi de güncellendi.
     new_folio_doc = await db.folios.find_one({"id": new_folio_id})
@@ -192,8 +193,9 @@ async def test_live_split_mixed_folio_and_extra_charge_balances(live_db):
     })
 
     from core.utils import calculate_folio_balance
-    # Split öncesi kaynak bakiye = oda(400) + minibar(60) = 460 (ekstra hariç).
-    assert await calculate_folio_balance(source_folio_id, tenant_id) == 460.0
+    # Split öncesi kaynak: oda400 + minibar60 + ekstra40 =500.
+    source_balance_before = await calculate_folio_balance(source_folio_id, tenant_id)
+    assert source_balance_before == 500.0
 
     res = await FolioHardeningService().split_folio(
         tenant_id, source_folio_id, [moveable_charge_id, extra_id],
@@ -222,6 +224,8 @@ async def test_live_split_mixed_folio_and_extra_charge_balances(live_db):
     # Bakiyeler: kaynak = oda(400), yeni = minibar(60) + ekstra(40) = 100.
     assert await calculate_folio_balance(source_folio_id, tenant_id) == 400.0
     assert await calculate_folio_balance(new_folio_id, tenant_id) == 100.0
+    assert (await calculate_folio_balance(source_folio_id, tenant_id)
+        + await calculate_folio_balance(new_folio_id, tenant_id)) == source_balance_before
 
 
 async def test_live_split_rejects_foreign_booking_extra_charge_fail_closed(live_db):
