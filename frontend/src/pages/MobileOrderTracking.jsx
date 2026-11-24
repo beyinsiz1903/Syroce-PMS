@@ -161,7 +161,7 @@ const MobileOrderTracking = ({ user }) => {
       paid: { label: 'Ödendi', color: 'bg-emerald-600', icon: CheckCircle },
       closed: { label: 'Kapandı', color: 'bg-gray-500', icon: CheckCircle },
       completed: { label: 'Tamamlandı', color: 'bg-gray-500', icon: CheckCircle },
-      refunded: { label: 'İade Edildi', color: 'bg-orange-600', icon: CheckCircle },
+      refunded: { label: 'İade Edildi', color: 'bg-amber-600', icon: CheckCircle },
       cancelled: { label: 'İptal Edildi', color: 'bg-red-600', icon: CheckCircle },
       canceled: { label: 'İptal Edildi', color: 'bg-red-600', icon: CheckCircle }
     };
