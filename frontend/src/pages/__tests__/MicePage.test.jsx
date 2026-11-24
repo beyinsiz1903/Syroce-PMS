@@ -193,6 +193,26 @@ describe('MicePage entitlement usage contract', () => {
     expect(within(dialog).getByLabelText('Etkinlik Adı')).toHaveValue('Salon Çakışma Kontrolü');
   });
 
+  it('submits an explicit tax-inclusive policy for a new gross-price event', async () => {
+    axiosPost.mockResolvedValue({ data: { id: 'inclusive-event' } });
+    render(<MemoryRouter><MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /yeni_etkinlik/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Yeni Etkinlik' });
+    fireEvent.change(within(dialog).getByLabelText('Etkinlik Adı'), { target: { value: 'Vergi dahil toplantı' } });
+    fireEvent.change(within(dialog).getByLabelText('Müşteri Adı'), { target: { value: 'Bora Arslan' } });
+    for (const dateInput of dialog.querySelectorAll('input[type="date"]')) {
+      fireEvent.change(dateInput, { target: { value: '2026-11-12' } });
+    }
+    fireEvent.click(within(dialog).getByRole('tab', { name: 'Fiyatlandırma' }));
+    fireEvent.click(within(dialog).getByLabelText('İndirim / servis / vergi dökümü kullan'));
+    expect(within(dialog).getByLabelText('Girilen fiyatlara vergi dahil')).toBeChecked();
+    fireEvent.change(within(dialog).getByLabelText('Vergi (%)'), { target: { value: '20' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Oluştur' }));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/mice/events', expect.objectContaining({
+      pricing: expect.objectContaining({ tax_inclusive: true, tax_percent: 20 }),
+    })));
+  });
+
   it('keeps the new event action disabled when entitlement usage reaches the limit', async () => {
     mockEntitlements.mockReturnValue({
       entitlements: {

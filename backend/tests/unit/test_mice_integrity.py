@@ -146,3 +146,30 @@ async def test_reading_catalog_does_not_create_demo_data(monkeypatch):
     monkeypatch.setattr(mice, "get_system_db", lambda: SimpleNamespace(mice_spaces=SimpleNamespace(find=lambda *_args: Cursor([]))))
     assert await mice.list_spaces.__wrapped__(USER) == {"spaces": []}
     seed.assert_not_awaited()
+
+
+@pytest.mark.parametrize("gross,discount,service,tax_service,expected", [
+    (150, 0, 0, True, (125, 0, 25, 150)),
+    (3000, 0, 0, True, (2500, 0, 500, 3000)),
+    (150, 10, 10, True, (112.5, 11.25, 24.75, 148.5)),
+    (150, 10, 10, False, (112.5, 11.25, 22.5, 146.25)),
+    (0.05, 0, 0, True, (0.04, 0, 0.01, 0.05)),
+    (150, 100, 10, True, (0, 0, 0, 0)),
+])
+def test_inclusive_quote_preserves_gross_and_reconciles_cents(gross, discount, service, tax_service, expected):
+    from core.mice_integrity import price_breakdown
+    policy = mice.PricingPolicyIn(tax_inclusive=True, tax_percent=20,
+                                 discount_percent=discount, service_percent=service,
+                                 tax_on_service=tax_service)
+    totals = price_breakdown(gross, policy.model_dump())
+    assert tuple(totals[k] for k in ("net_total", "service_total", "tax_total", "grand_total")) == expected
+    assert round(totals["net_total"] + totals["service_total"] + totals["tax_total"], 2) == totals["grand_total"]
+    assert totals["tax_inclusive"] is True
+
+
+def test_legacy_pricing_stays_exclusive_and_new_zero_tax_is_valid():
+    from core.mice_integrity import price_breakdown
+    legacy = mice.PricingPolicyIn(tax_percent=20)
+    assert legacy.tax_inclusive is False
+    assert price_breakdown(150, legacy.model_dump())["grand_total"] == 180
+    assert price_breakdown(150, {"tax_inclusive": True})["grand_total"] == 150

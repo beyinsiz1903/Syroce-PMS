@@ -129,3 +129,10 @@ describe('Versioned commercial workflows', () => {
     expect(axios.get).not.toHaveBeenCalledWith('/mice/events/event/actuals');
   });
 });
+
+
+it('shows included tax as a breakdown rather than an additional charge', () => {
+  render(<QuoteTotals totals={{ subtotal: 150, net_total: 125, tax_total: 25, grand_total: 150, tax_inclusive: true }} currency="TRY" />);
+  expect(screen.getByText('Vergi dökümü')).toBeInTheDocument();
+  expect(screen.queryByText('Vergi (+)')).not.toBeInTheDocument();
+});

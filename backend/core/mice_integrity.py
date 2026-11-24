@@ -52,7 +52,7 @@ def seating_needs_review(plan, booking, space, event_pax=0):
 
 
 def price_breakdown(subtotal, policy: dict) -> dict:
-    """Net catalog prices; discount → service → tax. No inferred legal rate.
+    """Explicit net or tax-inclusive catalog prices. No inferred legal rate.
 
     Round each payable component to cents, then add those rounded components
     so the screen, BEO, customer acceptance and accounting reconcile exactly.
@@ -62,13 +62,21 @@ def price_breakdown(subtotal, policy: dict) -> dict:
     if any(rate > 100 for rate in rates.values()):
         raise ValueError("Yüzde oranı 0 ile 100 arasında olmalıdır")
     discount = money(rounded(base * rates["discount_percent"] / 100))
-    net = base - discount
+    discounted = base - discount
+    inclusive = policy.get("tax_inclusive", False)
+    net = money(rounded(discounted / (1 + rates["tax_percent"] / 100))) if inclusive else discounted
     service = money(rounded(net * rates["service_percent"] / 100))
     taxable = net + service if policy.get("tax_on_service", True) else net
-    tax = money(rounded(taxable * rates["tax_percent"] / 100))
+    # Extract included tax as the residual so gross cents never drift.
+    if inclusive:
+        tax = discounted - net
+        if policy.get("tax_on_service", True):
+            tax += money(rounded(service * rates["tax_percent"] / 100))
+    else:
+        tax = money(rounded(taxable * rates["tax_percent"] / 100))
     return {"subtotal": float(base), "discount_total": float(discount), "net_total": float(net),
             "service_total": float(service), "taxable_total": float(taxable), "tax_total": float(tax),
-            "grand_total": rounded(net + service + tax)}
+            "grand_total": rounded(net + service + tax), "tax_inclusive": bool(inclusive)}
 
 
 def instant(value):
