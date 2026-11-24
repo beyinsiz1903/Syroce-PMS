@@ -378,7 +378,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const itemKind = (item) => {
     if (item._type === 'payment') {
       if (String(item.method || '').toLowerCase() === 'discount') return 'Finansal düzeltme / indirim';
-      if (isNonCashPayment(item)) return folioPaymentLabel(item);
+      if (isNonCashPayment(item)) return `${folioPaymentLabel(item)}${isRefundPayment(item) ? ' · ters kayıt' : ''}`;
       if (isRefundPayment(item)) return 'Ödeme iadesi';
       return String(item.payment_type || '').toLowerCase() === 'prepayment' ? 'Ön ödeme' : 'Tahsilat';
     }
@@ -847,7 +847,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-800">
-                  {item.description || item.charge_name || (refund ? 'Ödeme iadesi' : item._type === 'payment' ? folioPaymentLabel(item) : item.method || item.payment_type || '-')}
+                  {item._type === 'payment' && isNonCashPayment(item) ? itemKind(item) : item.description || item.charge_name || (refund ? 'Ödeme iadesi' : item._type === 'payment' ? folioPaymentLabel(item) : item.method || item.payment_type || '-')}
                   {item.voided && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">İPTAL</span>}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
@@ -856,7 +856,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                   {item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}
                 </div>
                 {(item.created_at || item.posted_at || item.processed_at) && <p className="mt-1 text-[11px] text-slate-500">Kayda alınma: {fmtTs(item.created_at || item.posted_at || item.processed_at)}</p>}
-                {received && !item.voided && (
+                {received && !item.voided && !isNonCashPayment(item) && (
                   <div className="mt-1 text-xs font-semibold text-emerald-700" data-testid={`received-currency-${item.id || i}`}>
                     {refund ? 'İade edilen:' : 'Alınan:'} {fmtCurrency(Math.abs(received.amount), received.currency)}
                   </div>
