@@ -369,6 +369,12 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                               <PlayCircle className="w-4 h-4 mr-1" />Başlat
                             </Button>
                           )}
+                          {a.status === 'scheduled' && (
+                            <Button size="sm" variant="ghost" title="Gelmedi" aria-label={`${a.guest_name} — Gelmedi olarak işaretle`} disabled={statusBusy}
+                                    onClick={() => updateStatus(a.id, 'no_show')}>
+                              <XCircle className="w-4 h-4 text-gray-500 mr-1" />Gelmedi
+                            </Button>
+                          )}
                           {(a.status === 'scheduled' || a.status === 'in_progress') && (
                             <Button size="sm" variant="ghost" title="Tamamla" aria-label={`${a.guest_name} — Hizmeti tamamla`} disabled={statusBusy}
                                     onClick={() => updateStatus(a.id, 'completed')}>

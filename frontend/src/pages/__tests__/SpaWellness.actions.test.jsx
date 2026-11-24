@@ -45,3 +45,17 @@ it('keeps the supported cancellation action available for an in-progress service
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/spa/appointments/a/status', { status: 'cancelled' }));
   expect(confirmDialog).not.toHaveBeenCalled();
 });
+
+it('marks an unstarted appointment as no-show without posting a completed service', async () => {
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Şule Acar — Gelmedi olarak işaretle' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/spa/appointments/a/status', { status: 'no_show' }));
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  expect(confirmDialog).not.toHaveBeenCalled();
+});
+it.each(['in_progress', 'completed', 'cancelled', 'no_show'])('does not offer no-show for %s appointments', async status => {
+  appointmentStatus = status;
+  mount();
+  await screen.findByText('Şule Acar');
+  expect(screen.queryByRole('button', { name: 'Şule Acar — Gelmedi olarak işaretle' })).not.toBeInTheDocument();
+});
