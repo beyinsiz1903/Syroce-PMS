@@ -78,3 +78,29 @@ async def test_parallel_account_opening_does_not_reassign_or_duplicate_extras(ac
     assert await accounts.extra_charges.count_documents({}) == 4
     windows = await accounts.folios.find({'tenant_id': 't'}).to_list(None)
     assert len({routes._resolve_window_number(w, windows) for w in windows}) == len(windows)
+
+
+@pytest.mark.parametrize('status', ['checked_out', 'cancelled', 'no_show'])
+async def test_terminal_stay_cannot_open_another_account(accounts, status):
+    await accounts.bookings.update_one({'id': 'b'}, {'$set': {'status': status}})
+    with pytest.raises(HTTPException) as error:
+        await open_account()
+    assert error.value.status_code == 409
+    assert await accounts.folios.count_documents({'tenant_id': 't'}) == 1
+    assert (await accounts.extra_charges.find_one({'id': 'e1'})).get('folio_id') is None
+
+
+async def test_closed_original_account_does_not_receive_legacy_extras(accounts):
+    await accounts.folios.update_one({'id': 'first'}, {'$set': {'status': 'closed'}})
+    with pytest.raises(HTTPException) as error:
+        await open_account()
+    assert error.value.status_code == 409
+    assert await accounts.folios.count_documents({'tenant_id': 't'}) == 1
+
+
+async def test_foreign_booking_cannot_open_account_or_bind_extras(accounts):
+    await accounts.bookings.update_one({'id': 'b'}, {'$set': {'tenant_id': 'other'}})
+    with pytest.raises(HTTPException) as error:
+        await open_account()
+    assert error.value.status_code == 404
+    assert await accounts.folios.count_documents({'tenant_id': 't'}) == 1

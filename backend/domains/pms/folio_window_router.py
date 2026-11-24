@@ -11,7 +11,7 @@ sadece kanonik "window" semantiği + auto-numbering + özet ekler.
 
 Tutarlılık:
   - (tenant_id, booking_id, window_number) partial unique index → race-safe
-  - DuplicateKeyError yakalanır, 3x retry
+  - Yeni hesap ve eski ek ücret sahipliği aynı rezervasyon kilidi/transaction içinde
   - Mutating endpoint'lerde require_op("post_charge") yetkisi
   - audit_log entegrasyonu
   - Legacy folios (window_number=None) slot accounting'e dahil edilir
@@ -269,12 +269,14 @@ async def open_window(
     payor = await _validate_payor(body, user.tenant_id)
     folio_type = _payor_to_folio_type(body.payor_type)
     folio_no = await generate_folio_number(user.tenant_id)
-    from core.booking_atomicity import with_resource_locks
+    from core.booking_atomicity import is_replica_set_unavailable, with_resource_locks
 
     async def commit(session):
         booking = await db.bookings.find_one({"id": body.booking_id, "tenant_id": user.tenant_id}, session=session)
         if not booking:
             raise HTTPException(404, "Rezervasyon bulunamadı")
+        if booking.get("status") in {"checked_out", "cancelled", "no_show"}:
+            raise HTTPException(409, "Kapalı veya iptal edilmiş konaklamaya yeni folyo açılamaz")
         # Serialize account topology with concurrent extra posting, which also
         # refreshes the booking projection in its transaction.
         await db.bookings.update_one({"id": body.booking_id, "tenant_id": user.tenant_id},
@@ -312,8 +314,13 @@ async def open_window(
             session=session, require_chain=True)
         return doc, window_no
 
-    doc, window_no = await with_resource_locks(client=db.client, db=db, tenant_id=user.tenant_id,
-        locks_collection="reservation_financial_locks", resources=[("booking", body.booking_id)], callback=commit)
+    try:
+        doc, window_no = await with_resource_locks(client=db.client, db=db, tenant_id=user.tenant_id,
+            locks_collection="reservation_financial_locks", resources=[("booking", body.booking_id)], callback=commit)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Folyo açma için transaction desteği gerekli") from exc
+        raise
     doc.pop("_id", None)
     return WindowSummary(
         folio_id=doc["id"],
