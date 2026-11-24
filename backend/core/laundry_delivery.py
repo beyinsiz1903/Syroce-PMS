@@ -24,6 +24,8 @@ async def deliver_laundry(db, tenant_id, order_id, actor):
         folio = await db.folios.find_one({"id": folio_id, "booking_id": booking_id, "tenant_id": tenant_id}, **kw)
         charge_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:laundry:{tenant_id}:{order_id}"))
         previous = await db.folio_charges.find_one({"id": charge_id, "tenant_id": tenant_id}, **kw)
+        if order.get("financial_voided") or previous and previous.get("voided"):
+            raise HTTPException(409, "Bu hizmetin ücreti iptal edildi; tekrar teslim mali kaydı oluşturmaz")
         if previous and order.get("folio_charged"):
             return {"id": order_id, "status": "delivered", "folio_charge": {"charged": True, "amount": previous["total"], "entry_id": order.get("folio_entry_id"), "replayed": True, "is_complimentary": bool(previous.get("is_complimentary"))}}
         if not booking or not folio or folio.get("status") != "open" or booking.get("status") not in {"checked_in", "in_house"}:
