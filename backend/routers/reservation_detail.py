@@ -1027,11 +1027,12 @@ class ExtraChargeAdd(BaseModel):
     category: str = Field("other", max_length=50)  # room, food, beverage, minibar, spa, laundry, other
     # Zero-value rows represent a complimentary item. They remain auditable
     # without creating revenue or changing the folio balance.
-    amount: float = Field(..., ge=0, le=1e9)
-    quantity: float = Field(1.0, gt=0, le=1e6)
+    amount: float = Field(..., ge=0, le=1e9, allow_inf_nan=False)
+    quantity: float = Field(1.0, gt=0, le=1e6, allow_inf_nan=False)
     input_currency: str | None = Field(None, min_length=3, max_length=3)
     # Booking-currency units produced by one input-currency unit.
-    exchange_rate: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9, allow_inf_nan=False)
+    vat_rate: float | None = Field(None, ge=0, le=100, allow_inf_nan=False)
     service_date: date | None = None
     service_time: str | None = Field(None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
@@ -3228,8 +3229,8 @@ async def add_extra_charge_detail(
     exchange_rate = 1.0 if input_currency == booking_currency else data.exchange_rate
     if exchange_rate is None:
         raise HTTPException(status_code=422, detail="Farklı para birimi için geçerli kur zorunludur")
-    input_total = round(data.amount * data.quantity, 2)
-    requested_total = round(input_total * exchange_rate, 2)
+    input_total = float((Decimal(str(data.amount)) * Decimal(str(data.quantity))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    requested_total = float((Decimal(str(input_total)) * Decimal(str(exchange_rate))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
     total = 0.0 if full_comp else requested_total
     is_complimentary = full_comp or total == 0
@@ -3257,6 +3258,19 @@ async def add_extra_charge_detail(
         "created_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    # The entered price is gross. Explicit zero is known tax-free; missing is
+    # unknown and must never become an inferred zero in downstream accounting.
+    if data.vat_rate is not None:
+        gross = Decimal(str(total))
+        net = (gross / (1 + Decimal(str(data.vat_rate)) / 100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        vat = gross - net
+        charge.update(net_amount=float(net), subtotal=float(net), vat_amount=float(vat), tax_amount=0.0,
+            vat_rate=data.vat_rate, tax_inclusive=True, tax_evidence_status="verified",
+            tax_breakdown={"vat": float(vat)},
+            tax_snapshot={"version": 1, "inclusive": True, "status": "verified", "currency": booking_currency,
+                "gross": total, "net": float(net), "vat": float(vat), "basis": "manual_entry"})
+    else:
+        charge.update(net_amount=None, vat_amount=None, tax_amount=None, tax_evidence_status="missing")
     # Report and cashier date filters are based on the hotel's open business
     # date, not the server's UTC calendar day.  Without this stamp a charge
     # posted after midnight (before night audit) disappears into the next
