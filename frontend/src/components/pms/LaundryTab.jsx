@@ -50,6 +50,7 @@ const LaundryTab = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [orderForm, setOrderForm] = useState(() => emptyOrder(currency));
   const [folioCurrency, setFolioCurrency] = useState('');
+  const [fullComp, setFullComp] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [statusError, setStatusError] = useState('');
   const [itemToAdd, setItemToAdd] = useState({
@@ -73,14 +74,14 @@ const LaundryTab = () => {
   const changeDialog = open => {
     lookupVersion.current += 1;
     setRoomLookupBusy(false);
-    if (!request.current) { setOrderForm(emptyOrder(currency)); setRoomError(''); setOrderError(''); setFolioCurrency(''); setFolioOptions([]); setItemToAdd({ code: items.find(item => item.active !== false && (item.currency || currency) === currency)?.code || '', quantity: 1 }); }
+    if (!request.current) { setOrderForm(emptyOrder(currency)); setRoomError(''); setOrderError(''); setFolioCurrency(''); setFullComp(false); setFolioOptions([]); setItemToAdd({ code: items.find(item => item.active !== false && (item.currency || currency) === currency)?.code || '', quantity: 1 }); }
     setShowNewOrder(open);
   };
   const changeRoom = value => {
     lookupVersion.current += 1;
     setRoomLookupBusy(false); setRoomError('Oda bilgisini doğrulayın');
     setFolioOptions([]);
-    setFolioCurrency(''); setOrderError('');
+    setFolioCurrency(''); setFullComp(false); setOrderError('');
     setOrderForm(p => ({ ...p, room_number: value, guest_name: '', booking_id: '', folio_id: '', exchange_rate: '' }));
   };
 
@@ -140,7 +141,7 @@ const LaundryTab = () => {
     const version = ++lookupVersion.current;
     const number = roomNumber.trim();
     setOrderForm(p => ({ ...p, guest_name: '', booking_id: '', folio_id: '' }));
-    setFolioCurrency('');
+    setFolioCurrency(''); setFullComp(false);
     setFolioOptions([]);
     if (!number) return;
     setRoomLookupBusy(true);
@@ -149,6 +150,7 @@ const LaundryTab = () => {
       const res = await axios.get(`/bookings/active-by-room/${encodeURIComponent(number)}`);
       if (version !== lookupVersion.current) return;
       if (res.data?.found) {
+        setFullComp(res.data.is_full_comp === true);
         setOrderForm(p => ({
           ...p,
           guest_name: res.data.guest_name || '',
@@ -662,7 +664,7 @@ const LaundryTab = () => {
               {orderForm.items.length > 0 && <p className="text-xs text-muted-foreground">Para birimini değiştirmek için eklediğiniz ürünleri kaldırın; mevcut fiyatlar başka para birimi olarak etiketlenmez.</p>}
               {needsExchange && <div><Label htmlFor="laundry-exchange-rate">Kur: 1 {orderForm.input_currency} = kaç {folioCurrency}?</Label><Input id="laundry-exchange-rate" aria-label="Folyo dönüşüm kuru" disabled={locked} type="number" min="0.000000001" step="any" value={orderForm.exchange_rate} onChange={e => { setOrderForm(p => ({ ...p, exchange_rate: e.target.value })); setOrderError(''); }} /><p className="mt-1 text-xs text-muted-foreground">PMS ek ücretlerinde olduğu gibi onayladığınız kuru girin. Kaynak tutar ve bu kur siparişte saklanır; teslimde yeni kur uygulanmaz.</p></div>}
               {conversionError && <p role="alert" className="text-sm text-amber-700">{conversionError}</p>}
-              {orderTotal > 0 && folioCurrency && !conversionError && <p role="status" className="text-sm font-medium">Folyoya yazılacak: {formatCurrency(folioTotal, folioCurrency)}</p>}
+              {orderTotal > 0 && folioCurrency && !conversionError && <p role="status" className="text-sm font-medium">Folyoya yazılacak: {formatCurrency(fullComp ? 0 : folioTotal, folioCurrency)}{fullComp ? ' · Tam ikram; liste bedeli raporlama için korunur.' : ''}</p>}
             </div>
             <div className="border rounded-lg p-3 space-y-2">
               <Label>{t('cm.components_pms_LaundryTab.urun_ekle')}</Label>

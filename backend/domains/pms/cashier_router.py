@@ -1541,4 +1541,5 @@ async def get_active_booking_by_room(room_number: str, current_user: User = Depe
         "folio_currency": laundry_currency(folio["currency"]) if folio and folio.get("currency") else None,
         "booking_currency": laundry_currency(booking["currency"]) if booking.get("currency") else None,
         "folio_selection_required": len(windows) > 1,
+        "is_full_comp": bool(booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"),
     }
