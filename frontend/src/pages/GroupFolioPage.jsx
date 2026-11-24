@@ -305,9 +305,9 @@ const GroupFolioPage = ({
       setBulkPaying(false);
     }
   };
+  const hasAccountWindows = (groupDetail?.bookings || []).some(b => b.uses_account_windows);
   const filteredGroups = groups.filter(g => !searchTerm || (g.group_name || '').toLowerCase().includes(searchTerm.toLowerCase()));
   const groupBalance = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).reduce((s, b) => s + (b.balance || 0), 0);
-  const hasAccountWindows = (groupDetail?.bookings || []).some(b => b.uses_account_windows);
   const unmergedCount = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).length;
   return <>
       {guestCardBookingId && <Suspense fallback={<div role="status">Misafir kartı yükleniyor...</div>}>
