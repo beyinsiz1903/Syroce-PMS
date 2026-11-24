@@ -676,6 +676,31 @@ def _build_channel_pricing_issue(
     }
 
 
+async def _project_reservation_folio_balances(database, tenant_id: str, booking: dict, folios: list[dict]) -> list[dict]:
+    """Return the same source-derived balances used by the folio window cards.
+
+    Cached folio.balance can retain a voided extra or an old payment. It must
+    not become a payment default or an expected merge balance in full-detail.
+    This is a read projection; source records and cached balances are untouched.
+    """
+    if not folios:
+        return []
+    from modules.pms_core.receivable_reporting import folio_snapshots
+
+    snapshots = await folio_snapshots(database, tenant_id, folios,
+        fallback_currency=booking.get("currency") or "TRY", include_booking_extras=True)
+    projected = []
+    for folio in folios:
+        snapshot = snapshots[folio["id"]]
+        code = snapshot["currency"]
+        if any(currency != code and amount for currency, amount in snapshot["balance_by_currency"].items()):
+            raise HTTPException(409, "Çok para birimli folyo: hesap detayında para birimi bazında mutabakat yapın")
+        projected.append({**folio, "currency": code,
+            "balance": snapshot["balance_by_currency"].get(code, 0),
+            "balance_by_currency": snapshot["balance_by_currency"]})
+    return projected
+
+
 async def _reservation_financial_snapshot(
     tenant_id: str,
     booking: dict,
@@ -1327,6 +1352,10 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
             booking_id,
             [folio.get("id") for folio in folios],
         )
+
+        # Use authoritative ledger balances in every guest-card selector and
+        # mutation preview, not only in the separately refreshed window cards.
+        folios = await _project_reservation_folio_balances(db, tid, booking, folios)
 
         # Charges per folio
         charges = []

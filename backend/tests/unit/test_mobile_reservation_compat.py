@@ -56,7 +56,7 @@ async def test_both_routes_return_the_same_authorized_financial_account(monkeypa
     fields = ["folios", "folio_charges", "payments", "extra_charges", "reservation_notes", "reservation_activity_log", "audit_logs", "room_move_history", "daily_rates", "booking_guests", "communication_logs", "deposits", "exely_reservation_versions"]
     collections = {field: SimpleNamespace(find=lambda *_args, field=field: Cursor(rows.get(field, []))) for field in fields}
     collections["exely_reservation_versions"].find = Mock(return_value=Cursor(rows["exely_reservation_versions"]))
-    collections["bookings"] = SimpleNamespace(find_one=AsyncMock(return_value=booking))
+    collections["bookings"] = SimpleNamespace(find_one=AsyncMock(return_value=booking), find=lambda *_args: Cursor([booking]))
     monkeypatch.setattr(reservation_detail, "db", SimpleNamespace(**collections))
     monkeypatch.setattr(reservation_detail, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-25"}))
     monkeypatch.setattr(reservation_detail, "get_accommodation_tax_rate", AsyncMock(return_value=0.02))
@@ -71,6 +71,7 @@ async def test_both_routes_return_the_same_authorized_financial_account(monkeypa
     body = response.json()
     assert body["booking"]["id"] == "booking-a"
     assert body["folios"][0]["id"] == "folio-a"
+    assert body["folios"][0]["balance"] == 75
     assert body["payments"][0]["amount"] == 25
     event = next(row for row in body["history"] if row["id"] == "exely-version-change-v2")
     assert event["actor"] == "Exely"
