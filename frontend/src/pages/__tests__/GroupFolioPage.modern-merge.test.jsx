@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import GroupFolioPage from '../GroupFolioPage';
@@ -33,4 +33,19 @@ it('uses member guest cards instead of legacy copies when the group has account 
   fireEvent.click(screen.getByTestId('guest-card-a2'));
   expect(await screen.findByRole('dialog')).toHaveTextContent('Guest card a2');
   expect(axios.post).not.toHaveBeenCalled();
+});
+
+
+it('preserves cents on balances above one thousand after proportional group payment', async () => {
+  const data = { currency: 'TRY', total_balance: 5089.99, bookings: [
+    { booking_id: 'a1', guest_name: 'Eren', currency: 'TRY', accommodation_total: 2400, payments: 9.40, balance: 2390.60 },
+    { booking_id: 'a2', guest_name: 'Derya', currency: 'TRY', accommodation_total: 2400, payments: 35.61, balance: 2699.39 },
+  ] };
+  axios.get.mockImplementation(url => Promise.resolve({ data: url === '/pms/group-bookings'
+    ? { groups } : url === '/pms/group-folio-summary' ? {} : data }));
+  render(<GroupFolioPage />);
+  fireEvent.click(await screen.findByTestId('group-card-a'));
+  expect(await within(await screen.findByTestId('booking-row-a1')).findByText('₺2.390,60')).toBeVisible();
+  expect(within(screen.getByTestId('booking-row-a2')).getByText('₺2.699,39')).toBeVisible();
+  expect(screen.getByText('₺5.089,99')).toBeVisible();
 });

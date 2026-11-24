@@ -16,7 +16,7 @@ import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 const API = "";
 const fmtTL = (v, locale = 'tr-TR') => Number(v || 0).toLocaleString(locale, { minimumFractionDigits: 2 });
-const fmtMoney = (v, currency) => formatCurrency(v, currency || cachedTenantCurrency());
+const fmtMoney = (v, currency) => formatCurrency(v, currency || cachedTenantCurrency(), { decimals: 2 });
 const fmtBreakdown = (totals, fallback, currency) => {
   const entries = Object.entries(totals || {}).filter(([, amount]) => Math.abs(Number(amount || 0)) > 0.001);
   return entries.length
