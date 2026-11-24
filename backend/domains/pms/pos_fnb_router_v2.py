@@ -397,6 +397,9 @@ async def pos_operations_summary(
     open_orders = await db.pos_orders.find(order_query, {"_id": 0}).sort("created_at", 1).to_list(None)
     transactions = await db.pos_transactions.find(tx_query, {"_id": 0}).to_list(None)
     kitchen = await db.kitchen_orders.find(kitchen_query, {"_id": 0}).sort("ordered_at", 1).to_list(None)
+    from domains.pms.pos_fnb.kitchen_refunds import actionable_kitchen_orders
+
+    kitchen = await actionable_kitchen_orders(db, tenant_id, kitchen)
     unverified = 0
     for row in open_orders:
         try:
