@@ -573,3 +573,28 @@ describe('reservation detail action feedback', () => {
     expect(await screen.findByRole('button', { name: 'Sanal kartı sil' })).toBeInTheDocument();
   });
 });
+
+
+it('keeps a manually entered VAT-included extra at150 while passing the explicit rate', async () => {
+  axiosPost.mockResolvedValue({ data: { success: true } });
+  render(<ExtraChargesTab extra_charges={[]} charges={[]} booking={{ id: 'vat-stay', currency: 'TRY' }} allBookings={[]} />);
+  fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+  fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Minibar' } });
+  fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '150' } });
+  fireEvent.change(screen.getByLabelText('KDV oranı (%)'), { target: { value: '20' } });
+  fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-11-12' } });
+  expect(screen.getByText(/KDV ayrıca eklenmez/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '150 TL Ekle' }));
+  await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/reservations/vat-stay/add-extra-charge', expect.objectContaining({ amount: 150, quantity: 1, vat_rate: 20 })));
+});
+
+it('does not submit an invalid manual VAT percentage', async () => {
+  render(<ExtraChargesTab extra_charges={[]} charges={[]} booking={{ id: 'vat-stay', currency: 'TRY' }} allBookings={[]} />);
+  fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+  fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Minibar' } });
+  fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '150' } });
+  fireEvent.change(screen.getByLabelText('KDV oranı (%)'), { target: { value: '101' } });
+  fireEvent.click(screen.getByRole('button', { name: '150 TL Ekle' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('KDV oranı 0–100');
+  expect(axiosPost).not.toHaveBeenCalled();
+});

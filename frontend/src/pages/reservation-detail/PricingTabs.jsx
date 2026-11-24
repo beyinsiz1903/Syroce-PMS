@@ -343,7 +343,7 @@ export function ExtraChargesTab({
     amount: '',
     quantity: '1',
     input_currency: currency === 'TRY' ? 'TRY' : currency,
-    service_date: '', service_time: '',
+    service_date: '', service_time: '', vat_rate: '',
   });
   const [exchangeRates, setExchangeRates] = useState({});
   const [ratesLoading, setRatesLoading] = useState(false);
@@ -382,7 +382,7 @@ export function ExtraChargesTab({
       amount: '',
       quantity: '1',
       input_currency: currency === 'TRY' ? 'TRY' : currency,
-      service_date: '', service_time: '',
+      service_date: '', service_time: '', vat_rate: '',
     });
   }, [booking?.id, currency]);
 
@@ -426,6 +426,10 @@ export function ExtraChargesTab({
       toast.error(message);
       return;
     }
+    if (form.vat_rate !== '' && (!Number.isFinite(Number(form.vat_rate)) || Number(form.vat_rate) < 0 || Number(form.vat_rate) > 100)) {
+      setFormError('KDV oranı 0–100 arasında olmalı.');
+      return;
+    }
     if (!form.service_date || (form.category === 'spa' && !form.service_time)) {
       setFormError('Hizmet tarihini girin. Spa hizmetlerinde saat de gereklidir.');
       return;
@@ -443,6 +447,7 @@ export function ExtraChargesTab({
         ...form,
         amount,
         quantity,
+        vat_rate: form.vat_rate === '' ? null : Number(form.vat_rate),
         input_currency: normalizedInputCurrency,
         exchange_rate: extraExchangeRate,
         service_time: form.service_time || null,
@@ -455,7 +460,7 @@ export function ExtraChargesTab({
         amount: '',
         quantity: '1',
         input_currency: currency === 'TRY' ? 'TRY' : currency,
-        service_date: '', service_time: '',
+        service_date: '', service_time: '', vat_rate: '',
       });
       onRefresh?.();
     } catch (e) {
@@ -554,7 +559,7 @@ export function ExtraChargesTab({
               setForm(p => ({ ...p, input_currency: v }));
               if ((v === 'TL' ? 'TRY' : v) !== currency) void fetchExchangeRates();
             }} options={[[currency, currency === 'TRY' ? 'TL (Türk Lirası)' : currency], ...['TRY', 'EUR', 'USD', 'GBP', 'CHF'].filter(code => code !== currency).map(code => [code, code === 'TRY' ? 'TL (Türk Lirası)' : code])]} />
-            <FormField label={`Birim tutar (${inputCurrencyLabel})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile en fazla iki ondalık basamak." value={form.amount} onChange={v => setForm(p => ({
+            <FormField label={`Birim tutar (${inputCurrencyLabel})`} type="text" inputMode="decimal" hint="KDV dahil birim fiyat. KDV ayrıca eklenmez. En fazla iki ondalık basamak." value={form.amount} onChange={v => setForm(p => ({
           ...p,
           amount: v
         }))} />
@@ -562,6 +567,7 @@ export function ExtraChargesTab({
           ...p,
           quantity: v
         }))} />
+            <FormField label="KDV oranı (%)" type="number" hint="Tesisinizin hizmet oranını girin. 0 açıkça vergisizdir; boş bırakılırsa vergi bilgisi eksik kalır." value={form.vat_rate} onChange={v => setForm(p => ({ ...p, vat_rate: v }))} />
             <FormField label="Hizmet tarihi" type="date" value={form.service_date} onChange={v => setForm(p => ({ ...p, service_date: v }))} />
             <FormField label="Hizmet saati" type="time" hint="Otelin yerel saati. Spa için zorunlu; bilinmiyorsa diğer hizmetlerde boş bırakın." value={form.service_time} onChange={v => setForm(p => ({ ...p, service_time: v }))} />
           </div>
