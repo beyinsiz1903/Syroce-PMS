@@ -7,8 +7,9 @@ import html as _html
 import re as _re
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from core.database import db
 
@@ -211,11 +212,18 @@ class GroupPaymentRequest(BaseModel):
 
 
 class GroupBulkPaymentRequest(BaseModel):
-    group_id: str
-    total_amount: float
-    method: str = "cash"
-    reference: str = ""
-    distribution: str = "proportional"  # proportional | equal | balance_only
+    group_id: str = Field(..., min_length=1, max_length=100)
+    total_amount: float = Field(..., gt=0, le=1e9)
+    method: str = Field("cash", min_length=1, max_length=50)
+    reference: str = Field(..., min_length=1, max_length=200)
+    distribution: Literal["proportional", "equal", "balance_only"] = "proportional"
+
+    @field_validator("reference")
+    @classmethod
+    def nonempty_reference(cls, value):
+        if not value.strip():
+            raise ValueError("Toplu ödeme işlem referansı zorunludur")
+        return value.strip()
 
 
 class CancelReservationRequest(BaseModel):

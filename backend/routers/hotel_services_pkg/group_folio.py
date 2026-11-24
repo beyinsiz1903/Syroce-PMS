@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
@@ -48,15 +47,16 @@ def _guest_display_name(guest: dict | None, booking: dict) -> str:
     return booking.get("guest_name") or "-"
 
 
-async def _load_group_booking_rows(tenant_id: str, booking_ids: list[str]) -> list[dict]:
+async def _load_group_booking_rows(tenant_id: str, booking_ids: list[str], *, session=None) -> list[dict]:
     """Load group-folio rows with a constant number of tenant-scoped queries."""
+    kwargs = {"session": session} if session is not None else {}
     ordered_ids = list(dict.fromkeys(booking_id for booking_id in booking_ids if booking_id))
     if not ordered_ids:
         return []
 
     bookings = await db.bookings.find(
         {"id": {"$in": ordered_ids}, "tenant_id": tenant_id},
-        {"_id": 0},
+        {"_id": 0}, **kwargs,
     ).to_list(len(ordered_ids))
     booking_map = {booking["id"]: booking for booking in bookings}
 
@@ -67,7 +67,7 @@ async def _load_group_booking_rows(tenant_id: str, booking_ids: list[str]) -> li
     if guest_ids:
         guests = await db.guests.find(
             {"id": {"$in": guest_ids}, "tenant_id": tenant_id},
-            {"_id": 0},
+            {"_id": 0}, **kwargs,
         ).to_list(len(guest_ids))
         guest_map = {guest["id"]: guest for guest in guests}
 
@@ -75,14 +75,14 @@ async def _load_group_booking_rows(tenant_id: str, booking_ids: list[str]) -> li
     if room_ids:
         rooms = await db.rooms.find(
             {"id": {"$in": room_ids}, "tenant_id": tenant_id},
-            {"_id": 0, "id": 1, "room_number": 1},
+            {"_id": 0, "id": 1, "room_number": 1}, **kwargs,
         ).to_list(len(room_ids))
         room_map = {room["id"]: room.get("room_number") or "-" for room in rooms}
 
     from modules.pms_core.reporting_financials import deduplicate_report_payments
     from routers.reservation_detail import _build_financial_summary
 
-    folios = await db.folios.find({"booking_id": {"$in": ordered_ids}, "tenant_id": tenant_id}, {"_id": 0}).to_list(None)
+    folios = await db.folios.find({"booking_id": {"$in": ordered_ids}, "tenant_id": tenant_id}, {"_id": 0}, **kwargs).to_list(None)
     owners = {f["id"]: f["booking_id"] for f in folios if f.get("id")}
     scope = {"tenant_id": tenant_id, "$or": [{"booking_id": {"$in": ordered_ids}}, {"folio_id": {"$in": list(owners)}}]}
     sources = {bid: {"charges": [], "payments": [], "extra_charges": [], "deposits": [], "folios": []} for bid in ordered_ids}
@@ -93,7 +93,7 @@ async def _load_group_booking_rows(tenant_id: str, booking_ids: list[str]) -> li
         if folio.get("type") != "payment" and folio.get("amount") is not None and not folio.get("status"):
             sources[folio["booking_id"]]["charges"].append({**folio, "total": folio["amount"], "charge_category": folio.get("category") or "legacy_extra"})
     for collection, key in ((db.folio_charges, "charges"), (db.payments, "payments"), (db.extra_charges, "extra_charges"), (db.deposits, "deposits")):
-        async for row in collection.find(scope, {"_id": 0}):
+        async for row in collection.find(scope, {"_id": 0}, **kwargs):
             owner = owners.get(row.get("folio_id")) or row.get("booking_id")
             if owner in sources:
                 sources[owner][key].append(row)
@@ -446,82 +446,11 @@ async def record_group_bulk_payment(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),
 ):
-    """Record a bulk payment distributed across all active bookings in a group."""
+    """Post one retry-safe group collection, including cashier and folio ownership."""
     _ensure_hotel_context(current_user)
-    tid = current_user.tenant_id
+    from modules.pms_core.group_bulk_collection import collect_group_payment
 
-    group = await db.group_bookings.find_one({"id": data.group_id, "tenant_id": tid}, {"_id": 0})
-    if not group:
-        raise HTTPException(status_code=404, detail="Grup bulunamadi")
-
-    # Collect active (unmerged) bookings with positive balances.
-    active_bookings = [row for row in await _load_group_booking_rows(tid, group.get("booking_ids", [])) if not row.get("folio_merged_to")]
-
-    if not active_bookings:
-        raise HTTPException(status_code=400, detail="Aktif rezervasyon bulunamadi")
-
-    currencies = {str(row.get("currency") or "TRY").upper() for row in active_bookings}
-    if len(currencies) != 1:
-        raise HTTPException(
-            status_code=409,
-            detail="Farklı para birimindeki grup folyolarına tek toplu ödeme dağıtılamaz.",
-        )
-    group_currency = next(iter(currencies))
-
-    # Calculate distribution
-    total_positive_balance = sum(max(b["balance"], 0) for b in active_bookings)
-    remaining = data.total_amount
-    payments_created = []
-
-    for i, ab in enumerate(active_bookings):
-        if remaining <= 0:
-            break
-
-        if data.distribution == "equal":
-            share = round(data.total_amount / len(active_bookings), 2)
-        elif data.distribution == "balance_only":
-            if ab["balance"] <= 0:
-                continue
-            share = min(ab["balance"], remaining)
-        else:  # proportional
-            if total_positive_balance > 0 and ab["balance"] > 0:
-                share = round(data.total_amount * (ab["balance"] / total_positive_balance), 2)
-            else:
-                share = round(data.total_amount / len(active_bookings), 2)
-
-        # Last booking gets the remainder to avoid rounding issues
-        if i == len(active_bookings) - 1 and data.distribution != "balance_only":
-            share = remaining
-
-        share = min(share, remaining)
-        if share <= 0:
-            continue
-
-        payment = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tid,
-            "booking_id": ab["booking_id"],
-            "amount": share,
-            "currency": group_currency,
-            "method": data.method,
-            "payment_type": "group_bulk_payment",
-            "reference": data.reference or f"Toplu grup odeme - Oda {ab['room_number']}",
-            "recorded_by": current_user.name,
-            "created_at": datetime.now(UTC).isoformat(),
-        }
-        await stamp_open_business_date(db, tid, payment)
-        await db.payments.insert_one(payment)
-        payment.pop("_id", None)
-        payments_created.append({**payment, "guest_name": ab["guest_name"]})
-        remaining = round(remaining - share, 2)
-
-    return {
-        "success": True,
-        "total_distributed": round(data.total_amount - remaining, 2),
-        "payments_count": len(payments_created),
-        "currency": group_currency,
-        "payments": payments_created,
-    }
+    return await collect_group_payment(db, data, current_user, load_rows=_load_group_booking_rows)
 
 
 @sub_router.get("/group-folio-summary")
