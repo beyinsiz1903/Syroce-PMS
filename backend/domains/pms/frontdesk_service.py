@@ -807,7 +807,34 @@ class FrontdeskService:
             async for r in self._db.rooms.find({"id": {"$in": room_ids}, "tenant_id": ctx.tenant_id}, {"_id": 0}):
                 room_map[r["id"]] = r
 
-        enriched = [{**b, "guest": guest_map.get(b.get("guest_id")), "room": room_map.get(b.get("room_id"))} for b in bookings]
+        # Arrival rows remain visible after check-in. Their cached booking
+        # balance can outlive payments, cari offsets and voided extras, so use
+        # the same durable ledger calculation as in-house and departures.
+        booking_ids = [b["id"] for b in bookings if b.get("id")]
+        charges_by_booking, payments_by_booking, extras_by_booking = {}, {}, {}
+        if booking_ids:
+            query = {"tenant_id": ctx.tenant_id, "booking_id": {"$in": booking_ids}}
+            for collection, grouped in (
+                (self._db.folio_charges, charges_by_booking),
+                (self._db.payments, payments_by_booking),
+                (self._db.extra_charges, extras_by_booking),
+            ):
+                async for row in collection.find(query, {"_id": 0}):
+                    grouped.setdefault(row["booking_id"], []).append(row)
+        enriched = [
+            {
+                **b,
+                "guest": guest_map.get(b.get("guest_id")),
+                "room": room_map.get(b.get("room_id")),
+                "balance": calculate_departure_balance(
+                    charges_by_booking.get(b.get("id"), []),
+                    payments_by_booking.get(b.get("id"), []),
+                    extras_by_booking.get(b.get("id"), []),
+                    booking_total=b.get("total_amount", 0),
+                ),
+            }
+            for b in bookings
+        ]
         return ServiceResult.success(enriched)
 
     async def get_departures(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:

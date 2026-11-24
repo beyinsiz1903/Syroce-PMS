@@ -194,3 +194,30 @@ async def test_duplicate_payment_reference_is_a_conflict_without_balance_or_cash
     assert await a.db.folios.find_one({'id': 'synthetic-folio'}) == before_folio
     assert await a.db.bookings.find_one({'id': 'synthetic-stay'}) == before_booking
     assert await a.db.cashier_transactions.count_documents({}) == before_cash
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('void_extra', 'payment', 'expected'), [(True, 150, 0), (False, 150, 60), (True, 129.99, 20.01)])
+async def test_arrivals_recomputes_stale_balance_from_same_durable_rows_as_inhouse(acceptance, void_extra, payment, expected):
+    a = acceptance
+    await a.db.bookings.update_one({'id': 'synthetic-stay'}, {'$set': {
+        'check_in': '2026-10-26', 'total_amount': 0, 'balance': 60, 'currency': 'TRY',
+    }})
+    await a.db.folio_charges.delete_many({'booking_id': 'synthetic-stay'})
+    await a.db.folio_charges.insert_one({'tenant_id': 'qa', 'id': 'laundry-fee', 'booking_id': 'synthetic-stay',
+        'total': 150, 'charge_type': 'laundry', 'currency': 'TRY'})
+    await a.db.extra_charges.insert_one({'tenant_id': 'qa', 'id': 'checkout-minibar', 'booking_id': 'synthetic-stay',
+        'charge_amount': 60, 'voided': void_extra})
+    await a.db.payments.insert_one({'tenant_id': 'qa', 'id': 'cari-offset', 'booking_id': 'synthetic-stay',
+        'amount': payment, 'method': 'city_ledger', 'status': 'paid'})
+    # A different tenant's records and a failed payment must not hide debt.
+    await a.db.payments.insert_many([
+        {'tenant_id': 'foreign', 'booking_id': 'synthetic-stay', 'amount': 999, 'status': 'paid'},
+        {'tenant_id': 'qa', 'booking_id': 'synthetic-stay', 'amount': 999, 'status': 'failed'},
+    ])
+    before = await a.db.bookings.find_one({'id': 'synthetic-stay'})
+    arrivals = await a.api.get('/api/frontdesk/arrivals?date=2026-10-26')
+    inhouse = await a.api.get('/api/frontdesk/inhouse')
+    assert arrivals.status_code == inhouse.status_code == 200
+    assert arrivals.json()[0]['balance'] == inhouse.json()[0]['balance'] == expected
+    assert await a.db.bookings.find_one({'id': 'synthetic-stay'}) == before
