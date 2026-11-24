@@ -34,6 +34,7 @@ from models.enums import FolioStatus, FolioType
 from models.schemas import User
 from modules.pms_core.folio_allocation import FolioAllocationRequest, allocate_posted_debt
 from modules.pms_core.folio_merge import FolioMergeRequest, merge_folio_windows
+from modules.pms_core.legacy_extra_ownership import ExtraOwnershipRequest, assign_legacy_extras
 from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.audit_helper import audit_log
@@ -256,6 +257,27 @@ async def allocate_windows(
         if is_replica_set_unavailable(exc):
             raise HTTPException(503, "Folyo paylaştırma için transaction desteği gerekli") from exc
         raise
+
+
+@router.post("/assign-legacy-extras")
+async def assign_extra_owners(body: ExtraOwnershipRequest, user: User = Depends(get_current_user),
+        _perm=Depends(require_op("transfer_folio"))):
+    from core.booking_atomicity import is_replica_set_unavailable, with_resource_locks
+
+    async def commit(session):
+        return await assign_legacy_extras(db, user.tenant_id, user.id, body, session=session)
+    try:
+        result = await with_resource_locks(client=db.client, db=db, tenant_id=user.tenant_id,
+            locks_collection="reservation_financial_locks",
+            resources=[("booking", body.booking_id), ("folio", body.target_folio_id)], callback=commit)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Ek ücret hesabını bağlamak için transaction desteği gerekli") from exc
+        raise
+    from core.report_cache import invalidate_financial_report_caches
+
+    invalidate_financial_report_caches(user.tenant_id)
+    return result
 
 
 @router.post("", response_model=WindowSummary, status_code=201)
