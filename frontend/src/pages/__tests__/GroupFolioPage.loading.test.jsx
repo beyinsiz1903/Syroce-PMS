@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import GroupFolioPage from '../GroupFolioPage';
 
+vi.mock('@/pages/ReservationDetailModal', () => ({ default: ({ bookingId, onClose }) => <div role="dialog">Guest card {bookingId}<button onClick={onClose}>Close guest card</button></div> }));
+
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key) => key }) }));
 vi.mock('@/lib/idle', () => ({ runIdle: () => () => {} }));
@@ -64,5 +66,21 @@ it('unmounts financial dialogs while changing groups and keeps them closed after
   await act(async () => {});
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.queryByTestId('add-payment-btn')).not.toBeInTheDocument();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+it('opens the selected group member in the shared guest card without submitting a legacy payment', async () => {
+  axios.get.mockImplementation(url => Promise.resolve({ data: url === '/pms/group-bookings'
+    ? { groups } : url === '/pms/group-folio-summary' ? {} : detail('a', 'TRY') }));
+  render(<GroupFolioPage />);
+  fireEvent.click(await screen.findByTestId('group-card-a'));
+  fireEvent.click(await screen.findByTestId('guest-card-a2'));
+  expect(await screen.findByRole('dialog')).toHaveTextContent('Guest card a2');
+  expect(axios.post).not.toHaveBeenCalled();
+  axios.get.mockClear();
+  fireEvent.click(screen.getByText('Close guest card'));
+  await act(async () => {});
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(axios.get).toHaveBeenCalledWith('/pms/group-folio/a');
   expect(axios.post).not.toHaveBeenCalled();
 });
