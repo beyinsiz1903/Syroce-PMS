@@ -332,3 +332,12 @@ async def test_explicit_catalog_vat_is_included_immutable_and_posted_once(accept
     ledger = await a.db.folio_ledger.find_one({'id': charge['source_ledger_entry_id']})
     assert ledger['tax_amount'] == charge['tax_amount'] == 0
     assert charge['amount'] == 75
+
+
+@pytest.mark.parametrize('scope,expected', [('full', True), ('accommodation', False), ('fnb', False), (None, False)])
+async def test_active_room_lookup_exposes_only_current_full_comp_policy(acceptance, scope, expected):
+    await acceptance.db.bookings.update_one({'tenant_id': 'qa', 'id': 'synthetic-stay'},
+        {'$set': {'status': 'checked_in', 'is_complimentary': scope is not None, 'complimentary_scope': scope}})
+    response = await acceptance.api.get('/api/bookings/active-by-room/QA104')
+    assert response.status_code == 200, response.text
+    assert response.json()['is_full_comp'] is expected

@@ -268,3 +268,29 @@ it('distinguishes a full-comp delivered service list price from the zero folio c
   expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   expect(patch).not.toHaveBeenCalled();
 });
+
+it('previews a full-comp stay as zero while retaining the catalogue order value and server authority', async () => {
+  await open();
+  get.mockResolvedValue({ data: { ...found('Aslı', 'full-stay', 'full-folio').data, is_full_comp: true } });
+  await lookup('103'); fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(screen.getByRole('status')).toHaveTextContent('Folyoya yazılacak: 0');
+  expect(screen.getByRole('status')).toHaveTextContent('Tam ikram');
+  expect(submit()).toHaveTextContent('30');
+  post.mockResolvedValue({ data: {} }); fireEvent.click(submit());
+  await waitFor(() => expect(post).toHaveBeenCalledOnce());
+  expect(post.mock.calls[0][1].items[0].total).toBe(30);
+  expect(post.mock.calls[0][1]).not.toHaveProperty('is_full_comp');
+});
+
+it('clears the previous full-comp preview as soon as another room is entered', async () => {
+  await open();
+  get.mockResolvedValue({ data: { ...found('Aslı', 'full-stay', 'full-folio').data, is_full_comp: true } });
+  await lookup('103'); fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
+  expect(screen.getByRole('status')).toHaveTextContent('Tam ikram');
+  fireEvent.change(room(), { target: { value: '104' } });
+  expect(screen.queryByText(/Tam ikram; liste bedeli/)).not.toBeInTheDocument();
+  get.mockResolvedValue(found('Ücretli', 'paid-stay', 'paid-folio'));
+  fireEvent.blur(room());
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Folyoya yazılacak: 30'));
+  expect(screen.getByRole('status')).not.toHaveTextContent('Tam ikram');
+});
