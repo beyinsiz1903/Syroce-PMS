@@ -109,6 +109,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const isLite = plan === 'pms_lite';
   const effectivePermissions = user?.effective_permissions || [];
   const canCreateBooking = effectivePermissions.includes('create_booking');
+  const canViewBookings = effectivePermissions.includes('view_bookings');
 
   const { data: setup } = useSetupStatus({ enabled: isLite });
   const roomsCount = setup?.rooms_count ?? 0;
@@ -562,7 +563,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       ]);
       const criticalResults = await Promise.allSettled([
         axios.get('/pms/rooms?limit=100', { timeout: 8000 }),
-        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 8000 })
+        // A forbidden dataset is not a partial network failure. Leave it empty
+        // rather than fetching reservation records for a housekeeping-only user.
+        canViewBookings
+          ? axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 8000 })
+          : Promise.resolve({ data: [] })
       ]);
       if (requestId !== dataRequestRef.current) return;
       const [roomsRes, bookingsRes] = criticalResults.map((r) => (r.status === 'fulfilled' ? r.value : null));

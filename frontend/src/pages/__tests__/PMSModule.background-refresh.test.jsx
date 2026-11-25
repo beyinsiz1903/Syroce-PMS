@@ -32,7 +32,7 @@ const bookingRows = name => [{ id: 'b1', guest_name: name, status: 'confirmed', 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const user = { id: 'u1', role: 'admin', effective_permissions: ['view_bookings'] };
 const tenant = { id: 't1', subscription_plan: 'core_small_hotel' };
-const mount = () => render(<MemoryRouter><PMSModule user={user} tenant={tenant} /></MemoryRouter>);
+const mount = (profile = user) => render(<MemoryRouter><PMSModule user={profile} tenant={tenant} /></MemoryRouter>);
 
 beforeEach(() => {
   window.location.hash = 'rooms';
@@ -46,6 +46,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); window.location.hash = ''; });
 
 describe('PMS background refresh', () => {
+  it('skips inaccessible booking reads without reporting a partial failure', async () => {
+    const originalGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation(url => url.startsWith('/pms/bookings?')
+      ? Promise.reject({ response: { status: 403 } }) : originalGet(url));
+    mount({ id: 'housekeeping-user', role: 'housekeeping', effective_permissions: ['view_rooms'] });
+    await screen.findByTestId('rooms-workspace');
+    expect(axios.get.mock.calls.some(([url]) => url.startsWith('/pms/bookings?'))).toBe(false);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('room-numbers')).toHaveTextContent('101');
+    fireEvent.click(screen.getByRole('button', { name: 'Oda verisini güncelle' }));
+    await waitFor(() => expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/pms/rooms?'))).toHaveLength(2));
+    expect(axios.get.mock.calls.some(([url]) => url.startsWith('/pms/bookings?'))).toBe(false);
+  });
+
   it('keeps the room workspace and its draft mounted while refreshing', async () => {
     mount();
     await screen.findByTestId('rooms-workspace');
