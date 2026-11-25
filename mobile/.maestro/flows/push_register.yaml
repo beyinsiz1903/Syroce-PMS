@@ -22,6 +22,12 @@ env:
       visible: "Open in.*Syroce PMS.*"
     commands:
       - tapOn: "Open"
+# The notification card is below the role and module sections.
+- scrollUntilVisible:
+    element:
+      id: "smoke-push-status"
+    direction: DOWN
+    timeout: 30000
 - extendedWaitUntil:
     visible:
       id: "smoke-push-status"
