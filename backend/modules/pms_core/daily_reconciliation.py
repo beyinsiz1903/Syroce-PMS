@@ -8,6 +8,8 @@ historical closing balance. No live FX or cross-currency netting is performed.
 import asyncio
 from datetime import UTC, date, datetime
 
+from fastapi import HTTPException
+
 from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.report_money import add_amount, currency_code, money, resolve_ledger_currencies, rounded, rounded_totals, single_amount
 from modules.pms_core.reporting_financials import NON_CASH_PAYMENT_METHODS, deduplicate_report_payments, effective_collection, effective_revenue_adjustment, is_valid_payment, report_payment_day_match
@@ -78,6 +80,26 @@ def daily_revenue_summary(metric_rows, charges_by_cat, *, fallback_currency="TRY
     return result
 
 
+async def _security_fund_positions(database, tenant_id):
+    from modules.pms_core.enterprise_billing import require_cent_currency
+
+    totals, held = {}, 0
+    async for fund in database.security_funds.find({"tenant_id": tenant_id,
+            "voided": {"$ne": True}, "deleted": {"$ne": True}}, {"_id": 0}):
+        amounts = [fund.get(key) for key in ("received_minor", "refunded_minor", "applied_minor", "remaining_minor")]
+        if any(type(value) is not int or value < 0 for value in amounts):
+            raise HTTPException(409, "İade edilebilir depozito tutarları doğrulanamadı; sıfır kabul edilmedi")
+        received, refunded, applied, remaining = amounts
+        if (received <= 0 or received - refunded - applied != remaining
+                or fund.get("status") != ("held" if remaining else "closed")):
+            raise HTTPException(409, "İade edilebilir depozito hareketleri kalan bakiyeyle uyuşmuyor")
+        code = require_cent_currency(fund.get("currency"))
+        if remaining:
+            held += 1
+            add_amount(totals, code, remaining / 100)
+    return rounded_totals(totals), held
+
+
 async def build_daily_reconciliation(database, tenant_id: str, day: date):
     from core.tenant_currency import get_tenant_currency
 
@@ -131,6 +153,7 @@ async def build_daily_reconciliation(database, tenant_id: str, day: date):
         remaining = max(money(deposit.get("amount", 0)) - money(deposit.get("refunded_amount") or 0) - money(deposit.get("applied_amount") or 0), 0)
         if remaining:
             add_amount(deposit_totals, deposit["currency"], remaining)
+    security_totals, security_count = await _security_fund_positions(database, tenant_id)
     metric = metrics[0] if metrics else {}
     capacity = int(metric.get("total_rooms") or 0)
     occupied = int(metric.get("occupied_rooms") or 0)
@@ -161,6 +184,9 @@ async def build_daily_reconciliation(database, tenant_id: str, day: date):
             "ar_balance_by_currency": rounded_totals(ar),
             "deposit_balance": single_amount(deposit_totals),
             "deposit_balance_by_currency": rounded_totals(deposit_totals),
+            "security_fund_balance": single_amount(security_totals),
+            "security_fund_balance_by_currency": security_totals,
+            "security_fund_count": security_count,
             "open_folios": len(folios),
             "currency": native,
             "snapshot_scope": "current",
