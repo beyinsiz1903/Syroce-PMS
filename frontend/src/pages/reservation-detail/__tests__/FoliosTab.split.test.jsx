@@ -50,6 +50,22 @@ it('labels a persisted deposit refund as money returned, not another collection 
   expect(screen.getAllByText('Ödeme iadesi').length).toBeGreaterThan(0);
 });
 
+it.each([
+  ['barter', 'Barter (tahsilat değil)'],
+  ['write_off', 'Alacaktan silme (tahsilat değil)'],
+  ['gift_card_redemption', 'Hediye kartı mahsubu'],
+  ['wallet', 'Cüzdan mahsubu'],
+  ['security_deposit_application', 'Güvence mahsubu (yeni tahsilat değil)'],
+])('identifies %s reversals as account adjustments rather than cash refunds', (method, label) => {
+  render(<FoliosTab {...singleFolioProps({ payments: [{ id: 'noncash-undo', folio_id: 'f1', amount: -10,
+    currency: 'TRY', method, payment_type: 'refund', description: 'Ödeme iadesi',
+    billing_settlement_id: 'linked-reverse', original_payment_id: 'original' }] })} />);
+  expect(screen.getAllByText(`${label} · ters kayıt`).length).toBeGreaterThan(0);
+  expect(screen.queryByText('Ödeme iadesi')).not.toBeInTheDocument();
+  expect(screen.getByTestId('folio-event-amount-noncash-undo')).toHaveTextContent('+10');
+  expect(screen.queryByTestId('received-currency-noncash-undo')).not.toBeInTheDocument();
+});
+
 function singleFolioProps(overrides = {}) {
   return {
     folios: [{ id: 'f1', folio_number: 'F-001', folio_type: 'guest', status: 'open', balance: 100 }],
