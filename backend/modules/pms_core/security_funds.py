@@ -134,7 +134,7 @@ async def move(database, tenant_id, actor, fund_id, body, *, session, record_cas
         folio = await select_booking_folio(database, tenant_id, fund["booking_id"], body.folio_id, session=session)
         if currency(folio.get("currency") or fund["currency"]) != fund["currency"]:
             raise HTTPException(409, "Güvence ve folyo para birimleri aynı olmalı")
-        snapshots = await folio_snapshots(database, tenant_id, [folio], fallback_currency=fund["currency"], session=session)
+        snapshots = await folio_snapshots(database, tenant_id, [folio], fallback_currency=fund["currency"], session=session, include_booking_extras=True)
         balances = snapshots[folio["id"]]["balance_by_currency"]
         if any(code != fund["currency"] and value for code, value in balances.items()):
             raise HTTPException(409, "Çok para birimli folyo önce mutabık hale getirilmeli")

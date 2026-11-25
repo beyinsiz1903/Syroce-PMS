@@ -22,7 +22,7 @@ async def ensure_folio_transfer_amount(database, tenant_id, folio, amount, curre
     """AR transfer may settle only posted debt belonging to this window."""
     from modules.pms_core.receivable_reporting import folio_snapshots
 
-    snapshot = (await folio_snapshots(database, tenant_id, [folio], fallback_currency=currency, session=session))[folio["id"]]
+    snapshot = (await folio_snapshots(database, tenant_id, [folio], fallback_currency=currency, session=session, include_booking_extras=True))[folio["id"]]
     if any(code != snapshot["currency"] and value for code, value in snapshot["balance_by_currency"].items()):
         raise HTTPException(409, "Çok para birimli folyo önce mutabık hale getirilmelidir")
     balance = snapshot["balance_by_currency"].get(snapshot["currency"], 0)

@@ -269,7 +269,7 @@ async def apply(db, tenant, actor, instrument_id, body, *, session, record_cash)
         "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
         "$or": [{"folio_id": folio["id"]}, {"folio_ids": folio["id"]}, {"booking_id": body.booking_id}]}, session=session):
         raise HTTPException(409, "Faturalı folyo için ayrı belge/mali düzeltme akışı gerekli")
-    snap = (await folio_snapshots(db, tenant, [folio], fallback_currency=code, session=session))[folio["id"]]
+    snap = (await folio_snapshots(db, tenant, [folio], fallback_currency=code, session=session, include_booking_extras=True))[folio["id"]]
     if any(cur != code and value for cur, value in snap["balance_by_currency"].items()) or minor(snap["balance_by_currency"].get(code, 0)) < body.amount_minor:
         raise HTTPException(409, "Mutabık folyo borcu bu tutar için yeterli değil")
     mapping = await db.gl_operational_mappings.find_one({"tenant_id": tenant}, session=session)
@@ -360,7 +360,7 @@ async def apply(db, tenant, actor, instrument_id, body, *, session, record_cash)
     updated = await db.billing_instruments.update_one({"tenant_id": tenant, "id": instrument_id, "remaining_minor": item["remaining_minor"], "status": item["status"]}, {"$set": changes}, session=session)
     if updated.matched_count != 1:
         raise HTTPException(409, "Araç başka bir işlem tarafından kullanıldı")
-    fresh = (await folio_snapshots(db, tenant, [folio], fallback_currency=code, session=session))[folio["id"]]
+    fresh = (await folio_snapshots(db, tenant, [folio], fallback_currency=code, session=session, include_booking_extras=True))[folio["id"]]
     updated = await db.folios.update_one({"tenant_id": tenant, "id": folio["id"], "status": "open"},
         {"$set": {"balance": fresh["balance_by_currency"].get(code, 0)}}, session=session)
     if updated.matched_count != 1:
@@ -460,7 +460,7 @@ async def reverse(db, tenant, actor, operation_id, body, *, session, record_cash
     if item["kind"] in FUNDED:
         changes["remaining_base_minor"] = item["remaining_base_minor"] + source["source_base_minor"]
     await db.billing_instruments.update_one({"tenant_id": tenant, "id": item["id"]}, {"$set": changes}, session=session)
-    snapshot = (await folio_snapshots(db, tenant, [folio], fallback_currency=item["currency"], session=session))[folio["id"]]
+    snapshot = (await folio_snapshots(db, tenant, [folio], fallback_currency=item["currency"], session=session, include_booking_extras=True))[folio["id"]]
     updated = await db.folios.update_one({"tenant_id": tenant, "id": folio["id"], "status": "open"},
         {"$set": {"balance": snapshot["balance_by_currency"].get(item["currency"], 0)}}, session=session)
     if updated.matched_count != 1:

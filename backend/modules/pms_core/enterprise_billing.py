@@ -113,7 +113,7 @@ async def concession_basis(database, tenant_id, body, *, session):
         "status": {"$nin": ["cancelled", "canceled", "void", "voided"]}, "voided": {"$ne": True},
         "$or": [{"booking_id": body.booking_id}, {"folio_id": body.folio_id}, {"folio_ids": {"$in": [body.folio_id]}}]}, session=session):
         raise HTTPException(409, "Faturaya bağlı hesapta önce fatura düzeltme akışı tamamlanmalı")
-    snap = (await folio_snapshots(database, tenant_id, [folio], fallback_currency=code, session=session))[body.folio_id]
+    snap = (await folio_snapshots(database, tenant_id, [folio], fallback_currency=code, session=session, include_booking_extras=True))[body.folio_id]
     if any(cur != code and value for cur, value in snap["balance_by_currency"].items()):
         raise HTTPException(409, "Çok para birimli folyo önce mutabık hale getirilmeli")
     selected = sorted([row for row in snap["charges"] if row.get("id") in body.charge_ids], key=lambda row: row["id"])
@@ -240,7 +240,7 @@ async def decide_concession(database, tenant_id, actor, request_id, approve, *, 
             "concession_id": str(request_id), "charge_ids": row["charge_ids"], "processed_by": actor,
             "processed_at": now, "business_date": day}, session=session)
         snapshots = await folio_snapshots(database, tenant_id, [await database.folios.find_one(
-            {"tenant_id": tenant_id, "id": row["folio_id"]}, session=session)], fallback_currency=row["currency"], session=session)
+            {"tenant_id": tenant_id, "id": row["folio_id"]}, session=session)], fallback_currency=row["currency"], session=session, include_booking_extras=True)
         updated = await database.folios.update_one({"tenant_id": tenant_id, "id": row["folio_id"], "status": "open"},
             {"$set": {"balance": snapshots[row["folio_id"]]["balance_by_currency"][row["currency"]]}}, session=session)
         if updated.matched_count != 1:
