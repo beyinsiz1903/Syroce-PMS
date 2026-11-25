@@ -262,7 +262,7 @@ jobs:
             echo "::error::Bilinmeyen artifact formati — .tar.gz veya .zip bekleniyordu"
             exit 1
           fi
-          APP_PATH=$(find extracted -maxdepth 4 -name "*.app" -type d | head -n1)
+          APP_PATH=$(find "$PWD/extracted" -maxdepth 4 -name "*.app" -type d | head -n1)
           if [ -z "$APP_PATH" ]; then
             echo "::error::Cikartilan artifact icinde .app bulunamadi (simulator build mi?)"
             find extracted -maxdepth 4 -type d
