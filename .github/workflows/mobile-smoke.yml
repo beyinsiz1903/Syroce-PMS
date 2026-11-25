@@ -196,7 +196,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      MAESTRO_VERSION: "1.39.0"
+      MAESTRO_VERSION: "2.12.1"
       IOS_RUNTIME: "iOS-26-2"
       IOS_DEVICE: "iPhone 17"
       BUILD_URL: ${{ needs.resolve.outputs.ios_build_url }}
