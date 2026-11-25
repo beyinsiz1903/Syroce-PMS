@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -87,4 +87,28 @@ describe('MobileFinance modal contract', () => {
     expect(screen.queryByText('₺0,00')).not.toBeInTheDocument();
     vi.restoreAllMocks();
   });
+
+  it('makes receivables beyond the first ten reachable and searchable by guest or folio', async () => {
+    const defaultGet = get.getMockImplementation();
+    const receivables = Array.from({ length: 17 }, (_, index) => ({
+      folio_id: `folio-${index}`, folio_number: `F-${index}`, guest_name: `Guest ${index}`,
+      balance: 50, currency: 'TRY',
+    }));
+    receivables[10] = { ...receivables[10], folio_number: 'F-2026-00411', guest_name: 'Deniz Karaca' };
+    get.mockImplementation(url => url === '/finance/mobile/pending-receivables'
+      ? Promise.resolve({ data: { receivables_count: 17, receivables, total_pending: 850 } }) : defaultGet(url));
+    render(<MemoryRouter><MobileFinance /></MemoryRouter>);
+    await screen.findByText('Bekleyen Alacaklar (17)');
+    expect(screen.queryByText('Deniz Karaca')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Diğer alacakları göster (7)' }));
+    expect(screen.getByText('Deniz Karaca')).toBeVisible();
+    expect(screen.getByText('Guest 16')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Diğer alacakları göster/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Alacaklarda misafir veya folyo ara' }), { target: { value: '00411' } });
+    expect(screen.getByText('Deniz Karaca')).toBeVisible();
+    expect(screen.queryByText('Guest 0')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Alacaklarda misafir veya folyo ara' }), { target: { value: 'bilinmeyen' } });
+    expect(screen.getByText('Aramayla eşleşen alacak yok.')).toBeVisible();
+  });
+
 });

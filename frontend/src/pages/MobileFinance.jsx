@@ -59,6 +59,8 @@ const MobileFinance = ({ user }) => {
   const [dailyCollections, setDailyCollections] = useState(null);
   const [monthlyCollections, setMonthlyCollections] = useState(null);
   const [pendingReceivables, setPendingReceivables] = useState(null);
+  const [receivableQuery, setReceivableQuery] = useState('');
+  const [visibleReceivables, setVisibleReceivables] = useState(10);
   const [monthlyCosts, setMonthlyCosts] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -304,6 +306,10 @@ const MobileFinance = ({ user }) => {
     }
   };
 
+  const searchKey = value => String(value || '').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/\p{M}/gu, '').replace(/ı/g, 'i');
+  const filteredReceivables = (pendingReceivables?.receivables || []).filter(row =>
+    [row.guest_name, row.folio_number, row.room_number].some(value => searchKey(value).includes(searchKey(receivableQuery.trim()))));
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -513,7 +519,21 @@ const MobileFinance = ({ user }) => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {pendingReceivables.receivables.slice(0, 10).map((receivable) => (
+              <label className="block text-sm">
+                Misafir / folyo ara
+                <input
+                  type="search"
+                  aria-label="Alacaklarda misafir veya folyo ara"
+                  value={receivableQuery}
+                  onChange={event => { setReceivableQuery(event.target.value); setVisibleReceivables(10); }}
+                  className="mt-1 w-full rounded border bg-background p-2"
+                />
+              </label>
+              <p role="status" className="text-xs text-muted-foreground">
+                {Math.min(visibleReceivables, filteredReceivables.length)} / {filteredReceivables.length} eşleşen hesap gösteriliyor · {pendingReceivables.receivables.length} yüklü hesap
+              </p>
+              {filteredReceivables.length === 0 && <p>Aramayla eşleşen alacak yok.</p>}
+              {filteredReceivables.slice(0, visibleReceivables).map((receivable) => (
                 <div 
                   key={receivable.folio_id} 
                   className={`flex items-center justify-between p-3 rounded-lg border ${
@@ -548,6 +568,11 @@ const MobileFinance = ({ user }) => {
                   </div>
                 </div>
               ))}
+              {visibleReceivables < filteredReceivables.length && (
+                <Button type="button" variant="outline" onClick={() => setVisibleReceivables(count => count + 10)}>
+                  Diğer alacakları göster ({filteredReceivables.length - visibleReceivables})
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
