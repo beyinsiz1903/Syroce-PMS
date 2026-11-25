@@ -193,12 +193,12 @@ jobs:
     name: iOS smoke (Simulator)
     needs: resolve
     if: needs.resolve.outputs.run_ios == 'true'
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       MAESTRO_VERSION: "1.39.0"
-      IOS_RUNTIME: "iOS-17-5"
-      IOS_DEVICE: "iPhone 15"
+      IOS_RUNTIME: "iOS-26-5"
+      IOS_DEVICE: "iPhone 17"
       BUILD_URL: ${{ needs.resolve.outputs.ios_build_url }}
       PROFILE: ${{ needs.resolve.outputs.profile }}
     outputs:
