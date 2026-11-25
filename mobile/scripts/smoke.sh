@@ -80,5 +80,15 @@ if [ "$#" -gt 0 ]; then
   fi
 fi
 
-echo "[smoke] maestro ${DEVICE_ARGS[*]:-} test ${ENV_ARGS[*]:-} $TARGET"
-exec maestro "${DEVICE_ARGS[@]}" test "${ENV_ARGS[@]}" "$TARGET" "$@"
+# Role acceptance fixtures have separate credentials and are not smoke flows.
+# Android-only adb helpers cannot exercise an iOS simulator.
+SUITE_ARGS=()
+if [ "$TARGET" = "$FLOWS_DIR" ]; then
+  SUITE_ARGS+=("--include-tags=smoke")
+  if [ "${SMOKE_PLATFORM:-}" = "ios" ]; then
+    SUITE_ARGS+=("--exclude-tags=android-only")
+  fi
+fi
+# Never echo credential-bearing -e arguments.
+echo "[smoke] platform=${SMOKE_PLATFORM:-default} target=$TARGET"
+exec maestro ${DEVICE_ARGS[@]+"${DEVICE_ARGS[@]}"} test ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} "$TARGET" ${SUITE_ARGS[@]+"${SUITE_ARGS[@]}"} "$@"

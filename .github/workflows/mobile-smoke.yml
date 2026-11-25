@@ -193,12 +193,12 @@ jobs:
     name: iOS smoke (Simulator)
     needs: resolve
     if: needs.resolve.outputs.run_ios == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     env:
       MAESTRO_VERSION: "1.39.0"
-      IOS_RUNTIME: "iOS-17-5"
-      IOS_DEVICE: "iPhone 15"
+      IOS_RUNTIME: "iOS-26-2"
+      IOS_DEVICE: "iPhone 17"
       BUILD_URL: ${{ needs.resolve.outputs.ios_build_url }}
       PROFILE: ${{ needs.resolve.outputs.profile }}
     outputs:
@@ -224,7 +224,7 @@ jobs:
             for (const r of Object.keys(d)) {
               for (const dev of d[r]) {
                 if (dev.name === process.env.IOS_DEVICE && dev.isAvailable) {
-                  process.stdout.write(dev.udid); return;
+                  process.stdout.write(dev.udid); process.exit(0);
                 }
               }
             }
@@ -262,7 +262,7 @@ jobs:
             echo "::error::Bilinmeyen artifact formati — .tar.gz veya .zip bekleniyordu"
             exit 1
           fi
-          APP_PATH=$(find extracted -maxdepth 4 -name "*.app" -type d | head -n1)
+          APP_PATH=$(find "$PWD/extracted" -maxdepth 4 -name "*.app" -type d | head -n1)
           if [ -z "$APP_PATH" ]; then
             echo "::error::Cikartilan artifact icinde .app bulunamadi (simulator build mi?)"
             find extracted -maxdepth 4 -type d
@@ -287,6 +287,7 @@ jobs:
       - name: Run Maestro smoke flows
         id: smoke
         env:
+          SMOKE_PLATFORM: ios
           SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
           SMOKE_GUEST_EMAIL: ${{ secrets.SMOKE_GUEST_EMAIL }}
@@ -317,7 +318,7 @@ jobs:
             echo ""
             echo "- Sonuc: **${STATUS}**"
             echo "- Build URL: \`${BUILD_URL}\`"
-            echo "- Cihaz: ${IOS_DEVICE} (${MAESTRO_DEVICE})"
+            echo "- Cihaz: ${IOS_DEVICE} (${MAESTRO_DEVICE:-not-booted})"
             echo ""
             echo "<details><summary>Maestro ciktisi (son 80 satir)</summary>"
             echo ""
