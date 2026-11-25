@@ -13,9 +13,8 @@ env:
       LOGIN_EMAIL: ${SMOKE_EMAIL}
       LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
-# The current app enables push only on explicit opt-in. Open the shared
-# profile instead of assuming a role-specific landing screen or old labels.
-- openLink: "syrocepms:///(home)/profile"
+# The current app enables push only on explicit opt-in. Open the frontdesk More screen instead of assuming a role-specific landing screen or old labels.
+- openLink: "syrocepms:///(frontdesk)/more"
 # iOS may request confirmation before opening this app link.
 - runFlow:
     when:
@@ -45,8 +44,13 @@ env:
           direction: DOWN
           centerElement: true
           timeout: 15000
+      - waitForAnimationToEnd
+      - takeScreenshot: artifacts/push-before-optin
       - tapOn:
           text: "Bildirimleri etkinleştir"
+          retryTapIfNoChange: false
+      - waitForAnimationToEnd
+      - takeScreenshot: artifacts/push-after-optin
 - extendedWaitUntil:
     notVisible:
       text: "Bildirimler henüz etkinleştirilmedi."

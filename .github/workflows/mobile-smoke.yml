@@ -308,6 +308,9 @@ jobs:
           fi
           # Maestro derives filenames from flow names (which may contain ':').
           # Archive first so upload-artifact does not reject valid macOS names.
+          if [ -d mobile/artifacts ]; then
+            cp -R mobile/artifacts smoke-artifacts/ios/maestro-tests/
+          fi
           tar -czf smoke-artifacts/ios/maestro-tests.tar.gz -C smoke-artifacts/ios maestro-tests
 
       - name: Build summary
@@ -446,6 +449,9 @@ jobs:
           fi
           # Maestro derives filenames from flow names (which may contain ':').
           # Archive first so upload-artifact does not reject valid macOS names.
+          if [ -d mobile/artifacts ]; then
+            cp -R mobile/artifacts smoke-artifacts/android/maestro-tests/
+          fi
           tar -czf smoke-artifacts/android/maestro-tests.tar.gz -C smoke-artifacts/android maestro-tests
 
       - name: Build summary
