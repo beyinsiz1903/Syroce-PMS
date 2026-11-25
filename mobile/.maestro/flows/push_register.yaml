@@ -15,8 +15,9 @@ env:
 
 # Login lands on the front_desk Today tab. Wait for it so registerForPush
 # (fired by AuthGate the moment `user` is set) has a chance to run.
-- assertVisible:
-    text: "Bugün Giriş"
+- extendedWaitUntil:
+    visible:
+      text: "Bugün Giriş"
     timeout: 30000
 
 # registerForPush asks for permission, fetches an Expo push token, POSTs
@@ -38,8 +39,9 @@ env:
 # assert that the status transitioned away from the pending sentinel
 # AND landed on one of the explicit terminal outcomes the
 # registration pipeline can produce.
-- assertVisible:
-    text: "Push bildirim"
+- extendedWaitUntil:
+    visible:
+      text: "Push bildirim"
     timeout: 10000
 
 # The pending sentinel ("Bekleniyor") MUST disappear within the
@@ -56,7 +58,8 @@ env:
 # testID — the row matches a single Body element, so the assertion
 # below is "this row's text equals one of the allowed values" via
 # Maestro's regex anchor on the testID-scoped text content.
-- assertVisible:
-    id: "smoke-push-status"
-    text: "Açık|İzin reddedildi|Kayıt hatası|Kapalı / Devre dışı"
+- extendedWaitUntil:
+    visible:
+      id: "smoke-push-status"
+      text: "Açık|İzin reddedildi|Kayıt hatası|Kapalı / Devre dışı"
     timeout: 5000

@@ -24,8 +24,9 @@ env:
 # crashing.
 - openLink: "syrocepms:///(guest)/digitalKey"
 
-- assertVisible:
-    id: "smoke-digital-key"
+- extendedWaitUntil:
+    visible:
+      id: "smoke-digital-key"
     timeout: 30000
 - assertVisible:
     text: "Dijital Anahtar"

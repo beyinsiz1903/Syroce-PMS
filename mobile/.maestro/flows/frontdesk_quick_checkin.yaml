@@ -15,15 +15,17 @@ env:
 
 # Wait for the Today screen to settle, then start the quick check-in
 # flow from the primary CTA on the home tab.
-- assertVisible:
-    id: "smoke-today-quick-checkin"
+- extendedWaitUntil:
+    visible:
+      id: "smoke-today-quick-checkin"
     timeout: 30000
 - tapOn:
     id: "smoke-today-quick-checkin"
 
 # Header rendered by mobile/app/(frontdesk)/checkin.tsx (tr.checkin.title).
-- assertVisible:
-    text: "Hızlı Check-in"
+- extendedWaitUntil:
+    visible:
+      text: "Hızlı Check-in"
     timeout: 20000
 
 # Scan CTA must be present so QR / kimlik tarama akışı tetiklenebilir.

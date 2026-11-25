@@ -16,8 +16,9 @@ env:
 # After login the front_desk role lands on the "Bugün" tab. We assert
 # the canonical labels rendered by mobile/app/(frontdesk)/index.tsx so
 # regressions in the home screen surface fail this smoke check.
-- assertVisible:
-    text: "Bugün Giriş"
+- extendedWaitUntil:
+    visible:
+      text: "Bugün Giriş"
     timeout: 30000
 - assertVisible:
     text: "Bugün Çıkış"

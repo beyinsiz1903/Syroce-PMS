@@ -9,16 +9,22 @@ env:
     clearState: true
     clearKeychain: true
     permissions: { all: allow }
-- assertVisible: { text: "Giriş Yap", timeout: 30000 }
+- extendedWaitUntil:
+    visible: { text: "Giriş Yap" }
+    timeout: 30000
 - tapOn: { id: "smoke-login-email" }
 - inputText: ${SMOKE_HK_EMAIL}
 - tapOn: { id: "smoke-login-password" }
 - inputText: ${SMOKE_HK_PASSWORD}
 - hideKeyboard
 - tapOn: { id: "smoke-login-submit" }
-- # Staff roles intentionally land in the shared front-desk shift shell.
-- # Department access is tested separately; this flow proves the assigned
-- # housekeeping account authenticates and is not left on the login gate.
-- assertVisible: { text: "Bugün Giriş", timeout: 30000 }
-- assertNotVisible: { id: "smoke-login-submit", timeout: 30000 }
+# Staff roles intentionally land in the shared front-desk shift shell.
+# Department access is tested separately; this flow proves the assigned
+# housekeeping account authenticates and is not left on the login gate.
+- extendedWaitUntil:
+    visible: { text: "Bugün Giriş" }
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: { id: "smoke-login-submit" }
+    timeout: 30000
 - takeScreenshot: { path: "artifacts/housekeeping-role-acceptance" }
