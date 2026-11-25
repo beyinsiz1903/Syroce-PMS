@@ -879,9 +879,10 @@ class SpaceBookingIn(MiceInput):
 
     @model_validator(mode="after")
     def valid_interval(self):
-        if (self.starts_at.tzinfo is None) != (self.ends_at.tzinfo is None):
-            raise ValueError("Başlangıç ve bitiş aynı saat dilimi biçiminde olmalıdır")
-        if self.ends_at <= self.starts_at:
+        # A datetime-local edit changes one endpoint to a property-local wall
+        # time while the untouched endpoint retains the stored UTC offset.
+        # Compare mixed pairs only after _property_clock resolves that wall time.
+        if (self.starts_at.tzinfo is None) == (self.ends_at.tzinfo is None) and self.ends_at <= self.starts_at:
             raise ValueError("Mekan bitişi başlangıçtan sonra olmalıdır")
         if self.setup_style not in _SETUP_TO_CAP:
             raise ValueError("Geçersiz salon düzeni")
@@ -920,8 +921,8 @@ class AgendaItemIn(MiceInput):
 
     @model_validator(mode="after")
     def valid_interval(self):
-        if (self.starts_at.tzinfo is None) != (self.ends_at.tzinfo is None) or self.ends_at <= self.starts_at:
-            raise ValueError("Program bitişi başlangıçtan sonra ve aynı saat diliminde olmalıdır")
+        if (self.starts_at.tzinfo is None) == (self.ends_at.tzinfo is None) and self.ends_at <= self.starts_at:
+            raise ValueError("Program bitişi başlangıçtan sonra olmalıdır")
         return self
 
 
@@ -1032,11 +1033,13 @@ class EventIn(MiceInput):
             if not booking.expected_pax:
                 booking.expected_pax = self.expected_pax
         for item in [*self.space_bookings, *self.agenda]:
-            if item.starts_at.tzinfo is None and (item.starts_at.date() < self.start_date or item.ends_at.date() > self.end_date):
+            if item.starts_at.tzinfo is None and item.ends_at.tzinfo is None and (item.starts_at.date() < self.start_date or item.ends_at.date() > self.end_date):
                 raise ValueError("Salon ve program saatleri etkinlik tarih aralığı içinde olmalıdır")
         for i, left in enumerate(self.space_bookings):
             for right in self.space_bookings[i + 1:]:
-                if left.space_id == right.space_id and overlaps(left.model_dump(), right.model_dump()):
+                clocks = (left.starts_at, left.ends_at, right.starts_at, right.ends_at)
+                comparable = len({clock.tzinfo is None for clock in clocks}) == 1
+                if comparable and left.space_id == right.space_id and overlaps(left.model_dump(), right.model_dump()):
                     raise ValueError("Aynı etkinlik içinde salon saatleri çakışıyor")
         return self
 
@@ -1050,8 +1053,16 @@ async def _property_clock(body: EventIn, tenant_id: str) -> EventIn:
         for line in [*body.space_bookings, *body.agenda]:
             line.starts_at = local_instant(line.starts_at, timezone)
             line.ends_at = local_instant(line.ends_at, timezone)
+            if line.ends_at <= line.starts_at:
+                raise ValueError("Salon/program bitişi başlangıçtan sonra olmalıdır")
             if line.starts_at.date() < body.start_date or line.ends_at.date() > body.end_date:
                 raise ValueError("Salon/program saatleri tesis yerel takviminde etkinlik tarih aralığında olmalıdır")
+        # Recheck all intra-event collisions in the resolved property clock;
+        # neither browser offsets nor the server OS timezone decide availability.
+        for i, left in enumerate(body.space_bookings):
+            for right in body.space_bookings[i + 1:]:
+                if left.space_id == right.space_id and overlaps(left.model_dump(), right.model_dump()):
+                    raise ValueError("Aynı etkinlik içinde salon saatleri çakışıyor")
         for line in [*body.staff_assignments, *([body.entertainment] if body.entertainment else [])]:
             for field in ("start_at", "end_at"):
                 if getattr(line, field, None):
