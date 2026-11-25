@@ -101,7 +101,16 @@ async def list_settlements(appt_id: str, current_user: User = Depends(get_curren
     accounts = await db.bank_accounts.find({'tenant_id': tid, 'is_active': {'$ne': False}, 'currency': charge['currency']},
         {'_id': 0, 'id': 1, 'name': 1, 'currency': 1}).to_list(None)
     pending = appt.get('finance_pending')
-    return {'currency': charge['currency'], 'guest_name': appt.get('guest_name'), 'service_name': appt.get('service_name'),
+    valuation = {'ready': True, 'rate_to_try': 1, 'business_date': charge['business_date']}
+    if charge['currency'] != 'TRY':
+        try:
+            rate, _ = await _foreign_carrying_rate(db, tid, charge, None)
+            valuation['rate_to_try'] = float(rate)
+        except HTTPException as error:
+            if error.status_code != 409:
+                raise
+            valuation.update(ready=False, rate_to_try=None, reason=error.detail)
+    return {'valuation': valuation, 'currency': charge['currency'], 'guest_name': appt.get('guest_name'), 'service_name': appt.get('service_name'),
         'charge_id': charge['id'], 'payments': rows, 'totals': settlement_totals(charge, rows), 'bank_accounts': accounts,
         'pending': {k: pending[k] for k in ('request', 'payment_id', 'started_at')} if pending else None,
         'notice': 'Alınmış veya iade edilmiş paranın manuel kaydıdır. Bankaya/karta ödeme emri göndermez; mali fatura değildir. Oda hesabını değiştirmez. Açık kasa vardiyası gerekir. Dövizde önce kaynak gününün muhasebe değerlemesi tamamlanmalı; farklı kur için ayrı mutabakat gerekir.'}

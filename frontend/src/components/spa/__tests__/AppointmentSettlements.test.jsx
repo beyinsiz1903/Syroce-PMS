@@ -131,3 +131,29 @@ describe('Independent SPA settlements', () => {
     })));
   });
 });
+
+it('blocks new foreign receipts before source valuation without blocking original refunds', async () => {
+  axios.get.mockResolvedValue({ data: result({ currency: 'USD', valuation: { ready: false, rate_to_try: null, business_date: '2026-11-12', reason: 'Kaynak değerlemesi gerekli' }, payments: [{ id: 'p', amount: 30, status: 'paid', method: 'cash', gl_exchange_rate: 40 }] }) });
+  render(<AppointmentSettlements appointmentId="usd" />);
+  await screen.findByText(/2026-11-12 satış değerlemesi tamamlanmadı/);
+  expect(screen.getByRole('button', { name: 'Hareketi kaydet' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'İade kaydet' }));
+  expect(screen.getByRole('button', { name: 'Hareketi kaydet' })).not.toBeDisabled();
+  expect(screen.getByLabelText('TRY muhasebe kuru')).toHaveValue(40);
+  expect(screen.getByLabelText('TRY muhasebe kuru')).toBeDisabled();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+it('uses the sealed sales rate rather than a new receipt rate', async () => {
+  axios.get.mockResolvedValue({ data: result({ currency: 'USD', valuation: { ready: true, rate_to_try: 40, business_date: '2026-11-12' } }) });
+  render(<AppointmentSettlements appointmentId="usd" />);
+  await screen.findByText(/1 USD = 40 TRY/);
+  expect(screen.getByLabelText('TRY muhasebe kuru')).toBeDisabled();
+  expect(screen.getByLabelText('TRY muhasebe kuru')).toHaveValue(40);
+  fireEvent.change(screen.getByLabelText('Tutar (USD)'), { target: { value: '30' } });
+  fireEvent.change(screen.getByLabelText('Makbuz / banka referansı'), { target: { value: 'USD-001' } });
+  fireEvent.change(screen.getByLabelText('Açıklama / iade gerekçesi'), { target: { value: 'Synthetic receipt only' } });
+  axios.post.mockResolvedValue({ data: {} });
+  fireEvent.click(screen.getByRole('button', { name: 'Hareketi kaydet' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/spa/appointments/usd/settlements', expect.objectContaining({ exchange_rate: 40, amount: 30 })));
+});

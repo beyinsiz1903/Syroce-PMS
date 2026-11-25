@@ -57,6 +57,10 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
   const submit = async e => {
     e.preventDefault();
     if (submitting.current || uncertain) return;
+    if (form.kind === 'collection' && data?.valuation?.ready === false) {
+      setSubmissionError(data.valuation.reason);
+      return;
+    }
     if (form.kind === 'refund') {
       const original = data?.payments.find(row => row.id === form.original_payment_id);
       const limit = original ? refundableMinor(original, data.payments) : null;
@@ -68,7 +72,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
     submitting.current = true;
     setBusy(true);
     const payload = { ...form, amount: Number(form.amount),
-      exchange_rate: form.exchange_rate === '' ? null : Number(form.exchange_rate),
+      exchange_rate: form.kind === 'collection' && data.currency !== 'TRY' && data.valuation?.ready ? data.valuation.rate_to_try : form.exchange_rate === '' ? null : Number(form.exchange_rate),
       bank_account_id: form.bank_account_id || null, original_payment_id: form.original_payment_id || null };
     try {
       const accepted = await confirmDialog({ message: `${form.kind === 'refund' ? 'İade edilen' : 'Alınan'} ${formatCurrency(payload.amount, data.currency)} tutarı manuel deftere kaydedilecek. Bu işlem bankaya/karta talimat göndermez. Onaylıyor musunuz?` });
@@ -94,6 +98,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
 
   const pending = data.pending?.request;
   const locked = Boolean(pending) || uncertain;
+  const valuationBlocked = form.kind === 'collection' && data.valuation?.ready === false;
   const selectedOriginal = data.payments.find(row => row.id === form.original_payment_id);
   const refundLimit = selectedOriginal ? refundableMinor(selectedOriginal, data.payments) : null;
   const startRefund = p => setForm({ ...blank(), kind: 'refund', method: p.method,
@@ -106,6 +111,9 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
       {[['Hizmet bedeli', data.totals.service_total], ['Net tahsilat', data.totals.net_collected], ['Kalan', data.totals.outstanding]].map(([label, amount]) =>
         <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="font-semibold">{formatCurrency(amount, data.currency)}</dd></div>)}
     </dl>
+    {data.currency !== 'TRY' && data.valuation && <div role="status" className="rounded border p-3 text-sm">
+      {data.valuation.ready ? `${data.valuation.business_date} satış kuru: 1 ${data.currency} = ${data.valuation.rate_to_try} TRY. Tahsilat bu kayıtlı kurla işlenir.` : `${data.valuation.business_date} satış değerlemesi tamamlanmadı. ${data.valuation.reason} Mevcut tahsilatın iadesi kendi kayıtlı kuruyla yapılabilir.`}
+    </div>}
     {error && <p role="alert">{error}</p>}
     {submissionError && <p role="alert" className="text-sm text-red-700">{submissionError}</p>}
     {uncertain && <div role="alert" className="rounded border border-amber-300 p-3 text-sm">
@@ -131,16 +139,16 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
     </article>)}</div>
     <form onSubmit={submit} className="space-y-3">
       <h4 className="text-sm font-medium">{form.kind === 'refund' ? 'Seçilen tahsilata iade' : 'Yeni tahsilat'}</h4>
-      <fieldset disabled={busy || locked} className="grid gap-3 sm:grid-cols-2">
+      <fieldset disabled={busy || locked || valuationBlocked} className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">Tutar ({data.currency})<Input required type="number" min="0.01" step="0.01" max={form.kind === 'refund' && refundLimit !== null ? refundLimit / 100 : undefined} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
         <label className="text-sm">Ödeme yöntemi<select className="w-full rounded border p-2" disabled={form.kind === 'refund'} value={form.method} onChange={e => setForm({ ...form, method: e.target.value, bank_account_id: '' })}>{Object.entries(methods).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
         {form.method !== 'cash' && <label className="text-sm">Banka / kart hesabı<select required disabled={form.kind === 'refund'} className="w-full rounded border p-2" value={form.bank_account_id} onChange={e => setForm({ ...form, bank_account_id: e.target.value })}><option value="">Hesap seçin</option>{data.bank_accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}</select></label>}
-        {data.currency !== 'TRY' && <label className="text-sm">TRY muhasebe kuru<Input required disabled={form.kind === 'refund'} type="number" min="0.000001" step="any" value={form.exchange_rate} onChange={e => setForm({ ...form, exchange_rate: e.target.value })} /></label>}
+        {data.currency !== 'TRY' && <label className="text-sm">TRY muhasebe kuru<Input required disabled={form.kind === 'refund' || data.valuation?.ready} type="number" min="0.000001" step="any" value={form.kind === 'collection' && data.valuation?.ready ? data.valuation.rate_to_try : form.exchange_rate} onChange={e => setForm({ ...form, exchange_rate: e.target.value })} /></label>}
         <label className="text-sm">Makbuz / banka referansı<Input required minLength={3} maxLength={200} value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} /></label>
         <label className="text-sm">Açıklama / iade gerekçesi<Input required minLength={10} maxLength={1000} value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} /></label>
         <Button type="button" variant="ghost" onClick={() => setForm(blank())}>Formu temizle</Button>
       </fieldset>
-      <Button type="submit" disabled={busy || uncertain || (pending && form.request_id !== pending.request_id)}>{busy ? 'Kaydediliyor…' : pending ? 'Aynı işlemi tamamla' : 'Hareketi kaydet'}</Button>
+      <Button type="submit" disabled={busy || uncertain || valuationBlocked || (pending && form.request_id !== pending.request_id)}>{busy ? 'Kaydediliyor…' : pending ? 'Aynı işlemi tamamla' : 'Hareketi kaydet'}</Button>
     </form>
   </section>;
 }

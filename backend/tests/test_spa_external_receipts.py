@@ -160,7 +160,7 @@ async def test_new_appointment_requires_explicit_service_vat_before_source_creat
 
 
 async def test_request_key_payload_change_and_excess_refund_are_rejected(financial):
-    first = (await finance.record_settlement('a', request(), user()))['payment']
+    await finance.record_settlement('a', request(), user())
     with pytest.raises(HTTPException) as error:
         await finance.record_settlement('a', request(amount=101), user())
     assert error.value.status_code == 409
@@ -224,8 +224,8 @@ async def test_night_audit_accrues_external_sale_once_not_already_posted_receipt
 
 
 async def test_foreign_bank_collection_requires_source_valuation_and_refunds_original_rate(financial):
-    from core.integrations.operational_gl_valuation import normalized_valuation, build_plan
     from core.integrations.operational_gl_bridge import DEFAULT_MAPPING
+    from core.integrations.operational_gl_valuation import build_plan, normalized_valuation
     from shared_kernel.gl_posting import post_journal_entry
     await financial.spa_appointments.update_one({'id': 'a'}, {'$set': {'currency': 'EUR'}})
     await financial.extra_charges.update_one({'source_spa_appointment_id': 'a'}, {'$set': {'currency': 'EUR'}})
@@ -250,3 +250,39 @@ async def test_foreign_bank_collection_requires_source_valuation_and_refunds_ori
     assert (await financial.bank_accounts.find_one({'id': 'bank'}))['balance'] == 75
     assert sum(p['reporting_amount'] for p in await financial.payments.find({}).to_list(None)) == 3000
     assert await financial.folio_charges.count_documents({}) == 0
+    readiness = await finance.list_settlements('a', user())
+    assert readiness['valuation']['ready'] and readiness['valuation']['rate_to_try'] == 40
+    await finance.record_settlement('a', request(request_id='foreign-final-refund', kind='refund', amount=75,
+        original_payment_id=first['id'], **{**args, 'exchange_rate': None}), user())
+    assert (await financial.bank_accounts.find_one({'id': 'bank'}))['balance'] == 0
+    assert sum(p['reporting_amount'] for p in await financial.payments.find({}).to_list(None)) == 0
+    with pytest.raises(HTTPException) as error:
+        await finance.record_settlement('a', request(request_id='foreign-repeat-refund', kind='refund', amount=.01,
+            original_payment_id=first['id'], **{**args, 'exchange_rate': None}), user())
+    assert error.value.status_code == 409
+    assert await financial.payments.count_documents({}) == 3
+
+
+async def test_fully_refunded_original_rejects_fresh_second_refund_without_writes(financial):
+    first = (await finance.record_settlement('a', request(), user()))['payment']
+    await finance.record_settlement('a', request(request_id='full-refund-001', kind='refund', original_payment_id=first['id']), user())
+    before = await financial.cashier_shifts.find_one({})
+    with pytest.raises(HTTPException) as error:
+        await finance.record_settlement('a', request(request_id='second-refund-001', kind='refund', amount=.01, original_payment_id=first['id']), user())
+    assert error.value.status_code == 409
+    assert await financial.payments.count_documents({}) == 2
+    assert await financial.gl_journal_entries.count_documents({}) == 2
+    assert await financial.cash_flow.count_documents({}) == 2
+    assert await financial.cashier_shifts.find_one({}) == before
+    assert not (await financial.spa_appointments.find_one({'id': 'a'})).get('finance_pending')
+
+
+async def test_valuation_readiness_is_read_only_and_does_not_disable_original_refunds(financial):
+    await financial.spa_appointments.update_one({'id': 'a'}, {'$set': {'currency': 'USD'}})
+    await financial.extra_charges.update_one({'source_spa_appointment_id': 'a'}, {'$set': {'currency': 'USD'}})
+    result = await finance.list_settlements('a', user())
+    assert result['valuation']['ready'] is False
+    assert result['valuation']['rate_to_try'] is None
+    assert result['valuation']['business_date'] == '2026-10-25'
+    assert await financial.gl_journal_entries.count_documents({}) == 0
+    assert await financial.payments.count_documents({}) == 0
