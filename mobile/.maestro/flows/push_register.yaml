@@ -51,6 +51,13 @@ env:
           retryTapIfNoChange: false
       - waitForAnimationToEnd
       - takeScreenshot: artifacts/push-after-optin
+# CI exercises the explicit denial path without registering a delivery device.
+# This is not evidence that real APNs delivery succeeded.
+- runFlow:
+    when:
+      visible: ".*Would Like to Send You Notifications.*"
+    commands:
+      - tapOn: "Don.t Allow"
 - extendedWaitUntil:
     notVisible:
       text: "Bildirimler henüz etkinleştirilmedi."
