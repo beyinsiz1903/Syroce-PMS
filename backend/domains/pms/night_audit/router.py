@@ -405,6 +405,7 @@ async def abort_run(
 async def get_audit_history(
     limit: int = 20,
     skip: int = 0,
+    completed_only: bool = False,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
@@ -413,7 +414,7 @@ async def get_audit_history(
     from domains.pms.night_audit.service import night_audit_core_service
 
     ctx = OperationContext.from_user(current_user)
-    result = await night_audit_core_service.get_audit_history(ctx, limit, skip)
+    result = await night_audit_core_service.get_audit_history(ctx, limit, skip, completed_only=completed_only)
     return result.data
 
 

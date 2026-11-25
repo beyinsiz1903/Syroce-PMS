@@ -688,11 +688,18 @@ class NightAuditCoreService:
         ctx: OperationContext,
         limit: int = 20,
         skip: int = 0,
+        completed_only: bool = False,
     ) -> ServiceResult:
+        query = {"tenant_id": ctx.tenant_id}
+        if completed_only:
+            query.update({
+                "status": {"$in": ["completed", "completed_with_exceptions"]},
+                "dry_run": {"$ne": True}, "is_dry_run": {"$ne": True},
+            })
         runs = []
         cursor = (
             self._db.night_audit_runs.find(
-                {"tenant_id": ctx.tenant_id},
+                query,
                 {"_id": 0},
             )
             .sort("started_at", -1)
@@ -759,7 +766,7 @@ class NightAuditCoreService:
                     run["total_payments_amount"] = round(float(psnapshot.get("payments") or 0), 2)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Night audit history financial enrichment failed: %s", exc)
-        total = await self._db.night_audit_runs.count_documents({"tenant_id": ctx.tenant_id})
+        total = await self._db.night_audit_runs.count_documents(query)
         return ServiceResult.success({"runs": runs, "total": total, "limit": limit, "skip": skip})
 
     # ── Get exceptions for a run ───────────────────────────────────────
