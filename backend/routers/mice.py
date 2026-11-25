@@ -3484,9 +3484,22 @@ async def transition_operation_task(event_id: str, task_id: str, body: Operation
     if not can_work_task(current_user, task):
         raise HTTPException(403, "Bu görev size veya yetkili departmanınıza atanmamış")
     if task["kind"] == "equipment" and body.status in {"acknowledged", "completed"}:
+        request_id = f"legacy-{task_id}-{body.status}"
+        prior = next((row for row in (task.get("handovers") or []) if row.get("request_id") == request_id), None)
+        # Full delivery/return completes the remaining quantity, not the whole
+        # original plan after a partial movement. Reuse the original amount on
+        # retries so the handover's idempotency comparison remains stable.
+        delivered = money(task.get("delivered_quantity", task["quantity"] if task["status"] == "acknowledged" and not task.get("handovers") else 0))
+        returned = money(task.get("returned_quantity", 0))
+        quantity = money(prior["quantity"]) if prior else (
+            money(task["quantity"]) - delivered if body.status == "acknowledged" else delivered - returned)
+        if quantity <= 0:
+            if task["status"] == body.status:
+                return {"ok": True, "unchanged": True}
+            raise HTTPException(409, "Teslim veya iade edilecek kalan ekipman yok")
         return await record_equipment_handover(event_id, task_id, EquipmentHandoverIn(
-            action="deliver" if body.status == "acknowledged" else "return", quantity=task["quantity"],
-            request_id=f"legacy-{task_id}-{body.status}"), current_user)
+            action="deliver" if body.status == "acknowledged" else "return", quantity=float(quantity),
+            request_id=request_id), current_user)
     if task["status"] == body.status:
         return {"ok": True, "unchanged": True}
     allowed = {"pending": {"acknowledged", "cancelled"}, "acknowledged": {"completed", "cancelled"}}
