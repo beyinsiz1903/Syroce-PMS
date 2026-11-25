@@ -27,6 +27,7 @@ env:
     element:
       id: "smoke-push-status"
     direction: DOWN
+    centerElement: true
     timeout: 30000
 - extendedWaitUntil:
     visible:
@@ -42,6 +43,7 @@ env:
           element:
             text: "Bildirimleri etkinleştir"
           direction: DOWN
+          centerElement: true
           timeout: 15000
       - tapOn:
           text: "Bildirimleri etkinleştir"
