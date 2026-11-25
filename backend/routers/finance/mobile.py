@@ -18,6 +18,7 @@ try:
 except ImportError:
     Workbook = None
 
+from core.booking_atomicity import is_replica_set_unavailable, with_resource_locks
 from core.business_date_service import (
     ensure_business_date_initialized,
     stamp_open_business_date,
@@ -477,17 +478,17 @@ async def record_payment_mobile(
     await stamp_open_business_date(db, current_user.tenant_id, payment)
     stamp_reporting_values(payment)
 
-    try:
-        await db.payments.insert_one(payment)
-    except Exception:
-        # Payment never became durable -> free the auto-dedup slot for a retry.
-        await release_idempotency(db, lock_id=auto_lock_id)
-        raise
-
-    # Kasa hareketine yaz — cash için race-safe rollback
-    is_cash = (payment_method or "").lower() == "cash"
-    try:
-        await record_cash_transaction(
+    async def commit(session):
+        if session is None:
+            raise HTTPException(503, "Mobil tahsilat için atomik kayıt desteği gerekli.")
+        # Recheck after acquiring the folio lock: its status may have changed
+        # while the operator was filling the compact collection form.
+        current = await db.folios.find_one(
+            {"id": folio_id, "tenant_id": current_user.tenant_id}, session=session)
+        if not current or current.get("status") != "open":
+            raise HTTPException(409, "Folyo değişti veya kapandı; yeniden kontrol edin.")
+        await db.payments.insert_one(dict(payment), session=session)
+        cashier = await record_cash_transaction(
             tenant_id=current_user.tenant_id,
             amount=amount,
             method=payment_method,
@@ -499,38 +500,38 @@ async def record_payment_mobile(
             created_by=current_user.email,
             created_by_name=getattr(current_user, "name", None) or current_user.email,
             idempotency_key=f"payment:{payment_id}",
-            require_open_shift=is_cash,
+            require_open_shift=(payment_method == "cash"),
+            session=session,
         )
-    except HTTPException as he:
-        if is_cash and he.status_code == 409:
-            try:
-                await db.payments.delete_one({"id": payment_id, "tenant_id": current_user.tenant_id})
-                # Row removed -> free the auto-dedup slot for a real retry.
-                await release_idempotency(db, lock_id=auto_lock_id)
-            except Exception:
-                import logging as _lg
+        if payment_method == "cash" and cashier is None:
+            raise HTTPException(409, "Nakit kasa hareketi kaydedilemedi; tahsilat uygulanmadı.")
+        after = (await folio_snapshots(db, current_user.tenant_id, [current],
+            fallback_currency=tenant_currency, include_booking_extras=True, session=session))[folio_id]
+        new_balance = single_amount(after["balance_by_currency"])
+        updates = {"balance_by_currency": after["balance_by_currency"]}
+        if new_balance is not None:
+            updates["balance"] = new_balance
+        closed = new_balance is not None and abs(new_balance) < 0.01
+        if closed:
+            updates.update(status="closed", closed_at=datetime.now(UTC), closed_by=current_user.username)
+        await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id},
+            {"$set": updates}, session=session)
+        return {"message": "Payment recorded successfully", "payment_id": payment_id,
+            "folio_id": folio_id, "amount": amount, "currency": ledger_currency,
+            "new_balance": new_balance, "balance_by_currency": after["balance_by_currency"], "folio_closed": closed}
 
-                _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+    try:
+        return await with_resource_locks(client=db.client, db=db,
+            tenant_id=current_user.tenant_id, locks_collection="folio_locks",
+            resources=[("folio", folio_id)], callback=commit)
+    except Exception as exc:
+        # A commit acknowledgement can be lost. Keep the short-window guard
+        # in that case; releasing it would allow a blind duplicate payment.
+        if not await db.payments.find_one({"id": payment_id, "tenant_id": current_user.tenant_id}):
+            await release_idempotency(db, lock_id=auto_lock_id)
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Mobil tahsilat için atomik kayıt desteği gerekli.") from exc
         raise
-    except Exception:
-        import logging as _lg
-
-        _lg.getLogger(__name__).exception("cashier txn record failed")
-
-    # Update folio balance
-    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=tenant_currency, include_booking_extras=True))[folio_id]
-    new_balance = single_amount(snapshot["balance_by_currency"])
-    updates = {"balance_by_currency": snapshot["balance_by_currency"]}
-    if new_balance is not None:
-        updates["balance"] = new_balance
-    await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
-
-    # Close folio if balance is zero
-    if new_balance is not None and abs(new_balance) < 0.01:
-        await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "closed", "closed_at": datetime.now(UTC), "closed_by": current_user.username}})
-
-    return {"message": "Payment recorded successfully", "payment_id": payment_id, "folio_id": folio_id, "amount": amount, "currency": ledger_currency,
-            "new_balance": new_balance, "balance_by_currency": snapshot["balance_by_currency"], "folio_closed": new_balance is not None and abs(new_balance) < 0.01}
 
 
 @router.get("/finance/mobile/cash-flow-summary")
