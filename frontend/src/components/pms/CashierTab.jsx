@@ -34,19 +34,24 @@ const todayIso = () => cashierCalendarDay();
 const monthAgoIso = () => cashierCalendarDay(new Date(Date.now() - 30 * 86400000));
 const formatTry = value => formatCurrency(value, 'TRY', { decimals: 2 });
 
+const CASH_DENOMINATIONS = [
+  ['cash_200', '200 TL', 20000], ['cash_100', '100 TL', 10000], ['cash_50', '50 TL', 5000],
+  ['cash_20', '20 TL', 2000], ['cash_10', '10 TL', 1000], ['cash_5', '5 TL', 500],
+  ['cash_1', '1 TL', 100], ['coin_1', '1 TL (Bozuk)', 100],
+  ['coin_050', '50 Krş', 50], ['coin_025', '25 Krş', 25],
+  ['coin_010', '10 Krş', 10], ['coin_005', '5 Krş', 5], ['coin_001', '1 Krş', 1],
+];
+const emptyCounts = () => Object.fromEntries(CASH_DENOMINATIONS.map(([key]) => [key, 0]));
+const calcTotal = counts => CASH_DENOMINATIONS.reduce((minor, [key, , value]) => minor + (counts[key] || 0) * value, 0) / 100;
+
 // Stable component identity: a count change must not remount the focused input.
 const DenominationGrid = ({ counts, setCounts }) => (
   <div className="grid grid-cols-2 gap-3">
-    {[
-      ['cash_200', '200 TL'], ['cash_100', '100 TL'], ['cash_50', '50 TL'],
-      ['cash_20', '20 TL'], ['cash_10', '10 TL'], ['cash_5', '5 TL'],
-      ['cash_1', '1 TL'], ['coin_1', '1 TL (Bozuk)'],
-      ['coin_050', '50 Krş'], ['coin_025', '25 Krş']
-    ].map(([key, label]) => (
+    {CASH_DENOMINATIONS.map(([key, label]) => (
       <div key={key} className="flex items-center gap-2">
         <Label htmlFor={`cashier-denomination-${key}`} className="w-24 text-xs">{label}</Label>
-        <Input id={`cashier-denomination-${key}`} type="number" min="0" className="h-8 text-xs"
-          value={counts[key]} onChange={e => setCounts(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))} />
+        <Input id={`cashier-denomination-${key}`} type="number" min="0" step="1" className="h-8 text-xs"
+          value={counts[key]} onChange={e => setCounts(p => ({ ...p, [key]: Math.max(0, parseInt(e.target.value) || 0) }))} />
       </div>
     ))}
   </div>
@@ -67,10 +72,7 @@ const CashierTab = () => {
   const [showCashInDialog, setShowCashInDialog] = useState(false);
   const [showPaidOutDialog, setShowPaidOutDialog] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('');
-  const [closingCounts, setClosingCounts] = useState({
-    cash_200: 0, cash_100: 0, cash_50: 0, cash_20: 0, cash_10: 0, cash_5: 0, cash_1: 0,
-    coin_1: 0, coin_050: 0, coin_025: 0
-  });
+  const [closingCounts, setClosingCounts] = useState(emptyCounts);
   const [closingNote, setClosingNote] = useState('');
   const [handoverTarget, setHandoverTarget] = useState({ email: '', password: '', note: '' });
   const [manualTxn, setManualTxn] = useState({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' });
@@ -198,11 +200,6 @@ const CashierTab = () => {
   };
   const openShift = () => requirePin(t('pms.cashierActions.passwordBeforeOpenShift', 'Vardiya açmadan önce giriş şifrenizi doğrulayın'), doOpenShift);
 
-  const calcTotal = (counts) =>
-    (counts.cash_200 * 200) + (counts.cash_100 * 100) + (counts.cash_50 * 50) +
-    (counts.cash_20 * 20) + (counts.cash_10 * 10) + (counts.cash_5 * 5) +
-    (counts.cash_1 * 1) + (counts.coin_1 * 1) + (counts.coin_050 * 0.5) + (counts.coin_025 * 0.25);
-
   const doCloseShift = async () => {
     setLoading(true);
     try {
@@ -213,7 +210,7 @@ const CashierTab = () => {
       });
       toast.success('Kasa vardiyası kapatıldı');
       setShowCloseDialog(false);
-      setClosingCounts({ cash_200: 0, cash_100: 0, cash_50: 0, cash_20: 0, cash_10: 0, cash_5: 0, cash_1: 0, coin_1: 0, coin_050: 0, coin_025: 0 });
+      setClosingCounts(emptyCounts());
       setClosingNote('');
       loadShift();
       loadHistory();
