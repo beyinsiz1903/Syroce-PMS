@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { refreshReservationReads } from '../../src/cache/reservationRefresh';
 import { ROUTES } from '../../src/navigation/routes';
 import { mobileTargetAllowed } from '../../src/navigation/routeAccess';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -127,6 +128,18 @@ export default function ReservationDetailScreen() {
     (enhanced.isError && isOffline(enhanced.error)) ||
     (ota.isError && isOffline(ota.error)) ||
     (detail.isError && isOffline(detail.error));
+
+  // Native stack screens remain mounted. A web-side refund must replace the
+  // cached account when this screen is focused or the phone resumes.
+  const reservationRefreshClient = useQueryClient();
+  useFocusEffect(useCallback(() => {
+    const refresh = () => { void refreshReservationReads(reservationRefreshClient, id); };
+    refresh();
+    const listener = AppState.addEventListener('change', state => {
+      if (state === 'active') refresh();
+    });
+    return () => listener.remove();
+  }, [reservationRefreshClient, id]));
 
   const booking = detail.data?.booking;
   const guest = detail.data?.guest;
