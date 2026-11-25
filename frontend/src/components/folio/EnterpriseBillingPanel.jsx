@@ -12,6 +12,8 @@ const errorText = error => typeof error?.response?.data?.detail === 'string'
 
 export default function EnterpriseBillingPanel({ bookingId, folios, charges, currency = 'TRY', readOnly, onChanged, onLockChange }) {
   const [data, setData] = useState(null);
+  const [controlsLoading, setControlsLoading] = useState(true);
+  const [controlsError, setControlsError] = useState('');
   const [policy, setPolicy] = useState(null);
   const [items, setItems] = useState([]);
   const [folioId, setFolioId] = useState('');
@@ -35,17 +37,23 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
   const inFlight = useRef(false);
   useEffect(() => { onLockChange?.(busy || uncertain || Boolean(pendingRetry) || fundsLocked || instrumentsLocked); }, [busy, uncertain, pendingRetry, fundsLocked, instrumentsLocked, onLockChange]);
   const refresh = async () => {
-    const [catalog, settings, requests] = await Promise.all([
-      axios.get('/enterprise-billing/catalog'), axios.get('/enterprise-billing/policy'),
-      axios.get('/enterprise-billing/concessions', { params: { booking_id: bookingId } }),
-    ]);
-    if (!active.current) return;
-    if (!Array.isArray(requests.data?.items) || !Array.isArray(catalog.data?.non_collection_operations)) throw new Error('Geçersiz veri');
-    setData(catalog.data); setPolicy(settings.data); setItems(requests.data.items);
+    if (active.current) { setControlsLoading(true); setControlsError(''); }
+    try {
+      const [catalog, settings, requests] = await Promise.all([
+        axios.get('/enterprise-billing/catalog'), axios.get('/enterprise-billing/policy'),
+        axios.get('/enterprise-billing/concessions', { params: { booking_id: bookingId } }),
+      ]);
+      if (!active.current) return;
+      if (!Array.isArray(requests.data?.items) || !Array.isArray(catalog.data?.non_collection_operations)) throw new Error('Geçersiz veri');
+      setData(catalog.data); setPolicy(settings.data); setItems(requests.data.items);
+    } catch (failure) {
+      if (active.current) setControlsError('Kurumsal ödeme kontrol verileri alınamadı. Tekrar yüklemek işlem veya tahsilat göndermez.');
+      throw failure;
+    } finally { if (active.current) setControlsLoading(false); }
   };
   useEffect(() => {
     active.current = true;
-    refresh().catch(() => { if (active.current) setError('Kurumsal ödeme kontrolleri yüklenemedi; yeniden açın.'); });
+    refresh().catch(() => {});
     return () => { active.current = false; };
     // Parent remounts this panel for each reservation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,7 +84,7 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
   };
   const submit = event => {
     event.preventDefault();
-    if ((!valid && !uncertain) || readOnly || !policy?.can_apply || pendingRetry) return;
+    if ((!valid && !uncertain) || readOnly || controlsError || controlsLoading || !policy?.can_apply || pendingRetry) return;
     operate(async () => {
       const payload = { booking_id: bookingId, folio_id: folioId, charge_ids: [...selected].sort(), kind, mode, reason: reason.trim(),
         ...(mode === 'percentage' ? { percentage: parsed } : mode === 'amount' ? { amount_minor: amountMinor } : {}) };
@@ -113,12 +121,14 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}
     {pendingRetry && <div className="space-y-2"><p className="text-sm text-destructive">Bekleyen işlemin sonucu belirsiz. Yeni işlem yapmayın; aynı kayıt ve açıklamayla sonucu doğrulayın.</p><Button type="button" disabled={busy} onClick={() => decide(pendingRetry.item, pendingRetry.approve)}>Bekleyen işlemin sonucunu doğrula</Button></div>}
-    {!data ? <p>Kontroller yükleniyor…</p> : <div className="rounded border p-3 text-sm">
+    {controlsError && <div role="alert" className="space-y-2 text-sm text-destructive"><p>{controlsError}</p><Button type="button" variant="outline" disabled={controlsLoading || busy} onClick={() => refresh().catch(() => {})}>Kontrolleri tekrar yükle</Button></div>}
+    {controlsLoading && <p role="status">Kontroller yükleniyor…</p>}
+    {data && !controlsError && !controlsLoading && <div className="rounded border p-3 text-sm">
       <p>Ödeme sağlayıcısı: {data.provider || 'Yapılandırılmamış'} · {data.provider_readiness === 'configured_not_live_verified' ? 'Yapılandırılmış; canlı kabul doğrulaması gerekli' : 'Entegre kart tahsilatı hazır değil'}</p>
       <p>Harici tahsilat kaydı: nakit, POS/kart, doğrulanmış banka transferi. Hediye kartı, cüzdan, sadakat, barter, alacaktan silme ve çek için aşağıdaki kaynaklı mahsup akışını kullanın.</p>
     </div>}
     {!readOnly && data && !policy?.can_apply && <p className="text-sm text-muted-foreground">İkram/indirim için masraf işleme ve fiyat değiştirme yetkileri gerekir.</p>}
-    {!readOnly && data && policy?.can_apply && <form onSubmit={submit} className="space-y-3">
+    {!readOnly && data && !controlsError && !controlsLoading && policy?.can_apply && <form onSubmit={submit} className="space-y-3">
       <h4 className="font-medium">Gerekçeli ikram / indirim</h4>
       <fieldset disabled={busy || uncertain || Boolean(pendingRetry) || instrumentsLocked} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -141,7 +151,7 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
       {item.service_details?.length > 0 && <p>Hizmetler: {item.service_details.map(row => row.description || row.category || row.id).join(', ')}</p>}
       {item.status === 'requested' && policy?.can_apply && !readOnly && <div className="mt-2 space-y-2">
         <label className="block">Uygulama / iptal açıklaması<input aria-label={`Bekleyen işlem açıklaması ${item.id}`} className="mt-1 block w-full rounded border bg-background p-2" disabled={busy || uncertain || Boolean(pendingRetry)} minLength={3} maxLength={500} value={pendingReasons[item.id] ?? item.reason ?? ''} onChange={e => setPendingReasons(previous => ({ ...previous, [item.id]: e.target.value }))} /></label>
-        <div className="flex gap-2"><Button type="button" size="sm" disabled={busy || uncertain || Boolean(pendingRetry) || (pendingReasons[item.id] ?? item.reason ?? '').trim().length < 3} onClick={() => decide(item, true)}>Uygula</Button><Button type="button" size="sm" variant="outline" disabled={busy || uncertain || Boolean(pendingRetry) || (pendingReasons[item.id] ?? item.reason ?? '').trim().length < 3} onClick={() => decide(item, false)}>İptal et</Button></div>
+        <div className="flex gap-2"><Button type="button" size="sm" disabled={controlsLoading || Boolean(controlsError) || busy || uncertain || Boolean(pendingRetry) || (pendingReasons[item.id] ?? item.reason ?? '').trim().length < 3} onClick={() => decide(item, true)}>Uygula</Button><Button type="button" size="sm" variant="outline" disabled={controlsLoading || Boolean(controlsError) || busy || uncertain || Boolean(pendingRetry) || (pendingReasons[item.id] ?? item.reason ?? '').trim().length < 3} onClick={() => decide(item, false)}>İptal et</Button></div>
       </div>}
     </div>)}</div>
     <Button type="button" variant="outline" disabled={fundsLocked || instrumentsLocked || busy || uncertain || Boolean(pendingRetry)} onClick={() => setShowFunds(value => !value)}>İade edilebilir güvence kayıtları</Button>
