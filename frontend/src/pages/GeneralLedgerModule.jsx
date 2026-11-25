@@ -271,6 +271,7 @@ export const voucherActionNames = (status, mode) => mode === 'authorized_self' ?
 }[status] || []);
 
 export function journalReversalBlocker(entry, control) {
+  if (entry.source === 'mice') return 'MICE kaynaklı gelir fişi bağımsız çevrilemez; organizasyon kaynağı ve cari hesapla birlikte uzlaştırılmalıdır.';
   if (['pos_direct', 'pos_refund'].includes(entry.source)) return 'POS kaynaklı fiş için özgün adisyonun iade akışını kullanın; bağımsız muhasebe ters kaydı açılamaz.';
   if (control?.can_reverse === false) return control.reason || 'Bu kayıt kaynak işlemle birlikte düzeltilmelidir.';
   if (['billing_settlement', 'billing_settlement_reversal'].includes(entry.source)) return 'Rezervasyondaki özgün kaynaklı mahsup bölümünden bağlı ters kayıt oluşturun.';

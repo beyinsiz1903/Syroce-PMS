@@ -31,6 +31,7 @@ describe('voucher finalization', () => {
         { id: 'linked', source: 'billing_settlement', memo: 'Misafir cüzdanı' },
         { id: 'funding', source: 'manual_voucher', memo: 'Fonlama kaydı' },
         { id: 'ordinary', source: 'manual_voucher', memo: 'Sıradan mahsup' },
+        { id: 'mice-source', source: 'mice', memo: 'Özgün organizasyon geliri' },
         { id: 'pos-sale', source: 'pos_direct', memo: 'Özgün POS satışı' },
         { id: 'pos-refund', source: 'pos_refund', memo: 'Özgün POS iadesi' },
       ], reversal_controls: { funding: { can_reverse: false, reason: 'Fonlama kaynağı haklara bağlı' } } } : {} }));
@@ -38,6 +39,7 @@ describe('voucher finalization', () => {
     expect(await screen.findByText('Fonlama kaynağı haklara bağlı')).toBeInTheDocument();
     expect(screen.getByText(/Rezervasyondaki özgün kaynaklı mahsup/)).toBeInTheDocument();
     expect(screen.getAllByText(/POS kaynaklı fiş için özgün adisyonun iade akışını/)).toHaveLength(2);
+    expect(screen.getByText(/MICE kaynaklı gelir fişi bağımsız çevrilemez/)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Ters Kayıt Oluştur' })).toHaveLength(1);
     expect(axios.post).not.toHaveBeenCalled();
   });
