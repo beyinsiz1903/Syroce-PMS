@@ -105,10 +105,18 @@ const EventFormModal = ({
               </select>
               {editing && <p className="text-xs text-muted-foreground">Durum, etkinlik listesindeki geçerli adımlarla değiştirilir.</p>}
             </Field>
-            <Field label="Beklenen Pax"><Input type="number" min="0" required value={form.expected_pax} onChange={e => setForm({
-              ...form,
-              expected_pax: +e.target.value
-            })} /></Field>
+            <Field label="Beklenen Pax"><Input type="number" min="0" required value={form.expected_pax} onChange={e => {
+              const pax = Number(e.target.value);
+              setForm(previous => ({
+                ...previous,
+                expected_pax: pax,
+                // Keep inherited hall attendance in sync. Separate breakout
+                // counts remain explicit and are validated independently.
+                space_bookings: previous.space_bookings.map(sb =>
+                  !sb.expected_pax || sb.expected_pax === previous.expected_pax
+                    ? { ...sb, expected_pax: pax } : sb),
+              }));
+            }} /></Field>
             <Field label="Para Birimi">
               <Input required maxLength={3} value={form.currency || cachedTenantCurrency()} onChange={e => setForm({
                 ...form,
