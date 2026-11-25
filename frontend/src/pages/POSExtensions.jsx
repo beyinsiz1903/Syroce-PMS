@@ -5,7 +5,18 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { parseMoneyInput } from '@/lib/moneyInput';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatHotelEventTimestamp, HOTEL_EVENT_TIME_ZONE_LABEL } from '@/lib/hotelEventTime';
 const money = (value, currency = cachedTenantCurrency()) => formatCurrency(value, currency, { decimals: 2 });
+export function ShiftAuditDetails({ shift }) {
+  return <div className="mt-2 space-y-1 text-xs text-gray-500">
+    <p>Vardiya no: {shift.id || '—'}</p>
+    <p>Açılış: {formatHotelEventTimestamp(shift.opened_at)}</p>
+    {shift.status === 'closed' && <p>Kapanış: {formatHotelEventTimestamp(shift.closed_at)}</p>}
+    <p>{HOTEL_EVENT_TIME_ZONE_LABEL}</p>
+    {Number.isInteger(shift.tx_count) && <p>İşlem sayısı: {shift.tx_count}</p>}
+    {typeof shift.cash_sales === 'number' && Number.isFinite(shift.cash_sales) && <p>İade sonrası nakit satış: {money(shift.cash_sales, shift.currency)}</p>}
+  </div>;
+}
 const TABS = [{ id: "stock", label: "Stok kurtarma" }, {
   id: "currency",
   label: "Çoklu Döviz"
@@ -347,6 +358,7 @@ function ShiftsTab() {
         {shifts.length === 0 ? <p className="text-sm text-gray-500">Henüz vardiya kaydı yok.</p> : <div className="space-y-3">
           {shifts.map(shift => <div key={shift.id} className="rounded-lg border p-3">
             <div className="flex items-start justify-between gap-3"><div><strong>{outlets.find(row => row.id === shift.outlet_id)?.outlet_name || outlets.find(row => row.id === shift.outlet_id)?.name || 'Satış noktası'}</strong><p className="text-xs text-gray-500">{shift.status === 'open' ? 'Açık vardiya' : 'Kapanmış vardiya'} · Açılış nakdi {money(shift.opening_cash || 0, shift.currency || currency)}</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${shift.status === 'open' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{shift.status === 'open' ? 'Açık' : 'Kapalı'}</span></div>
+            <ShiftAuditDetails shift={shift} />
             {shift.status === 'open' ? <div className="mt-3 flex items-end gap-2"><div className="flex-1"><Input label={`Sayılan kasa toplamı (${shift.currency || currency})`} value={counted[shift.id] || ''} onChange={value => setCounted(previous => ({ ...previous, [shift.id]: value }))} money /></div><Btn disabled={!Number.isFinite(parseMoneyInput(counted[shift.id] || ''))} onClick={async () => { const response = await apiFetch(`/api/pos/ext/shifts/${shift.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_total: parseMoneyInput(counted[shift.id]) }) }); setMessage(response.ok ? `Vardiya kapandı. Kasa farkı: ${money(response.body?.shift?.variance || 0, response.body?.shift?.currency || shift.currency || currency)}` : response.body?.detail || 'Vardiya kapatılamadı.'); if (response.ok) setCounted(previous => ({ ...previous, [shift.id]: '' })); await load(); }}>Sayımı Onayla ve Kapat</Btn></div> : <div className="mt-2 grid grid-cols-3 gap-2 text-sm"><div><span className="text-gray-500">Beklenen</span><strong className="block">{money(shift.expected_cash_total || 0, shift.currency || currency)}</strong></div><div><span className="text-gray-500">Sayılan</span><strong className="block">{money(shift.counted_cash_total || 0, shift.currency || currency)}</strong></div><div><span className="text-gray-500">Fark</span><strong className={`block ${Number(shift.variance || 0) === 0 ? 'text-emerald-700' : 'text-red-700'}`}>{money(shift.variance || 0, shift.currency || currency)}</strong></div></div>}
           </div>)}
         </div>}
