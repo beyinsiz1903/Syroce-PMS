@@ -73,6 +73,7 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
   const [items, setItems] = useState([]);
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const activeSpaces = useMemo(() => (spaces || []).filter(space => space.active !== false), [spaces]);
 
   const monthRange = useMemo(() => {
     const { year, month } = calMonth;
@@ -140,12 +141,12 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
       const bookedSpaceIds = bookedSpacesOnDate(dayEvents, dateStr, spaces);
       days.push({
         day: d, dateStr, events: dayEvents,
-        bookedCount: bookedSpaceIds.size,
-        freeCount: Math.max(0, (spaces?.length || 0) - bookedSpaceIds.size),
+        bookedCount: activeSpaces.filter(space => bookedSpaceIds.has(space.id)).length,
+        freeCount: activeSpaces.filter(space => !bookedSpaceIds.has(space.id)).length,
       });
     }
     return days;
-  }, [calMonth, eventsByDate, spaces, monthRange.lastDay]);
+  }, [calMonth, eventsByDate, spaces, activeSpaces, monthRange.lastDay]);
 
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const prevMonth = () => setCalMonth((p) => p.month === 0 ? { year: p.year - 1, month: 11 } : { ...p, month: p.month - 1 });
@@ -198,7 +199,7 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
         relatedSpaceIds(sb.space_id, spaces).forEach(id => (bySpace[id] || (bySpace[id] = [])).push({ ev, sb, startH, endH }));
       });
     });
-    return (spaces || []).map((sp) => {
+    return (spaces || []).filter(sp => sp.active !== false || bySpace[sp.id]?.length).map((sp) => {
       const bookings = (bySpace[sp.id] || []).slice().sort((a, b) => a.startH - b.startH);
       const laneEnds = [];
       bookings.forEach((b) => {
@@ -211,11 +212,11 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
     });
   }, [items, ganttDate, spaces]);
 
-  const ganttBookedCount = ganttRows.filter((r) => r.bookings.length > 0).length;
+  const ganttBookedCount = ganttRows.filter((r) => r.space.active !== false && r.bookings.length > 0).length;
 
   const selectedDayEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
   const selectedDayBookedIds = bookedSpacesOnDate(selectedDayEvents, selectedDate, spaces);
-  const selectedDayFreeSpaces = (spaces || []).filter((s) => !selectedDayBookedIds.has(s.id));
+  const selectedDayFreeSpaces = activeSpaces.filter((s) => !selectedDayBookedIds.has(s.id));
   const selectedDayBookedSpaces = (spaces || []).filter((s) => selectedDayBookedIds.has(s.id));
 
   return (
@@ -302,9 +303,9 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
                         </div>
                       </div>
                     )}
-                    {(spaces?.length || 0) > 0 && (
+                    {activeSpaces.length > 0 && (
                       <div className="mt-0.5 text-[10px] text-emerald-700">
-                        {cell.freeCount}/{spaces.length} {t('cm.components_mice_DiaryView.musait_873fb')}
+                        {cell.freeCount}/{activeSpaces.length} {t('cm.components_mice_DiaryView.musait_873fb')}
                       </div>
                     )}
                   </button>
@@ -379,7 +380,7 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
         ) : (
           <>
             <div className="text-xs text-gray-600 mb-2">
-              {ganttBookedCount} dolu • {Math.max(0, spaces.length - ganttBookedCount)} müsait salon
+              {ganttBookedCount} dolu • {Math.max(0, activeSpaces.length - ganttBookedCount)} müsait salon
             </div>
             <div className="overflow-x-auto">
               <div className="min-w-[760px]">
@@ -403,7 +404,7 @@ const DiaryView = ({ spaceById, spaces, revision }) => {
                   return (
                     <div key={row.space.id} className="flex border-b last:border-b-0">
                       <div className="w-40 shrink-0 pr-2 py-2 text-xs font-medium text-gray-700 flex items-center">
-                        <span className="truncate" title={row.space.name}>{row.space.name}</span>
+                        <span className="truncate" title={row.space.name}>{row.space.name}{row.space.active === false ? ' · Pasif (geçmiş)' : ''}</span>
                       </div>
                       <div className="flex-1 relative" style={{ height: `${rowHeight}px` }}>
                         {ganttHours.map((h) => (
