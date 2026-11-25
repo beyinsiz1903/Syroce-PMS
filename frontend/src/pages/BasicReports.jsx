@@ -1,3 +1,4 @@
+import { reportPaymentMethodLabel } from '@/lib/reportPaymentLabels';
 import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -444,7 +445,7 @@ const BasicReports = ({
     const totals = rawValue && typeof rawValue === 'object' ? rawValue : { TRY: Number(rawValue || 0) };
     const currencies = Object.keys(totals).filter(currency => Number(totals[currency]) !== 0);
     return {
-    name: key === 'credit_card' ? 'Kredi Kartı' : key === 'cash' ? 'Nakit' : key === 'bank_transfer' ? 'Havale/EFT' : key === 'debit_card' ? 'Banka Kartı' : key,
+    name: reportPaymentMethodLabel(key),
     value: currencies.length === 1 ? Number(totals[currencies[0]] || 0) : 0,
     currency: currencies.length === 1 ? currencies[0] : null,
     totals,
