@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import DiaryView from '../DiaryView';
@@ -39,4 +39,20 @@ it('does not reinterpret a malformed response as an empty free calendar', async 
   expect(freeCells()).toHaveLength(0);
   expect(screen.queryByText('Salon takvimi doğrulanıyor…')).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'uiQuality.states.error.title' })).toBeInTheDocument();
+});
+
+it.each([false, true])('excludes inactive halls from availability while retaining their history (active booked: %s)', async activeBooked => {
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-10`;
+  const venues = [...spaces, { id: 'closed', name: 'Retired hall', active: false }];
+  const reservations = [{ space_id: 'closed', starts_at: `${day}T10:00:00`, ends_at: `${day}T11:00:00` }];
+  if (activeBooked) reservations.push({ ...reservations[0], space_id: 'board' });
+  axios.get.mockResolvedValue({ data: { events: [{ id: 'historical', name: 'Preserved event', status: 'completed',
+    start_date: day, end_date: day, space_bookings: reservations }] } });
+  render(<DiaryView spaces={venues} spaceById={Object.fromEntries(venues.map(s => [s.id, s]))} revision={1} />);
+  await act(async () => {});
+  const cell = screen.getByRole('button', { name: new RegExp(`^10 1 ${activeBooked ? 0 : 1}/1 müsait$`) });
+  fireEvent.click(cell);
+  expect(screen.getAllByText('Preserved event').length).toBeGreaterThan(0);
+  expect(screen.queryAllByRole('button', { name: /\/2 müsait/ })).toHaveLength(0);
 });
