@@ -1,0 +1,17 @@
+@media print {
+  /* Safari otherwise fragments a multi-currency cell between printed pages. */
+  .revenue-category-scroll {
+    overflow: visible !important;
+  }
+
+  .revenue-category-table thead {
+    display: table-header-group;
+  }
+
+  .revenue-category-table tr,
+  .revenue-category-table th,
+  .revenue-category-table td {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+  }
+}
