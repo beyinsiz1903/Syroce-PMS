@@ -55,6 +55,9 @@ async def transfer_posted_charges(database, client, tenant_id, actor_id, body):
         if len(bookings) != len(booking_ids) or any(row.get("status") in {"cancelled", "canceled", "no_show", "checked_out"} for row in bookings):
             raise HTTPException(409, "Aktif rezervasyonların açık folyolarını seçin")
         booking_map = {row["id"]: row for row in bookings}
+        target_booking = booking_map[target["booking_id"]]
+        if target_booking.get("is_complimentary") and target_booking.get("complimentary_scope") == "full":
+            raise HTTPException(409, "Tam ikramlı rezervasyona ücretli hizmet aktarılamaz; önce ikram kapsamını uzlaştırın")
         codes = [row.get("currency") or booking_map[row["booking_id"]].get("currency") for row in folios]
         if not all(codes) or len({currency_code(code) for code in codes}) != 1:
             raise HTTPException(409, "Folyo para birimleri aynı ve açıkça kayıtlı olmalı")
