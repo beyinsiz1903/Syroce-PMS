@@ -67,6 +67,70 @@ async def list_settlements(event_id: str, current_user: User = Depends(get_curre
             "notice": "Gerçekte alınmış/iade edilmiş parayı kaydeder; bankaya veya karta ödeme emri göndermez. Ödeme planındaki eski beyanlar tahsilat sayılmaz."}
 
 
+def _journal_amount(journal, code, currency):
+    lines = [line for line in journal.get("lines", []) if line.get("account_code") == code]
+    if not lines or (currency != "TRY" and any(line.get("currency") != currency or line.get("foreign_amount") is None for line in lines)):
+        return None
+    return sum((money(line.get("debit", 0)) - money(line.get("credit", 0)) if currency == "TRY" else money(line["foreign_amount"]) * (1 if line.get("debit", 0) else -1) for line in lines), money(0))
+
+
+@router.get("/accounts/{account_id}/statement")
+async def account_statement(account_id: str, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_finance_reports"))):
+    """Read-only statement of verified direct MICE postings, never quotes as debt."""
+    require_finance(current_user)
+    db, tid = get_system_db(), current_user.tenant_id
+    if not await db.mice_accounts.find_one({"tenant_id": tid, "id": account_id}):
+        raise HTTPException(404, "Kurumsal hesap bulunamadı")
+    events = await db.mice_events.find({"tenant_id": tid, "client_account_id": account_id}, {"_id": 0}).sort("start_date", 1).to_list(501)
+    if len(events) > 500:
+        raise HTTPException(422, "Hesap dökümü 500 etkinliği aşıyor; dönem filtresi gereklidir")
+    ids = [event["id"] for event in events]
+    payments = await db.payments.find({"tenant_id": tid, "mice_event_id": {"$in": ids}, "status": {"$in": ["paid", "refunded"]}, "voided": {"$ne": True}}, {"_id": 0}).to_list(None)
+    journals = await db.gl_journal_entries.find({"tenant_id": tid, "source_ref": {"$in": ids}, "source": {"$in": ["mice", "mice_settlement"]}, "status": "posted", "reversal_status": {"$ne": "reversed"}}, {"_id": 0}).to_list(None)
+    by_id = {journal["id"]: journal for journal in journals}
+    folio_events = set(await db.folio_charges.distinct("mice_event_id", {"tenant_id": tid, "mice_event_id": {"$in": ids}, "voided": {"$ne": True}}))
+    rows, totals = [], {}
+    for event in events:
+        currency = event.get("currency")
+        issues = []
+        journal = by_id.get(event.get("gl_journal_entry_id"))
+        posted = None
+        if journal and journal.get("source") == "mice" and journal.get("source_ref") == event["id"]:
+            posted = _journal_amount(journal, "120", currency) if currency else None
+        if event.get("reservation_id") or event.get("group_block_id") or event["id"] in folio_events:
+            issues.append("Folyo bağlantılı: misafir/grup hesabıyla mutabakat gerekli")
+            posted = None
+        if event.get("finance_pending") or event.get("gl_posting_state") == "pending":
+            issues.append("Bekleyen muhasebe işlemi var")
+        net = money(0)
+        seen = set()
+        for payment in [row for row in payments if row.get("mice_event_id") == event["id"]]:
+            pj = by_id.get(payment.get("gl_journal_entry_id"))
+            amount = _journal_amount(pj, "120", currency) if pj and currency else None
+            expected = money(abs(payment["amount"])) * (1 if payment.get("payment_type") == "refund" else -1)
+            if (not pj or pj.get("source") != "mice_settlement" or pj.get("source_ref") != event["id"] or payment.get("currency") != currency or amount != expected or pj["id"] in seen):
+                issues.append("Tahsilat/iade muhasebe kaydı doğrulanamadı")
+            else:
+                net -= amount
+                seen.add(pj["id"])
+        if posted is None:
+            issues.append("Doğrulanmış doğrudan satış kaydı yok; teklif borç sayılmaz")
+        verified = posted is not None and not issues
+        balance = posted - net if verified else None
+        row = {"event_id": event["id"], "name": event.get("name"), "date": event.get("start_date"), "status": event.get("status"), "currency": currency,
+               "quoted_total": (event.get("totals") or {}).get("grand_total"), "posted_total": float(posted) if posted is not None else None,
+               "net_collected": float(net) if not any("Tahsilat" in issue for issue in issues) else None,
+               "outstanding": float(max(money(0), balance)) if balance is not None else None,
+               "customer_credit": float(max(money(0), -balance)) if balance is not None else None, "issues": issues}
+        rows.append(row)
+        if verified:
+            total = totals.setdefault(currency, {"posted_total": 0, "net_collected": 0, "outstanding": 0, "customer_credit": 0})
+            for key in total:
+                total[key] = float(money(total[key]) + money(row[key]))
+    return {"rows": rows, "totals_by_currency": totals, "excluded_count": sum(bool(row["issues"]) for row in rows),
+            "notice": "Yalnız doğrulanmış doğrudan MICE satış ve tahsilat kayıtları toplanır. Teklifler borç değildir. Folyo bağlantılı ve eksik kayıtlar toplamın dışında gösterilir; farklı para birimleri birleştirilmez."}
+
+
 @router.post("/events/{event_id}/settlements")
 async def record_settlement(event_id: str, body: SettlementIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("post_payment"))):
     require_finance(current_user)

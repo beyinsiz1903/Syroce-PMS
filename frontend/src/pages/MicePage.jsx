@@ -925,7 +925,7 @@ const MicePage = ({
         </TabsContent>
 
         <TabsContent value="accounts">
-          <AccountsView accounts={accounts} reload={loadAccountsList} canManage={canMice} />
+          <AccountsView accounts={accounts} reload={loadAccountsList} canManage={canMice} canFinance={canFinance} />
         </TabsContent>
 
         <TabsContent value="spaces">

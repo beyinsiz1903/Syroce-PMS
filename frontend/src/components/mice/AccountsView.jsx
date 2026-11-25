@@ -11,7 +11,7 @@ import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
-const AccountsView = ({ accounts, reload, canManage = false }) => {
+const AccountsView = ({ accounts, reload, canManage = false, canFinance = false }) => {
   const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -20,6 +20,19 @@ const AccountsView = ({ accounts, reload, canManage = false }) => {
   const [expandedId, setExpandedId] = useState(null);
   const [contactsCache, setContactsCache] = useState({});
   const [contactForm, setContactForm] = useState(null);
+  const [statement, setStatement] = useState(null);
+  const [statementLoading, setStatementLoading] = useState(false);
+  const showStatement = async (account) => {
+    setStatement({ account, data: null, error: null });
+    setStatementLoading(true);
+    try {
+      const { data } = await axios.get(`/mice/accounts/${account.id}/statement`);
+      setStatement({ account, data, error: null });
+    } catch (error) {
+      setStatement({ account, data: null, error: error.response?.data?.detail || 'Hesap dökümü yüklenemedi' });
+    } finally { setStatementLoading(false); }
+  };
+  const amount = (value, currency) => value == null || !currency ? 'Doğrulanmadı' : formatCurrency(value, currency);
 
   const create = async (e) => {
     e.preventDefault();
@@ -84,6 +97,7 @@ const AccountsView = ({ accounts, reload, canManage = false }) => {
               <Badge variant="outline" className="text-xs">
                 {a.payment_terms_days}{t('cm.components_mice_AccountsView.gun_vade')}
               </Badge>
+              {canFinance && <Button size="sm" variant="outline" disabled={statementLoading} onClick={e => { e.stopPropagation(); showStatement(a); }}>Hesap dökümü</Button>}
               <Button disabled={!canManage} size="sm" variant="ghost" aria-label={`${a.name} düzenle`} onClick={e => { e.stopPropagation(); setEditing(a.id); setForm({ ...a }); setShowForm(true); }}><Pencil className="w-3 h-3" /></Button>
               <Button disabled={!canManage} size="sm" variant="ghost" onClick={(e) => {
                 e.stopPropagation();
@@ -127,6 +141,27 @@ const AccountsView = ({ accounts, reload, canManage = false }) => {
         ))}
       </div>
 
+      {statement && <Modal title={`${statement.account.name} — Hesap dökümü`} onClose={() => setStatement(null)}>
+        {statementLoading && <p role="status">Yükleniyor…</p>}
+        {statement.error && <p role="alert">{statement.error}</p>}
+        {statement.data && <div className="space-y-3">
+          <p className="text-sm">{statement.data.notice}</p>
+          {Object.entries(statement.data.totals_by_currency).map(([currency, total]) => <div key={currency} className="border rounded p-2 text-sm">
+            <strong>{currency} — Doğrulanmış kayıtlar</strong>
+            <p>Kaydedilmiş satış: {amount(total.posted_total, currency)} · Net tahsilat: {amount(total.net_collected, currency)}</p>
+            <p>Kalan alacak: {amount(total.outstanding, currency)} · Müşteri alacağı: {amount(total.customer_credit, currency)}</p>
+          </div>)}
+          {statement.data.excluded_count > 0 && <p role="status">{statement.data.excluded_count} etkinlik mutabakat bekliyor; toplama dahil edilmedi.</p>}
+          {statement.data.rows.length === 0 && <p>Bu hesaba bağlı etkinlik yok.</p>}
+          {statement.data.rows.map(row => <div key={row.event_id} className="border rounded p-2 text-sm">
+            <strong>{row.name}</strong><p>{row.date} · {row.currency || 'Para birimi eksik'}</p>
+            <p>Teklif: {amount(row.quoted_total, row.currency)} · Kaydedilmiş satış: {amount(row.posted_total, row.currency)}</p>
+            <p>Net tahsilat: {amount(row.net_collected, row.currency)} · Kalan alacak: {amount(row.outstanding, row.currency)}</p>
+            <p>Müşteri alacağı: {amount(row.customer_credit, row.currency)}</p>
+            {row.issues.map(issue => <p key={issue} className="text-amber-700 dark:text-amber-300">{issue}</p>)}
+          </div>)}
+        </div>}
+      </Modal>}
       {showForm && (
         <Modal title={editing ? 'Kurumsal Hesap Düzenle' : t('cm.components_mice_AccountsView.yeni_kurumsal_hesap')} onClose={() => setShowForm(false)}>
           <form onSubmit={create} className="space-y-2">
