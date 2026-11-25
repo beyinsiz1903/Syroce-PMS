@@ -340,6 +340,10 @@ async def update_space(
     require_catalog(current_user)
     db = get_system_db()
     data = await _currency_payload(body, current_user.tenant_id)
+    # This token identifies the original creation, not an editable catalog
+    # property. Writing a default None enrolls legacy rows in the partial
+    # unique index and makes the second legacy edit fail with E11000.
+    data.pop("client_request_id", None)
     async def update_locked(session):
         spaces = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": current_user.tenant_id}, session=session)}
         original = spaces.get(space_id)
