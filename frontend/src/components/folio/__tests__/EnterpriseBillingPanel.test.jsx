@@ -25,6 +25,37 @@ async function fill() {
 }
 
 describe('Enterprise billing', () => {
+  it('stops loading on read failure and retries without sending a financial request', async () => {
+    const normalGet = axios.get.getMockImplementation();
+    axios.get.mockRejectedValueOnce(new Error('read unavailable'));
+    render(<EnterpriseBillingPanel {...props} />);
+    await screen.findByText(/kontrol verileri alınamadı/);
+    expect(screen.queryByText('Kontroller yükleniyor…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'İkramı / indirimi uygula' })).not.toBeInTheDocument();
+    axios.get.mockImplementation(normalGet);
+    fireEvent.click(screen.getByRole('button', { name: 'Kontrolleri tekrar yükle' }));
+    await screen.findByText(/Ödeme sağlayıcısı:/);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('read recovery after a saved concession does not repeat the financial action', async () => {
+    const normalGet = axios.get.getMockImplementation();
+    render(<EnterpriseBillingPanel {...props} />);
+    await fill();
+    axios.post.mockImplementationOnce(async (_url, body) => {
+      axios.get.mockRejectedValue(new Error('read unavailable'));
+      return { data: { ...body, id: body.request_id, status: 'applied' } };
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'İkramı / indirimi uygula' }));
+    await screen.findByText(/kontrol verileri alınamadı/);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    axios.get.mockImplementation(normalGet);
+    fireEvent.click(screen.getByRole('button', { name: 'Kontrolleri tekrar yükle' }));
+    await screen.findByText(/Ödeme sağlayıcısı:/);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
   it('applies directly with explanation, refreshes the folio and removes approval settings', async () => {
     const onChanged = vi.fn();
     render(<EnterpriseBillingPanel {...props} onChanged={onChanged} />);
