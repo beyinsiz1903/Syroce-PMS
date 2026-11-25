@@ -241,7 +241,7 @@ export const FnBSection = ({
         <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrencyBreakdown(s.fnb_revenue_by_currency, s.fnb_revenue)}</p>
         <p className="text-sm text-slate-500 mt-2">{reportDate} tarihli toplam yiyecek ve içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrencyBreakdown(s.today_room_revenue_by_currency, s.today_room_revenue)}</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Folyoya İşlenen Oda Geliri</p><p className="font-bold text-slate-900">{s.posted_room_revenue_by_currency || s.posted_room_revenue != null ? formatCurrencyBreakdown(s.posted_room_revenue_by_currency, s.posted_room_revenue) : "Doğrulanamadı"}</p></div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Toplam Gelirdeki Payı</p><p className="font-bold text-slate-900">{revenueShare}</p></div>
         </div>
       </CardContent>
