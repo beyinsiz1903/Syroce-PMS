@@ -292,9 +292,10 @@ const EventFormModal = ({
             </div>)}
         </TabsContent>
         <TabsContent value="pricing" className="space-y-4">
-          <p className="text-sm text-muted-foreground">Katalog ve serbest satır fiyatları net kabul edilir. Sıra: ara toplam − indirim + servis + vergi. Bu oranlar yasal vergi tavsiyesi değildir; tesisin geçerli oranlarını girin. Karma vergi oranlı fatura için muhasebe modülünü kullanın.</p>
-          <label className="flex gap-2 text-sm"><input type="checkbox" checked={form.pricing != null} onChange={e => setForm({ ...form, pricing: e.target.checked ? { discount_percent: 0, service_percent: 0, tax_percent: 0, tax_on_service: true } : null })} />İndirim / servis / vergi dökümü kullan</label>
+          <p className="text-sm text-muted-foreground">Vergi dahil girişte vergi tutarın içinden ayrılır; tutara ikinci kez eklenmez. Servis bedeli ayrıca eklenir. Vergi hariç seçilirse vergi tutara eklenir. Bu oranlar yasal vergi tavsiyesi değildir; tesisin geçerli oranlarını girin. Karma vergi oranlı fatura için muhasebe modülünü kullanın.</p>
+          <label className="flex gap-2 text-sm"><input type="checkbox" checked={form.pricing != null} onChange={e => setForm({ ...form, pricing: e.target.checked ? { discount_percent: 0, service_percent: 0, tax_percent: 0, tax_on_service: true, tax_inclusive: true } : null })} />İndirim / servis / vergi dökümü kullan</label>
           {form.pricing && <div className="grid gap-3 sm:grid-cols-3">
+            <label className="flex gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={Boolean(form.pricing.tax_inclusive)} onChange={e => setForm({ ...form, pricing: { ...form.pricing, tax_inclusive: e.target.checked } })} />Girilen fiyatlara vergi dahil</label>
             {[['discount_percent', 'İndirim (%)'], ['service_percent', 'Servis (%)'], ['tax_percent', 'Vergi (%)']].map(([key, label]) => <Field key={key} label={label}><Input type="number" min="0" max="100" step="0.01" value={form.pricing[key]} onChange={e => setForm({ ...form, pricing: { ...form.pricing, [key]: Number(e.target.value) } })} /></Field>)}
             <label className="flex gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={form.pricing.tax_on_service} onChange={e => setForm({ ...form, pricing: { ...form.pricing, tax_on_service: e.target.checked } })} />Servis bedeli vergi matrahına dahil</label>
           </div>}

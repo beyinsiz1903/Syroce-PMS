@@ -6,7 +6,7 @@ export default function QuoteTotals({ totals = {}, currency }) {
       ['space_total', 'Salon'], ['resources_total', 'Kaynaklar'],
       ['subtotal', 'Ara toplam'], ['discount_total', 'İndirim (−)'],
       ['net_total', 'İndirim sonrası net'], ['service_total', 'Servis (+)'],
-      ['tax_total', 'Vergi (+)'], ['grand_total', 'Etkinlik satış toplamı'],
+      ['tax_total', totals.tax_inclusive ? 'Vergi dökümü' : 'Vergi (+)'], ['grand_total', 'Etkinlik satış toplamı'],
     ].filter(([key]) => totals[key] != null).map(([key, label]) => <div key={key} className={`flex justify-between gap-4 ${key === 'grand_total' ? 'border-t pt-2 font-bold' : ''}`}>
       <dt>{label}</dt><dd>{formatCurrency(totals[key], currency)}</dd>
     </div>)}

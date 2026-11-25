@@ -985,6 +985,7 @@ class PricingPolicyIn(MiceInput):
     service_percent: float = Field(0, ge=0, le=100)
     tax_percent: float = Field(0, ge=0, le=100)
     tax_on_service: bool = True
+    tax_inclusive: bool = False  # Missing legacy policies retain exclusive pricing.
 
 
 class EventIn(MiceInput):
@@ -1510,7 +1511,7 @@ async def quote_event(body: EventIn, current_user: User = Depends(get_current_us
     resources = await _expand_resource_prices(tid, [r.model_dump() for r in body.resources], body.expected_pax, currency, tenant_currency)
     totals = _compute_totals({"space_bookings": bookings, "resources": resources, "pricing": body.pricing.model_dump() if body.pricing else None}, spaces)
     return {"currency": currency, "totals": totals, "payment_schedule_total": rounded(sum((money(p.amount) for p in body.payment_schedule), Decimal(0))),
-            "notice": "Net katalog fiyatı − indirim + servis + tanımlanan vergi. Oranlar tesis tarafından belirlenir; bu teklif fatura, müsaitlik garantisi veya tahsilat değildir." if body.pricing else "Salon ve kaynak satış bedeli; müsaitlik garantisi veya tahsilat değildir. Vergi/servis bedeli ayrıca tanımlanmamıştır."}
+            "notice": ("Katalog tutarına vergi dahildir; vergi tutarın içinden ayrılır. Servis bedeli ayrıca eklenir." if body.pricing and body.pricing.tax_inclusive else "Net katalog fiyatı − indirim + servis + tanımlanan vergi.") + " Oranlar tesis tarafından belirlenir; bu teklif fatura, müsaitlik garantisi veya tahsilat değildir." if body.pricing else "Salon ve kaynak satış bedeli; müsaitlik garantisi veya tahsilat değildir. Vergi/servis bedeli ayrıca tanımlanmamıştır."}
 
 
 @router.post("/events")
@@ -2700,7 +2701,7 @@ def _beo_html(payload: dict) -> str:
   <table class="totals">
     <tr><td class='k'>Mekan Toplamı</td><td class='r'>{_money(totals.get("space_total"))}</td></tr>
     <tr><td class='k'>Kaynak Toplamı</td><td class='r'>{_money(totals.get("resources_total"))}</td></tr>
-    {''.join(f"<tr><td class='k'>{label}</td><td class='r'>{_money(totals[key])}</td></tr>" for key, label in (("discount_total", "İndirim (−)"), ("net_total", "İndirim sonrası net"), ("service_total", "Servis (+)"), ("tax_total", "Vergi (+)")) if key in totals)}
+    {''.join(f"<tr><td class='k'>{label}</td><td class='r'>{_money(totals[key])}</td></tr>" for key, label in (("discount_total", "İndirim (−)"), ("net_total", "İndirim sonrası net"), ("service_total", "Servis (+)"), ("tax_total", "Vergi dökümü" if totals.get("tax_inclusive") else "Vergi (+)")) if key in totals)}
     <tr class='grand'><td class='k'>GRAND TOTAL</td><td class='r'>{_money(totals.get("grand_total"))}</td></tr>
   </table>
 
