@@ -91,4 +91,4 @@ if [ "$TARGET" = "$FLOWS_DIR" ]; then
 fi
 # Never echo credential-bearing -e arguments.
 echo "[smoke] platform=${SMOKE_PLATFORM:-default} target=$TARGET"
-exec maestro "${DEVICE_ARGS[@]}" test "${ENV_ARGS[@]}" "$TARGET" "${SUITE_ARGS[@]}" "$@"
+exec maestro ${DEVICE_ARGS[@]+"${DEVICE_ARGS[@]}"} test ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} "$TARGET" ${SUITE_ARGS[@]+"${SUITE_ARGS[@]}"} "$@"
