@@ -336,7 +336,7 @@ export default function TrialBalancePage({ reportDate, onReportDateChange }) {
             </CardHeader>
             <CardContent>
               {data.ledger.snapshot_scope === 'current' && <p className="mb-3 text-xs text-muted-foreground" data-testid="current-ledger-scope">Defter bakiyeleri güncel durumu gösterir; seçili rapor gününün tarihsel kapanış bakiyesi değildir. Farklı dövizlerdeki borç ve avans birbirinden düşülmez.</p>}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <MetricCard
                   icon={Wallet}
                   label="Açık Folyo Alacağı"
@@ -349,6 +349,12 @@ export default function TrialBalancePage({ reportDate, onReportDateChange }) {
                   label="Depozito Bakiyesi"
                   value={money(data.ledger.deposit_balance, data.ledger.currency || data.currency, data.ledger.deposit_balance_by_currency)}
                   sub="Henüz kullanılmamış depozito"
+                />
+                <MetricCard
+                  icon={ArrowDownToLine}
+                  label="İade Edilebilir Depozito"
+                  value={data.ledger.security_fund_balance_by_currency === undefined ? 'Raporlanmadı' : money(data.ledger.security_fund_balance, data.ledger.currency || data.currency, data.ledger.security_fund_balance_by_currency)}
+                  sub="Henüz iade edilmemiş veya misafir hesabına kullanılmamış tutar. Gelir ve yeni tahsilat değildir."
                 />
                 <MetricCard
                   icon={ClipboardCheck}

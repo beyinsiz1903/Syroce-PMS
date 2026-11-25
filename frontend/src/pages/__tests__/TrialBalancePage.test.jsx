@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import TrialBalancePage from '../TrialBalancePage';
@@ -103,4 +103,21 @@ describe('TrialBalancePage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Geçerli bir rapor tarihi');
     expect(get).not.toHaveBeenCalled();
   });
+});
+
+
+it('keeps refundable deposit currencies separate from advances and collections', async () => {
+  get.mockResolvedValue({ data: { ...response, ledger: { ...response.ledger,
+    security_fund_balance: null, security_fund_balance_by_currency: { EUR: 50, USD: 10 } } } });
+  render(<TrialBalancePage reportDate="2026-10-01" />);
+  const card = (await screen.findByText('İade Edilebilir Depozito')).parentElement;
+  expect(within(card).getByText(text => text.includes('EUR:') && text.includes('50,00') && text.includes('USD:') && text.includes('10,00'))).toBeInTheDocument();
+  expect(within(card).getByText(/Gelir ve yeni tahsilat değildir/)).toBeInTheDocument();
+});
+
+it('does not turn an unavailable refundable deposit position into zero', async () => {
+  get.mockResolvedValue({ data: response });
+  render(<TrialBalancePage reportDate="2026-10-01" />);
+  const card = (await screen.findByText('İade Edilebilir Depozito')).parentElement;
+  expect(within(card).getByText('Raporlanmadı')).toBeInTheDocument();
 });
