@@ -133,7 +133,8 @@ class FrontdeskServiceV2:
         except ValueError as exc:
             return ServiceResult.fail(str(exc), "BUSINESS_DATE_MISMATCH")
 
-        if room["status"] not in ("available", "inspected", "clean"):
+        room_status = room.get("status")
+        if room_status not in ("available", "inspected", "clean"):
             # Check pending HK tasks
             pending_hk = await self._db.housekeeping_tasks.count_documents(
                 {
@@ -144,24 +145,29 @@ class FrontdeskServiceV2:
             )
             if pending_hk > 0:
                 return ServiceResult.fail(
-                    f"Room {room.get('room_number')} has {pending_hk} pending housekeeping task(s). Status: {room['status']}",
+                    f"Room {room.get('room_number')} has {pending_hk} pending housekeeping task(s). Status: {room_status}",
                     "ROOM_NOT_READY",
                 )
-            if room["status"] == "dirty":
+            if room_status == "dirty":
                 return ServiceResult.fail(
                     f"Room {room.get('room_number')} is dirty and needs cleaning",
                     "ROOM_NOT_READY",
                 )
-            if room["status"] == "maintenance":
+            if room_status == "maintenance":
                 return ServiceResult.fail(
                     f"Room {room.get('room_number')} is under maintenance",
                     "ROOM_MAINTENANCE",
                 )
-            if room["status"] == "occupied":
+            if room_status == "occupied":
                 return ServiceResult.fail(
                     f"Room {room.get('room_number')} is currently occupied",
                     "ROOM_OCCUPIED",
                 )
+
+            return ServiceResult.fail(
+                f"Room {room.get('room_number')} is not ready for check-in (status: {room_status or 'unknown'})",
+                "ROOM_NOT_READY",
+            )
 
         # Create guest folio
         folio_id = None
