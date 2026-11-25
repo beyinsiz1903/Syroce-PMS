@@ -87,7 +87,7 @@ def ledger(monkeypatch):
         tenant_settings=Collection([{"tenant_id": "A", "business_date": "2026-10-24", "enterprise_billing": {"approval_limits_minor": {"TRY": 1000000}}}]),
         folio_charges=Collection([{"id": "room", "tenant_id": "A", "folio_id": "guest", "booking_id": "booking", "currency": "TRY",
             "charge_category": "room", "amount": 900, "tax_amount": 100, "total": 1000, "business_date": "2026-10-23", "voided": False}]),
-        payments=Collection(), billing_concessions=Collection(), invoices=Collection(), pms_audit_trail=Collection(), audit_logs=Collection())
+        extra_charges=Collection(), payments=Collection(), billing_concessions=Collection(), invoices=Collection(), pms_audit_trail=Collection(), audit_logs=Collection())
 
 
 def body(**changes):
