@@ -300,13 +300,13 @@ async def _company_ledger_positions(tenant_id: str, folios: list[dict]):
     fallback_currency = await _native_report_currency(tenant_id)
     failed = []
     try:
-        snapshots = await folio_snapshots(db, tenant_id, folios, fallback_currency=fallback_currency)
+        snapshots = await folio_snapshots(db, tenant_id, folios, fallback_currency=fallback_currency, include_booking_extras=True)
     except (ValueError, TypeError, ArithmeticError, KeyError):
         logger.exception("Company ledger batch failed tenant=%s; isolating invalid folios", tenant_id)
         snapshots = {}
         for folio in folios:
             try:
-                snapshots.update(await folio_snapshots(db, tenant_id, [folio], fallback_currency=fallback_currency))
+                snapshots.update(await folio_snapshots(db, tenant_id, [folio], fallback_currency=fallback_currency, include_booking_extras=True))
             except Exception:
                 failed.append(str(folio.get("id")))
     except Exception:

@@ -256,7 +256,7 @@ async def get_folio_detail(folio_id: str, current_user: User = Depends(get_curre
         from modules.pms_core.receivable_reporting import folio_snapshots
 
         currency, _ = await get_tenant_currency(current_user.tenant_id)
-        snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency))[folio_id]
+        snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency, include_booking_extras=True))[folio_id]
         folio["outstanding_by_currency"] = snapshot["balance_by_currency"]
         folio["outstanding"] = single_amount(snapshot["balance_by_currency"])
         folio["currency"] = snapshot["currency"]

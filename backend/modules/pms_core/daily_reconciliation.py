@@ -118,7 +118,7 @@ async def build_daily_reconciliation(database, tenant_id: str, day: date):
     revenue.update(adjustments=single_amount(adjustments), adjustments_by_currency=rounded_totals(adjustments), net_total=single_amount(net), net_total_by_currency=rounded_totals(net))
     difference = {code: money(net.get(code, 0)) - money(payment_totals.get(code, 0)) for code in net.keys() | payment_totals.keys()}
     # Current positions come from actual folio movements, not booking.ar_balance.
-    snapshots = await folio_snapshots(database, tenant_id, folios, fallback_currency=native)
+    snapshots = await folio_snapshots(database, tenant_id, folios, fallback_currency=native, include_booking_extras=True)
     ar, deposit_totals = {}, {}
     for snap in snapshots.values():
         for code, value in snap["balance_by_currency"].items():
