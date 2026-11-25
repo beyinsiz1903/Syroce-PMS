@@ -109,7 +109,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const isLite = plan === 'pms_lite';
   const effectivePermissions = user?.effective_permissions || [];
   const canCreateBooking = effectivePermissions.includes('create_booking');
-  const canViewBookings = effectivePermissions.includes('view_bookings');
+  const canViewBookings = effectivePermissions.includes('view_bookings') && canAccessPmsTab(user, 'bookings');
 
   const { data: setup } = useSetupStatus({ enabled: isLite });
   const roomsCount = setup?.rooms_count ?? 0;

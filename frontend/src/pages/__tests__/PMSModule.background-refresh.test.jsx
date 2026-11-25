@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate, i18n: {
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock('@/components/Layout', () => ({ default: ({ children }) => <main>{children}</main> }));
 vi.mock('@/components/GlobalSearch', () => ({ default: () => null }));
-vi.mock('@/utils/moduleAccess', () => ({ canAccessPmsTab: (_user, tab) => tab === 'rooms' }));
+vi.mock('@/utils/moduleAccess', () => ({ canAccessPmsTab: (profile, tab) => tab === 'rooms' || (tab === 'bookings' && profile.role === 'admin') }));
 vi.mock('@/components/pms/RoomsTab', async () => {
   const { useState } = await import('react');
   const RoomWorkspaceMock = ({ rooms, bookings, onDataRefresh }) => {
@@ -50,7 +50,7 @@ describe('PMS background refresh', () => {
     const originalGet = axios.get.getMockImplementation();
     axios.get.mockImplementation(url => url.startsWith('/pms/bookings?')
       ? Promise.reject({ response: { status: 403 } }) : originalGet(url));
-    mount({ id: 'housekeeping-user', role: 'housekeeping', effective_permissions: ['view_rooms'] });
+    mount({ id: 'housekeeping-user', role: 'housekeeping', effective_permissions: ['view_rooms', 'view_bookings'] });
     await screen.findByTestId('rooms-workspace');
     expect(axios.get.mock.calls.some(([url]) => url.startsWith('/pms/bookings?'))).toBe(false);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
