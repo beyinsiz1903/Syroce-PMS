@@ -105,7 +105,7 @@ const POSReports = ({ outletId }) => {
 
   return (
     <div className="space-y-4">
-      <POSReceiptHistory outletId={outletId} />
+      <POSReceiptHistory outletId={outletId} onRefund={load} />
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-2">
