@@ -11,6 +11,16 @@ const blank = () => ({ request_id: crypto.randomUUID(), kind: 'collection', amou
   bank_account_id: '', original_payment_id: '', exchange_rate: '', reference: '', reason: '' });
 const methods = { cash: 'Nakit', card: 'Kart', bank_transfer: 'Banka havalesi' };
 
+export function refundableMinor(payment, payments) {
+  const original = Number(payment.amount);
+  if (!Number.isFinite(original) || original <= 0) return null;
+  if (payment.voided) return 0;
+  const refunds = payments.filter(row => row.payment_type === 'refund' && row.original_payment_id === payment.id && row.status === 'refunded' && !row.voided);
+  if (refunds.some(row => !Number.isFinite(Number(row.amount)))) return null;
+  const remaining = Math.round(original * 100) - refunds.reduce((sum, row) => sum + Math.round(Math.abs(Number(row.amount)) * 100), 0);
+  return remaining < 0 ? null : remaining;
+}
+
 export default function AppointmentSettlements({ appointmentId, onRecorded }) {
   const endpoint = `/spa/appointments/${appointmentId}/settlements`;
   const [data, setData] = useState(null);
@@ -47,6 +57,14 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
   const submit = async e => {
     e.preventDefault();
     if (submitting.current || uncertain) return;
+    if (form.kind === 'refund') {
+      const original = data?.payments.find(row => row.id === form.original_payment_id);
+      const limit = original ? refundableMinor(original, data.payments) : null;
+      if (limit === null || limit <= 0 || Math.round(Number(form.amount) * 100) > limit) {
+        setSubmissionError('İade tutarı seçilen tahsilatın kalan iade edilebilir tutarını aşamaz.');
+        return;
+      }
+    }
     submitting.current = true;
     setBusy(true);
     const payload = { ...form, amount: Number(form.amount),
@@ -76,6 +94,8 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
 
   const pending = data.pending?.request;
   const locked = Boolean(pending) || uncertain;
+  const selectedOriginal = data.payments.find(row => row.id === form.original_payment_id);
+  const refundLimit = selectedOriginal ? refundableMinor(selectedOriginal, data.payments) : null;
   const startRefund = p => setForm({ ...blank(), kind: 'refund', method: p.method,
     bank_account_id: p.bank_account_id || '', original_payment_id: p.id, exchange_rate: p.gl_exchange_rate });
   return <section aria-label="SPA tahsilatları" className="space-y-4 rounded-xl border bg-white p-4">
@@ -100,7 +120,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
     <div className="space-y-2">{data.payments.map(p => <article key={p.id} className="rounded-lg border p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span>{p.payment_type === 'refund' ? 'İade' : 'Tahsilat'} · {formatCurrency(p.amount, data.currency)} · {methods[p.method]}</span>
-        {p.payment_type !== 'refund' && <Button type="button" size="sm" variant="outline" disabled={busy || locked} onClick={() => startRefund(p)}>İade kaydet</Button>}
+        {p.payment_type !== 'refund' && <Button type="button" size="sm" variant="outline" disabled={busy || locked || refundableMinor(p, data.payments) === null || refundableMinor(p, data.payments) <= 0} onClick={() => startRefund(p)}>{refundableMinor(p, data.payments) === null ? 'İade tutarı doğrulanamadı' : refundableMinor(p, data.payments) === 0 ? 'İade tamamlandı' : 'İade kaydet'}</Button>}
       </div>
       <details className="mt-2 text-xs"><summary className="cursor-pointer">Makbuz ayrıntıları</summary>
         <dl className="mt-2 grid gap-2 break-words sm:grid-cols-2">
@@ -112,7 +132,7 @@ export default function AppointmentSettlements({ appointmentId, onRecorded }) {
     <form onSubmit={submit} className="space-y-3">
       <h4 className="text-sm font-medium">{form.kind === 'refund' ? 'Seçilen tahsilata iade' : 'Yeni tahsilat'}</h4>
       <fieldset disabled={busy || locked} className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm">Tutar ({data.currency})<Input required type="number" min="0.01" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
+        <label className="text-sm">Tutar ({data.currency})<Input required type="number" min="0.01" step="0.01" max={form.kind === 'refund' && refundLimit !== null ? refundLimit / 100 : undefined} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
         <label className="text-sm">Ödeme yöntemi<select className="w-full rounded border p-2" disabled={form.kind === 'refund'} value={form.method} onChange={e => setForm({ ...form, method: e.target.value, bank_account_id: '' })}>{Object.entries(methods).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
         {form.method !== 'cash' && <label className="text-sm">Banka / kart hesabı<select required disabled={form.kind === 'refund'} className="w-full rounded border p-2" value={form.bank_account_id} onChange={e => setForm({ ...form, bank_account_id: e.target.value })}><option value="">Hesap seçin</option>{data.bank_accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}</select></label>}
         {data.currency !== 'TRY' && <label className="text-sm">TRY muhasebe kuru<Input required disabled={form.kind === 'refund'} type="number" min="0.000001" step="any" value={form.exchange_rate} onChange={e => setForm({ ...form, exchange_rate: e.target.value })} /></label>}
