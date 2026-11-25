@@ -420,7 +420,7 @@ async def record_payment_mobile(
     from core.tenant_currency import get_tenant_currency
 
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
-    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=tenant_currency))[folio_id]
+    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=tenant_currency, include_booking_extras=True))[folio_id]
     ledger_currency = snapshot["currency"]
     if request.currency and currency_code(request.currency) != ledger_currency:
         raise HTTPException(409, "Tahsilat para birimi folyo para birimiyle aynı olmalıdır.")
@@ -518,7 +518,7 @@ async def record_payment_mobile(
         _lg.getLogger(__name__).exception("cashier txn record failed")
 
     # Update folio balance
-    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=tenant_currency))[folio_id]
+    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=tenant_currency, include_booking_extras=True))[folio_id]
     new_balance = single_amount(snapshot["balance_by_currency"])
     updates = {"balance_by_currency": snapshot["balance_by_currency"]}
     if new_balance is not None:
@@ -844,7 +844,7 @@ async def get_folio_full_extract_mobile(
     if not folio:
         raise HTTPException(404, "Folio not found")
     currency, _ = await get_tenant_currency(current_user.tenant_id)
-    snap = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency))[folio_id]
+    snap = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency, include_booking_extras=True))[folio_id]
     booking = snap["booking"]
     guest = None
     if booking.get("guest_id"):
