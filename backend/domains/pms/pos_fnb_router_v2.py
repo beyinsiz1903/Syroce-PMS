@@ -5,7 +5,7 @@ create_order, close_order, void_order, stock_adjust, table_reserve.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 from common.context import OperationContext
 from common.response import from_service_result
@@ -340,6 +340,23 @@ async def transfer_order_table(
         status_code = 409 if result.code in {"ORDER_NOT_OPEN", "TABLE_UNAVAILABLE"} else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
+
+
+class SplitItemsRequest(BaseModel):
+    to_table_number: str = Field(min_length=1, max_length=30)
+    quantities: dict[str, StrictInt]
+    request_id: str = Field(min_length=16, max_length=100)
+
+
+@router.post("/orders/{order_id}/split-items")
+async def split_order_items(order_id: str, req: SplitItemsRequest, user=Depends(get_current_user),
+                            _perm=Depends(require_module_role("pos"))):
+    from domains.pms.pos_fnb.item_split import split_items
+
+    result = await split_items(pos_fnb_service_v2._db, user.tenant_id, user.id, order_id,
+                               req.to_table_number, req.quantities, req.request_id)
+    await pos_fnb_service_v2._broadcast_kitchen_queue(user.tenant_id)
+    return result
 
 
 @router.post("/orders/{order_id}/merge-table")

@@ -69,6 +69,10 @@ const POSWaiterTerminal = () => {
   const [lastOrder, setLastOrder] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
   const [transferTarget, setTransferTarget] = useState('');
+  const [itemSplitOpen, setItemSplitOpen] = useState(false);
+  const [itemSplitQuantities, setItemSplitQuantities] = useState({});
+  const [itemSplitTarget, setItemSplitTarget] = useState('');
+  const itemSplitRequest = useRef(null);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitCount, setSplitCount] = useState(2);
   const [splitMethods, setSplitMethods] = useState(['cash', 'card']);
@@ -167,6 +171,7 @@ const POSWaiterTerminal = () => {
     setStep(STEPS.TABLE);
   };
   const pickTable = async t => {
+    setItemSplitOpen(false); setItemSplitQuantities({}); setItemSplitTarget(''); itemSplitRequest.current = null;
     setTable(t);
     setCart([]);
     setRoomBooking(null);
@@ -493,6 +498,24 @@ const POSWaiterTerminal = () => {
       setLoading(false);
     }
   };
+  const splitOrderItems = async () => {
+    if (!activeOrder?.id || cart.length || !itemSplitTarget) return;
+    const quantities = Object.fromEntries(Object.entries(itemSplitQuantities).filter(([, value]) => Number(value) > 0).map(([key, value]) => [key, Number(value)]));
+    if (!Object.keys(quantities).length) return;
+    const payloadKey = JSON.stringify([activeOrder.id, itemSplitTarget, quantities]);
+    if (itemSplitRequest.current?.key !== payloadKey) itemSplitRequest.current = { key: payloadKey, id: crypto.randomUUID() };
+    setLoading(true);
+    try {
+      const response = await axios.post(`/pos/v2/orders/${activeOrder.id}/split-items`, {
+        to_table_number: itemSplitTarget, quantities, request_id: itemSplitRequest.current.id,
+      });
+      await refreshActiveOrder(activeOrder.id);
+      await loadTables(outlet.id);
+      setItemSplitOpen(false); setItemSplitQuantities({}); setItemSplitTarget(''); itemSplitRequest.current = null;
+      toast.success(`Ürünler Masa ${response.data.to_table} üzerinde ayrı adisyona bölündü. Tahsilat yapılmadı.`);
+    } catch (error) { toast.error(posErrorMessage(error, 'Adisyon bölünemedi; sonucu yenileyerek kontrol edin.')); }
+    finally { setLoading(false); }
+  };
   const transferOrder = async () => {
     if (!activeOrder?.id || !transferTarget) return;
     if (cart.length) { toast.error('Önce yeni ürünleri mutfağa gönderin; ardından masa işlemini yapın.'); return; }
@@ -700,6 +723,21 @@ const POSWaiterTerminal = () => {
                       <Button size="sm" variant="outline" disabled={!transferTarget || loading || cart.length > 0} onClick={transferOrder} data-testid="transfer-table"><ArrowRightLeft className="h-4 w-4 mr-1" />{tables.find(candidate => String(candidate.table_number) === String(transferTarget))?.current_order_id ? 'Birleştir' : 'Aktar'}</Button>
                       <Button size="sm" variant="destructive" disabled={loading} onClick={voidActiveOrder} data-testid="void-order"><XCircle className="h-4 w-4 mr-1" />İptal</Button>
                     </div>
+                    <Button size="sm" variant="outline" disabled={loading || cart.length > 0} onClick={() => setItemSplitOpen(value => !value)} data-testid="toggle-item-split">Ürünleri ayrı adisyona böl</Button>
+                    {itemSplitOpen && <div className="mt-2 space-y-2 rounded border p-2" data-testid="item-split-panel">
+                      <p className="text-xs">Seçilen adetler farklı boş masada ayrı adisyon olur. Mutfak durumu korunur; yeniden sipariş veya tahsilat yapılmaz. Kaynakta en az bir ürün bırakın.</p>
+                      {(activeOrder.order_items || []).map(item => <label key={item.line_id} className="flex items-center justify-between gap-2 text-xs">
+                        <span>{item.item_name || item.name} · mevcut {item.quantity}</span>
+                        <Input className="w-20" type="number" min="0" max={item.quantity} step="1" aria-label={`${item.item_name || item.name} bölünecek adet`} value={itemSplitQuantities[item.line_id] || 0}
+                          onChange={event => setItemSplitQuantities(previous => ({ ...previous, [item.line_id]: event.target.value }))} />
+                      </label>)}
+                      <select aria-label="Yeni adisyon masası" className="h-9 w-full rounded border px-2" value={itemSplitTarget} onChange={event => setItemSplitTarget(event.target.value)}>
+                        <option value="">Boş masa seçin</option>
+                        {tables.filter(candidate => candidate.id !== table?.id && candidate.status === 'available' && !candidate.current_order_id && !candidate.current_transaction_id)
+                          .map(candidate => <option key={candidate.id} value={candidate.table_number}>Masa {candidate.table_number}</option>)}
+                      </select>
+                      <Button size="sm" disabled={loading || cart.length > 0 || !itemSplitTarget || !Object.values(itemSplitQuantities).some(value => Number(value) > 0)} onClick={splitOrderItems} data-testid="submit-item-split">Seçilen ürünleri böl</Button>
+                    </div>}
                   </div>}
                 {cart.length === 0 && !activeOrder ? <div className="text-center text-gray-500 py-6 text-sm">{t("cm.pages_POSWaiterTerminal.urun_eklemek_icin_menuden_seci")}</div> : cart.length > 0 ? <div className="space-y-2">
                     {cart.map(c => <div key={c.item_id} className="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded">
