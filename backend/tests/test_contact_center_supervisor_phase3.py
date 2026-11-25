@@ -1,13 +1,13 @@
-import pytest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi import HTTPException
+
 import domains.contact_center.voice_router as voice_router
 import shared_kernel.audit_helper as audit_helper
-from models.schemas import User
 from models.enums import UserRole
+from models.schemas import User
 
 _TENANT = "test_tenant_1"
 _USER_ID = "user_1"
@@ -159,7 +159,7 @@ async def test_supervisor_dashboard_unauthorized(fake_db):
 async def test_supervisor_dashboard_success(fake_db):
     """Test dashboard metrics for active calls, queued callers, SLA calculations."""
     supervisor_user = make_user(UserRole.SUPERVISOR.value)
-    
+
     # Insert test queue config
     queue_id = "q_reservations"
     fake_db.contact_center_queues.docs.append({
@@ -235,8 +235,19 @@ async def test_supervisor_dashboard_success(fake_db):
 
 
 @pytest.mark.asyncio
-async def test_supervisor_agents_metrics(fake_db):
+async def test_supervisor_agents_metrics(fake_db, monkeypatch):
     """Test fetching detailed agent rows with calls answered/missed metrics."""
+    # CI can reach this test just after UTC midnight. A call started five
+    # minutes earlier then belongs to yesterday and correctly is not missed_today.
+    # Keep this today's-metrics fixture inside a fixed day, including router time.
+    fixed_now = datetime(2026, 11, 25, 12, tzinfo=UTC)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.astimezone(tz) if tz else fixed_now.replace(tzinfo=None)
+
+    monkeypatch.setattr(voice_router, "datetime", FixedClock)
     supervisor_user = make_user(UserRole.SUPERVISOR.value)
 
     # Insert agent users
@@ -255,7 +266,7 @@ async def test_supervisor_agents_metrics(fake_db):
         }
     ])
 
-    now = datetime.now(UTC)
+    now = fixed_now
     fake_db.contact_center_agent_states.docs.append({
         "id": "state_1",
         "tenant_id": _TENANT,
@@ -280,7 +291,7 @@ async def test_supervisor_agents_metrics(fake_db):
 
     data = await voice_router.get_supervisor_agents(supervisor_user)
     agents_list = data["agents"]
-    
+
     a1 = next(x for x in agents_list if x["agent_id"] == "agent_1")
     a2 = next(x for x in agents_list if x["agent_id"] == "agent_2")
 
@@ -323,7 +334,7 @@ async def test_supervisor_force_state_and_intervention(fake_db):
     )
     response_intervene = await voice_router.post_supervisor_intervene(payload_intervene, supervisor_user)
     assert response_intervene["success"] is True
-    
+
     # Verify Audit Log was recorded
     audit_entry = await fake_db.audit_logs.find_one({
         "tenant_id": _TENANT,
