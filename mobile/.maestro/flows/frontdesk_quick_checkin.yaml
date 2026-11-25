@@ -16,6 +16,12 @@ env:
 # Admin and manager accounts may land on their own dashboard.
 # Open the authorized frontdesk route explicitly; route permissions still apply.
 - openLink: "syrocepms:///(frontdesk)"
+# iOS may request confirmation before opening this app link.
+- runFlow:
+    when:
+      visible: "Open in.*Syroce PMS.*"
+    commands:
+      - tapOn: "Open"
 
 # Wait for the Today screen to settle, then start the quick check-in
 # flow from the primary CTA on the home tab.

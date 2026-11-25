@@ -19,6 +19,12 @@ env:
 # Admin and manager accounts may land on their own dashboard.
 # Open the authorized frontdesk route explicitly; route permissions still apply.
 - openLink: "syrocepms:///(frontdesk)"
+# iOS may request confirmation before opening this app link.
+- runFlow:
+    when:
+      visible: "Open in.*Syroce PMS.*"
+    commands:
+      - tapOn: "Open"
 
 # Let Today fully settle so React Query persists arrivals + departures
 # into the offline cache (MMKV in EAS builds, AsyncStorage fallback).
