@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/currency';
 import { toMinorUnits } from '@/lib/financialInput';
 
+const statusLabel = status => ({ active: 'Kullanıma hazır', pending: 'Banka tahsili bekleniyor', exhausted: 'Tamamı kullanıldı', cleared: 'Bankada tahsil edildi', returned: 'İade edildi' })[status] || 'Durum doğrulanamadı';
+const actionLabel = action => ({ issue: 'Kaynak tanımlandı', apply: 'Hesaba uygulandı', reverse: 'Uygulama geri alındı' })[action] || 'Diğer işlem';
+
 const funded = kind => ['gift_card_redemption', 'wallet'].includes(kind);
 const blank = { kind: 'gift_card_redemption', amount: '', currency: 'TRY', account_code: '', funding_entry_id: '', point_value: '', reference: '', reason: '', expires_on: '', due_on: '' };
 const inputClass = 'mt-1 block w-full rounded border bg-background p-2';
@@ -41,7 +44,11 @@ export default function SettlementInstrumentsPanel({ bookingId, folios, currency
       const response = await axios.post(attempt.path, attempt.body);
       if (response.data?.id !== attempt.body.request_id) throw new Error('İşlem yanıtı doğrulanamadı');
       setPending(null);
-      setNotice('İşlem kaydedildi; kaynak, folyo, muhasebe ve gerekçe aynı işlemde kaydedildi.');
+      setNotice(attempt.path === '/enterprise-billing/instruments'
+        ? 'Kaynak tanımlandı. Bu adım misafir borcunu azaltmaz ve tahsilat oluşturmaz.'
+        : attempt.path.endsWith('/reverse')
+          ? 'Özgün uygulama geri alındı; hesap ve kaynak hakkı güncellendi.'
+          : 'Kaynak hesaba uygulandı; hesap ve muhasebe kayıtları güncellendi.');
       try { await Promise.all([load(), onChanged?.()]); }
       catch { setData(null); setError('İşlem kaydedildi; liste yenilenemedi. Yeni işlem yapmadan yeniden yükleyin.'); }
       setIssue({ ...blank, currency });
@@ -84,7 +91,7 @@ export default function SettlementInstrumentsPanel({ bookingId, folios, currency
     {pending && <Button type="button" disabled={busy} onClick={() => submit(pending)}>Aynı mahsup talebinin sonucunu doğrula</Button>}
     {pending && <p className="text-sm text-destructive">Sonuç belirsiz; form kilitli. Aynı anahtarla tekrar doğrulayın, yeni talep oluşturmayın.</p>}
     {data && !data.reconciliation?.healthy && <p role="alert" className="text-destructive">Kaynak–muhasebe mutabakatı doğrulanamadı; yeni işlem yapmadan inceleyin.</p>}
-    {data && <div className="space-y-2">{data.items.length === 0 ? <p className="text-sm">Henüz tanımlı mahsup kaynağı yok.</p> : data.items.map(item => <div key={item.id} className="rounded border p-2 text-sm"><p>{data.kinds[item.kind]} · {item.reference} · {item.status}</p><p>Kalan: {formatCurrency(item.remaining_minor / 100, item.currency)}{item.expires_on ? ` · Son kullanım: ${item.expires_on}` : ''}</p><p>{item.reason}</p></div>)}</div>}
+    {data && <div className="space-y-2">{data.items.length === 0 ? <p className="text-sm">Henüz tanımlı mahsup kaynağı yok.</p> : data.items.map(item => <div key={item.id} className="rounded border p-2 text-sm"><p>{data.kinds[item.kind]} · {item.reference} · {statusLabel(item.status)}</p><p>Kalan: {formatCurrency(item.remaining_minor / 100, item.currency)}{item.expires_on ? ` · Son kullanım: ${item.expires_on}` : ''}</p><p>{item.reason}</p></div>)}</div>}
     {!readOnly && data?.can_issue && <form onSubmit={makeIssue} className="space-y-3"><h5 className="font-medium">Belgeye bağlı kaynak / limit tanımla</h5><fieldset disabled={busy || Boolean(pending)} className="grid gap-3 sm:grid-cols-2">
       <label className="block text-sm">Kaynak türü<select aria-label="Kaynak türü" className={inputClass} value={issue.kind} onChange={e => setIssue(previous => ({ ...blank, currency, kind: e.target.value }))}>{Object.entries(data.kinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       <label className="block text-sm">Kaynak para birimi<select aria-label="Kaynak para birimi" className={inputClass} value={issue.kind === 'cheque_pending_clearance' ? 'TRY' : issue.currency} onChange={e => setIssue(previous => ({ ...previous, currency: e.target.value }))}>{(issue.kind === 'cheque_pending_clearance' ? ['TRY'] : ['TRY', 'USD', 'EUR', 'GBP', 'CHF']).map(code => <option key={code}>{code}</option>)}</select></label>
@@ -108,7 +115,7 @@ export default function SettlementInstrumentsPanel({ bookingId, folios, currency
       <Text label="Mahsup gerekçesi" required minLength={3} maxLength={500} value={use.reason} onChange={e => setUse(previous => ({ ...previous, reason: e.target.value }))} />
       <Button type="submit">{selected?.kind === 'cheque_pending_clearance' ? 'Bankada tahsil edilen çeki kaydet' : 'Kaynaklı mahsubu uygula'}</Button>
     </fieldset></form>}
-    {data && <div className="space-y-1 text-sm"><h5 className="font-medium">Kaynak ve işlem geçmişi</h5>{data.operations.map(op => <p key={op.id}>{data.kinds[op.kind]} · {op.action} · {op.reference} · {op.business_date} · {op.reason}</p>)}</div>}
+    {data && <div className="space-y-1 text-sm"><h5 className="font-medium">Kaynak ve işlem geçmişi</h5>{data.operations.map(op => <p key={op.id}>{data.kinds[op.kind]} · {actionLabel(op.action)} · {op.reference} · {op.business_date} · {op.reason}</p>)}</div>}
     {!readOnly && data?.can_reverse && <form className="space-y-2" onSubmit={event => { event.preventDefault(); start(`/enterprise-billing/instrument-operations/${reverse.operation_id}/reverse`, { booking_id: bookingId, reference: reverse.reference.trim(), reason: reverse.reason.trim() }); }}><h5 className="font-medium">Özgün işleme bağlı tam ters kayıt</h5><fieldset disabled={busy || Boolean(pending)} className="space-y-2">
       <select aria-label="Ters kaydedilecek mahsup" className={inputClass} required value={reverse.operation_id} onChange={e => setReverse(previous => ({ ...previous, operation_id: e.target.value }))}><option value="">İşlem seçin</option>{data.operations.filter(op => op.action === 'apply' && !reversed.has(op.id)).map(op => <option key={op.id} value={op.id}>{data.kinds[op.kind]} · {op.reference}</option>)}</select>
       <Text label="Ters kayıt belge referansı" required minLength={3} maxLength={160} value={reverse.reference} onChange={e => setReverse(previous => ({ ...previous, reference: e.target.value }))} />
