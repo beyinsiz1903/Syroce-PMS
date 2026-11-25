@@ -12,6 +12,7 @@
     "types": ["node"]
   },
   "include": [
+    "src/cache/__tests__/reservationRefresh.test.ts",
     "src/state/__tests__/authLifecycle.test.ts",
     "src/navigation/__tests__/notificationRoutes.test.ts",
     "src/utils/__tests__/kbs.test.ts",
