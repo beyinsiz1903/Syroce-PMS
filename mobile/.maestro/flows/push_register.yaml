@@ -13,57 +13,24 @@ env:
       SMOKE_EMAIL: ${SMOKE_EMAIL}
       SMOKE_PASSWORD: ${SMOKE_PASSWORD}
 
-# Admin and manager accounts may land on their own dashboard.
-# Open the authorized frontdesk route explicitly; route permissions still apply.
-- openLink: "syrocepms:///(frontdesk)"
-
-# Login lands on the front_desk Today tab. Wait for it so registerForPush
-# (fired by AuthGate the moment `user` is set) has a chance to run.
-- extendedWaitUntil:
-    visible:
-      text: "Bugün Giriş"
-    timeout: 30000
-
-# registerForPush asks for permission, fetches an Expo push token, POSTs
-# it to /api/notifications/push/register, and updates the in-memory
-# status flag read by the More screen indicator. Give it up to ~10s on
-# slower simulators.
-- extendedWaitUntil:
-    visible:
-      id: "smoke-today-quick-checkin"
-    timeout: 10000
-
-# Open the "Daha" (Settings/More) tab where the push status row lives.
-- tapOn:
-    text: "Daha"
-
-# The status card uses the shared `pushStatus` label and exposes a
-# stable testID. The card is *always* rendered (initial value is
-# "Bekleniyor"), so card presence alone proves nothing — we have to
-# assert that the status transitioned away from the pending sentinel
-# AND landed on one of the explicit terminal outcomes the
-# registration pipeline can produce.
-- extendedWaitUntil:
-    visible:
-      text: "Push bildirim"
-    timeout: 10000
-
-# The pending sentinel ("Bekleniyor") MUST disappear within the
-# registration timeout. If it stays visible, registerForPush() never
-# resolved — that's the silent breakage we want to catch.
-- extendedWaitUntil:
-    notVisible:
-      text: "Bekleniyor"
-    timeout: 20000
-
-# Status must land on one of the four terminal labels emitted by
-# registerForPush() (registered / denied / unavailable / error). We
-# express this as four independent assertions tied to the same
-# testID — the row matches a single Body element, so the assertion
-# below is "this row's text equals one of the allowed values" via
-# Maestro's regex anchor on the testID-scoped text content.
+# The current app enables push only on explicit opt-in. Open the shared
+# profile instead of assuming a role-specific landing screen or old labels.
+- openLink: "syrocepms:///(home)/profile"
 - extendedWaitUntil:
     visible:
       id: "smoke-push-status"
-      text: "Açık|İzin reddedildi|Kayıt hatası|Kapalı / Devre dışı"
-    timeout: 5000
+    timeout: 30000
+- tapOn:
+    text: "Bildirimleri etkinleştir"
+    optional: true
+- extendedWaitUntil:
+    notVisible:
+      text: "Bildirimler henüz etkinleştirilmedi."
+    timeout: 20000
+
+# Preserve the existing four terminal outcomes; unknown must not pass.
+- extendedWaitUntil:
+    visible:
+      id: "smoke-push-status"
+      text: "Bildirimler bu hesap için etkin.|Bildirim izni kapalı.*|Bu ortamda cihaz bildirimi desteklenmiyor.|Bildirim kaydı tamamlanamadı.*"
+    timeout: 10000
