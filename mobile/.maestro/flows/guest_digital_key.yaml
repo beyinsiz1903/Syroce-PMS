@@ -9,8 +9,8 @@ tags:
 - runFlow:
     file: ../helpers/login.yaml
     env:
-      SMOKE_EMAIL: ${SMOKE_GUEST_EMAIL}
-      SMOKE_PASSWORD: ${SMOKE_GUEST_PASSWORD}
+      LOGIN_EMAIL: ${SMOKE_GUEST_EMAIL}
+      LOGIN_PASSWORD: ${SMOKE_GUEST_PASSWORD}
 
 # Deep-link straight to the guest digital key screen. The screen is
 # registered as href:null in (guest)/_layout.tsx (no tab bar entry), so
