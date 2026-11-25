@@ -539,6 +539,7 @@ async def record_payment_mobile(
 async def get_cash_flow_summary_mobile(
     current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
     _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get cash flow summary for finance mobile dashboard
     - Today's cash inflow (tahsilat)

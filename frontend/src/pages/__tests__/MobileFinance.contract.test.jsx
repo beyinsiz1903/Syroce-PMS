@@ -111,4 +111,14 @@ describe('MobileFinance modal contract', () => {
     expect(screen.getByText('Aramayla eşleşen alacak yok.')).toBeVisible();
   });
 
+  it('refreshes the cash-flow card together with current collections', async () => {
+    render(<MemoryRouter><MobileFinance /></MemoryRouter>);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(10));
+    expect(get).toHaveBeenCalledWith('/finance/mobile/cash-flow-summary', { params: { nocache: true } });
+    get.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Yenile/ }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(10));
+    expect(get).toHaveBeenCalledWith('/finance/mobile/cash-flow-summary', { params: { nocache: true } });
+  });
+
 });

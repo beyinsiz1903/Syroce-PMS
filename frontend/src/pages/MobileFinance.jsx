@@ -123,7 +123,7 @@ const MobileFinance = ({ user }) => {
         axios.get('/finance/mobile/monthly-costs'),
         axios.get('/notifications/mobile/finance'),
         axios.get('/finance/mobile/invoices').catch(() => ({ data: { invoices: [] } })),
-        axios.get('/finance/mobile/cash-flow-summary').catch(() => ({ data: null })),
+        axios.get('/finance/mobile/cash-flow-summary', { params: { nocache: true } }).catch(() => ({ data: null })),
         axios.get('/finance/mobile/risk-alerts', { params: { nocache: true } }).catch(() => ({ data: null })),
         axios.get('/finance/mobile/daily-expenses').catch(() => ({ data: null })),
         axios.get('/finance/mobile/bank-balances').catch(() => ({ data: null }))
@@ -207,7 +207,7 @@ const MobileFinance = ({ user }) => {
 
   const loadCashFlowDetail = async () => {
     try {
-      const res = await axios.get('/finance/mobile/cash-flow-summary');
+      const res = await axios.get('/finance/mobile/cash-flow-summary', { params: { nocache: true } });
       setCashFlowData(res.data);
       setCashFlowModalOpen(true);
     } catch (error) {
