@@ -8,7 +8,7 @@ env:
   SMOKE_PASSWORD: Syroce2026
 ---
 - runFlow:
-    file: login.yaml
+    file: ../helpers/login.yaml
     env:
       SMOKE_EMAIL: ${SMOKE_EMAIL}
       SMOKE_PASSWORD: ${SMOKE_PASSWORD}
@@ -32,9 +32,19 @@ env:
     visible:
       id: "smoke-push-status"
     timeout: 30000
-- tapOn:
-    text: "Bildirimleri etkinleştir"
-    optional: true
+# Non-registered states render an opt-in button below the status row.
+# Bring the button fully above the tab bar before tapping it.
+- runFlow:
+    when:
+      notVisible: "Bildirimler bu hesap için etkin."
+    commands:
+      - scrollUntilVisible:
+          element:
+            text: "Bildirimleri etkinleştir"
+          direction: DOWN
+          timeout: 15000
+      - tapOn:
+          text: "Bildirimleri etkinleştir"
 - extendedWaitUntil:
     notVisible:
       text: "Bildirimler henüz etkinleştirilmedi."

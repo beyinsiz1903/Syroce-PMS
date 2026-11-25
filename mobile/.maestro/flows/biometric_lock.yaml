@@ -11,7 +11,7 @@ env:
 # NOTE: requires an Android emulator with at least one fingerprint
 # enrolled (id=1). See README → "Biometric flow prerequisites".
 - runFlow:
-    file: login.yaml
+    file: ../helpers/login.yaml
     env:
       SMOKE_EMAIL: ${SMOKE_EMAIL}
       SMOKE_PASSWORD: ${SMOKE_PASSWORD}
