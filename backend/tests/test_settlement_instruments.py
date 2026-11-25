@@ -180,7 +180,9 @@ async def test_legacy_reversed_funding_is_blocked_on_apply_and_flagged_by_reconc
 
 async def test_generic_reversal_has_no_unsafe_standalone_fallback(store, monkeypatch):
     from unittest.mock import AsyncMock
+
     from pymongo.errors import OperationFailure
+
     from core import booking_atomicity
     db = store
     entry = await funding_only(db)
@@ -352,3 +354,44 @@ def test_schema_rejects_unbacked_or_inexact_money(changes):
     with pytest.raises((ValidationError, HTTPException)):
         s.Issue(**{"request_id": uuid4(), "booking_id": "b", "kind": "barter", "currency": "TRY", "amount_minor": 100,
             "account_code": "136", "reference": "doc", "reason": "documented", **changes})
+
+
+async def test_legacy_ui_loyalty_source_consumes_and_restores_same_ledger(store):
+    db = store
+    await db.loyalty_members.delete_many({"tenant_id": "A"})
+    await db.loyalty_programs.insert_one({"id": "legacy", "tenant_id": "A", "guest_id": "g", "points": 10000, "lifetime_points": 12000})
+    item, _ = await issued(db, "loyalty_redemption")
+    result = await apply(db, item, application())
+    assert (await db.loyalty_programs.find_one({"id": "legacy"}))["points"] == 9000
+    tx = await db.loyalty_transactions.find_one({"source": "folio_settlement"})
+    assert tx["transaction_type"] == "redeemed" and tx["points"] == 1000
+    assert tx["description"]
+    body = s.Reverse(request_id=uuid4(), booking_id="b", reference="Legacy ters kayıt", reason="Özgün puan defterine iade")
+    await reverse(db, result, body)
+    assert (await db.loyalty_programs.find_one({"id": "legacy"}))["points"] == 10000
+    assert (await db.loyalty_programs.find_one({"id": "legacy"}))["lifetime_points"] == 12000
+    assert await db.loyalty_members.count_documents({"tenant_id": "A"}) == 0
+    assert (await db.folios.find_one({"id": "f"}))["balance"] == 1000
+    assert (await s.reconcile(db, "A"))["healthy"]
+
+
+async def test_ambiguous_loyalty_ledgers_reject_without_issuing_or_copying_points(store):
+    db = store
+    await db.loyalty_programs.insert_one({"id": "legacy", "tenant_id": "A", "guest_id": "g", "points": 10000})
+    with pytest.raises(HTTPException) as error:
+        await issued(db, "loyalty_redemption")
+    assert error.value.status_code == 409
+    assert await db.billing_instruments.count_documents({}) == 0
+    assert await db.payments.count_documents({}) == 0
+
+
+async def test_loyalty_source_cannot_switch_member_ledger_after_issue(store):
+    db = store
+    item, _ = await issued(db, "loyalty_redemption")
+    await db.loyalty_members.delete_many({"tenant_id": "A"})
+    await db.loyalty_programs.insert_one({"id": "legacy", "tenant_id": "A", "guest_id": "g", "points": 10000})
+    with pytest.raises(HTTPException) as error:
+        await apply(db, item, application())
+    assert error.value.status_code == 409
+    assert (await db.loyalty_programs.find_one({"id": "legacy"}))["points"] == 10000
+    assert await db.payments.count_documents({}) == 0

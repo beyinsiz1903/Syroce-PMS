@@ -200,6 +200,32 @@ async def _record(db, tenant, actor, body, key, digest, action, instrument, resu
     return result
 
 
+async def _loyalty_source(db, tenant, guest, session, *, item=None):
+    # Both shipped PMS UIs have existing point ledgers. Never copy balances or
+    # guess between them: bind the instrument to the single original member.
+    found = []
+    for name, field in (("loyalty_members", "points_balance"), ("loyalty_programs", "points")):
+        rows = await db[name].find({"tenant_id": tenant, "guest_id": guest}, session=session).to_list(2)
+        found.extend((name, field, row) for row in rows)
+    if len(found) != 1:
+        raise HTTPException(409, "Tekil mevcut sadakat üyeliği doğrulanamadı; puan üretilmedi")
+    name, field, member = found[0]
+    if item is not None and (name != item.get("loyalty_collection", "loyalty_members")
+            or (item.get("loyalty_member_id") and str(member["_id"]) != item["loyalty_member_id"])):
+        raise HTTPException(409, "Özgün sadakat puan defteri değişmiş; işlem yapılmadı")
+    return name, field, member
+
+
+async def _loyalty_movement(db, tenant, guest, request_id, points, reason, session, *, legacy, reversal_of=None):
+    row = {"id": str(request_id), "tenant_id": tenant, "guest_id": guest,
+        "type": "refund" if reversal_of else "redeem", "points": points if reversal_of else -points,
+        "source": "folio_settlement_reversal" if reversal_of else "folio_settlement",
+        "reference_id": reversal_of or str(request_id), "created_at": datetime.now(UTC).isoformat()}
+    if legacy:
+        row.update(transaction_type="earned" if reversal_of else "redeemed", points=points, description=reason)
+    await db.loyalty_transactions.insert_one(row, session=session)
+
+
 async def issue(db, tenant, actor, body, *, session):
     if session is None:
         raise HTTPException(503, "Finansal işlem transaction desteği gerektirir")
@@ -218,15 +244,16 @@ async def issue(db, tenant, actor, body, *, session):
     guest = booking.get("guest_id")
     if body.kind in {"wallet", "loyalty_redemption"} and not guest:
         raise HTTPException(409, "Cüzdan/sadakat için rezervasyon misafir profiline bağlı olmalı")
+    loyalty = None
     if body.kind == "loyalty_redemption":
-        members = await db.loyalty_members.find({"tenant_id": tenant, "guest_id": guest}, session=session).to_list(2)
-        if len(members) != 1:
-            raise HTTPException(409, "Tekil mevcut sadakat üyeliği doğrulanamadı; puan üretilmedi")
+        loyalty = await _loyalty_source(db, tenant, guest, session)
     document = {"_id": key, "id": str(body.request_id), "tenant_id": tenant,
         **body.model_dump(mode="json", exclude={"request_id", "booking_id"}), "origin_booking_id": body.booking_id,
         "owner_guest_id": guest, "issued_minor": body.amount_minor, "remaining_minor": body.amount_minor,
         "status": "pending" if body.kind == "cheque_pending_clearance" else "active",
         "created_at": datetime.now(UTC).isoformat(), "created_by": actor.id, "business_date": day}
+    if loyalty:
+        document.update(loyalty_collection=loyalty[0], loyalty_member_id=str(loyalty[2]["_id"]))
     if body.kind in FUNDED:
         document.update(await _funding(db, tenant, body, session))
     await db.billing_instruments.insert_one(document, session=session)
@@ -301,16 +328,13 @@ async def apply(db, tenant, actor, instrument_id, body, *, session, record_cash)
         if body.amount_minor % item["point_value_minor"]:
             raise HTTPException(422, "Tutar tanımlı puan değerinin tam katı olmalı")
         points = body.amount_minor // item["point_value_minor"]
-        members = await db.loyalty_members.find({"tenant_id": tenant, "guest_id": item["owner_guest_id"]}, session=session).to_list(2)
-        if len(members) != 1:
-            raise HTTPException(409, "Tekil sadakat üyesi doğrulanamadı")
-        updated = await db.loyalty_members.update_one({"tenant_id": tenant, "guest_id": item["owner_guest_id"],
-            "points_balance": {"$gte": points}}, {"$inc": {"points_balance": -points}}, session=session)
+        name, field, member = await _loyalty_source(db, tenant, item["owner_guest_id"], session, item=item)
+        updated = await db[name].update_one({"_id": member["_id"], "tenant_id": tenant,
+            "guest_id": item["owner_guest_id"], field: {"$gte": points}}, {"$inc": {field: -points}}, session=session)
         if updated.matched_count != 1:
             raise HTTPException(409, "Sadakat puanı yetersiz; puan üretilmedi")
-        await db.loyalty_transactions.insert_one({"id": str(body.request_id), "tenant_id": tenant,
-            "guest_id": item["owner_guest_id"], "type": "redeem", "points": -points,
-            "source": "folio_settlement", "reference_id": str(body.request_id), "created_at": datetime.now(UTC).isoformat()}, session=session)
+        await _loyalty_movement(db, tenant, item["owner_guest_id"], body.request_id, points, body.reason,
+            session, legacy=name == "loyalty_programs")
     lines = [{"account_code": item["account_code"], "debit": source_base / 100}, {"account_code": ar, "credit": paid_base / 100}]
     if code != "TRY":
         # Preserve native monetary positions, not just the TRY journal value.
@@ -442,13 +466,13 @@ async def reverse(db, tenant, actor, operation_id, body, *, session, record_cash
         "amount": -abs(payment["amount"]), "reporting_amount": -abs(payment["reporting_amount"])}
     await db.payments.insert_one(refund, session=session)
     if source.get("points"):
-        update = await db.loyalty_members.update_one({"tenant_id": tenant, "guest_id": item["owner_guest_id"]},
-            {"$inc": {"points_balance": source["points"]}}, session=session)
+        name, field, member = await _loyalty_source(db, tenant, item["owner_guest_id"], session, item=item)
+        update = await db[name].update_one({"_id": member["_id"], "tenant_id": tenant,
+            "guest_id": item["owner_guest_id"]}, {"$inc": {field: source["points"]}}, session=session)
         if update.matched_count != 1:
             raise HTTPException(409, "Sadakat üyesi bulunamadı; iade tamamlanamadı")
-        await db.loyalty_transactions.insert_one({"id": str(body.request_id), "tenant_id": tenant, "guest_id": item["owner_guest_id"],
-            "type": "refund", "points": source["points"], "source": "folio_settlement_reversal", "reference_id": operation_id,
-            "created_at": datetime.now(UTC).isoformat()}, session=session)
+        await _loyalty_movement(db, tenant, item["owner_guest_id"], body.request_id, source["points"], body.reason,
+            session, legacy=name == "loyalty_programs", reversal_of=operation_id)
     cheque = item["kind"] == "cheque_pending_clearance"
     if cheque:
         transaction = await record_cash(tenant_id=tenant, amount=source["settlement_base_minor"] / 100, method="bank_transfer", direction="out",
