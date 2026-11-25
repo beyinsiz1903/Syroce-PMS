@@ -38,6 +38,11 @@ class RoutingInstructionCreate(BaseModel):
 
 
 class RoutingInstruction(RoutingInstructionCreate):
+    # Storage adds posting_revision after the first automatic charge. Internal
+    # concurrency metadata is not an API field and must not break readback.
+    # Keep the CREATE request strict; only the response ignores storage extras.
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
     id: str
     tenant_id: str
     created_by: str
