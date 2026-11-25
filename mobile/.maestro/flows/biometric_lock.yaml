@@ -2,6 +2,7 @@ appId: com.syroce.pms
 name: "Biyometrik kilit re-lock (smoke)"
 tags:
   - smoke
+  - android-only
   - security
 env:
   SMOKE_EMAIL: info@syroce.com

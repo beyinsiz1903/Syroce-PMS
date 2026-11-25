@@ -2,6 +2,7 @@ appId: com.syroce.pms
 name: "Bugün: çevrimdışı render (smoke)"
 tags:
   - smoke
+  - android-only
   - offline
 env:
   SMOKE_EMAIL: info@syroce.com

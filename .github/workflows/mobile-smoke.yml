@@ -287,6 +287,7 @@ jobs:
       - name: Run Maestro smoke flows
         id: smoke
         env:
+          SMOKE_PLATFORM: ios
           SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
           SMOKE_GUEST_EMAIL: ${{ secrets.SMOKE_GUEST_EMAIL }}
