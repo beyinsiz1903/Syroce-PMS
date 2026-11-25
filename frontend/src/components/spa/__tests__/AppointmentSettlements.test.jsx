@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import axios from 'axios';
 import { confirmDialog } from '@/lib/dialogs';
-import AppointmentSettlements from '../AppointmentSettlements';
+import AppointmentSettlements, { refundableMinor } from '../AppointmentSettlements';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -18,6 +18,42 @@ async function fill() {
   fireEvent.change(screen.getByLabelText('Açıklama / iade gerekçesi'), { target: { value: 'Synthetic receipt only' } });
 }
 describe('Independent SPA settlements', () => {
+  it('keeps fractional-cent conservation and fails closed on inconsistent refund data', () => {
+    const original = { id: 'p', amount: 0.30 };
+    const refunds = [0.1, 0.2].map((amount, index) => ({ id: String(index), amount: -amount, original_payment_id: 'p', payment_type: 'refund', status: 'refunded' }));
+    expect(refundableMinor(original, refunds)).toBe(0);
+    expect(refundableMinor(original, [...refunds, { ...refunds[0], id: 'extra' }])).toBeNull();
+    expect(refundableMinor({ ...original, amount: 'invalid' }, [])).toBeNull();
+  });
+
+  it('disables repeat refunds after the original receipt has been fully refunded', async () => {
+    axios.get.mockResolvedValue({ data: result({ payments: [
+      { id: 'original', amount: 100, method: 'bank_transfer', payment_type: 'payment', status: 'paid' },
+      { id: 'refund1', amount: -40, original_payment_id: 'original', payment_type: 'refund', status: 'refunded' },
+      { id: 'refund2', amount: -60, original_payment_id: 'original', payment_type: 'refund', status: 'refunded' },
+    ] }) });
+    render(<AppointmentSettlements appointmentId="appt" />);
+    expect(await screen.findByRole('button', { name: 'İade tamamlandı' })).toBeDisabled();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('caps a partial refund at its original remaining amount and ignores voided or unrelated refunds', async () => {
+    axios.get.mockResolvedValue({ data: result({ payments: [
+      { id: 'original', amount: 100, method: 'cash', payment_type: 'payment', status: 'paid' },
+      { id: 'refund1', amount: -30, original_payment_id: 'original', payment_type: 'refund', status: 'refunded' },
+      { id: 'voided', amount: -80, original_payment_id: 'original', payment_type: 'refund', status: 'refunded', voided: true },
+      { id: 'other', amount: -100, original_payment_id: 'elsewhere', payment_type: 'refund', status: 'refunded' },
+    ] }) });
+    render(<AppointmentSettlements appointmentId="appt" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'İade kaydet' }));
+    expect(screen.getByLabelText('Tutar (TRY)')).toHaveAttribute('max', '70');
+    fireEvent.change(screen.getByLabelText('Tutar (TRY)'), { target: { value: '71' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Hareketi kaydet' }).closest('form'));
+    await screen.findByText(/kalan iade edilebilir tutarını aşamaz/);
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it('keeps a server rejection visible after the payment list has been reconciled', async () => {
     const reason = 'Geçerli iş gününde kasa vardiyasını açın';
     axios.post.mockRejectedValue({ response: { status: 409, data: { detail: reason } } });
