@@ -23,9 +23,16 @@ env:
 # smoke test passes — the goal is to verify the screen mounts without
 # crashing.
 - openLink: "syrocepms:///(guest)/digitalKey"
+# iOS may request confirmation before opening this app link.
+- runFlow:
+    when:
+      visible: "Open in.*Syroce PMS.*"
+    commands:
+      - tapOn: "Open"
 
-- assertVisible:
-    id: "smoke-digital-key"
+- extendedWaitUntil:
+    visible:
+      id: "smoke-digital-key"
     timeout: 30000
 - assertVisible:
     text: "Dijital Anahtar"

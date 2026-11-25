@@ -16,17 +16,29 @@ env:
       SMOKE_EMAIL: ${SMOKE_EMAIL}
       SMOKE_PASSWORD: ${SMOKE_PASSWORD}
 
+# Admin and manager accounts may land on their own dashboard.
+# Open the authorized frontdesk route explicitly; route permissions still apply.
+- openLink: "syrocepms:///(frontdesk)"
+# iOS may request confirmation before opening this app link.
+- runFlow:
+    when:
+      visible: "Open in.*Syroce PMS.*"
+    commands:
+      - tapOn: "Open"
+
 # Wait for the Today tab so we know AuthGate has hydrated the user
 # session and SecureStore is reachable from BiometricLockGate.
-- assertVisible:
-    text: "Bugün Giriş"
+- extendedWaitUntil:
+    visible:
+      text: "Bugün Giriş"
     timeout: 30000
 
 # Open Settings → Biyometrik kilit toggle.
 - tapOn:
     text: "Daha"
-- assertVisible:
-    text: "Biyometrik kilit"
+- extendedWaitUntil:
+    visible:
+      text: "Biyometrik kilit"
     timeout: 10000
 
 # Flip the switch ON. The OS biometric prompt is then dismissed by the
@@ -53,8 +65,9 @@ env:
 # Lock overlay must render — assert by both testID (structural) and
 # the visible "Doğrulama gerekli" header (textual). Either failure
 # would surface a regression in BiometricLockGate's lock semantics.
-- assertVisible:
-    id: "smoke-biometric-lock"
+- extendedWaitUntil:
+    visible:
+      id: "smoke-biometric-lock"
     timeout: 15000
 - assertVisible:
     text: "Doğrulama gerekli"
