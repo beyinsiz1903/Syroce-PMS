@@ -224,7 +224,7 @@ jobs:
             for (const r of Object.keys(d)) {
               for (const dev of d[r]) {
                 if (dev.name === process.env.IOS_DEVICE && dev.isAvailable) {
-                  process.stdout.write(dev.udid); return;
+                  process.stdout.write(dev.udid); process.exit(0);
                 }
               }
             }
@@ -317,7 +317,7 @@ jobs:
             echo ""
             echo "- Sonuc: **${STATUS}**"
             echo "- Build URL: \`${BUILD_URL}\`"
-            echo "- Cihaz: ${IOS_DEVICE} (${MAESTRO_DEVICE})"
+            echo "- Cihaz: ${IOS_DEVICE} (${MAESTRO_DEVICE:-not-booted})"
             echo ""
             echo "<details><summary>Maestro ciktisi (son 80 satir)</summary>"
             echo ""
