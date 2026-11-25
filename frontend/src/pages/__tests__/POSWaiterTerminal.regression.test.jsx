@@ -27,6 +27,45 @@ describe('POS waiter menu regressions', () => {
     confirmDialog.mockResolvedValue(true);
   });
 
+  it('partitions selected units into another free table without checkout or new kitchen submission', async () => {
+    let split = false;
+    axiosGet.mockImplementation(url => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'o1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/o1') return Promise.resolve({ data: { tables: [
+        { id: 't1', table_number: '1', status: 'occupied', current_order_id: 'order1' },
+        { id: 't2', table_number: '2', status: split ? 'occupied' : 'available', current_order_id: split ? 'order2' : null },
+        { id: 't3', table_number: '3', status: 'occupied', current_order_id: 'other' },
+      ] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
+      if (url === '/pos/v2/orders/order1') return Promise.resolve({ data: { order: {
+        id: 'order1', order_number: 'ORD-1', status: 'pending', payment_status: 'unpaid', grand_total: split ? 44 : 88,
+        order_items: [{ line_id: 'line1', item_name: 'Su', quantity: split ? 1 : 2, unit_price: 40, total: split ? 40 : 80 }],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockImplementation(url => {
+      if (url === '/pos/v2/orders/order1/split-items') { split = true; return Promise.resolve({ data: { target_order_id: 'order2', to_table: '2' } }); }
+      throw new Error(`Unexpected POST ${url}`);
+    });
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-o1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.click(await screen.findByTestId('toggle-item-split'));
+    expect(screen.getByTestId('submit-item-split')).toBeDisabled();
+    const target = screen.getByRole('combobox', { name: 'Yeni adisyon masası' });
+    expect(target).not.toHaveTextContent('Masa 3');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Su bölünecek adet' }), { target: { value: '1' } });
+    fireEvent.change(target, { target: { value: '2' } });
+    fireEvent.click(screen.getByTestId('submit-item-split'));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders/order1/split-items', {
+      to_table_number: '2', quantities: { line1: 1 }, request_id: expect.any(String),
+    }));
+    await waitFor(() => expect(screen.queryByTestId('item-split-panel')).not.toBeInTheDocument());
+    expect(axiosPost).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('active-order-summary')).toHaveTextContent('1 × Su');
+  });
+
   it('keeps unavailable products visible while excluding inactive products', () => {
     const items = normalizeWaiterMenuItems([
       { id: 'sold-out', name: 'QA Burger', price: '120', available: false, status: 'active' },
