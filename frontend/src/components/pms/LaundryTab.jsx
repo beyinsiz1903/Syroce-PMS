@@ -732,7 +732,7 @@ const LaundryTab = () => {
                       </div>
                     </div>)}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
-                    <span>{t('cm.components_pms_LaundryTab.toplam')}</span>
+                    <span>{fullComp ? 'Liste bedeli' : t('cm.components_pms_LaundryTab.toplam')}</span>
                     <span>{formatCurrency(orderTotal, orderForm.input_currency)}</span>
                   </div>
                 </div>}
@@ -743,7 +743,7 @@ const LaundryTab = () => {
             }))} placeholder={t('cm.components_pms_LaundryTab.ozel_talimatlar')} /></div>
             <Button onClick={submitOrder} disabled={loading || (!request.current && (roomLookupBusy || Boolean(roomError) || Boolean(conversionError) || !orderForm.booking_id || !orderForm.folio_id || !orderForm.items.length))} className="w-full">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              {t('cm.components_pms_LaundryTab.siparis_olustur')} ({formatCurrency(orderTotal, orderForm.input_currency)})
+              {t('cm.components_pms_LaundryTab.siparis_olustur')} ({formatCurrency(fullComp ? 0 : orderTotal, orderForm.input_currency)}){fullComp ? ' · Tam ikram' : ''}
             </Button>
           </div>
         </DialogContent>

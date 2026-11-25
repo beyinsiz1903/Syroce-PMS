@@ -275,7 +275,9 @@ it('previews a full-comp stay as zero while retaining the catalogue order value 
   await lookup('103'); fireEvent.click(screen.getByRole('button', { name: 'Ürün ekle', exact: true }));
   expect(screen.getByRole('status')).toHaveTextContent('Folyoya yazılacak: 0');
   expect(screen.getByRole('status')).toHaveTextContent('Tam ikram');
-  expect(submit()).toHaveTextContent('30');
+  expect(submit()).toHaveTextContent('(0) · Tam ikram');
+  expect(submit()).not.toHaveTextContent('30');
+  expect(screen.getByText('Liste bedeli')).toBeInTheDocument();
   post.mockResolvedValue({ data: {} }); fireEvent.click(submit());
   await waitFor(() => expect(post).toHaveBeenCalledOnce());
   expect(post.mock.calls[0][1].items[0].total).toBe(30);
