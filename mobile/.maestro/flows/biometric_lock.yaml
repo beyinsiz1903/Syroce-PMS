@@ -16,6 +16,10 @@ env:
       SMOKE_EMAIL: ${SMOKE_EMAIL}
       SMOKE_PASSWORD: ${SMOKE_PASSWORD}
 
+# Admin and manager accounts may land on their own dashboard.
+# Open the authorized frontdesk route explicitly; route permissions still apply.
+- openLink: "syrocepms:///(frontdesk)"
+
 # Wait for the Today tab so we know AuthGate has hydrated the user
 # session and SecureStore is reachable from BiometricLockGate.
 - extendedWaitUntil:

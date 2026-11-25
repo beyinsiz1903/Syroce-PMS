@@ -16,6 +16,10 @@ env:
       SMOKE_EMAIL: ${SMOKE_EMAIL}
       SMOKE_PASSWORD: ${SMOKE_PASSWORD}
 
+# Admin and manager accounts may land on their own dashboard.
+# Open the authorized frontdesk route explicitly; route permissions still apply.
+- openLink: "syrocepms:///(frontdesk)"
+
 # Let Today fully settle so React Query persists arrivals + departures
 # into the offline cache (MMKV in EAS builds, AsyncStorage fallback).
 - extendedWaitUntil:
