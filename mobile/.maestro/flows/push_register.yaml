@@ -10,8 +10,8 @@ env:
 - runFlow:
     file: ../helpers/login.yaml
     env:
-      SMOKE_EMAIL: ${SMOKE_EMAIL}
-      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+      LOGIN_EMAIL: ${SMOKE_EMAIL}
+      LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
 # The current app enables push only on explicit opt-in. Open the shared
 # profile instead of assuming a role-specific landing screen or old labels.

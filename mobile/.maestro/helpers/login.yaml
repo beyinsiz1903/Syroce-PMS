@@ -15,11 +15,11 @@ name: "Shared login commands (credentials supplied by caller)"
 
 - tapOn:
     id: "smoke-login-email"
-- inputText: ${SMOKE_EMAIL}
+- inputText: ${LOGIN_EMAIL}
 
 - tapOn:
     id: "smoke-login-password"
-- inputText: ${SMOKE_PASSWORD}
+- inputText: ${LOGIN_PASSWORD}
 - hideKeyboard
 
 - tapOn:

@@ -10,5 +10,5 @@ env:
 - runFlow:
     file: ../helpers/login.yaml
     env:
-      SMOKE_EMAIL: ${SMOKE_EMAIL}
-      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+      LOGIN_EMAIL: ${SMOKE_EMAIL}
+      LOGIN_PASSWORD: ${SMOKE_PASSWORD}
