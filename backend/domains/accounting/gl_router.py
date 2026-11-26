@@ -1646,6 +1646,10 @@ async def list_journal(
 
 
 def _journal_reversal_blocker(original, allocated):
+    if original.get("source") == "spa_settlement":
+        return "SPA tahsilat/iade fişi bağımsız çevrilemez; özgün SPA tahsilat kaydıyla birlikte uzlaştırılmalıdır"
+    if original.get("source") == "mice":
+        return "MICE kaynaklı gelir fişi bağımsız çevrilemez; organizasyon kaynağı ve cari hesapla birlikte uzlaştırılmalıdır"
     if original.get("source") in {"pos_direct", "pos_refund"}:
         return "POS kaynaklı fiş genel muhasebeden bağımsız çevrilemez; özgün adisyonun iade akışını kullanın"
     if original.get("source") == "external_parking_payment":
