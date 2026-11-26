@@ -1242,6 +1242,8 @@ async def create_laundry_order(
         item = catalog.get(line["code"])
         if not item or laundry_currency(item.get("currency") or None, hotel_currency) != currency:
             raise HTTPException(400, "Ürün aktif katalogda veya aynı para biriminde değil")
+        if item.get("vat_rate") is None:
+            raise HTTPException(409, "Sipariş oluşturmadan önce çamaşırhane ürününün KDV oranını tanımlayın; boş oran sıfır sayılmaz")
         price = Decimal(str(_cashier_number(item.get("price"), "Katalog fiyatı")))
         total = (price * line["quantity"] * _LAUNDRY_MULTIPLIERS[data["service_type"]]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         lines.append({**line, "name": item["name"], "price": float(price), "total": float(total), "currency": currency, "vat_rate": laundry_vat_rate(item.get("vat_rate"))})
