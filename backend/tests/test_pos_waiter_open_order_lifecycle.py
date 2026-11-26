@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
 from domains.pms.pos_fnb_router import kitchen, pos_core
+from tests.pos_day_fixture_helpers import open_pos_day_collections
 
 
 class MemoryCollection:
@@ -116,6 +117,7 @@ async def test_waiter_price_is_rebuilt_from_catalog_not_browser_payload(monkeypa
     orders = MemoryCollection()
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        **open_pos_day_collections(),
         client=_FakeClient(),
         pos_orders=orders,
         pos_menu_items=MemoryCollection([{
