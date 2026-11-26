@@ -235,3 +235,19 @@ async def test_mobile_retry_after_closure_returns_original_without_new_write(db,
     again = await mobile.create_quick_order_mobile(request, credentials=None, _perm=None)
     assert again["idempotent_replay"] and first["order_id"] == again["order_id"]
     assert await db.pos_orders.count_documents({}) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_mobile_retries_claim_only_one_order_on_a_fresh_day(db, monkeypatch):
+    from domains.pms.mobile_router import pos as mobile
+    await menu(db)
+    monkeypatch.setattr(mobile, "db", db)
+    monkeypatch.setattr(mobile, "get_current_user", AsyncMock(return_value=SimpleNamespace(tenant_id="t", username="local")))
+    request = mobile.QuickOrderRequest(outlet_id="bar", items=[mobile.QuickOrderItem(item_id="tea", quantity=1)], idempotency_key="local-concurrent-mobile")
+    first, second = await asyncio.gather(
+        mobile.create_quick_order_mobile(request, credentials=None, _perm=None),
+        mobile.create_quick_order_mobile(request, credentials=None, _perm=None),
+    )
+    assert first["order_id"] == second["order_id"]
+    assert sorted([first["idempotent_replay"], second["idempotent_replay"]]) == [False, True]
+    assert await db.pos_orders.count_documents({}) == 1
