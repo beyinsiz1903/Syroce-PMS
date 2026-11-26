@@ -77,7 +77,7 @@ async def frontdesk_acceptance(monkeypatch):
 
 async def add_fee(acceptance, **overrides):
     return await acceptance.api.post("/api/pms/reservations/synthetic-stay/add-extra-charge", json={
-        "description": "QA geç çıkış ek ücreti", "category": "other", "amount": 56, "quantity": 1,
+        "description": "QA geç çıkış ek ücreti", "category": "other", "vat_rate": 20, "amount": 56, "quantity": 1,
         "input_currency": "USD", "service_date": "2026-10-26", "service_time": "14:30", **overrides})
 
 

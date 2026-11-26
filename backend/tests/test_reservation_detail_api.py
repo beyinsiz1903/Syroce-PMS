@@ -367,6 +367,7 @@ class TestExtraCharges:
         """Test adding an extra charge to reservation."""
         charge_data = {
             "description": "Minibar consumption",
+            "vat_rate": 20,
             "category": "minibar",
             "amount": 45.0,
             "quantity": 1.0,

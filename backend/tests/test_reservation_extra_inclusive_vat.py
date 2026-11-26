@@ -5,10 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from routers import reservation_detail as detail
-from tests.test_report_ledger_mongo_acceptance import ledger_db  # noqa: F401
+
+pytest_plugins = ("tests.test_report_ledger_mongo_acceptance",)
 
 
-@pytest.mark.parametrize('rate,quantity,total,net,vat', [(20, 1, 150, 125, 25), (20, 2, 300, 250, 50), (0, 1, 150, 150, 0), (20, .333, 49.95, 41.63, 8.32), (None, 1, 150, None, None)])
+@pytest.mark.parametrize('rate,quantity,total,net,vat', [(20, 1, 150, 125, 25), (20, 2, 300, 250, 50), (0, 1, 150, 150, 0), (20, .333, 49.95, 41.63, 8.32)])
 async def test_entered_gross_stays_fixed_with_explicit_vat_evidence(ledger_db, monkeypatch, rate, quantity, total, net, vat):  # noqa: F811
     await ledger_db.bookings.insert_one({'id': 'b', 'tenant_id': 't', 'currency': 'TRY'})
     monkeypatch.setattr(detail, 'db', ledger_db)
@@ -45,3 +46,20 @@ async def test_entered_gross_stays_fixed_with_explicit_vat_evidence(ledger_db, m
 def test_invalid_rate_never_reaches_posting(rate):
     with pytest.raises(ValidationError):
         detail.ExtraChargeAdd(description='Minibar', amount=150, vat_rate=rate)
+
+
+@pytest.mark.parametrize('category,amount', [('minibar', 120), ('spa', 30), ('laundry', 25), ('other', 0)])
+async def test_new_extra_without_tax_evidence_is_rejected_before_any_write(ledger_db, monkeypatch, category, amount):
+    from fastapi import HTTPException
+
+    await ledger_db.bookings.insert_one({'id': 'b', 'tenant_id': 't', 'currency': 'TRY', 'is_complimentary': amount == 0})
+    monkeypatch.setattr(detail, 'db', ledger_db)
+    monkeypatch.setattr(detail, '_enforce_perm', lambda *_: None)
+    monkeypatch.setattr(detail, '_ensure_hotel_context', lambda *_: None)
+    monkeypatch.setattr(detail, 'ensure_reservation_mutable', AsyncMock())
+    with pytest.raises(HTTPException) as error:
+        await detail.add_extra_charge_detail('b', detail.ExtraChargeAdd(description='Sentetik hizmet', category=category, amount=amount),
+            current_user=SimpleNamespace(id='manager', name='Operator', role='admin', tenant_id='t'), _perm=None)
+    assert error.value.status_code == 422
+    assert await ledger_db.extra_charges.count_documents({}) == 0
+    assert await ledger_db.folio_charges.count_documents({}) == 0

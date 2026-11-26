@@ -38,6 +38,8 @@ const { axiosGet, axiosPost, axiosMock } = vi.hoisted(() => {
 vi.mock('axios', () => ({ default: axiosMock }));
 
 import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
+import { CancelTab } from '@/pages/reservation-detail/OperationTabs';
+import { confirmDialog } from '@/lib/dialogs';
 import { OnlinePaymentTab } from '@/pages/reservation-detail/OnlinePaymentTab';
 import { DailyRatesTab, ExtraChargesTab, completeDailyRatesForStay, distributeTotalAcrossEditableRates, filterDailyRatesForStay } from '@/pages/reservation-detail/PricingTabs';
 
@@ -246,6 +248,7 @@ describe('reservation detail action feedback', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Kola' } });
+    fireEvent.change(screen.getByLabelText('KDV oranı (%)'), { target: { value: '20' } });
     const inputs = screen.getAllByRole('textbox');
     fireEvent.change(inputs[1], { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: '0 TL Ekle' }));
@@ -268,6 +271,7 @@ describe('reservation detail action feedback', () => {
     render(<ExtraChargesTab extra_charges={[]} charges={[]} booking={{ id: 'spa-booking', currency: 'USD' }} allBookings={[]} />);
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Masaj' } });
+    fireEvent.change(screen.getByLabelText('KDV oranı (%)'), { target: { value: '20' } });
     fireEvent.change(screen.getByLabelText('Kategori'), { target: { value: 'spa' } });
     fireEvent.change(screen.getByLabelText('Birim tutar (USD)'), { target: { value: '30' } });
     fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-10-24' } });
@@ -292,6 +296,7 @@ describe('reservation detail action feedback', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Kahve' } });
+    fireEvent.change(screen.getByLabelText('KDV oranı (%)'), { target: { value: '20' } });
     const inputs = screen.getAllByRole('textbox');
     fireEvent.change(inputs[1], { target: { value: '15' } });
     fireEvent.change(inputs[2], { target: { value: '3' } });
@@ -345,6 +350,7 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(selects[1], { target: { value: 'TRY' } });
     await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/exchange-rates', { timeout: 10000 }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Türk kahvesi' } });
+    fireEvent.change(screen.getByLabelText('KDV oranı (%)'), { target: { value: '20' } });
     fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '390' } });
     expect(await screen.findByText(/7,8 EUR olarak folyoya yansır/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-10-24' } });
@@ -620,6 +626,33 @@ it('does not submit an invalid manual VAT percentage', async () => {
   fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '150' } });
   fireEvent.change(screen.getByLabelText('KDV oranı (%)'), { target: { value: '101' } });
   fireEvent.click(screen.getByRole('button', { name: '150 TL Ekle' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('KDV oranı 0–100');
+  expect(await screen.findByRole('alert')).toHaveTextContent('KDV oranını girin (0–100)');
   expect(axiosPost).not.toHaveBeenCalled();
+});
+
+
+it('blocks an amount-only manual extra before posting when VAT evidence is blank', async () => {
+  render(<ExtraChargesTab extra_charges={[]} charges={[]} booking={{ id: 'tax', currency: 'TRY' }} allBookings={[]} />);
+  fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+  fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Ürünsüz hizmet' } });
+  fireEvent.change(screen.getByLabelText('Birim tutar (TL)'), { target: { value: '120' } });
+  fireEvent.change(screen.getByLabelText('Hizmet tarihi'), { target: { value: '2026-11-12' } });
+  fireEvent.click(screen.getByRole('button', { name: '120 TL Ekle' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Boş oranla kayıt oluşturulamaz');
+  expect(axiosPost).not.toHaveBeenCalled();
+});
+
+
+it('validates no-show tax before changing reservation status and submits an explicit zero rate', async () => {
+  axiosPost.mockResolvedValue({ data: { success: true } });
+  confirmDialog.mockResolvedValue(true);
+  render(<CancelTab booking={{ id: 'no-show', check_in: '2026-11-12', check_out: '2026-11-13', total_amount: 120, currency: 'TRY' }} bookingId="no-show" onRefresh={vi.fn()} />);
+  fireEvent.change(screen.getByTestId('cancel-reason-input'), { target: { value: 'Sentetik no-show kabulü' } });
+  fireEvent.click(screen.getByTestId('noshow-checkbox'));
+  fireEvent.click(screen.getByTestId('cancel-submit-btn'));
+  expect(toast.error).toHaveBeenCalledWith('No-show ücretinin tanımlı KDV oranını girin (0–100).');
+  expect(axiosPost).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('No-show hizmet KDV oranı (%)'), { target: { value: '0' } });
+  fireEvent.click(screen.getByTestId('cancel-submit-btn'));
+  await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/reservations/no-show/add-extra-charge', expect.objectContaining({ vat_rate: 0, amount: 120 })));
 });

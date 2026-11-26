@@ -475,7 +475,7 @@ async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance
 
     result = await reservation_detail.add_extra_charge_detail(
         "booking-a",
-        reservation_detail.ExtraChargeAdd(description="Akşam yemeği", amount=750, quantity=2),
+        reservation_detail.ExtraChargeAdd(description="Akşam yemeği", amount=750, quantity=2, vat_rate=20),
         current_user=SimpleNamespace(
             id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
         ),
@@ -520,6 +520,7 @@ async def test_extra_charge_converts_entered_currency_to_booking_currency(monkey
         "booking-a",
         reservation_detail.ExtraChargeAdd(
             description="Türk kahvesi",
+            vat_rate=20,
             amount=390,
             quantity=1,
             input_currency="TRY",

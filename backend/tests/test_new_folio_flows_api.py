@@ -285,6 +285,7 @@ class TestRoomServiceCharges:
         """Test adding an extra charge with room_service category."""
         charge_data = {
             "description": "TEST_Oda Servisi - Kahvalti",
+            "vat_rate": 20,
             "category": "room_service",
             "amount": 75.0,
             "quantity": 2
@@ -308,6 +309,7 @@ class TestRoomServiceCharges:
         """Test adding an extra charge with minibar category."""
         charge_data = {
             "description": "TEST_Minibar - Icecekler",
+            "vat_rate": 20,
             "category": "minibar",
             "amount": 25.0,
             "quantity": 1
@@ -334,6 +336,7 @@ class TestChargeSplit:
             f"{BASE_URL}/api/pms/reservations/{booking_id}/add-extra-charge",
             json={
                 "description": "TEST_Charge_To_Split",
+            "vat_rate": 20,
                 "category": "food",
                 "amount": 200.0,
                 "quantity": 1
