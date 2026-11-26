@@ -83,7 +83,7 @@ async def test_mice_gl_uses_tenant_event_total_and_idempotency(monkeypatch):
         "tenant_id": "tenant-a",
         "status": "confirmed",
         "end_date": "2026-08-13",
-        "totals": {"grand_total": 780},
+        "totals": {"grand_total": 780, "tax_total": 130},
     }
     collection = SimpleNamespace(find_one=AsyncMock(return_value=event), update_one=AsyncMock())
     post = AsyncMock(return_value={"id": "journal-2"})
@@ -97,6 +97,7 @@ async def test_mice_gl_uses_tenant_event_total_and_idempotency(monkeypatch):
     kwargs = post.await_args.kwargs
     assert kwargs["idempotency_key"] == "mice-event:event-1"
     assert kwargs["lines"][0]["debit"] == 780
+    assert [(line["account_code"], line.get("credit", 0)) for line in kwargs["lines"][1:]] == [("600", 650), ("391", 130)]
 
 
 @pytest.mark.asyncio
