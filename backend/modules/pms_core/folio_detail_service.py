@@ -88,6 +88,15 @@ class FolioDetailService:
 
     async def get_folio_detail(self, tenant_id: str, folio_id: str) -> dict:
         """Get complete folio detail with timeline, running balance, split view, tax breakdown."""
+        folio_id = str(folio_id).strip()
+        if re.fullmatch(r"F-\d{4}-\d{1,12}", folio_id):
+            matches = await db.folios.find(
+                {"tenant_id": tenant_id, "folio_number": folio_id}, {"_id": 0, "id": 1},
+            ).limit(2).to_list(2)
+            if len(matches) != 1 or not matches[0].get("id"):
+                return {"success": False, "error": "Folio not found or number is ambiguous"}
+            # Every downstream ledger lookup and action uses the canonical ID.
+            folio_id = matches[0]["id"]
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
             return {"success": False, "error": "Folio not found"}
