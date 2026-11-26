@@ -97,3 +97,38 @@ async def test_grid_rejects_unknown_status_without_writing(db, wired, user, bulk
             await hk.update_room_housekeeping_status("r", RoomStatusUpdate(status="anything"), user, None)
     assert rejected.value.status_code == 422
     assert "housekeeping_status" not in await db.rooms.find_one({"tenant_id": "t"})
+
+
+@pytest.mark.asyncio
+async def test_replayed_room_status_does_not_duplicate_log_or_timestamp(db, wired, user):
+    await db.rooms.insert_one({"id": "r", "tenant_id": "t", "status": "dirty"})
+    await hk.update_room_housekeeping_status("r", RoomStatusUpdate(status="cleaning"), user, None)
+    before = await db.rooms.find_one({"tenant_id": "t", "id": "r"})
+    result = await hk.update_room_housekeeping_status("r", RoomStatusUpdate(status="cleaning"), user, None)
+    assert result["success"] is True
+    assert await db.housekeeping_log.count_documents({}) == 1
+    assert (await db.rooms.find_one({"tenant_id": "t", "id": "r"}))["updated_at"] == before["updated_at"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("new_owner", [None, "new-guest"])
+async def test_concurrent_same_status_replay_only_acknowledges_same_occupancy(db, wired, user, monkeypatch, new_owner):
+    await db.rooms.insert_one({"id": "r", "tenant_id": "t", "status": "dirty", "current_booking_id": None})
+    original = type(db.rooms).update_one
+
+    async def race(self, query, update, *args, **kwargs):
+        if self.name == "rooms" and "housekeeping_status" in update.get("$set", {}):
+            await original(self, {"id": "r", "tenant_id": "t"}, {"$set": {
+                "status": "occupied" if new_owner else "cleaning", "room_status": "occupied" if new_owner else "cleaning",
+                "current_booking_id": new_owner, "housekeeping_status": "cleaning", "hk_status": "cleaning"}})
+        return await original(self, query, update, *args, **kwargs)
+
+    monkeypatch.setattr(type(db.rooms), "update_one", race)
+    if new_owner:
+        with pytest.raises(HTTPException) as rejected:
+            await hk.update_room_housekeeping_status("r", RoomStatusUpdate(status="cleaning"), user, None)
+        assert rejected.value.status_code == 409
+    else:
+        result = await hk.update_room_housekeeping_status("r", RoomStatusUpdate(status="cleaning"), user, None)
+        assert result["success"] is True
+    assert await db.housekeeping_log.count_documents({}) == 0  # loser adds no second audit record

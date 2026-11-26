@@ -45,6 +45,13 @@ def _housekeeping_scope(room, tid):
             "current_booking_id": room.get("current_booking_id")}
 
 
+def _housekeeping_state_matches(room, updates):
+    # Replays may come from both the page and Background Sync. An identical
+    # final state is already applied; do not duplicate timestamps/audit rows.
+    keys = {"housekeeping_status", "hk_status", "status", "room_status", "housekeeping_notes"}
+    return all(room.get(key) == value for key, value in updates.items() if key in keys)
+
+
 def _invalidate_housekeeping(tid):
     from routers.housekeeping import _invalidate_hk_caches
 
@@ -116,8 +123,15 @@ async def update_room_housekeeping_status(
     if data.notes:
         update_data["housekeeping_notes"] = data.notes
 
+    if _housekeeping_state_matches(room, update_data):
+        return {"success": True, "room_id": room_id, "new_status": data.status, "idempotent": True}
+
     result = await db.rooms.update_one(_housekeeping_scope(room, tid), {"$set": update_data})
     if result.matched_count != 1:
+        current = await db.rooms.find_one({"id": room_id, "tenant_id": tid})
+        if (current and current.get("current_booking_id") == room.get("current_booking_id")
+                and _housekeeping_state_matches(current, update_data)):
+            return {"success": True, "room_id": room_id, "new_status": data.status, "idempotent": True}
         raise HTTPException(409, "Odanın durumu değişti; yenileyip tekrar kontrol edin.")
     _invalidate_housekeeping(tid)
 
