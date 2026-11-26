@@ -1,0 +1,14 @@
+appId: com.syroce.pms
+name: "Open an authorized app route and handle Simulator confirmation"
+---
+- openLink: ${TARGET_LINK}
+# Match the unique button rather than the duplicated alert title. Optional
+# tap waits for the asynchronously presented iOS sheet; destination assertions
+# in the caller remain mandatory on both platforms.
+- tapOn:
+    text: "Open"
+    optional: true
+- tapOn:
+    text: "Not Now"
+    optional: true
+- waitForAnimationToEnd
