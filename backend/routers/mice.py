@@ -3925,7 +3925,15 @@ async def post_beo_to_folio(
             "foreign_amount": amount,
             "exchange_rate": exchange_rate,
         }
-    tax = money((event_doc.get("totals") or {}).get("tax_total", 0))
+    tax_value = (event_doc.get("totals") or {}).get("tax_total")
+    if tax_value is None:
+        raise HTTPException(409, "Muhasebe aktarımından önce etkinliğin vergi dökümünü tanımlayın; boş vergi sıfır sayılmaz")
+    try:
+        tax = money(tax_value)
+        if tax > money(amount):
+            raise ValueError("Vergi toplam tutarı aşamaz")
+    except (ValueError, ArithmeticError, TypeError) as exc:
+        raise HTTPException(409, "Etkinliğin vergi dökümü geçersiz; muhasebe aktarımından önce düzeltin") from exc
     rate = money(exchange_rate) if foreign_fields else Decimal(1)
     base_tax = rounded(tax * rate)
     revenue = rounded(money(base_amount) - money(base_tax))

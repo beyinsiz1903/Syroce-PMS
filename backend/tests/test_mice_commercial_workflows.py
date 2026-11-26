@@ -139,3 +139,44 @@ async def test_interrupted_gl_post_freezes_editing_and_retry_preserves_its_amoun
     assert replay["already_posted"]
     assert journal.await_count == 2  # failed/uncertain + recovery; no third posting
     assert (await wired.mice_events.find_one({"id": "event", "tenant_id": "A"}))["gl_posting_state"] == "posted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tax", ["missing", None, -1, 121, float("nan")])
+async def test_gl_rejects_missing_or_invalid_tax_before_claim(wired, monkeypatch, tax):  # noqa: F811
+    totals = {"grand_total": 120}
+    if tax != "missing":
+        totals["tax_total"] = tax
+    original = await event(wired, totals=totals)
+    journal = AsyncMock(return_value={"id": "must-not-post"})
+    monkeypatch.setattr(mice, "post_journal_entry", journal)
+    with pytest.raises(HTTPException) as error:
+        await mice.post_beo_to_folio("event", None, USER)
+    assert error.value.status_code == 409
+    journal.assert_not_awaited()
+    current = await wired.mice_events.find_one({"id": "event", "tenant_id": "A"})
+    assert current.get("gl_posting_state") is None
+    assert current.get("updated_at") == original.get("updated_at")
+
+
+@pytest.mark.asyncio
+async def test_gl_accepts_explicit_zero_tax(wired, monkeypatch):  # noqa: F811
+    await event(wired, totals={"grand_total": 120, "tax_total": 0})
+    journal = AsyncMock(return_value={"id": "zero-tax-journal"})
+    monkeypatch.setattr(mice, "post_journal_entry", journal)
+    await mice.post_beo_to_folio("event", None, USER)
+    lines = journal.await_args.kwargs["lines"]
+    assert [(line["account_code"], line.get("credit", 0)) for line in lines] == [("120", 0), ("600", 120)]
+
+
+@pytest.mark.asyncio
+async def test_gl_replays_legacy_post_without_inventing_tax(wired, monkeypatch):  # noqa: F811
+    await event(wired, totals={"grand_total": 120}, gl_journal_entry_id="original-journal")
+    journal = AsyncMock()
+    monkeypatch.setattr(mice, "post_journal_entry", journal)
+    result = await mice.post_beo_to_folio("event", None, USER)
+    assert result["already_posted"] is True
+    assert result["journal_entry_id"] == "original-journal"
+    journal.assert_not_awaited()
+    current = await wired.mice_events.find_one({"id": "event", "tenant_id": "A"})
+    assert "tax_total" not in current["totals"]
