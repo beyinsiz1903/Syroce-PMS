@@ -76,10 +76,14 @@ def test_registry_deploy_keeps_exact_revision_ci_gates_and_read_only_credentials
     checkout = next(step for step in steps if step.get("name") == "Checkout Code")
     assert checkout["with"]["ref"] == "${{ env.DEPLOY_SHA }}"
     gate = next(step for step in steps if step.get("id") == "gate")["with"]["script"]
+    assert "require('./.github/scripts/deploy-readiness.cjs')" in gate
+    assert "await gate({ github, context, core, sha: process.env.DEPLOY_SHA })" in gate
+    gate = (REPO_ROOT / ".github/scripts/deploy-readiness.cjs").read_text()
     assert "main.data.commit.sha !== sha" in gate
     assert "head_sha: sha" in gate
     assert "['Syroce PMS CI/CD Pipeline', 'Frontend Quality Gates']" in gate
-    assert "latest?.conclusion === 'success'" in gate
+    assert "latest.every(r => r?.status === 'completed' && r.conclusion === 'success')" in gate
+    assert "core.setFailed(" in gate
     deploy = next(step for step in steps if step.get("name") == "Deploy to Server")
     assert deploy["if"] == "steps.gate.outputs.ready == 'true'"
     assert deploy["env"]["REGISTRY_TOKEN"] == "${{ github.token }}"
@@ -128,3 +132,10 @@ def test_patched_nginx_is_pulled_before_rollout_and_running_binary_is_checked():
         content = (REPO_ROOT / name).read_text()
         assert "nginx:1.25-alpine" not in content
         assert "nginx:1.30.7-alpine@sha256:" in content
+
+
+def test_deployment_gate_behavior():
+    import subprocess
+
+    subprocess.run(["node", "--test", ".github/scripts/deploy-readiness.test.cjs"],
+                   cwd=REPO_ROOT, check=True, capture_output=True, text=True)
