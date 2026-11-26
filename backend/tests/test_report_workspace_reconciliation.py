@@ -155,3 +155,22 @@ async def test_comparison_reservation_count_uses_same_statuses_in_both_periods(l
         await ledger_db.bookings.insert_one({"tenant_id": "A", "id": day, "status": "guaranteed", "check_in": day, "check_out": end})
     report = await dashboard()
     assert report["period_comparison"]["month_bookings"] == report["period_comparison"]["prev_month_bookings"] == 1
+
+
+async def test_fnb_summary_exposes_zero_postings_separately_from_unposted_room_accrual(ledger_db):
+    await seed_stay(ledger_db)
+    report = await dashboard()
+    assert report['summary']['today_room_revenue_by_currency'] == {'EUR': 100}
+    assert report['summary']['posted_room_revenue'] == 0
+    assert report['summary']['posted_room_revenue_by_currency'] == {'EUR': 0}
+
+
+async def test_fnb_summary_keeps_posted_native_currencies_separate(ledger_db):
+    await seed_stay(ledger_db)
+    await ledger_db.folio_charges.insert_many([
+        {'tenant_id': 'A', 'booking_id': 'b', 'business_date': '2026-10-07', 'category': 'room', 'total': 80, 'currency': 'EUR'},
+        {'tenant_id': 'A', 'booking_id': 'b', 'business_date': '2026-10-07', 'category': 'room', 'total': 200, 'currency': 'TRY'},
+    ])
+    report = await dashboard()
+    assert report['summary']['posted_room_revenue'] is None
+    assert report['summary']['posted_room_revenue_by_currency'] == {'EUR': 80, 'TRY': 200}

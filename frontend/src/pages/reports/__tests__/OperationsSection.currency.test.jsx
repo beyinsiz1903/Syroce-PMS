@@ -44,3 +44,24 @@ describe('report currency integrity', () => {
     expect(screen.getAllByText('TRY: %25.0 · EUR: %50.0').length).toBeGreaterThan(0);
   });
 });
+
+it('does not show an unposted room estimate as realized F&B comparison revenue', () => {
+  render(<FnBSection reportDate="2026-11-12" s={{ today_room_revenue: 4800,
+    today_room_revenue_by_currency: { TRY: 4800 }, posted_room_revenue: 0,
+    posted_room_revenue_by_currency: { TRY: 0 }, fnb_revenue: 0 }} />);
+  const roomCard = screen.getByText(/^(Folyoya İşlenen )?Oda Geliri$/).parentElement;
+  expect(roomCard).toHaveTextContent('₺0');
+  expect(roomCard).not.toHaveTextContent('4.800');
+});
+it('preserves currency-separated posted room values instead of operational accrual', () => {
+  render(<FnBSection reportDate="2026-11-12" s={{ today_room_revenue_by_currency: { TRY: 4800 },
+    posted_room_revenue_by_currency: { EUR: 80, TRY: 200 }, posted_room_revenue: null }} />);
+  const roomCard = screen.getByText(/^(Folyoya İşlenen )?Oda Geliri$/).parentElement;
+  expect(roomCard).toHaveTextContent('€80');
+  expect(roomCard).toHaveTextContent('₺200');
+  expect(roomCard).not.toHaveTextContent('4.800');
+});
+it('does not silently replace a missing posted total with an operational estimate', () => {
+  render(<FnBSection reportDate="2026-11-12" s={{ today_room_revenue: 4800 }} />);
+  expect(screen.getByText(/^(Folyoya İşlenen )?Oda Geliri$/).parentElement).toHaveTextContent('Doğrulanamadı');
+});

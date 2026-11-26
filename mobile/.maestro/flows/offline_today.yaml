@@ -11,10 +11,10 @@ env:
 # NOTE: Android-only — the network-toggle scripts shell out to `adb`.
 # See README → "Offline flow prerequisites" for the iOS workaround.
 - runFlow:
-    file: login.yaml
+    file: ../helpers/login.yaml
     env:
-      SMOKE_EMAIL: ${SMOKE_EMAIL}
-      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+      LOGIN_EMAIL: ${SMOKE_EMAIL}
+      LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
 # Admin and manager accounts may land on their own dashboard.
 # Open the authorized frontdesk route explicitly; route permissions still apply.

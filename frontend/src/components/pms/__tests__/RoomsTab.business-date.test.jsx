@@ -48,8 +48,31 @@ describe('RoomsTab PMS business date', () => {
 
   it('does not mislabel a booking-only estimate as a posted folio charge', () => {
     render(<RoomsTab rooms={[room]} bookings={[booking]} businessDate="2026-08-28" />);
-    expect(screen.getByTestId('room-balance-208')).toHaveTextContent('Rezervasyon bakiyesi:');
-    expect(screen.getByTestId('room-balance-208')).not.toHaveTextContent('Folyo borcu:');
+    expect(screen.queryByTestId('room-balance-208')).not.toBeInTheDocument();
+    expect(screen.getByTestId('room-balance-unverified-208')).toHaveTextContent('Güncel hesap için rezervasyonu açın.');
+  });
+
+
+  it('opens the guest account without pre-filling a stale 120 TRY estimate', () => {
+    const openAccount = vi.fn();
+    render(<RoomsTab rooms={[{ ...room, status: 'occupied' }]} businessDate="2026-08-28"
+      bookings={[{ ...booking, status: 'checked_in', total_amount: 120, balance: 120, currency: 'TRY' }]}
+      onPayment={openAccount} />);
+    expect(screen.queryByTestId('room-balance-208')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('room-card-208')).getByRole('button', { name: 'Ödeme' }));
+    expect(openAccount).toHaveBeenCalledWith('booking-28');
+    expect(screen.queryByTestId('quick-payment-amount')).not.toBeInTheDocument();
+  });
+
+  it('opens the verified account before checkout when list balance is unknown', () => {
+    const openAccount = vi.fn();
+    const checkout = vi.fn();
+    render(<RoomsTab rooms={[{ ...room, status: 'occupied' }]} businessDate="2026-08-30"
+      bookings={[{ ...booking, status: 'checked_in', total_amount: 0, balance: 0 }]}
+      onPayment={openAccount} handleCheckOut={checkout} />);
+    fireEvent.click(within(screen.getByTestId('room-card-208')).getByRole('button', { name: /Çıkış/ }));
+    expect(openAccount).toHaveBeenCalledWith('booking-28');
+    expect(checkout).not.toHaveBeenCalled();
   });
 
   it('recognizes explicit zero but not malformed folio values as evidence of posted scope', () => {

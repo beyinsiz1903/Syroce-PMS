@@ -8,14 +8,13 @@ env:
   SMOKE_PASSWORD: Syroce2026
 ---
 - runFlow:
-    file: login.yaml
+    file: ../helpers/login.yaml
     env:
-      SMOKE_EMAIL: ${SMOKE_EMAIL}
-      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+      LOGIN_EMAIL: ${SMOKE_EMAIL}
+      LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
-# The current app enables push only on explicit opt-in. Open the shared
-# profile instead of assuming a role-specific landing screen or old labels.
-- openLink: "syrocepms:///(home)/profile"
+# The current app enables push only on explicit opt-in. Open the frontdesk More screen instead of assuming a role-specific landing screen or old labels.
+- openLink: "syrocepms:///(frontdesk)/more"
 # iOS may request confirmation before opening this app link.
 - runFlow:
     when:
@@ -27,14 +26,38 @@ env:
     element:
       id: "smoke-push-status"
     direction: DOWN
+    centerElement: true
     timeout: 30000
 - extendedWaitUntil:
     visible:
       id: "smoke-push-status"
     timeout: 30000
-- tapOn:
-    text: "Bildirimleri etkinleştir"
-    optional: true
+# Non-registered states render an opt-in button below the status row.
+# Bring the button fully above the tab bar before tapping it.
+- runFlow:
+    when:
+      notVisible: "Bildirimler bu hesap için etkin."
+    commands:
+      - scrollUntilVisible:
+          element:
+            text: "Bildirimleri etkinleştir"
+          direction: DOWN
+          centerElement: true
+          timeout: 15000
+      - waitForAnimationToEnd
+      - takeScreenshot: artifacts/push-before-optin
+      - tapOn:
+          text: "Bildirimleri etkinleştir"
+          retryTapIfNoChange: false
+      - waitForAnimationToEnd
+      - takeScreenshot: artifacts/push-after-optin
+# CI exercises the explicit denial path without registering a delivery device.
+# This is not evidence that real APNs delivery succeeded.
+- runFlow:
+    when:
+      visible: ".*Would Like to Send You Notifications.*"
+    commands:
+      - tapOn: "Don.t Allow"
 - extendedWaitUntil:
     notVisible:
       text: "Bildirimler henüz etkinleştirilmedi."

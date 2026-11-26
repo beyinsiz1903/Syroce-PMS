@@ -7,42 +7,8 @@ env:
   SMOKE_EMAIL: info@syroce.com
   SMOKE_PASSWORD: Syroce2026
 ---
-- launchApp:
-    clearState: true
-    clearKeychain: true
-    permissions:
-      all: allow
-
-# Login screen renders.
-- extendedWaitUntil:
-    visible:
-      text: "Giriş Yap"
-    timeout: 30000
-
-- tapOn:
-    id: "smoke-login-email"
-- inputText: ${SMOKE_EMAIL}
-
-- tapOn:
-    id: "smoke-login-password"
-- inputText: ${SMOKE_PASSWORD}
-- hideKeyboard
-
-- tapOn:
-    id: "smoke-login-submit"
-
-# Server-side auth must succeed.
-- extendedWaitUntil:
-    notVisible:
-      text: "E-posta veya şifre hatalı"
-    timeout: 15000
-- extendedWaitUntil:
-    notVisible:
-      text: "Sunucuya ulaşılamıyor, tekrar dene"
-    timeout: 15000
-
-# Login screen header must disappear (we're past the auth gate).
-- extendedWaitUntil:
-    notVisible:
-      id: "smoke-login-submit"
-    timeout: 30000
+- runFlow:
+    file: ../helpers/login.yaml
+    env:
+      LOGIN_EMAIL: ${SMOKE_EMAIL}
+      LOGIN_PASSWORD: ${SMOKE_PASSWORD}

@@ -1534,6 +1534,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "today_room_revenue": daily_performance["room_revenue"],
             "today_room_revenue_by_currency": today_room_revenue_by_currency,
             "posted_room_revenue": today_room_revenue,
+            "posted_room_revenue_by_currency": posted_room_revenue_by_currency,
             "room_revenue_source": daily_performance["revenue_source"],
             "adr": adr,
             "adr_by_currency": daily_performance["adr_by_currency"],

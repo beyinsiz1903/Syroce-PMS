@@ -9,10 +9,10 @@ import { MoneyCell } from './GuestSection';
 import { formatCurrency as formatCurrencyValue } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import ReportConversionNotice from './ReportConversionNotice';
+import { reportPaymentMethodLabel } from '@/lib/reportPaymentLabels';
 const HK_READINESS_LABELS = { ...ROOM_STATUS_LABELS, available: 'Temiz / hazır', clean: 'Temiz', inspected: 'Kontrol edildi' };
 const TASK_STATUS_LABELS = { completed: 'Tamamlandı', pending: 'Bekliyor', assigned: 'Atandı', open: 'Açık', new: 'Yeni', in_progress: 'Devam ediyor', inprogress: 'Devam ediyor', active: 'Devam ediyor', cleaning: 'Temizleniyor', ready: 'Hazır' };
 const TASK_TYPE_LABELS = { checkout_cleaning: 'Çıkış temizliği', stayover_cleaning: 'Konaklama temizliği', room_status: 'Oda kontrolü', deep_cleaning: 'Detaylı temizlik' };
-const PAYMENT_METHOD_LABELS = { cash: 'Nakit', credit_card: 'Kredi kartı', debit_card: 'Banka kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme' };
 export const NoShowSection = ({
   s,
   noShowGuests,
@@ -172,7 +172,7 @@ export const PaymentsSection = ({
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Tahsilat Hareketleri ({payments.rows?.length || 0})</CardTitle></CardHeader>
       <CardContent className="p-0 overflow-x-auto">
-        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Alınan Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{PAYMENT_METHOD_LABELS[row.method] || row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrencyValue(row.received_amount ?? row.amount, row.received_currency || row.currency, { decimals: 2, compactDecimals: false })}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
+        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Alınan Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{reportPaymentMethodLabel(row.method)}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrencyValue(row.received_amount ?? row.amount, row.received_currency || row.currency, { decimals: 2, compactDecimals: false })}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
       </CardContent>
     </Card>
   </div>;
@@ -242,7 +242,7 @@ export const FnBSection = ({
         <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrencyBreakdown(s.fnb_revenue_by_currency, s.fnb_revenue)}</p>
         <p className="text-sm text-slate-500 mt-2">{reportDate} tarihli toplam yiyecek ve içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrencyBreakdown(s.today_room_revenue_by_currency, s.today_room_revenue)}</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Folyoya İşlenen Oda Geliri</p><p className="font-bold text-slate-900">{s.posted_room_revenue_by_currency || s.posted_room_revenue != null ? formatCurrencyBreakdown(s.posted_room_revenue_by_currency, s.posted_room_revenue) : "Doğrulanamadı"}</p></div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Toplam Gelirdeki Payı</p><p className="font-bold text-slate-900">{revenueShare}</p></div>
         </div>
       </CardContent>

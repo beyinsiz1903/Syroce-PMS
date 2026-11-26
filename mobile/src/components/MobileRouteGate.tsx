@@ -20,7 +20,7 @@ export function MobileRouteGate({ children }: { children: React.ReactNode }) {
     queryFn: getCurrentSubscription, enabled: !loading && allowed && !!paidTile,
     staleTime: 5 * 60 * 1000, retry: false,
   });
-  if (loading) return <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator accessibilityLabel="Oturum doğrulanıyor" /></View>;
+  if (loading && !user) return <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator accessibilityLabel="Oturum doğrulanıyor" /></View>;
   if (!user) return <Redirect href={ROUTES.login} />;
   if (!allowed) return <Redirect href={mobileHome(user)} />;
   if (paidTile) {
@@ -32,5 +32,19 @@ export function MobileRouteGate({ children }: { children: React.ReactNode }) {
       <Button title="Profil ve yetkili modüllere dön" onPress={() => router.replace(ROUTES.homeProfile)} />
     </Card></View>;
   }
-  return <>{children}</>;
+  // A resumed authenticated session must not unmount its Tabs/Stack while
+  // /auth/me is being refreshed (for example after an OS permission prompt).
+  // Keep the navigator mounted but block input until the new rights arrive.
+  return <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} pointerEvents={loading ? 'none' : 'auto'}
+      accessibilityElementsHidden={loading}
+      importantForAccessibility={loading ? 'no-hide-descendants' : 'auto'}>
+      {children}
+    </View>
+    {loading ? <View testID="session-validation-overlay" accessibilityViewIsModal
+      onStartShouldSetResponder={() => true}
+      style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'center' }}>
+      <ActivityIndicator accessibilityLabel="Oturum doğrulanıyor" />
+    </View> : null}
+  </View>;
 }
