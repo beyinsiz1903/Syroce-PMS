@@ -170,7 +170,7 @@ class PosFnbServiceV2:
             try:
                 quantity = int(requested.get("quantity", 1))
                 price = float(menu.get("unit_price", menu.get("price")))
-                tax_rate = float(menu.get("tax_rate", 0.10) or 0)
+                tax_rate = float(menu.get("tax_rate"))
             except (TypeError, ValueError):
                 raise HTTPException(status_code=422, detail="Menü ürününün fiyat veya KDV tanımı geçersiz")
             if quantity < 1 or quantity > 100 or not math.isfinite(price) or price < 0 or not 0 <= tax_rate <= 1:

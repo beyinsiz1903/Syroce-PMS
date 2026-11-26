@@ -362,3 +362,30 @@ async def test_room_charge_reports_durable_folio_queue_status(monkeypatch):
 
 async def _async_none():
     return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tax", ["missing", None, "", 0])
+async def test_order_requires_catalog_tax_and_accepts_explicit_zero(monkeypatch, tax):
+    menu = {"id": "burger", "tenant_id": "tenant-1", "outlet_id": "outlet-1",
+            "item_name": "Burger", "unit_price": 125, "available": True}
+    if tax != "missing":
+        menu["tax_rate"] = tax
+    orders, kitchen = MemoryCollection(), MemoryCollection()
+    service = PosFnbServiceV2()
+    service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
+        **open_pos_day_collections(), client=_FakeClient(), pos_orders=orders,
+        pos_menu_items=MemoryCollection([menu]), kitchen_orders=kitchen, table_layouts=MemoryCollection())
+    monkeypatch.setattr(service, "_broadcast_kitchen_queue", lambda _tenant_id: _async_none())
+    monkeypatch.setattr(service, "_enqueue_kot", lambda *_args: _async_none())
+    result = await PosFnbServiceV2.create_order.__wrapped__(
+        service, ctx(), "outlet-1", items=[{"item_id": "burger", "tax_rate": .2}])
+    if tax == 0:
+        assert result.ok is True
+        assert orders.docs[0]["grand_total"] == 125
+        assert orders.docs[0]["order_items"][0]["tax_rate"] == 0
+    else:
+        assert result.ok is False
+        assert orders.docs == []
+        assert kitchen.docs == []
