@@ -7,8 +7,8 @@
 #   npm run smoke -- frontdesk_today.yaml                  # bare name resolved under .maestro/flows
 #
 # Honoured environment variables:
-#   SMOKE_EMAIL / SMOKE_PASSWORD             — frontdesk login (default: demo)
-#   SMOKE_GUEST_EMAIL / SMOKE_GUEST_PASSWORD — guest login    (default: demo)
+#   SMOKE_EMAIL / SMOKE_PASSWORD             — frontdesk login (caller / CI secrets)
+#   SMOKE_GUEST_EMAIL / SMOKE_GUEST_PASSWORD — guest login (caller / CI secrets)
 #   MAESTRO_DEVICE                           — explicit device id when multiple
 #                                              simulators/emulators are running
 #
@@ -44,7 +44,7 @@ fi
 
 # Forward credential env vars to Maestro so the YAML ${VAR} placeholders
 # resolve. We only forward when the variable is set in the parent shell;
-# otherwise the flow's own default (demo account) wins.
+# credentials must come from the caller / CI secrets, never repository defaults.
 ENV_ARGS=()
 for var in SMOKE_EMAIL SMOKE_PASSWORD SMOKE_GUEST_EMAIL SMOKE_GUEST_PASSWORD; do
   if [ -n "${!var:-}" ]; then
