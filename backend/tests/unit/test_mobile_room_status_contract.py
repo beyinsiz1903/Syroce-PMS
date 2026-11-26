@@ -144,9 +144,10 @@ async def test_prewarmed_snapshot_retains_operational_status_fields():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("currency", ["USD", "EUR", None])
-async def test_inhouse_room_card_source_preserves_currency_without_conversion(currency):
+async def test_inhouse_room_card_source_preserves_currency_without_conversion(currency, monkeypatch):
     from domains.pms.frontdesk_service import FrontdeskService
 
+    monkeypatch.setattr("domains.pms.reservation_balance_projection.reservation_balances", AsyncMock(return_value={"booking-1": 125}))
     booking = {"id": "booking-1", "room_id": "room-1", "status": "checked_in", "balance": 125}
     if currency is not None:
         booking["currency"] = currency
@@ -166,9 +167,10 @@ async def test_inhouse_room_card_source_preserves_currency_without_conversion(cu
 
 
 @pytest.mark.asyncio
-async def test_unified_inhouse_count_includes_stays_beyond_the_list_limit():
+async def test_unified_inhouse_count_includes_stays_beyond_the_list_limit(monkeypatch):
     from domains.pms.frontdesk_service import FrontdeskService
 
+    monkeypatch.setattr("domains.pms.reservation_balance_projection.reservation_balances", AsyncMock(return_value={}))
     rows = [{"id": f"booking-{index}"} for index in range(503)]
     bookings = SimpleNamespace(find=MagicMock(return_value=Cursor(rows)), count_documents=AsyncMock(return_value=503))
     service = FrontdeskService.__new__(FrontdeskService)

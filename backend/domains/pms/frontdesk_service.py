@@ -735,6 +735,13 @@ class FrontdeskService:
         count = len(bookings)
         if count == limit:
             count = await self._db.bookings.count_documents(query)
+        from domains.pms.reservation_balance_projection import reservation_balances
+
+        balances = await reservation_balances(self._db, ctx.tenant_id, bookings)
+        for booking in bookings:
+            if booking.get("id") in balances:
+                booking["balance"] = balances[booking["id"]]
+                booking["balance_basis"] = "reservation_total_due"
         enriched = await self._enrich_bookings(bookings, ctx.tenant_id)
         return ServiceResult.success({"in_house": enriched, "count": count})
 
