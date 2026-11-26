@@ -211,7 +211,8 @@ async def test_night_audit_accrues_external_sale_once_not_already_posted_receipt
     from core.integrations.operational_gl_valuation import daily_sources
     await financial.gl_accounts.insert_many([{'tenant_id': 't', 'code': c, 'name': c, 'active': True, 'type': 'revenue' if c == '600' else 'liability'} for c in ('600', '391')])
     await finance.record_settlement('a', request(amount=1500), user())
-    # A generic extra charge must not suddenly acquire this new SPA GL path.
+    # Automatic SPA accrual stays scoped; explicit source valuation also
+    # discovers manual extras and must fail closed if their tax is unknown.
     await financial.extra_charges.insert_one({'id': 'unrelated', 'tenant_id': 't', 'business_date': '2026-10-25', 'total': 999, 'currency': 'TRY'})
     result = await bridge.post_night_audit_daily_to_gl(financial, 't', '2026-10-25', run_id='audit')
     assert result['status'] == 'posted'
@@ -220,7 +221,14 @@ async def test_night_audit_accrues_external_sale_once_not_already_posted_receipt
     assert values == {'120': (1500, 0), '600': (0, 1250), '391': (0, 250)}
     assert await financial.gl_journal_entries.count_documents({}) == 2
     charges, payments, _ = await daily_sources(financial, 't', '2026-10-25')
-    assert len(charges) == 1 and charges[0]['source'] == 'spa_external' and not payments
+    assert len(charges) == 2
+    assert len([row for row in charges if row.get('source') == 'spa_external']) == 1
+    assert any(row['id'] == 'unrelated' for row in charges)
+    assert not payments
+    from core.integrations.operational_gl_valuation import OperationalValuationError, build_plan, normalized_valuation
+    with pytest.raises(OperationalValuationError, match='Unknown source tax'):
+        build_plan(charges, payments, bridge.DEFAULT_MAPPING, normalized_valuation('2026-10-25', {
+            'business_date': '2026-10-25', 'base_currency': 'TRY', 'reference': 'local test', 'rates_to_try': {}}))
 
 
 async def test_foreign_bank_collection_requires_source_valuation_and_refunds_original_rate(financial):
