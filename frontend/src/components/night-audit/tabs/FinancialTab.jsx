@@ -14,6 +14,10 @@ export default function FinancialTab(props) {
   const { StatCard, categoryLabels, financialSummary, paymentMethodLabels, reportingDate } = props;
   const money = (value, currency = 'TRY') => formatCurrency(value, currency);
   const breakdown = (values, fallback) => formatCurrencyBreakdown(values, fallback);
+  const verifiedBreakdown = (verified, values, fallback) => {
+    if (!verified) return financialSummary.tax_unknown_count > 0 ? 'Doğrulanamadı (vergi ayrımı eksik)' : breakdown(values, fallback);
+    return Object.entries(verified).map(([code, value]) => value == null ? `Doğrulanamadı (${code})` : breakdown({ [code]: value })).join(' · ') || '—';
+  };
   const balanceBreakdown = (key) => formatCurrencyBreakdown(
     Object.fromEntries(Object.entries(financialSummary.open_folios?.balance_by_currency || {}).map(([currency, values]) => [currency, values?.[key] || 0])),
     financialSummary.open_folios?.balance?.[key],
@@ -23,7 +27,7 @@ export default function FinancialTab(props) {
       {financialSummary ? (
         <>
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-            <strong>Rapor iş günü:</strong> {financialSummary.business_date || financialSummary.date || reportingDate || '-'} · Son tamamlanan gece denetiminin finansal hareketleri
+            <strong>Rapor iş günü:</strong> {financialSummary.business_date || financialSummary.date || reportingDate || '-'} · Seçili iş gününün kayıtlı finansal hareketleri
           </div>
           {(financialSummary.degraded || financialSummary.tax_unknown_count > 0 || financialSummary.tax_breakdown_incomplete_count > 0) && (
             <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -38,14 +42,14 @@ export default function FinancialTab(props) {
             <StatCard
               icon={TrendingUp}
               label={t('cm.components_nightaudit_tabs_FinancialTab.toplam_gelir')}
-              value={breakdown(financialSummary.revenue?.total_by_currency, financialSummary.revenue?.total)}
+              value={verifiedBreakdown(financialSummary.revenue?.verified_total_by_currency, financialSummary.revenue?.total_by_currency, financialSummary.revenue?.total)}
               subValue={`${financialSummary.revenue?.charges_count || 0} masraf`}
               color="text-emerald-600"
             />
             <StatCard
               icon={Receipt}
               label={t('cm.components_nightaudit_tabs_FinancialTab.vergi_toplami')}
-              value={breakdown(financialSummary.tax?.total_by_currency, financialSummary.tax?.total)}
+              value={verifiedBreakdown(financialSummary.tax?.verified_total_by_currency, financialSummary.tax?.total_by_currency, financialSummary.tax?.total)}
               subValue="Vergiler para birimine göre ayrılmıştır"
               color="text-blue-600"
             />
@@ -91,8 +95,8 @@ export default function FinancialTab(props) {
                             <span className="text-[11px] text-gray-400">({data.count})</span>
                           </div>
                           <div className="text-right">
-                            <span className="text-sm font-semibold text-gray-900">{breakdown(data.amount_by_currency, data.amount)}</span>
-                            {financialSummary.revenue.total != null && <span className="text-[11px] text-gray-400 ml-2">{pct}%</span>}
+                            <span className="text-sm font-semibold text-gray-900">{verifiedBreakdown(data.verified_amount_by_currency, data.amount_by_currency, data.amount)}</span>
+                            {!financialSummary.tax_unknown_count && financialSummary.revenue.total != null && <span className="text-[11px] text-gray-400 ml-2">{pct}%</span>}
                           </div>
                         </div>
                       );

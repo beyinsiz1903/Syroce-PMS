@@ -223,16 +223,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     }
   }, []);
 
-  // Mount waterfall fix: 4+3 sıralı round-trip → 7 paralel.
-  // financial-summary/payment-reconciliation/integrity-check `date=null`
-  // gönderildiğinde backend bugün'e default eder; businessDate gelmesini
-  // beklemeye gerek yok. Sonraki businessDate değişimleri için
-  // initialLoadRef ile ilk render'ı atlayıp re-fetch sadece manuel
-  // değişimde tetiklenir.
-  const initialLoadRef = useRef(true);
+  // Resolve completed history before selecting the finance day. Fetching the
+  // current business day while history is pending can overwrite this snapshot.
   const loadAll = useCallback(async () => {
     setLoading(true);
-    initialLoadRef.current = true; // skip the businessDate effect after this
     const [, latestCompletedRun] = await Promise.all([
       fetchBusinessDate(),
       fetchHistory(),
@@ -252,19 +246,6 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
-
-  useEffect(() => {
-    if (initialLoadRef.current) {
-      // İlk yüklemede (veya loadAll sonrası) finansal endpoint'ler zaten çekildi
-      initialLoadRef.current = false;
-      return;
-    }
-    if (businessDate && !reportingDate) {
-      fetchFinancialSummary(businessDate);
-      fetchReconciliation(businessDate);
-      fetchIntegrityCheck(businessDate);
-    }
-  }, [businessDate, reportingDate, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
 
   const handleRunAudit = async () => {
     setRunning(true);
