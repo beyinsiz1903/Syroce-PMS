@@ -40,3 +40,9 @@ name: "Shared login commands (credentials supplied by caller)"
     notVisible:
       id: "smoke-login-submit"
     timeout: 30000
+
+# Decline the Simulator's optional password-save sheet. It can otherwise
+# cover the destination and remain above later clearState launches.
+- tapOn:
+    text: "Not Now"
+    optional: true

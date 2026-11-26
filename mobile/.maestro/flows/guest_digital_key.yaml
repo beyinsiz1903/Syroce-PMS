@@ -19,13 +19,10 @@ tags:
 # render the title + "Aktif rezervasyon bulunamadı" message and the
 # smoke test passes — the goal is to verify the screen mounts without
 # crashing.
-- openLink: "syrocepms:///(guest)/digitalKey"
-# iOS may request confirmation before opening this app link.
 - runFlow:
-    when:
-      visible: "Open in.*Syroce PMS.*"
-    commands:
-      - tapOn: "Open"
+    file: ../helpers/open_link.yaml
+    env:
+      TARGET_LINK: "syrocepms:///(guest)/digitalKey"
 
 - extendedWaitUntil:
     visible:
