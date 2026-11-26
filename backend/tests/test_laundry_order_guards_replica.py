@@ -23,7 +23,7 @@ async def catalog(acceptance, laundry, monkeypatch):
     matching = [route for route in acceptance.api._transport.app.routes if getattr(route, "path", None) == "/api/laundry/orders" and "POST" in getattr(route, "methods", ())]
     assert [route.endpoint for route in matching] == [cashier_router.create_laundry_order, laundry_router.create_order]
     await acceptance.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$set": {
-        "laundry_items": [{"id": "shirt", "code": "shirt", "name": "Gömlek", "price": 30, "active": True},
+        "laundry_items": [{"id": "shirt", "code": "shirt", "name": "Gömlek", "price": 30, "vat_rate": 20, "active": True},
                           {"id": "old", "code": "old", "name": "Eski", "price": 10, "active": False}]}})
     await acceptance.db.hotel_settings.insert_one({"tenant_id": "qa", "currency": "USD"})
 
@@ -341,3 +341,25 @@ async def test_active_room_lookup_exposes_only_current_full_comp_policy(acceptan
     response = await acceptance.api.get('/api/bookings/active-by-room/QA104')
     assert response.status_code == 200, response.text
     assert response.json()['is_full_comp'] is expected
+
+
+async def test_missing_catalog_vat_rejects_new_order_without_changing_legacy_sources(acceptance):
+    a = acceptance
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$unset": {"laundry_items.0.vat_rate": ""}})
+    before = await a.db.tenant_settings.find_one({"tenant_id": "qa"})
+    response = await create(a, key="missing-tax")
+    assert response.status_code == 409 and "KDV" in response.text
+    after = await a.db.tenant_settings.find_one({"tenant_id": "qa"})
+    assert after["laundry_orders"] == before["laundry_orders"]
+    assert "vat_rate" not in after["laundry_items"][0]
+    assert await a.db.folio_charges.count_documents({"source_laundry_order_id": {"$exists": True}}) == 0
+
+
+async def test_explicit_zero_catalog_rate_is_preserved_as_evidence(acceptance):
+    a = acceptance
+    await a.db.tenant_settings.update_one({"tenant_id": "qa"}, {"$set": {"laundry_items.0.vat_rate": 0}})
+    response = await create(a, key="explicit-zero-tax")
+    assert response.status_code == 200, response.text
+    snapshot = response.json()["tax_snapshot"]
+    assert snapshot["status"] == "verified" and snapshot["gross"] == snapshot["net"] == 90
+    assert snapshot["vat"] == 0
