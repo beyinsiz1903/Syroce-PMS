@@ -661,3 +661,32 @@ async def test_linked_laundry_vat_is_not_misread_as_additional_tax(existing_vat)
     assert charge == before and ledger["tax_amount"] == 25
     conflicting = {**charge, "vat_amount": 24}
     assert await v.resolve_laundry_tax_evidence(db, "hotel", [conflicting]) == [conflicting]
+
+
+def test_legacy_inclusive_laundry_snapshot_matches_revenue_without_mutating_source():
+    source = {"id": "legacy-wash", "charge_category": "laundry", "currency": "TRY",
+              "total": 150, "net_amount": 125, "vat_amount": 25, "tax_amount": 25,
+              "tax_inclusive": True, "tax_snapshot": {"status": "verified"}}
+    original = deepcopy(source)
+    assert v.source_tax_components(source) == (2500, 0)
+    assert source == original
+    journal = plan([source])
+    assert journal["charge_total_try"] == 150
+    assert sum(row["credit"] for row in journal["lines"] if row["account_code"] == MAPPING["tax_account_code"]) == 25
+    assert normalize_journal_lines(journal["lines"])[1:] == (150, 150)
+    assert source == original
+    assert v.source_tax_components({**source, "tax_amount": 0}) == (2500, 0)
+    for change in ({"net_amount": 124}, {"tax_inclusive": False},
+                   {"tax_snapshot": {"status": "missing"}}, {"charge_category": "room"},
+                   {"tax_amount": 24}, {"posted_by": "night_audit"},
+                   {"tax_breakdown": {"vat": 24, "accommodation_tax": 1}}):
+        with pytest.raises(v.OperationalValuationError):
+            v.source_tax_components({**source, **change})
+
+
+def test_aggregate_diagnostic_does_not_expose_posting_actor_email():
+    source = {"id": "legacy", "total": 150, "tax_amount": 25, "vat_amount": 25,
+              "posted_by": "operator-private@example.com"}
+    with pytest.raises(v.OperationalValuationError) as failure:
+        v.source_tax_components(source)
+    assert "operator-private@example.com" not in str(failure.value)

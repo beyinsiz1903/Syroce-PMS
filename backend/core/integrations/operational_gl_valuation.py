@@ -12,6 +12,7 @@ import json
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
+from core.laundry_tax import has_inclusive_laundry_evidence
 from modules.pms_core.report_money import resolve_ledger_currencies
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_folio_payment, is_non_cash_adjustment, report_payment_period_match
 from shared_kernel.gl_posting import GLPostingError, normalize_journal_lines, post_journal_entry, verify_journal_entry_hash
@@ -80,15 +81,20 @@ def source_tax_components(source):
         tax = vat + accommodation
     elif source.get("vat_amount") is not None:
         vat = minor(source["vat_amount"])
-        if aggregate or "night_audit" in str(source.get("posted_by") or ""):
+        if has_inclusive_laundry_evidence(source) and "night_audit" not in str(source.get("posted_by") or ""):
+            # Same immutable VAT-inclusive snapshot evidence as revenue/proforma.
+            # Legacy laundry stored VAT twice; it is not accommodation tax.
+            accommodation, tax = 0, vat
+        elif aggregate or "night_audit" in str(source.get("posted_by") or ""):
             context = {key: source[key] for key in (
                 "id", "booking_id", "folio_id", "charge_category", "category",
-                "currency", "business_date", "tax_amount", "vat_amount", "posted_by")
+                "currency", "business_date", "tax_amount", "vat_amount")
                 if source.get(key) is not None}
             raise OperationalValuationError(
                 "Aggregate room tax requires an explicit component breakdown: "
                 + json.dumps(context, ensure_ascii=False, sort_keys=True, default=str))
-        accommodation, tax = aggregate, vat + aggregate
+        else:
+            accommodation, tax = aggregate, vat + aggregate
     else:
         tax, vat = aggregate, aggregate
     gross = minor(source.get("total", source.get("amount")))
