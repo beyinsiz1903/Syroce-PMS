@@ -23,6 +23,12 @@ tags:
     visible:
       id: "smoke-today-quick-checkin"
     timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "smoke-today-quick-checkin"
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
 - tapOn:
     id: "smoke-today-quick-checkin"
 
