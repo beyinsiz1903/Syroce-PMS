@@ -110,6 +110,7 @@ def _ctx(tenant_id="t1"):
 
 def _build_db(**overrides):
     db = SimpleNamespace(
+        tenant_settings=InMemoryCollection([{"tenant_id": "t1", "business_date": "2026-10-18"}]),
         client=_FakeClient(),
         pos_transactions=InMemoryCollection(),
         pos_orders=InMemoryCollection(),

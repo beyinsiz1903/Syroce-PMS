@@ -1,6 +1,7 @@
 """Regression coverage for atomic POS checkout state transitions."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -42,7 +43,9 @@ def _context():
 async def test_close_returns_business_error_when_order_is_voided_during_checkout(monkeypatch):
     """A race with void must not become a paid sale or an HTTP 500."""
     service = PosFnbServiceV2()
-    service._db = SimpleNamespace(pos_transactions=_Transactions(), pos_orders=_OrdersThatBecomeVoided())
+    service._db = SimpleNamespace(
+        tenant_settings=SimpleNamespace(find_one=AsyncMock(return_value={"business_date": "2026-10-18"})),
+        pos_transactions=_Transactions(), pos_orders=_OrdersThatBecomeVoided())
 
     async def loses_race(*_args, **_kwargs):
         raise PosOrderStateChanged("order-1")

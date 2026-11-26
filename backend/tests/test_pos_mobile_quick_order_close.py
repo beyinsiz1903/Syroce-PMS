@@ -110,6 +110,7 @@ class _FakeClient:
 
 def _build_db(**overrides):
     db = SimpleNamespace(
+        tenant_settings=InMemoryCollection([{"tenant_id": "t1", "business_date": "2026-10-18"}]),
         client=_FakeClient(),
         pos_outlets=InMemoryCollection(),
         pos_menu_items=InMemoryCollection(),
