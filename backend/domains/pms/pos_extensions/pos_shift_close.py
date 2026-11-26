@@ -17,8 +17,8 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.security import get_current_user
-from models.schemas import User
 from domains.pms.pos_fnb.day_write_guard import posting_day
+from models.schemas import User
 
 from ._idem import ensure_compound_unique
 
