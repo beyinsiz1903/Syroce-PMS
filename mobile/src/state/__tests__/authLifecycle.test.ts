@@ -137,3 +137,33 @@ test('session revalidation adopts revoked page permissions and clears previous r
   assert.equal(h.store.getState().procurementAccess, true);
   assert.ok(h.cache.clears > before);
 });
+
+test('temporary refresh failure preserves the session and never replays a pending payment', async () => {
+  const h = authHarness();
+  await h.store.getState().login('a', 'synthetic');
+  let writes = 0;
+  h.setFetch(async url => {
+    if (new URL(url).pathname === '/api/auth/refresh-token') return reply({ detail: 'upstream unavailable' }, 503);
+    writes++;
+    return reply({ detail: 'access expired' }, 401);
+  });
+  await assert.rejects(h.client.api.post('/api/pms/payments', { amount: 20 }), { status: 503 });
+  assert.equal(h.store.getState().user.id, 'a');
+  assert.equal(await h.client.getRefreshToken(), 'refresh-a');
+  assert.equal(writes, 1);
+});
+
+test('proactive refresh outage stops a payment before submission without signing out', async () => {
+  const h = authHarness();
+  await h.store.getState().login('a', 'synthetic');
+  h.storage.set('syroce.auth.token_issued_at', '1');
+  let writes = 0;
+  h.setFetch(async url => {
+    if (new URL(url).pathname === '/api/auth/refresh-token') throw new TypeError('offline');
+    writes++;
+    return reply({ ok: true });
+  });
+  await assert.rejects(h.client.api.post('/api/pms/payments', { amount: 20 }), { status: 0 });
+  assert.equal(h.store.getState().user.id, 'a');
+  assert.equal(writes, 0);
+});

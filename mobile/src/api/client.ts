@@ -192,8 +192,12 @@ async function _doRefresh(): Promise<string | null> {
   try {
     const res = await refreshAccessToken();
     return res?.access_token || null;
-  } catch {
-    return null;
+  } catch (error) {
+    // Only an authentication rejection proves this refresh credential invalid.
+    // A rollout/network outage must not erase a valid session or submit a
+    // payment with the stale access token after proactive rotation failed.
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return null;
+    throw error;
   }
 }
 
@@ -287,7 +291,7 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
   if (isAuthCall) {
     // Proactive rotate when the access token is close to expiring.
     if (!opts._retried && path !== '/api/auth/refresh-token' && path !== '/api/auth/login') {
-      await refreshIfNeeded(false).catch(() => null);
+      await refreshIfNeeded(false);
     }
     const token = await getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -350,7 +354,7 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
     path !== '/api/auth/refresh-token' &&
     path !== '/api/auth/login'
   ) {
-    const fresh = await refreshIfNeeded(true).catch(() => null);
+    const fresh = await refreshIfNeeded(true);
     assertAuthSession(revision);
     if (fresh) {
       return apiRequest<T>(path, { ...opts, _retried: true });
