@@ -214,7 +214,15 @@ jobs:
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
           "$HOME/.maestro/bin/maestro" --version
 
+      # Maestro 2.12.1's SafariViewService query can terminate its XCTest server.
+      # Upstream #3773 fixes the query; use its official, hash-pinned driver rebuild.
+      - name: Verify and pin upstream iOS snapshot driver fix
+        run: |
+          python3 -m unittest discover -s mobile/scripts -p 'test_patch_maestro_ios_driver.py'
+          python3 mobile/scripts/patch-maestro-ios-driver.py --maestro-home "$HOME/.maestro"
+
       - name: Boot iOS Simulator (${{ env.IOS_DEVICE }})
+        timeout-minutes: 8
         id: boot
         run: |
           set -euo pipefail
