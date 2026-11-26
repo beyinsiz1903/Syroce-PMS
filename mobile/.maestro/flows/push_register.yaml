@@ -10,6 +10,13 @@ tags:
       LOGIN_EMAIL: ${SMOKE_EMAIL}
       LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
+# Exercise the declared denial path. Shared login allows all permissions;
+# leaving that override active auto-accepts the iOS prompt and waits for APNs
+# on a Simulator instead of testing denial.
+- setPermissions:
+    permissions:
+      notifications: deny
+
 # The current app enables push only on explicit opt-in. Open the frontdesk More screen instead of assuming a role-specific landing screen or old labels.
 - runFlow:
     file: ../helpers/open_link.yaml
