@@ -28,6 +28,7 @@ from core.outbox_service import (
     POS_CHARGE_REVERSED,
     enqueue_outbox_event,
 )
+from domains.pms.pos_fnb.day_write_guard import assert_day_writable, prepare_day_lock
 from domains.pms.pos_fnb.order_pricing import allocate_parts, decimal, reprice_order, rounded
 
 logger = logging.getLogger(__name__)
@@ -256,6 +257,7 @@ class PosFnbServiceV2:
         from domains.pms.pos_extensions.pos_happy_hour import hotel_local_time
         pricing_now = await hotel_local_time(self._db, ctx.tenant_id, now)
         business_date = await self._business_date(ctx.tenant_id, now)
+        await prepare_day_lock(self._db)
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{now.strftime('%Y%m%d%H%M')}-{uuid.uuid4().hex[:4].upper()}"
 
@@ -338,6 +340,7 @@ class PosFnbServiceV2:
                 return ServiceResult.fail(f"Table {table_number} is unavailable", "TABLE_UNAVAILABLE")
         else:
             async def commit_counter(session):
+                await assert_day_writable(self._db, ctx.tenant_id, business_date, session)
                 await self._db.pos_orders.insert_one(dict(order_doc), session=session)
                 for kitchen_doc in kitchen_docs:
                     await self._db.kitchen_orders.insert_one(dict(kitchen_doc), session=session)
@@ -383,6 +386,7 @@ class PosFnbServiceV2:
         """
 
         async def _commit(session) -> None:
+            await assert_day_writable(self._db, tenant_id, order_doc["business_date"], session)
             claim = await self._db.table_layouts.update_one(
                 {
                     "tenant_id": tenant_id,
@@ -1183,6 +1187,7 @@ class PosFnbServiceV2:
         a terminal state.
         """
 
+        await prepare_day_lock(self._db)
         if (txn_doc.get("checkout_quote") or {}).get("guest_id"):
             # Fail closed if historical duplicates prevent the uniqueness guard.
             await self._db.loyalty_pos_accounts.create_index(
@@ -1191,6 +1196,7 @@ class PosFnbServiceV2:
             )
 
         async def _txn(session) -> None:
+            await assert_day_writable(self._db, tenant_id, txn_doc["transaction_date"], session)
             if txn_doc.get("checkout_quote"):
                 from domains.pms.pos_fnb.checkout_benefits import commit_benefits
 
@@ -1284,6 +1290,8 @@ class PosFnbServiceV2:
         record, source sale and order state move together.
         """
 
+        await prepare_day_lock(self._db)
+
         async def _commit(session):
             if refund_doc.get('idempotency_key'):
                 prior = await self._db.pos_transactions.find_one({'tenant_id': tenant_id,
@@ -1292,6 +1300,7 @@ class PosFnbServiceV2:
                     if prior.get('request_hash') != refund_doc.get('request_hash') or prior.get('order_id') != order_id or prior.get('payment_type') != 'refund':
                         raise HTTPException(409, 'İade anahtarı farklı bir işlem için kullanılmış.')
                     return {'_refund_replayed': prior['id']}
+            await assert_day_writable(self._db, tenant_id, refund_doc["transaction_date"], session)
             updated_sale = await self._db.pos_transactions.find_one_and_update(
                 {
                     "tenant_id": tenant_id,
@@ -1858,6 +1867,8 @@ class PosFnbServiceV2:
             return ServiceResult.fail(f"Table {table_number} already has an open tab", "TAB_ALREADY_OPEN")
 
         now = datetime.now(UTC)
+        day = await self._business_date(ctx.tenant_id, now)
+        await prepare_day_lock(self._db)
         txn_id = str(uuid.uuid4())
         line_items = []
         total_amount = 0.0
@@ -1889,17 +1900,21 @@ class PosFnbServiceV2:
             "amount": total_amount,
             "total_amount": total_amount,
             "status": "open",
+            "business_date": day, "transaction_date": day, "currency": await self._currency(ctx.tenant_id),
             "opened_by": ctx.actor_id,
             "idempotency_key": idempotency_key,
             "created_at": now.isoformat(),
         }
-        await self._db.pos_transactions.insert_one(txn_doc)
+        async def commit(session):
+            await assert_day_writable(self._db, ctx.tenant_id, day, session)
+            await self._db.pos_transactions.insert_one(dict(txn_doc), session=session)
+            await self._db.table_layouts.update_one(
+                {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id},
+                {"$set": {"status": "occupied", "current_transaction_id": txn_id}}, session=session,
+            )
 
-        # Mark table occupied (best-effort — table_layouts row may not exist).
-        await self._db.table_layouts.update_one(
-            {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id},
-            {"$set": {"status": "occupied", "current_transaction_id": txn_id}},
-        )
+        await with_resource_locks(client=self._db.client, db=self._db, tenant_id=ctx.tenant_id,
+                                 locks_collection="pos_closure_locks", resources=[], callback=commit)
 
         return ServiceResult.success(
             {
@@ -1936,25 +1951,30 @@ class PosFnbServiceV2:
             return ServiceResult.fail(f"Tab is in terminal state '{txn.get('status')}'", "TAB_NOT_OPEN")
 
         now = datetime.now(UTC)
-        # SECURITY: tenant_id filter required (defense-in-depth).
-        await self._db.pos_transactions.update_one(
-            {"id": transaction_id, "tenant_id": ctx.tenant_id},
-            {
-                "$set": {
-                    "status": "completed",
-                    "payment_method": payment_method,
-                    "closed_at": now.isoformat(),
-                    "closed_by": ctx.actor_id,
-                }
-            },
-        )
+        day = await self._business_date(ctx.tenant_id, now)
+        await prepare_day_lock(self._db)
 
-        # Release table.
-        if txn.get("table_number") and txn.get("outlet_id"):
-            await self._db.table_layouts.update_one(
-                {"table_number": txn["table_number"], "outlet_id": txn["outlet_id"], "tenant_id": ctx.tenant_id},
-                {"$set": {"status": "dirty", "current_transaction_id": None}},
+        async def commit(session):
+            await assert_day_writable(self._db, ctx.tenant_id, day, session)
+            fresh = await self._db.pos_transactions.find_one({"id": transaction_id, "tenant_id": ctx.tenant_id}, session=session)
+            if fresh and fresh.get("status") == "completed":
+                return
+            if not fresh or fresh.get("status") != "open":
+                raise HTTPException(409, "Adisyon durumu değişti; yeniden inceleyin.")
+            await self._db.pos_transactions.update_one(
+                {"id": transaction_id, "tenant_id": ctx.tenant_id, "status": "open"},
+                {"$set": {"status": "completed", "payment_method": payment_method,
+                          "business_date": day, "transaction_date": day,
+                          "closed_at": now.isoformat(), "closed_by": ctx.actor_id}}, session=session,
             )
+            if fresh.get("table_number") and fresh.get("outlet_id"):
+                await self._db.table_layouts.update_one(
+                    {"table_number": fresh["table_number"], "outlet_id": fresh["outlet_id"], "tenant_id": ctx.tenant_id},
+                    {"$set": {"status": "dirty", "current_transaction_id": None}}, session=session,
+                )
+
+        await with_resource_locks(client=self._db.client, db=self._db, tenant_id=ctx.tenant_id,
+                                 locks_collection="pos_closure_locks", resources=[], callback=commit)
 
         return ServiceResult.success(
             {

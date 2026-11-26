@@ -20,6 +20,7 @@ from types import SimpleNamespace
 
 from domains.pms.mobile_router import pos as mobile_pos
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
+from tests.pos_day_fixture_helpers import open_pos_day_collections
 
 
 # ── Minimal in-memory Mongo-ish collection (supports the operators used) ──
@@ -110,7 +111,9 @@ class _FakeClient:
 
 def _build_db(**overrides):
     db = SimpleNamespace(
+        **open_pos_day_collections(),
         client=_FakeClient(),
+        tenant_settings=InMemoryCollection([{ "tenant_id": "t1", "business_date": "2026-10-18"}]),
         pos_outlets=InMemoryCollection(),
         pos_menu_items=InMemoryCollection(),
         pos_transactions=InMemoryCollection(),

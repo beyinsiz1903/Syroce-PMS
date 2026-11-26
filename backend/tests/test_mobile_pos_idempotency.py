@@ -20,6 +20,8 @@ from pymongo.errors import DuplicateKeyError
 
 from domains.pms.mobile_router import pos as mobile_pos
 from domains.pms.pos_extensions import _idem
+from tests.pos_day_fixture_helpers import open_pos_day_collections
+from tests.test_pos_mobile_quick_order_close import _FakeClient
 
 
 class _Coll:
@@ -67,6 +69,9 @@ class _Coll:
 class _FakeDB:
     def __init__(self):
         self._colls: dict[str, _Coll] = {}
+        self.client = _FakeClient()
+        for name, collection in open_pos_day_collections().items():
+            setattr(self, name, collection)
 
     def _get(self, name) -> _Coll:
         if name not in self._colls:
@@ -82,6 +87,7 @@ class _FakeDB:
 @pytest.fixture(autouse=True)
 def _patch(monkeypatch):
     fake_db = _FakeDB()
+    fake_db.tenant_settings.docs.append({"tenant_id": "tenant-A", "business_date": "2026-10-18"})
     fake_db.pos_outlets.docs.append(
         {"id": "O1", "tenant_id": "tenant-A", "name": "Lobby Bar"}
     )
@@ -146,12 +152,7 @@ async def test_index_ensure_failure_is_fail_closed_503(_patch, monkeypatch):
     async def _boom(*_a, **_kw):
         raise RuntimeError("index perms lost")
 
-    # idempotent_insert, ensure_idem_index'i kendi home modülünün (shared_kernel.
-    # pos_idem) global ad alanından çözer; patch'i orada yapmazsak iç çağrı
-    # gerçek fonksiyonu kullanır.
-    from shared_kernel import pos_idem
-
-    monkeypatch.setattr(pos_idem, "ensure_idem_index", _boom)
+    monkeypatch.setattr(mobile_pos, "ensure_idem_index", _boom)
     with pytest.raises(HTTPException) as exc:
         await mobile_pos.create_quick_order_mobile(
             request=_req([("m1", 1)], idem="K"), credentials=None, _perm=None
