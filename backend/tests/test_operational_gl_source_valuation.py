@@ -430,7 +430,17 @@ async def test_reversed_correction_cannot_be_certified_and_keeps_foreign_positio
     monkeypatch.setattr(database, "client", db.client)
     monkeypatch.setattr(audit_chain, "_system_db", lambda: db)
     user = SimpleNamespace(tenant_id="hotel", role="finance", id="finance")
-    reversal = await gl.reverse_journal(result["entry_id"], gl.JournalReversalIn(date=DAY, reason="Source correction reversal acceptance", idempotency_key="reverse-correction-acceptance"), user)
+    reversal_request = gl.JournalReversalIn(date=DAY, reason="Source correction reversal acceptance", idempotency_key="reverse-correction-acceptance")
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as blocked:
+        await gl.reverse_journal(result["entry_id"], reversal_request, user)
+    assert blocked.value.status_code == 409
+    assert await db.gl_journal_entries.count_documents({"reversal_of_entry_id": result["entry_id"]}) == 0
+    # Emulate a legacy reversal made before the source guard existed. Keep the
+    # reconciliation regression: an already-reversed historical correction must
+    # never be certified, even though new independent reversals are blocked.
+    monkeypatch.setattr(gl, "_journal_reversal_blocker", lambda entry, allocated: None)
+    reversal = await gl.reverse_journal(result["entry_id"], reversal_request, user)
     assert any(r.get("currency") == "EUR" for r in reversal["entry"]["lines"])
     assert verify_journal_entry_hash(reversal["entry"])
     corrected = await db.gl_journal_entries.find_one({"id": result["entry_id"]})
