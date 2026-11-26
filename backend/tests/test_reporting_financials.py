@@ -146,3 +146,14 @@ def test_pending_or_authorized_payments_are_not_received_cash_or_folio_offsets()
 
 def test_reporting_normalizes_currency_aliases_and_refund_whitespace():
     assert reporting_collection_amount({"amount": 100, "currency": " tl ", "payment_type": " REFUND "}) == -100
+
+
+def test_new_payment_null_fx_date_is_stamped_from_its_explicit_business_day():
+    payment = {'amount': 25, 'currency': 'TRY', 'business_date': '2026-11-12',
+               'processed_at': '2026-11-26T18:00:00+00:00', 'exchange_rate_date': None}
+    stamp_reporting_values(payment)
+    assert payment['exchange_rate_date'] == '2026-11-12'
+    assert payment['reporting_amount'] == 25
+    payment['exchange_rate_date'] = '2026-11-10'
+    stamp_reporting_values(payment)
+    assert payment['exchange_rate_date'] == '2026-11-10'

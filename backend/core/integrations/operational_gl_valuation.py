@@ -279,8 +279,25 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                 # source-day valuation. A realised FX difference needs its own
                 # gain/loss accounting; never bury it in sales or round it away.
                 if source.get("reporting_amount") is not None:
-                    if source.get("reporting_currency") != "TRY" or source.get("exchange_rate_date") != valuation["business_date"]:
-                        raise OperationalValuationError("Receipt TRY snapshot is not bound to this source day")
+                    # A nominal TRY receipt has no foreign conversion to date.
+                    # Legacy null metadata is safe only with exact native amounts,
+                    # identity rate and an explicit matching original business day.
+                    rate = source.get("exchange_rate")
+                    native_try = (code == "TRY" and source.get("reporting_currency") == "TRY"
+                        and source.get("exchange_rate_date") in (None, "")
+                        and source.get("business_date") == valuation["business_date"]
+                        and (source.get("received_currency") or "TRY") == "TRY"
+                        and not isinstance(rate, bool) and rate in (None, 1, "1", "1.0", "1.00")
+                        and abs(minor(source["reporting_amount"])) == abs(paid)
+                        and (source.get("received_amount") is None or abs(minor(source["received_amount"])) == abs(paid)))
+                    if not native_try and (source.get("reporting_currency") != "TRY" or source.get("exchange_rate_date") != valuation["business_date"]):
+                        context = {key: source.get(key) for key in (
+                            "id", "booking_id", "folio_id", "currency", "business_date",
+                            "reporting_currency", "exchange_rate_date", "received_currency")}
+                        raise OperationalValuationError("Receipt TRY snapshot is not bound to this source day: "
+                            + json.dumps(context, ensure_ascii=False, sort_keys=True, default=str))
+                    if native_try:
+                        row["receipt_binding"] = {"kind": "native_try_identity", "source_business_date": source["business_date"]}
                     receipt = abs(minor(source["reporting_amount"])) * (1 if paid > 0 else -1)
                     if receipt != base_paid:
                         fx_accounts = valuation.get("realised_fx_accounts")
