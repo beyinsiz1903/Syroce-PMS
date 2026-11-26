@@ -3,9 +3,6 @@ name: "Frontdesk: Hızlı check-in başlangıcı (smoke)"
 tags:
   - smoke
   - frontdesk
-env:
-  SMOKE_EMAIL: info@syroce.com
-  SMOKE_PASSWORD: Syroce2026
 ---
 - runFlow:
     file: ../helpers/login.yaml

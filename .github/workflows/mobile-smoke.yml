@@ -311,7 +311,13 @@ jobs:
           npm run smoke 2>&1 | tee ../smoke-artifacts/ios/output.log
 
       - name: Collect Maestro debug artifacts
+        id: collect
         if: always()
+        env:
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          SMOKE_GUEST_EMAIL: ${{ secrets.SMOKE_GUEST_EMAIL }}
+          SMOKE_GUEST_PASSWORD: ${{ secrets.SMOKE_GUEST_PASSWORD }}
         run: |
           set -euo pipefail
           mkdir -p smoke-artifacts/ios/maestro-tests
@@ -323,6 +329,8 @@ jobs:
           if [ -d mobile/artifacts ]; then
             cp -R mobile/artifacts smoke-artifacts/ios/maestro-tests/
           fi
+          python3 -m unittest discover -s mobile/scripts -p 'test_redact_maestro_artifacts.py'
+          python3 mobile/scripts/redact-maestro-artifacts.py smoke-artifacts/ios
           tar -czf smoke-artifacts/ios/maestro-tests.tar.gz -C smoke-artifacts/ios maestro-tests
 
       - name: Build summary
@@ -341,14 +349,18 @@ jobs:
             echo "<details><summary>Maestro ciktisi (son 80 satir)</summary>"
             echo ""
             echo '```'
-            tail -80 smoke-artifacts/ios/output.log 2>/dev/null || echo "(no output)"
+            if [ "${{ steps.collect.outcome }}" = "success" ]; then
+              tail -80 smoke-artifacts/ios/output.log 2>/dev/null || echo "(no output)"
+            else
+              echo "Diagnostics withheld: credential redaction did not complete."
+            fi
             echo '```'
             echo "</details>"
           } > "$OUT"
           cat "$OUT" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Maestro debug output
-        if: always()
+        if: ${{ always() && steps.collect.outcome == 'success' }}
         uses: actions/upload-artifact@v6
         with:
           retention-days: 1
@@ -452,7 +464,13 @@ jobs:
             npm run smoke 2>&1 | tee ../smoke-artifacts/android/output.log
 
       - name: Collect Maestro debug artifacts
+        id: collect
         if: always()
+        env:
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          SMOKE_GUEST_EMAIL: ${{ secrets.SMOKE_GUEST_EMAIL }}
+          SMOKE_GUEST_PASSWORD: ${{ secrets.SMOKE_GUEST_PASSWORD }}
         run: |
           set -euo pipefail
           mkdir -p smoke-artifacts/android/maestro-tests
@@ -464,6 +482,8 @@ jobs:
           if [ -d mobile/artifacts ]; then
             cp -R mobile/artifacts smoke-artifacts/android/maestro-tests/
           fi
+          python3 -m unittest discover -s mobile/scripts -p 'test_redact_maestro_artifacts.py'
+          python3 mobile/scripts/redact-maestro-artifacts.py smoke-artifacts/android
           tar -czf smoke-artifacts/android/maestro-tests.tar.gz -C smoke-artifacts/android maestro-tests
 
       - name: Build summary
@@ -482,14 +502,18 @@ jobs:
             echo "<details><summary>Maestro ciktisi (son 80 satir)</summary>"
             echo ""
             echo '```'
-            tail -80 smoke-artifacts/android/output.log 2>/dev/null || echo "(no output)"
+            if [ "${{ steps.collect.outcome }}" = "success" ]; then
+              tail -80 smoke-artifacts/android/output.log 2>/dev/null || echo "(no output)"
+            else
+              echo "Diagnostics withheld: credential redaction did not complete."
+            fi
             echo '```'
             echo "</details>"
           } > "$OUT"
           cat "$OUT" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Maestro debug output
-        if: always()
+        if: ${{ always() && steps.collect.outcome == 'success' }}
         uses: actions/upload-artifact@v6
         with:
           retention-days: 1
