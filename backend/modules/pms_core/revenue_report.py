@@ -131,7 +131,10 @@ def build_revenue_report(charges, first, last):
         if values["tax_unknown"] and len(unknown_sources) < 100:
             unknown_sources.append({"source": row.get("report_source"), "id": str(row.get("id") or ""),
                 "date": day.isoformat(), "currency": code, "category": category,
-                "total": rounded(values["total"])})
+                "total": rounded(values["total"]),
+                **({"description": row.get("description") or row.get("charge_name")} if row.get("description") or row.get("charge_name") else {}),
+                **({"booking_id": str(row["booking_id"])} if row.get("booking_id") else {}),
+                **({"folio_id": str(row["folio_id"])} if row.get("folio_id") else {})})
         reconstructed_count += (row.get("demo_reconstruction") or {}).get("basis") == "demo_reconstruction"
         if values["issues"]:
             issue_count += 1

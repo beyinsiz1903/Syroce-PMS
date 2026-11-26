@@ -48,6 +48,8 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
     projection = {
         "_id": 0,
         "id": 1,
+        "description": 1,
+        "charge_name": 1,
         "charge_category": 1,
         "category": 1,
         "charge_type": 1,
