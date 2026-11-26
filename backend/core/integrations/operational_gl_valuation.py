@@ -175,8 +175,17 @@ async def resolve_laundry_tax_evidence(db, tenant_id, charges):
 async def daily_sources(db, tenant_id, business_date):
     charges = await db.folio_charges.find({"tenant_id": tenant_id, "voided": {"$ne": True},
         **report_payment_period_match(business_date, business_date, date_fields=("date", "charge_date", "posted_at", "created_at"))}, {"_id": 0}).to_list(None)
-    charges.extend(await db.extra_charges.find({'tenant_id': tenant_id, 'source': 'spa_external', 'voided': {'$ne': True},
-        **report_payment_period_match(business_date, business_date, date_fields=('date', 'posted_at'))}, {'_id': 0}).to_list(None))
+    extras = await db.extra_charges.find({'tenant_id': tenant_id, 'voided': {'$ne': True},
+        **report_payment_period_match(business_date, business_date,
+            date_fields=('date', 'charge_date', 'posted_at', 'created_at'))}, {'_id': 0}).to_list(None)
+    # Manual extras are real receivables too. Exclude exact folio mirrors so
+    # migration/routing cannot turn one source sale into two revenue entries.
+    represented = {str(row[key]) for row in charges for key in ('id', 'source_extra_charge_id') if row.get(key)}
+    from modules.pms_core.reporting_ledger import charge_amount
+
+    charges.extend({**row, 'total': charge_amount({**row, 'report_source': 'extra'})}
+                   for row in extras if str(row.get('id') or '') not in represented)
+
     charges = await resolve_laundry_tax_evidence(db, tenant_id, charges)
     payments = await db.payments.find({"tenant_id": tenant_id, "voided": {"$ne": True},
         **report_payment_period_match(business_date, business_date)}, {"_id": 0}).to_list(None)

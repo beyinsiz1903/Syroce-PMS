@@ -722,3 +722,23 @@ def test_unbound_fx_receipt_error_identifies_only_safe_source_fields():
         plan(payments=[payment])
     assert '"id": "unbound-fx"' in str(failure.value)
     assert 'private@example.com' not in str(failure.value) and 'must-not-leak' not in str(failure.value)
+
+@pytest.mark.asyncio
+async def test_daily_sources_includes_manual_extra_once_with_immutable_tax_and_quantity(ledger_db):
+    source = {'tenant_id': 't', 'id': 'minibar', 'business_date': DAY,
+              'charge_type': 'minibar', 'charge_amount': 60, 'quantity': 2,
+              'currency': 'TRY', 'tax_amount': 0, 'vat_amount': 20,
+              'tax_breakdown': {'vat': 20, 'accommodation_tax': 0}}
+    await ledger_db.extra_charges.insert_many([
+        deepcopy(source), {**source, 'id': 'void', 'voided': True},
+        {**source, 'id': 'other-tenant', 'tenant_id': 'foreign'},
+        {**source, 'id': 'tomorrow', 'business_date': '2026-10-02'},
+        {**source, 'id': 'mirror'}, {**source, 'id': 'same-id'}])
+    await ledger_db.folio_charges.insert_many([
+        {**source, 'id': 'folio-mirror', 'source_extra_charge_id': 'mirror', 'total': 120},
+        {**source, 'id': 'same-id', 'total': 120}])
+    charges, payments, security = await v.daily_sources(ledger_db, 't', DAY)
+    assert {r['id'] for r in charges} == {'minibar', 'folio-mirror', 'same-id'}
+    assert plan(charges)['charge_total_try'] == 360
+    original = await ledger_db.extra_charges.find_one({'id': 'minibar'}, {'_id': 0})
+    assert original == source
