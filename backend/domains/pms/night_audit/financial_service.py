@@ -915,34 +915,45 @@ class FinancialService:
             return len(invalid), invalid[:ITEM_LIMIT]
 
         async def _check5_closed():
-            closed_folios = (
-                await self._db.folios.find(
-                    {"tenant_id": tid, "status": "closed"},
-                    {"_id": 0, "id": 1},
-                )
-                .max_time_ms(_FIN_AGG_MAX_MS)
-                .to_list(500)
-            )
-            closed_ids = [f["id"] for f in closed_folios]
-            if not closed_ids:
-                return 0, []
-            q = {"tenant_id": tid, "folio_id": {"$in": closed_ids}, "date": business_date, "voided": {"$ne": True}}
-            return await asyncio.gather(
-                self._db.folio_charges.count_documents(q, maxTimeMS=_FIN_AGG_MAX_MS),
-                self._db.folio_charges.find(
-                    q,
-                    {
-                        "_id": 0,
-                        "folio_id": 1,
-                        "booking_id": 1,
-                        "amount": 1,
-                        "description": 1,
-                    },
-                )
-                .limit(ITEM_LIMIT)
-                .max_time_ms(_FIN_AGG_MAX_MS)
-                .to_list(ITEM_LIMIT),
-            )
+            # A folio closed today can legitimately contain earlier charges.
+            # Compare actual creation timestamps, never the service/business day.
+            def instant(field):
+                return {"$cond": [
+                    {"$or": [
+                        {"$eq": [{"$type": field}, "date"]},
+                        {"$regexMatch": {"input": {"$convert": {"input": field, "to": "string", "onError": "", "onNull": ""}},
+                                         "regex": r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"}},
+                    ]},
+                    {"$convert": {"input": field, "to": "date", "onError": None, "onNull": None}}, None,
+                ]}
+
+            pipeline = [
+                {"$match": {"tenant_id": tid, "date": business_date, "voided": {"$ne": True}}},
+                {"$lookup": {"from": "folios", "let": {"fid": "$folio_id"}, "pipeline": [
+                    {"$match": {"tenant_id": tid, "status": "closed", "$expr": {"$eq": ["$id", "$$fid"]}}},
+                    {"$project": {"_id": 0, "closed_at": 1}},
+                ], "as": "closed_folio"}},
+                {"$unwind": "$closed_folio"},
+                {"$set": {"write_time": instant({"$ifNull": ["$created_at", "$posted_at"]}),
+                          "close_time": instant("$closed_folio.closed_at")}},
+                {"$set": {"chronology": {"$cond": [
+                    {"$or": [{"$eq": ["$write_time", None]}, {"$eq": ["$close_time", None]}]}, "unknown",
+                    {"$cond": [{"$gt": ["$write_time", "$close_time"]}, "after_close", "before_close"]},
+                ]}}},
+                {"$facet": {
+                    "counts": [{"$group": {"_id": "$chronology", "count": {"$sum": 1}}}],
+                    "items": [{"$match": {"chronology": {"$in": ["after_close", "unknown"]}}},
+                              {"$sort": {"chronology": 1, "folio_id": 1}},
+                              {"$limit": ITEM_LIMIT}, {"$project": {"_id": 0, "folio_id": 1, "booking_id": 1,
+                                  "amount": 1, "description": 1, "chronology": 1}}],
+                }},
+            ]
+            rows = await self._db.folio_charges.aggregate(pipeline, maxTimeMS=_FIN_AGG_MAX_MS).to_list(1)
+            result = rows[0] if rows else {}
+            counts = {row["_id"]: row["count"] for row in result.get("counts", [])}
+            items = result.get("items", [])
+            return (counts.get("after_close", 0), [row for row in items if row["chronology"] == "after_close"],
+                    counts.get("unknown", 0), [row for row in items if row["chronology"] == "unknown"])
 
         async def _check6_audit():
             audit_run = await self._db.night_audit_runs.find_one(
@@ -982,7 +993,8 @@ class FinancialService:
         voided_count, voided_raw = _ok(r2, (0, []))
         neg_balance, neg_raw = _ok(r3, (0, []))
         rate_count, rate_raw = _ok(r4, (0, []))
-        closed_folio_charges, closed_raw = _ok(r5, (0, []))
+        closed_query_failed = isinstance(r5, BaseException)
+        closed_folio_charges, closed_raw, closed_unknown, closed_unknown_raw = _ok(r5, (0, [], 0, []))
         audit_result = _ok(r6, None)
 
         # Gercekten acik folyosu olmayan checked-in booking'ler (folios
@@ -1041,7 +1053,7 @@ class FinancialService:
                 "description": ch.get("description"),
                 "action": "open_folio",
             }
-            for ch in closed_raw
+            for ch in closed_raw + closed_unknown_raw
         ]
 
         # Single shared enrichment pass — bookings/guests/rooms tek tek $in.
@@ -1085,12 +1097,23 @@ class FinancialService:
             {
                 "check": "closed_folio_charges",
                 "label": "Kapali Folyoya Masraf",
-                "status": "pass" if closed_folio_charges == 0 else "error",
-                "detail": f"{closed_folio_charges} masraf kapali folyolara kaydedilmis",
+                "status": "warning" if closed_query_failed else ("pass" if closed_folio_charges == 0 else "error"),
+                "detail": f"{closed_folio_charges} masraf folyo kapandıktan sonra kaydedilmiş",
                 "count": closed_folio_charges,
-                "items": closed_charge_items,
+                "items": closed_charge_items[:len(closed_raw)],
             },
         ]
+
+        if closed_unknown or closed_query_failed:
+            checks.append({
+                "check": "closed_folio_chronology_unknown",
+                "label": "Kapalı Folyo Kayıt Zamanı",
+                "status": "warning",
+                "detail": ("Kapanış sonrası masraf kontrolü doğrulanamadı" if closed_query_failed else
+                           f"{closed_unknown} masrafın kayıt/kapanış zamanı doğrulanamıyor"),
+                "count": closed_unknown,
+                "items": closed_charge_items[len(closed_raw):],
+            })
 
         if audit_result is not None:
             audit_run, actual_posted = audit_result

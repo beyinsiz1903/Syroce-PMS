@@ -457,6 +457,7 @@ async def test_integrity_check_reports_clean_empty_day():
         rooms=_find_collection(AsyncCursor()),
     )
 
+    database.folio_charges.aggregate = MagicMock(return_value=AsyncCursor([{"counts": [], "items": []}]))
     result = await _service(database).get_integrity_check(_ctx(), "2026-08-25")
 
     assert result.ok is True
@@ -492,7 +493,11 @@ async def test_integrity_check_surfaces_each_operational_issue_and_audit_mismatc
         AsyncCursor([{"folio_id": "folio-closed", "booking_id": "booking-1", "amount": 100.0}]),
         count=1,
     )
-    folio_charges.count_documents = AsyncMock(side_effect=[1, 1, 1])
+    folio_charges.count_documents = AsyncMock(side_effect=[1, 1])
+    folio_charges.aggregate = MagicMock(return_value=AsyncCursor([{
+        "counts": [{"_id": "after_close", "count": 1}],
+        "items": [{"folio_id": "folio-closed", "booking_id": "booking-1", "amount": 100.0, "chronology": "after_close"}],
+    }]))
     database = SimpleNamespace(
         bookings=bookings,
         daily_rates=_find_collection(AsyncCursor()),
@@ -523,3 +528,20 @@ async def test_integrity_check_surfaces_each_operational_issue_and_audit_mismatc
         for call in bookings.find.call_args_list
     )
     service._enrich_with_guest_room.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_closed_folio_query_failure_is_not_reported_as_pass():
+    charges = _find_collection(AsyncCursor(), count=0)
+    charges.aggregate = MagicMock(side_effect=RuntimeError("local query unavailable"))
+    database = SimpleNamespace(
+        bookings=_find_collection(AsyncCursor(), AsyncCursor(), count=0),
+        folios=_find_collection(AsyncCursor(), count=0),
+        folio_charges=charges,
+        night_audit_runs=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+    result = await _service(database).get_integrity_check(_ctx(), "2026-08-25")
+    checks = {row["check"]: row for row in result.data["checks"]}
+    assert checks["closed_folio_charges"]["status"] == "warning"
+    assert checks["closed_folio_chronology_unknown"]["status"] == "warning"
+    assert result.data["summary"]["overall_status"] == "warning"
