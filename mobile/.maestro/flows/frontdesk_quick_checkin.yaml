@@ -8,10 +8,10 @@ env:
   SMOKE_PASSWORD: Syroce2026
 ---
 - runFlow:
-    file: login.yaml
+    file: ../helpers/login.yaml
     env:
-      SMOKE_EMAIL: ${SMOKE_EMAIL}
-      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+      LOGIN_EMAIL: ${SMOKE_EMAIL}
+      LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
 # Admin and manager accounts may land on their own dashboard.
 # Open the authorized frontdesk route explicitly; route permissions still apply.

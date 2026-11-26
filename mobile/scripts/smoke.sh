@@ -35,6 +35,7 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FLOWS_DIR="$ROOT_DIR/.maestro/flows"
+mkdir -p "$ROOT_DIR/artifacts"
 
 if [ ! -d "$FLOWS_DIR" ]; then
   echo "[smoke] Flows directory not found: $FLOWS_DIR" >&2

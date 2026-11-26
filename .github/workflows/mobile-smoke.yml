@@ -196,7 +196,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      MAESTRO_VERSION: "1.39.0"
+      MAESTRO_VERSION: "2.12.1"
       IOS_RUNTIME: "iOS-26-2"
       IOS_DEVICE: "iPhone 17"
       BUILD_URL: ${{ needs.resolve.outputs.ios_build_url }}
@@ -308,6 +308,9 @@ jobs:
           fi
           # Maestro derives filenames from flow names (which may contain ':').
           # Archive first so upload-artifact does not reject valid macOS names.
+          if [ -d mobile/artifacts ]; then
+            cp -R mobile/artifacts smoke-artifacts/ios/maestro-tests/
+          fi
           tar -czf smoke-artifacts/ios/maestro-tests.tar.gz -C smoke-artifacts/ios maestro-tests
 
       - name: Build summary
@@ -446,6 +449,9 @@ jobs:
           fi
           # Maestro derives filenames from flow names (which may contain ':').
           # Archive first so upload-artifact does not reject valid macOS names.
+          if [ -d mobile/artifacts ]; then
+            cp -R mobile/artifacts smoke-artifacts/android/maestro-tests/
+          fi
           tar -czf smoke-artifacts/android/maestro-tests.tar.gz -C smoke-artifacts/android maestro-tests
 
       - name: Build summary
