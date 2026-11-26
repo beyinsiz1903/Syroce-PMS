@@ -52,6 +52,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [businessDateMeta, setBusinessDateMeta] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyTotal, setHistoryTotal] = useState(0);
+  const [lastCompletedRun, setLastCompletedRun] = useState(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [expandedRun, setExpandedRun] = useState(null);
@@ -117,7 +118,15 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
 
   const fetchHistory = useCallback(async () => {
     try {
-      const res = await axios.get("/night-audit/history", { params: { limit: 20, skip: 0 } });
+      const [res, completedRes] = await Promise.all([
+        axios.get("/night-audit/history", { params: { limit: 20, skip: 0 } }),
+        // A busy simulation history must not hide the latest real close.
+        axios.get("/night-audit/history", { params: { limit: 1, skip: 0, completed_only: true } }),
+      ]);
+      const completedRun = (completedRes.data.runs || []).find((run) =>
+        !(run.is_dry_run || run.dry_run)
+        && ["completed", "completed_with_exceptions"].includes(run.status));
+      setLastCompletedRun(completedRun || null);
       const normalizedRuns = (res.data.runs || []).map((run) => ({
         ...run,
         audit_id: run.audit_id || run.id,
@@ -133,10 +142,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       }));
       setHistory(normalizedRuns);
       setHistoryTotal(res.data.total || 0);
-      return normalizedRuns;
+      return completedRun || null;
     } catch (err) {
       console.error("History fetch failed:", err);
-      return [];
+      setLastCompletedRun(null);
+      return null;
     }
   }, []);
 
@@ -223,13 +233,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const loadAll = useCallback(async () => {
     setLoading(true);
     initialLoadRef.current = true; // skip the businessDate effect after this
-    const [, runs] = await Promise.all([
+    const [, latestCompletedRun] = await Promise.all([
       fetchBusinessDate(),
       fetchHistory(),
       fetchSchedule(),
       fetchScheduleStatus(),
     ]);
-    const latestCompletedRun = runs.find((run) => !run.is_dry_run && run.status?.startsWith("completed"));
     const financeDate = latestCompletedRun?.business_date || null;
     setReportingDate(financeDate);
     await Promise.all([
@@ -450,7 +459,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   };
 
   const lastRun = history.length > 0 ? history[0] : null;
-  const todayCompleted = lastRun?.business_date === businessDate && lastRun?.status?.startsWith("completed");
+  const todayCompleted = lastCompletedRun?.business_date === businessDate;
 
   // Final close never bypasses blockers. A dry run remains available so the
   // operator can inspect the result without posting or advancing the date.
@@ -619,22 +628,22 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             icon={Banknote}
             intent="info"
             label="Son Oda Geliri"
-            value={lastRun ? moneyBreakdown(lastRun.total_room_revenue_by_currency, lastRun.total_room_revenue) : "-"}
-            sub={lastRun ? `Vergi: ${moneyBreakdown(lastRun.total_tax_amount_by_currency, lastRun.total_tax_amount)}` : undefined}
+            value={lastCompletedRun ? moneyBreakdown(lastCompletedRun.total_room_revenue_by_currency, lastCompletedRun.total_room_revenue) : "-"}
+            sub={lastCompletedRun ? `İş günü: ${lastCompletedRun.business_date} · Vergi: ${moneyBreakdown(lastCompletedRun.total_tax_amount_by_currency, lastCompletedRun.total_tax_amount)}` : "Tamamlanan gerçek gün sonu bulunamadı"}
           />
           <KpiCard
             icon={CreditCard}
             intent="success"
             label="Son Tahsilat"
-            value={lastRun ? moneyBreakdown(lastRun.total_payments_by_currency, lastRun.total_payments_amount) : "-"}
-            sub="Kasaya Giren Net Tutar"
+            value={lastCompletedRun ? moneyBreakdown(lastCompletedRun.total_payments_by_currency, lastCompletedRun.total_payments_amount) : "-"}
+            sub={lastCompletedRun ? `İş günü: ${lastCompletedRun.business_date} · Kasaya Giren Net Tutar` : undefined}
           />
           <KpiCard
             icon={Users}
             intent="warning"
             label="Son No-Show"
-            value={lastRun?.no_shows_processed ?? "-"}
-            sub={lastRun ? `${lastRun.rooms_processed || 0} oda işlendi` : undefined}
+            value={lastCompletedRun?.no_shows_processed ?? "-"}
+            sub={lastCompletedRun ? `${lastCompletedRun.rooms_processed || 0} oda işlendi` : undefined}
           />
         </div>
 
