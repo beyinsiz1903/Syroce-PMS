@@ -114,3 +114,24 @@ async def test_inclusive_laundry_evidence_survives_ledger_projection(ledger_db, 
     assert (laundry["total"], laundry["net"], laundry["vat"], laundry["city_tax"], laundry["difference"]) == (150, 125, 25, 0, 0)
     assert data["reconciliation"]["issue_count"] == 0
     assert await ledger_db[collection].find_one({"id": charge["id"]}) == before
+
+
+async def test_missing_tax_diagnostic_keeps_source_description_and_booking_without_foreign_rows(ledger_db):
+    from datetime import date
+
+    from modules.pms_core.reporting_ledger import posted_revenue_rows
+    from modules.pms_core.revenue_report import build_revenue_report
+
+    await ledger_db.extra_charges.insert_many([
+        {"tenant_id": "A", "id": "zero", "booking_id": "booking-A", "charge_name": "İkram kaydı", "business_date": DAY, "total": 0, "currency": "TRY"},
+        {"tenant_id": "B", "id": "foreign", "booking_id": "booking-B", "description": "Foreign source", "business_date": DAY, "total": 99, "currency": "TRY"},
+    ])
+    first = date.fromisoformat(DAY)
+    rows = await posted_revenue_rows("A", first, first, database=ledger_db)
+    result = build_revenue_report(rows, first, first)
+    sources = result["reconciliation"]["tax_unknown_sources"]
+    assert len(sources) == 1
+    assert sources[0]["booking_id"] == "booking-A"
+    assert sources[0]["description"] == "İkram kaydı"
+    assert result["reconciliation"]["tax_unknown_count"] == 1
+    assert (await ledger_db.extra_charges.find_one({"id": "zero"})).get("tax_amount") is None
