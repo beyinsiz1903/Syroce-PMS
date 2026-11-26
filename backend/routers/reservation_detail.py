@@ -3254,6 +3254,9 @@ async def add_extra_charge_detail(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
     await ensure_reservation_mutable(db, tid, booking)
 
+    if data.vat_rate is None:
+        raise HTTPException(422, "Ek ücret için ürün/hizmet KDV oranı zorunludur; boş oranla mali kayıt oluşturulamaz")
+
     booking_currency = str(booking.get("currency") or "TRY").upper()
     if booking_currency == "TL":
         booking_currency = "TRY"

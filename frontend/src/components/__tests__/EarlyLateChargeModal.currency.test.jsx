@@ -48,6 +48,7 @@ describe('EarlyLateChargeModal currency contract', () => {
       />
     );
 
+    fireEvent.change(screen.getByLabelText('Hizmet KDV oranı (%)'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ücreti hesapla' }));
     expect(await screen.findByText(/25,00\s*€/)).toBeInTheDocument();
 
@@ -72,6 +73,7 @@ describe('EarlyLateChargeModal currency contract', () => {
   it('invalidates a calculated amount when the service hour changes', async () => {
     post.mockResolvedValue({ data: quote });
     mount();
+    fireEvent.change(screen.getByLabelText('Hizmet KDV oranı (%)'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ücreti hesapla' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Folyoya Ekle' })).toBeEnabled());
     fireEvent.change(screen.getByLabelText('Hizmet saati'), { target: { value: '18:30' } });
@@ -84,6 +86,7 @@ describe('EarlyLateChargeModal currency contract', () => {
     let resolve;
     post.mockReturnValue(new Promise(yes => { resolve = yes; }));
     mount();
+    fireEvent.change(screen.getByLabelText('Hizmet KDV oranı (%)'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ücreti hesapla' }));
     fireEvent.change(screen.getByLabelText('Hizmet saati'), { target: { value: '19:00' } });
     await act(async () => resolve({ data: quote }));
@@ -94,6 +97,7 @@ describe('EarlyLateChargeModal currency contract', () => {
     post.mockResolvedValueOnce({ data: quote }).mockReturnValue(new Promise(() => {}));
     mount();
     expect(screen.getByLabelText('Düzeltilmiş tutar')).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Hizmet KDV oranı (%)'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ücreti hesapla' }));
     await waitFor(() => expect(screen.getByLabelText('Düzeltilmiş tutar')).toBeEnabled());
     fireEvent.change(screen.getByLabelText('Düzeltilmiş tutar'), { target: { value: '40' } });
@@ -108,6 +112,7 @@ describe('EarlyLateChargeModal currency contract', () => {
   it('blocks a blind repeat after an unknown write outcome', async () => {
     post.mockResolvedValueOnce({ data: quote }).mockRejectedValueOnce(new Error('network unavailable'));
     mount();
+    fireEvent.change(screen.getByLabelText('Hizmet KDV oranı (%)'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ücreti hesapla' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Folyoya Ekle' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Folyoya Ekle' }));
@@ -115,4 +120,17 @@ describe('EarlyLateChargeModal currency contract', () => {
     expect(screen.getByRole('button', { name: 'Folyoya Ekle' })).toBeDisabled();
     expect(post).toHaveBeenCalledTimes(2);
   });
+});
+
+
+it('keeps a quoted charge disabled until an explicit service VAT rate is supplied', async () => {
+  post.mockReset();
+  post.mockResolvedValue({ data: { applicable: true, amount: 120, currency: 'TRY' } });
+  render(<EarlyLateChargeModal open onClose={vi.fn()} bookingId="tax" direction="late_checkout" serviceDate="2026-11-12" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Ücreti hesapla' }));
+  await screen.findByText(/120/);
+  expect(screen.getByRole('button', { name: 'Folyoya Ekle' })).toBeDisabled();
+  expect(post).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByLabelText('Hizmet KDV oranı (%)'), { target: { value: '0' } });
+  expect(screen.getByRole('button', { name: 'Folyoya Ekle' })).toBeEnabled();
 });

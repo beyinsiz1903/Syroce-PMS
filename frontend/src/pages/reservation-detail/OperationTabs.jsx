@@ -182,6 +182,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
   const [applyNoshow, setApplyNoshow] = useState(false);
   const [noshowChargeType, setNoshowChargeType] = useState('per_night');
   const [noshowAmount, setNoshowAmount] = useState('');
+  const [noshowVatRate, setNoshowVatRate] = useState('');
   const [loading, setLoading] = useState(false);
 
   const cancelTypes = {
@@ -201,6 +202,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
   const handleCancel = async () => {
     if (!reason) { toast.error('İptal nedeni giriniz'); return; }
+    if (applyNoshow && !isMarketplaceAgency && Number(noshowAmount) > 0 && (noshowVatRate.trim() === '' || !Number.isFinite(Number(noshowVatRate)) || Number(noshowVatRate) < 0 || Number(noshowVatRate) > 100)) { toast.error('No-show ücretinin tanımlı KDV oranını girin (0–100).'); return; }
     if (!await confirmDialog({ message: applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?', variant: 'danger' })) return;
     setLoading(true);
     try {
@@ -215,6 +217,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
         if (noshowChargeType && parseFloat(noshowAmount) > 0) {
           await axios.post(`/pms/reservations/${bookingId}/add-extra-charge`, {
             description: `No-Show Ücreti (${noshowChargeType})`,
+            vat_rate: Number(noshowVatRate),
             amount: parseFloat(noshowAmount),
             category: 'other',
             quantity: 1
@@ -260,6 +263,9 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
           {applyNoshow && !isMarketplaceAgency && (
             <div className="bg-white border rounded-lg p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_OperationTabs.no_show_ucreti')}</div>
+              <Label htmlFor="noshow-vat-rate">No-show hizmet KDV oranı (%)</Label>
+              <Input id="noshow-vat-rate" type="number" min="0" max="100" value={noshowVatRate} onChange={e => setNoshowVatRate(e.target.value)} />
+              <p className="text-xs text-gray-500">Tanımlı oran zorunludur. Ücret KDV dahil kaydedilir; boş alan sıfır oran sayılmaz.</p>
               <div className="flex gap-2">
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="per_night" checked={noshowChargeType === 'per_night'} onChange={e => setNoshowChargeType(e.target.value)} />

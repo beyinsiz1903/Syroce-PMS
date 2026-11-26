@@ -18,13 +18,14 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
   const [overrideAmount, setOverrideAmount] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
   const [date, setDate] = useState(serviceDate);
+  const [vatRate, setVatRate] = useState('');
   const [uncertain, setUncertain] = useState(false);
   const requestRef = useRef(0);
   const applyingRef = useRef(false);
 
   useEffect(() => {
     requestRef.current += 1;
-    if (open) { setCalc(null); setOverrideAmount(''); setOverrideReason(''); setHour(defaultHour); setDate(serviceDate); setUncertain(false); setBusy(false); }
+    if (open) { setCalc(null); setVatRate(''); setOverrideAmount(''); setOverrideReason(''); setHour(defaultHour); setDate(serviceDate); setUncertain(false); setBusy(false); }
     return () => { requestRef.current += 1; };
   }, [open, defaultHour, serviceDate, bookingId, direction]);
 
@@ -47,7 +48,8 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
 
   const hasOverride = overrideAmount.trim() !== '';
   const amount = hasOverride ? parseMoneyInput(overrideAmount) : calc?.amount;
-  const canApply = !!calc?.currency && !!date && Number.isFinite(amount) && amount >= 0 &&
+  const hasTax = vatRate.trim() !== '' && Number.isFinite(Number(vatRate)) && Number(vatRate) >= 0 && Number(vatRate) <= 100;
+  const canApply = hasTax && !!calc?.currency && !!date && Number.isFinite(amount) && amount >= 0 &&
     (hasOverride ? overrideReason.trim().length >= 3 : calc?.applicable) && !uncertain;
   const time = `${String(Math.floor(Number(hour) || 0)).padStart(2, '0')}:${String(Math.round(((Number(hour) || 0) % 1) * 60)).padStart(2, '0')}`;
 
@@ -65,6 +67,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
         category: 'other',
         amount,
         quantity: 1,
+        vat_rate: Number(vatRate),
         input_currency: calc?.currency,
         service_date: date,
         service_time: time,
@@ -91,6 +94,11 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
         <div className="space-y-3">
           <p className="text-xs text-slate-600">Bu işlem yalnız ek ücret kaydeder; misafirin giriş veya çıkış durumunu değiştirmez.</p>
           {uncertain && <p role="alert" className="text-sm text-red-700">İşlemin sonucu doğrulanamadı. Mükerrer ücret oluşturmamak için tekrar eklemeyin; kapatıp folyo ve işlem geçmişini kontrol edin.</p>}
+          <div>
+            <Label htmlFor="early-late-vat-rate">Hizmet KDV oranı (%)</Label>
+            <Input id="early-late-vat-rate" type="number" min="0" max="100" value={vatRate} disabled={busy || uncertain} onChange={e => setVatRate(e.target.value)} />
+            <p className="text-xs text-slate-600">Tanımlı hizmet oranını girin. Hesaplanan tutar KDV dahildir; vergi ayrıca eklenmez.</p>
+          </div>
           <div>
             <Label htmlFor="early-late-service-date">Hizmet tarihi</Label>
             <Input id="early-late-service-date" type="date" value={date} disabled={busy || uncertain} onChange={e => setDate(e.target.value)} />

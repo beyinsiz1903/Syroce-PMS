@@ -426,8 +426,8 @@ export function ExtraChargesTab({
       toast.error(message);
       return;
     }
-    if (form.vat_rate !== '' && (!Number.isFinite(Number(form.vat_rate)) || Number(form.vat_rate) < 0 || Number(form.vat_rate) > 100)) {
-      setFormError('KDV oranı 0–100 arasında olmalı.');
+    if (form.vat_rate === '' || (!Number.isFinite(Number(form.vat_rate)) || Number(form.vat_rate) < 0 || Number(form.vat_rate) > 100)) {
+      setFormError('Ürün/hizmet KDV oranını girin (0–100). Boş oranla kayıt oluşturulamaz.');
       return;
     }
     if (!form.service_date || (form.category === 'spa' && !form.service_time)) {
@@ -567,7 +567,7 @@ export function ExtraChargesTab({
           ...p,
           quantity: v
         }))} />
-            <FormField label="KDV oranı (%)" type="number" hint="Tesisinizin hizmet oranını girin. 0 açıkça vergisizdir; boş bırakılırsa vergi bilgisi eksik kalır." value={form.vat_rate} onChange={v => setForm(p => ({ ...p, vat_rate: v }))} />
+            <FormField label="KDV oranı (%)" type="number" hint="Ürün/hizmetin tanımlı KDV oranı zorunludur. Geçerli sıfır oranı açıkça 0 olarak girin; boş alan sıfır sayılmaz." value={form.vat_rate} onChange={v => setForm(p => ({ ...p, vat_rate: v }))} />
             <FormField label="Hizmet tarihi" type="date" value={form.service_date} onChange={v => setForm(p => ({ ...p, service_date: v }))} />
             <FormField label="Hizmet saati" type="time" hint="Otelin yerel saati. Spa için zorunlu; bilinmiyorsa diğer hizmetlerde boş bırakın." value={form.service_time} onChange={v => setForm(p => ({ ...p, service_time: v }))} />
           </div>
