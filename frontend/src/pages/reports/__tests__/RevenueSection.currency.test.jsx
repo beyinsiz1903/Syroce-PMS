@@ -26,6 +26,17 @@ beforeEach(() => {
   window.print = vi.fn();
 });
 describe('one-snapshot revenue report', () => {
+  it('identifies missing-tax sources without treating zero gross as verified tax', async () => {
+    const data = payload();
+    data.reconciliation.tax_unknown_sources = [{ source: 'folio', id: 'zero-source', date: '2026-10-01', currency: 'TRY', category: 'other', total: 0 }];
+    axios.get.mockResolvedValueOnce({ data });
+    renderReport();
+    await screen.findByRole('table');
+    expect(screen.getByText(/Vergi kırılımı eksik kaynak hareketleri/)).toBeInTheDocument();
+    expect(screen.getByText(/folio \/ zero-source/)).toHaveTextContent('₺0,00');
+    expect(screen.getByText(/Vergi oranı tahmin edilmez/)).toBeInTheDocument();
+    expect(screen.getAllByText('Doğrulanamadı (TRY)').length).toBeGreaterThan(0);
+  });
   it('keeps currencies separate in cards/table and never fabricates net from missing taxes', async () => {
     renderReport();
     const table = await screen.findByRole('table', { name: 'Kategori bazlı gelir' });

@@ -129,6 +129,30 @@ def test_high_volume_cent_rounding_and_complete_date_series():
     assert data["revenue_trend"][1]["revenue_by_currency"] == {}
 
 
+def test_missing_tax_sources_keep_zero_refunds_and_scope_without_rewriting_evidence():
+    from copy import deepcopy
+
+    sources = [row(id="zero", total=0), row(id="refund", total=-20, report_refund=True),
+        row(id="known", total=30, amount=25, tax_breakdown={"vat": 5}, currency="USD"),
+        row(id="outside", business_date="2026-09-06", total=999)]
+    original = deepcopy(sources)
+    data = build_revenue_report(sources, DAY, DAY)
+    details = data["reconciliation"]["tax_unknown_sources"]
+    assert [(item["id"], item["total"]) for item in details] == [("zero", 0), ("refund", -20)]
+    assert not data["reconciliation"]["tax_unknown_sources_truncated"]
+    assert data["totals_by_currency"]["TRY"]["verified_net"] is None
+    assert data["totals_by_currency"]["USD"]["verified_net"] == 25
+    assert sources == original
+
+
+def test_missing_tax_detail_limit_does_not_reduce_unknown_count_or_total():
+    data = build_revenue_report([row(id=f"source-{i}", total=1) for i in range(101)], DAY, DAY)
+    assert len(data["reconciliation"]["tax_unknown_sources"]) == 100
+    assert data["reconciliation"]["tax_unknown_count"] == 101
+    assert data["reconciliation"]["tax_unknown_sources_truncated"] is True
+    assert data["totals_by_currency"]["TRY"]["total"] == 101
+
+
 def test_catalog_ids_case_variants_and_orphans_have_stable_labels_without_changing_input():
     uuid = "b3c7bb47-1234-1234-1234-123456789012"
     labels = RoomTypeLabels([{"id": uuid, "name": "Standard"}], [{"room_type": "standard"}])

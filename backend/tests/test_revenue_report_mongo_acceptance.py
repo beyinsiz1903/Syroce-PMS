@@ -44,6 +44,12 @@ async def test_category_endpoint_shares_posted_pos_refund_tax_room_type_and_expo
     book = load_workbook(BytesIO(blob), data_only=True)
     totals = [row for row in book.active.iter_rows(values_only=True) if row[0] == "TOPLAM"]
     assert totals[0][-1] == 262
+    missing = list(book["Eksik Vergi Kaynakları"].iter_rows(min_row=4, values_only=True))
+    expected = data["reconciliation"]["tax_unknown_sources"]
+    assert len(missing) == data["reconciliation"]["tax_unknown_count"]
+    assert missing == [(entry["source"], entry["id"], entry["date"], entry["currency"], entry["category"], entry["total"]) for entry in expected]
+    assert "zero" in {entry[1] for entry in missing}
+    assert not any(entry[1] == "room" for entry in missing)
     assert await db.folio_charges.count_documents({"tenant_id": "A"}) == 2  # report never repairs the ledger
     await db.folio_charges.insert_one({"tenant_id": "A", "business_date": DAY, "total": 1, "currency": "TRY"})
     with pytest.raises(HTTPException) as error:
