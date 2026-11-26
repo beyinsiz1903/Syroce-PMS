@@ -1147,6 +1147,13 @@ async def revenue_by_category_excel(
     issues.append(["Kaynak", "Hareket kimliği", "Tarih", "Para birimi", "Açıklanamayan fark", "Açıklama"])
     for issue in result["reconciliation"]["issues"]:
         issues.append([issue["source"], issue["id"], issue["date"], issue["currency"], issue["difference"], "; ".join(issue["reasons"])])
+    missing_tax = workbook.create_sheet("Eksik Vergi Kaynakları")
+    missing_tax.append(["Eksik vergi kırılımlı işlem", result["reconciliation"]["tax_unknown_count"]])
+    missing_tax.append(["Not", "İlk 100 kaynak gösterilir. Vergi tahmin edilmez; kaynak kayıt değiştirilmez."])
+    missing_tax.append(["Kaynak", "Hareket kimliği", "Tarih", "Para birimi", "Kategori", "Toplam (vergi dahil)"])
+    for source in result["reconciliation"].get("tax_unknown_sources", []):
+        missing_tax.append([source["source"], source["id"], source["date"], source["currency"], source["category"], source["total"]])
+    missing_tax.freeze_panes = "A4"
     for page in workbook:
         for row in page:
             for cell in row:

@@ -106,6 +106,13 @@ export default function RevenueSection({ reportDate, reportPeriod = 'monthly' })
         {data.reconciliation.tax_unknown_count > 0 && <p>{data.reconciliation.tax_unknown_count} işlemin vergi kırılımı eksik; bu kapsamdaki net ve vergi toplamı doğrulanamadı.</p>}
         {data.reconciliation.issue_count > 0 && <p>{data.reconciliation.issue_count} kaynak harekette hesap uyuşmazlığı var. Farklar gizlenmedi; kaynak kayıt değiştirilmedi.</p>}
       </div>}
+      {data.reconciliation?.tax_unknown_sources?.length > 0 && <details className="rounded-lg border p-3 text-sm">
+        <summary>Vergi kırılımı eksik kaynak hareketleri ({data.reconciliation.tax_unknown_count})</summary>
+        <p className="my-2 text-xs">İlk 100 kaynak gösterilir. Vergi oranı tahmin edilmez; kaynak kayıt değiştirilmez.</p>
+        {data.reconciliation.tax_unknown_sources.map((source, index) => <p key={`${source.source}-${source.id}-${index}`}>
+          {source.date} · {source.source} / {source.id || 'kimlik eksik'} · {source.category} · {moneyText(source.total, source.currency)}
+        </p>)}
+      </details>}
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Dönem kırılımı</h3><label className="text-sm print:hidden">Grafik para birimi <select aria-label="Gelir grafik para birimi" className="rounded border bg-background p-2" value={currency} onChange={e => setCurrency(e.target.value)}>{(currencies.length ? currencies : ['TRY']).map(code => <option key={code}>{code}</option>)}</select></label></div>
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Günlük işlenen tutar · {currency}</CardTitle></CardHeader><CardContent>
         <ResponsiveContainer width="100%" height={230}><AreaChart data={trend}>
