@@ -16,7 +16,7 @@ db = fixtures.db
 async def setup(database, monkeypatch):
     actor = await fixtures.setup_payment(database, monkeypatch)
     await database.folios.insert_one({'id': 'f1', 'tenant_id': 't', 'booking_id': 'b1', 'status': 'open', 'currency': 'TRY'})
-    await database.cashier_shifts.insert_one({'id': 'shift', 'tenant_id': 't', 'status': 'open', 'cash_in': 0, 'transactions': []})
+    await database.cashier_shifts.insert_one({'id': 'shift', 'tenant_id': 't', 'status': 'open', 'business_date': '2026-11-12', 'cash_in': 0, 'transactions': []})
     await database.tenant_settings.update_one({'tenant_id': 't'}, {'$set': {'business_date': '2026-11-12'}})
     return actor
 
@@ -62,11 +62,15 @@ async def test_later_cashier_failure_rolls_back_all_member_payments(db, monkeypa
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('invalid', ['no-shift', 'ambiguous', 'closed', 'mixed', 'fx', 'overpayment', 'missing-member'])
+@pytest.mark.parametrize('invalid', ['no-shift', 'stale-shift', 'missing-shift-day', 'ambiguous', 'closed', 'mixed', 'fx', 'overpayment', 'missing-member'])
 async def test_invalid_bulk_targets_leave_no_partial_writes(db, monkeypatch, invalid):
     actor = await setup(db, monkeypatch)
     if invalid == 'no-shift':
         await db.cashier_shifts.update_one({'id': 'shift'}, {'$set': {'status': 'closed'}})
+    elif invalid == 'stale-shift':
+        await db.cashier_shifts.update_one({'id': 'shift'}, {'$set': {'business_date': '2026-11-11'}})
+    elif invalid == 'missing-shift-day':
+        await db.cashier_shifts.update_one({'id': 'shift'}, {'$unset': {'business_date': ''}})
     elif invalid == 'ambiguous':
         await db.folios.insert_one({'id': 'f-other', 'tenant_id': 't', 'booking_id': 'b2', 'status': 'open', 'currency': 'TRY'})
     elif invalid == 'closed':
