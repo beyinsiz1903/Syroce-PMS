@@ -40,7 +40,7 @@ test('only the exact subscription-bound routes request a paid-module check', () 
   assert.equal(paidDepartmentForSegments(['(guest)', 'spa']), undefined);
   const gate = readFileSync(resolve('src/components/MobileRouteGate.tsx'), 'utf8');
   assert.match(gate, /hubModuleState\(paidTile, subscription.data\)/);
-  assert.ok(gate.indexOf("state !== 'enabled'") < gate.indexOf('return <>{children}</>'));
+  assert.ok(gate.indexOf("state !== 'enabled'") < gate.indexOf('// A resumed authenticated session'));
 });
 
 test('department menu and cold/deep links use identical server context', () => {
