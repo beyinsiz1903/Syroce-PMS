@@ -537,6 +537,8 @@ async def create_booking(
             raise HTTPException(422, "Dış otopark müşterisi oda/folyo ile bağlanamaz")
         if not payload.guest_name or not payload.guest_name.strip() or payload.vat_rate is None:
             raise HTTPException(422, "Dış müşteri adı ve toplama dahil KDV oranı gerekli")
+    if payload.vat_rate is None:
+        raise HTTPException(422, "Transfer/otopark hizmetinin KDV oranını belirtin; boş oranla mali kayıt oluşturulamaz")
     slots, total, sched = _compute_slots(resource, payload)
 
     booking_id = _stable_booking_id(tenant_id, payload.idempotency_key) if payload.idempotency_key else str(uuid.uuid4())
