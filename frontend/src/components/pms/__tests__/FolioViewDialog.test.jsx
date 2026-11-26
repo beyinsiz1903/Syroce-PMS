@@ -91,6 +91,15 @@ describe('guest-card account detail parity', () => {
     expect(screen.getByText(/-₺20,00/)).toBeInTheDocument();
     expect(screen.getByText('Bakiye hesabına dahil değil')).toBeInTheDocument();
   });
+  it('does not offer generic refund for a deposit whose two linked refunds exhaust the original', () => {
+    render(<FolioViewDialog {...baseProps} selectedFolio={folio} folioPayments={[
+      { id: 'deposit', method: 'cash', amount: 100, payment_type: 'deposit', deposit_id: 'd' },
+      { id: 'r1', method: 'cash', amount: 40, payment_type: 'refund', deposit_id: 'd' },
+      { id: 'r2', method: 'cash', amount: 60, payment_type: 'refund', deposit_id: 'd' },
+    ]} />);
+    expect(screen.queryByRole('button', { name: 'İade' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('İade için rezervasyonun depozito işlemlerini kullanın.')).toHaveLength(3);
+  });
   it('shows authoritative net, unknown price/tax details and separate non-cash totals in the proforma', async () => {
     axios.post.mockResolvedValueOnce({ data: { folio, hotel: {}, guest: {}, booking: {},
       charges: [{ id: 'spa', description: 'Masaj', total: 120, amount: 120, net_amount: 100, subtotal: 100, vat_amount: 20, vat_rate: null, service_date: '2026-11-10' }],

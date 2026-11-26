@@ -1294,6 +1294,8 @@ async def void_payment(
     )
     if not payment:
         raise HTTPException(status_code=404, detail="Ödeme bulunamadı")
+    if payment.get("deposit_id") or str(payment.get("payment_type") or "").lower() == "deposit":
+        raise HTTPException(409, "Depozito iadesini rezervasyonun bağlı depozito akışından yapın")
     if payment.get("billing_settlement_id"):
         raise HTTPException(409, "Kurumsal mahsubu kendi bağlı ters kayıt akışından düzeltin")
     if payment.get("mice_event_id"):

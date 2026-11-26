@@ -255,7 +255,7 @@ class FolioDetailService:
             ts = p.get("processed_at") or ""
             method = str(p.get("payment_method") or p.get("method") or "cash").strip().lower()
             refund = str(p.get("payment_type") or "").lower() == "refund" or effective_folio_payment(p) < 0
-            protected = any(p.get(field) for field in ("billing_settlement_id", "security_fund_id", "concession_id", "provider_ref", "mice_event_id"))
+            protected = str(p.get("payment_type") or "").lower() == "deposit" or any(p.get(field) for field in ("deposit_id", "billing_settlement_id", "security_fund_id", "concession_id", "provider_ref", "mice_event_id"))
             events.append(
                 {
                     "id": p.get("id"),

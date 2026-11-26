@@ -644,6 +644,7 @@ th{background:#f5f5f5}
                                   {payment.voided && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">İPTAL / İADE</span>}
                                 </div>
                                 <div className="text-xs text-gray-500 capitalize">{!isEffectivePayment(payment) ? 'Bakiye hesabına dahil değil' : isNonCashPayment(payment) ? 'Hesap mahsubu' : signedFolioPayment(payment) < 0 ? 'Ödeme iadesi' : 'Tahsilat'}</div>
+                                {(payment.deposit_id || payment.payment_type === 'deposit') && <div className="text-xs text-gray-500">İade için rezervasyonun depozito işlemlerini kullanın.</div>}
                                 {payment.reference && <div className="text-xs text-gray-400">Ref: {payment.reference}</div>}
                                 <div className="text-xs text-gray-400">
                                   {formatHotelEventTimestamp(payment.created_at || payment.processed_at)} · {HOTEL_EVENT_TIME_ZONE_LABEL}

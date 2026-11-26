@@ -246,6 +246,8 @@ class FolioHardeningService:
         payment = await db.payments.find_one({"id": payment_id, "tenant_id": tenant_id}, {"_id": 0})
         if not payment:
             return {"success": False, "error": "Payment not found"}
+        if payment.get("deposit_id") or str(payment.get("payment_type") or "").lower() == "deposit":
+            return {"success": False, "error": "Depozito iadesini rezervasyonun bağlı depozito akışından yapın"}
         if payment.get("billing_settlement_id"):
             return {"success": False, "error": "Kurumsal mahsup bağlı ters kayıt akışından düzeltilmeli"}
         if payment.get("security_fund_id") or payment.get("concession_id"):
