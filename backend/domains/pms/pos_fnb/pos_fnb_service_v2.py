@@ -10,7 +10,7 @@ import hashlib
 import logging
 import math
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
@@ -116,9 +116,12 @@ class PosFnbServiceV2:
         """Use the hotel operating day, never the server's calendar day."""
         settings_collection = getattr(self._db, "tenant_settings", None)
         if settings_collection is None:
-            return now.date().isoformat()
+            raise HTTPException(409, "POS işleminden önce otel iş günü doğrulanmalıdır.")
         settings = await settings_collection.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
-        return str((settings or {}).get("business_date") or now.date().isoformat())
+        try:
+            return date.fromisoformat(str((settings or {}).get("business_date") or "")[:10]).isoformat()
+        except ValueError as exc:
+            raise HTTPException(409, "POS işleminden önce otel iş günü doğrulanmalıdır.") from exc
 
     async def _currency(self, tenant_id: str) -> str:
         collection = getattr(self._db, 'hotel_settings', None)

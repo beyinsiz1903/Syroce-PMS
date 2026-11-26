@@ -183,6 +183,7 @@ async def test_z_and_daily_reports_include_over_5000_rows_without_legacy_duplica
 
 @pytest.mark.asyncio
 async def test_offline_create_and_append_replays_do_not_duplicate_kitchen_or_order(db):
+    await db.tenant_settings.insert_one({"tenant_id": "t1", "business_date": "2026-10-18"})
     service = PosFnbServiceV2()
     service._db = db
     service._enqueue_kot = AsyncMock()

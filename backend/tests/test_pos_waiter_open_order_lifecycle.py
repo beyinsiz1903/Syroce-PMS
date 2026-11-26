@@ -89,6 +89,7 @@ async def test_waiter_can_append_items_to_open_order_idempotently(monkeypatch):
     kitchen_orders = MemoryCollection()
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         client=_FakeClient(),
         pos_orders=orders,
         pos_order_item_batches=batches,
@@ -117,6 +118,7 @@ async def test_waiter_price_is_rebuilt_from_catalog_not_browser_payload(monkeypa
     orders = MemoryCollection()
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         **open_pos_day_collections(),
         client=_FakeClient(),
         pos_orders=orders,
@@ -174,6 +176,7 @@ async def test_waiter_transfers_open_order_and_releases_source_table(monkeypatch
     ])
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         pos_orders=orders,
         table_layouts=tables,
         kitchen_orders=MemoryCollection(),
@@ -204,6 +207,7 @@ async def test_waiter_does_not_transfer_onto_a_legacy_open_check(monkeypatch):
     ])
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         pos_orders=orders,
         table_layouts=tables,
         kitchen_orders=MemoryCollection(),
@@ -253,6 +257,7 @@ async def test_open_table_cannot_be_manually_marked_available(monkeypatch):
 async def test_room_charge_fails_closed_when_open_folio_is_missing():
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         pos_transactions=MemoryCollection(),
         pos_orders=MemoryCollection([{
             "id": "order-1", "tenant_id": "tenant-1", "status": "pending",
@@ -280,6 +285,7 @@ async def test_room_charge_fails_closed_when_open_folio_is_missing():
 async def test_room_charge_rejects_booking_that_is_not_in_house():
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         pos_transactions=MemoryCollection(),
         pos_orders=MemoryCollection([{
             "id": "order-1", "tenant_id": "tenant-1", "status": "pending",
@@ -310,6 +316,7 @@ async def test_room_charge_rejects_booking_that_is_not_in_house():
 async def test_room_charge_reports_durable_folio_queue_status(monkeypatch):
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=MemoryCollection([{"tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         hotel_settings=MemoryCollection([{
             "tenant_id": "tenant-1", "currency": "TRY",
         }]),
