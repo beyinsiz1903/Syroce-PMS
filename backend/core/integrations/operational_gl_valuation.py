@@ -81,7 +81,13 @@ def source_tax_components(source):
     elif source.get("vat_amount") is not None:
         vat = minor(source["vat_amount"])
         if aggregate or "night_audit" in str(source.get("posted_by") or ""):
-            raise OperationalValuationError("Aggregate room tax requires an explicit component breakdown")
+            context = {key: source[key] for key in (
+                "id", "booking_id", "folio_id", "charge_category", "category",
+                "currency", "business_date", "tax_amount", "vat_amount", "posted_by")
+                if source.get(key) is not None}
+            raise OperationalValuationError(
+                "Aggregate room tax requires an explicit component breakdown: "
+                + json.dumps(context, ensure_ascii=False, sort_keys=True, default=str))
         accommodation, tax = aggregate, vat + aggregate
     else:
         tax, vat = aggregate, aggregate
@@ -146,7 +152,16 @@ async def resolve_laundry_tax_evidence(db, tenant_id, charges):
             continue
         evidence = {key: ledger.get(key) for key in ("id", "tenant_id", "booking_id", "folio_id", "currency", "business_date",
                     "entry_type", "idempotency_key", "amount", "tax_amount", "is_voided")}
-        result.append({**charge, "tax_amount": ledger["tax_amount"],
+        # The laundry ledger field is VAT, while department charge tax_amount
+        # represents OTHER tax. Keep that schema boundary explicit in this
+        # read-only projection; copying VAT into OTHER tax double counts it.
+        ledger_vat = ledger["tax_amount"]
+        if (charge.get("tax_breakdown") or
+            (charge.get("vat_amount") is not None and minor(charge["vat_amount"]) != minor(ledger_vat))):
+            result.append(charge)
+            continue
+        result.append({**charge, "tax_amount": 0, "vat_amount": ledger_vat,
+                       "tax_breakdown": {"vat": ledger_vat, "accommodation_tax": 0},
                        "tax_evidence": {"kind": "linked_laundry_ledger", "id": ledger["id"], "source_hash": digest(evidence)}})
     return result
 
