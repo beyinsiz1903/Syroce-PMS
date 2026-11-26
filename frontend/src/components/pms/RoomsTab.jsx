@@ -366,13 +366,21 @@ const RoomsTab = ({
   // Handle checkout with balance check
   const handleCheckOutClick = useCallback(async (e, guestInfo) => {
     e.stopPropagation();
+    if (guestInfo.balance_scope !== 'folio') {
+      if (onPayment) onPayment(guestInfo.booking_id);
+      else if (onBookingDoubleClick) {
+        const booking = bookings.find(b => b.id === guestInfo.booking_id);
+        if (booking) onBookingDoubleClick(booking);
+      } else toast.error('Çıkıştan önce güncel hesabı rezervasyon detayından kontrol edin.');
+      return;
+    }
     if (guestInfo.balance > 0.01) {
       setCheckoutBooking(guestInfo);
       setCheckoutDialog(true);
     } else {
       handleCheckOut?.(guestInfo.booking_id);
     }
-  }, [handleCheckOut]);
+  }, [handleCheckOut, onPayment, onBookingDoubleClick, bookings]);
 
   // Open quick payment dialog
   const handlePaymentClick = useCallback((e, guestInfo) => {
@@ -381,11 +389,20 @@ const RoomsTab = ({
       toast.error('Rezervasyon bilgisi yüklenemedi. Sayfayı yenileyip tekrar deneyin.');
       return;
     }
+    // Verify the current account in the guest card, not the list snapshot.
+    if (onPayment) {
+      onPayment(guestInfo.booking_id);
+      return;
+    }
+    if (guestInfo.balance_scope !== 'folio') {
+      toast.error('Güncel ödeme tutarı için rezervasyon hesabını açın.');
+      return;
+    }
     setPaymentTarget(guestInfo);
     setPaymentAmount(guestInfo.balance > 0 ? String(guestInfo.balance) : '');
     setPaymentMethod('cash');
     setPaymentDialog(true);
-  }, []);
+  }, [onPayment]);
 
   const fetchExchangeRates = async () => {
     try {
@@ -649,7 +666,7 @@ const RoomsTab = ({
           const roomBlock = getRoomBlockForDate(room.id, today, roomBlocks);
           const showCheckIn = guestInfo && guestInfo.isCheckInToday && (guestInfo.status === 'confirmed' || guestInfo.status === 'guaranteed');
           const showCheckOut = guestInfo && guestInfo.isCheckOutToday && guestInfo.status === 'checked_in';
-          const hasBalance = guestInfo && guestInfo.balance > 0.01;
+          const hasBalance = guestInfo && guestInfo.balance_scope === 'folio' && guestInfo.balance > 0.01;
           const isOccupied = guestInfo && guestInfo.status === 'checked_in';
           const cat = guestInfo?.category;
           const cardExtra = roomBlock ? 'border-l-4 border-l-slate-500 bg-slate-100/70' : cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-amber-400' : '';
@@ -824,6 +841,12 @@ const RoomsTab = ({
                           {guestInfo.balance_scope === 'folio' ? 'İşlenmemiş oda bedeli hariç.' : 'Güncel toplam için rezervasyonu açın.'}
                         </p>
                       </div>
+                    )}
+
+                    {guestInfo.balance_scope !== 'folio' && (
+                      <p className="mt-1 text-[11px] leading-4 text-slate-600" data-testid={`room-balance-unverified-${room.room_number}`}>
+                        Güncel hesap için rezervasyonu açın.
+                      </p>
                     )}
 
                     {/* Quick action buttons */}
