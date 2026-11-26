@@ -30,6 +30,8 @@ describe('FolioDetailView identifier contract', () => {
     expect(isSupportedFolioId('507f1f77bcf86cd799439011')).toBe(true);
     expect(isSupportedFolioId('cb6d687f-7011-43f6-8dd6-570c36fc8936')).toBe(true);
     expect(isSupportedFolioId('not-a-folio-id')).toBe(false);
+    expect(isSupportedFolioId('F-2026-00413')).toBe(true);
+    expect(isSupportedFolioId('F-2026-00413/other')).toBe(false);
   });
 
   it('loads a UUID folio instead of rejecting it in the browser', async () => {
@@ -46,6 +48,13 @@ describe('FolioDetailView identifier contract', () => {
       { headers: {} },
     ));
     expect(screen.queryByTestId('folio-not-found')).not.toBeInTheDocument();
+  });
+
+  it('loads an exact human folio number', async () => {
+    render(<MemoryRouter><FolioDetailView folioId="F-2026-00413" /></MemoryRouter>);
+    await waitFor(() => expect(get).toHaveBeenCalledWith(
+      '/pms-core/folio/detail/F-2026-00413', { headers: {} },
+    ));
   });
 
   it('still rejects malformed folio identifiers without a backend request', async () => {

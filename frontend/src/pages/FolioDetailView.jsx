@@ -234,7 +234,7 @@ const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-
 
 export function isSupportedFolioId(value) {
   const id = String(value || "").trim();
-  return OBJECT_ID_RE.test(id) || UUID_RE.test(id);
+  return OBJECT_ID_RE.test(id) || UUID_RE.test(id) || /^F-\d{4}-\d{1,12}$/.test(id);
 }
 
 export default function FolioDetailView({
@@ -289,7 +289,7 @@ export default function FolioDetailView({
     try {
       const {
         data: d
-      } = await axios.get(`/pms-core/folio/detail/${id}`, {
+      } = await axios.get(`/pms-core/folio/detail/${id.trim()}`, {
         headers: {}
       });
       setData(d);
