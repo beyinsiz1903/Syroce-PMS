@@ -45,7 +45,7 @@ async def test_concurrent_different_receipts_do_not_lose_a_booking_counter_incre
 
 async def test_shift_race_rollback_does_not_credit_the_booking_counter(acceptance, monkeypatch):
     a = acceptance
-    await a.db.cashier_shifts.insert_one({'tenant_id': 'qa', 'id': 'race-shift', 'status': 'open',
+    await a.db.cashier_shifts.insert_one({'tenant_id': 'qa', 'id': 'race-shift', 'status': 'open', 'business_date': '2026-10-26',
         'opened_at': datetime.now(UTC).isoformat(), 'transactions': [], 'cash_in': 0, 'cash_out': 0})
 
     async def closed_in_between(**kwargs):
@@ -64,7 +64,7 @@ async def test_foreign_receipt_void_uses_the_original_try_snapshot_and_reverses_
 
     a = acceptance
     monkeypatch.setattr(database, 'db', a.db)
-    await a.db.cashier_shifts.insert_one({'tenant_id': 'qa', 'id': 'refund-shift', 'status': 'open',
+    await a.db.cashier_shifts.insert_one({'tenant_id': 'qa', 'id': 'refund-shift', 'status': 'open', 'business_date': '2026-10-26',
         'opened_at': datetime.now(UTC).isoformat(), 'transactions': [], 'cash_in': 0, 'cash_out': 0})
     first = await call(a, monkeypatch, receipt(method='cash'), 'counter-refund')
     assert first.status_code == 200

@@ -98,6 +98,11 @@ async def ensure_active_shift(tenant_id: str, method: str) -> dict | None:
     """
     shift = await get_active_shift(tenant_id)
     if shift:
+        if (method or "").lower() in CASH_METHODS:
+            marker: dict = {}
+            business_day = await stamp_open_business_date(db, tenant_id, marker)
+            if str(shift.get("business_date") or "")[:10] != business_day:
+                raise HTTPException(409, "Açık kasa vardiyasının iş günü PMS iş günüyle eşleşmiyor. Eski vardiyayı normal devir/kapanışla tamamlayıp güncel iş günü için vardiya açın.")
         return shift
     if (method or "").lower() in CASH_METHODS:
         raise HTTPException(
@@ -288,6 +293,13 @@ async def record_cash_transaction(
         logger.info(f"cashier txn skipped (no open shift) tenant={tenant_id} method={method_l} amount={amount_f} ref={ref_type}:{ref_id}")
         return None
 
+    # A replay of an already recorded movement does not write into another day.
+    if idempotency_key:
+        prior = next((row for row in shift.get("transactions") or []
+                      if row.get("idempotency_key") == idempotency_key), None)
+        if prior is not None:
+            return prior
+
     now = datetime.utcnow()
     txn = {
         "id": str(uuid.uuid4()),
@@ -308,6 +320,9 @@ async def record_cash_transaction(
         "original_amount": original_amount_f,
     }
     await stamp_open_business_date(db, tenant_id, txn)
+    if require_open_shift and method_l in CASH_METHODS:
+        if str(shift.get("business_date") or "")[:10] != txn["business_date"]:
+            raise HTTPException(409, "Nakit hareketinin iş günü açık vardiyayla eşleşmiyor. Güncel iş günü için vardiya açın.")
     if extra and isinstance(extra, dict):
         for k, v in extra.items():
             if k not in txn:
@@ -325,6 +340,8 @@ async def record_cash_transaction(
         "tenant_id": tenant_id,
         "status": "open",
     }
+    if require_open_shift and method_l in CASH_METHODS:
+        filter_doc["business_date"] = shift["business_date"]
     if idempotency_key:
         filter_doc["transactions.idempotency_key"] = {"$ne": idempotency_key}
 

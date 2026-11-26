@@ -27,7 +27,7 @@ async def setup_payment(database, monkeypatch):
     monkeypatch.setattr(reservation_detail, '_log_activity', AsyncMock())
     monkeypatch.setattr(webhook_retry_service, 'schedule_emit_reservation_updated', lambda *_args, **_kwargs: None)
     await database.extra_charges.update_many({'booking_id': 'b2', 'tenant_id': 't'}, {'$set': {'folio_id': 'f'}})
-    await database.tenant_settings.insert_one({'tenant_id': 't', 'business_date': '2026-11-12'})
+    await database.tenant_settings.update_one({'tenant_id': 't'}, {'$set': {'business_date': '2026-11-12'}}, upsert=True)
     return SimpleNamespace(id='operator', tenant_id='t', name='Operator', role='manager', email='operator@example.invalid')
 
 
@@ -35,7 +35,7 @@ async def setup_payment(database, monkeypatch):
 @pytest.mark.parametrize('method', ['cash', 'card', 'bank_transfer', 'online'])
 async def test_group_payment_owns_folio_records_cashier_and_replays_once(db, monkeypatch, method):
     actor = await setup_payment(db, monkeypatch)
-    await db.cashier_shifts.insert_one({'id': 'shift', 'tenant_id': 't', 'status': 'open', 'transactions': [], 'cash_in': 0})
+    await db.cashier_shifts.insert_one({'id': 'shift', 'tenant_id': 't', 'status': 'open', 'business_date': '2026-11-12', 'transactions': [], 'cash_in': 0})
     request = GroupPaymentRequest(group_id='g', booking_id='b2', folio_id='f', amount=25, method=method, reference='group-intent-1')
     first = await route.record_group_payment(request, actor, None)
     repeated = await route.record_group_payment(request, actor, None)
