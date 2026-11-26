@@ -1646,6 +1646,8 @@ async def list_journal(
 
 
 def _journal_reversal_blocker(original, allocated):
+    if original.get("source") in {"night_audit", "night_audit_correction"}:
+        return "Gün sonu kaynak fişi bağımsız çevrilemez; özgün gün sonu kaynak değerlemesiyle birlikte uzlaştırılmalıdır"
     if original.get("source") == "spa_settlement":
         return "SPA tahsilat/iade fişi bağımsız çevrilemez; özgün SPA tahsilat kaydıyla birlikte uzlaştırılmalıdır"
     if original.get("source") == "mice":

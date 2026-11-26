@@ -25,6 +25,8 @@ import {
 
 describe('GeneralLedgerModule persistent GL contract', () => {
   it('does not offer an independent GL reversal for source-linked settlements or allocated funding', () => {
+    expect(journalReversalBlocker({ source: 'night_audit' })).toContain('Gün sonu');
+    expect(journalReversalBlocker({ source: 'night_audit_correction' })).toContain('Gün sonu');
     expect(journalReversalBlocker({ source: 'billing_settlement' })).toContain('kaynaklı mahsup');
     expect(journalReversalBlocker({ source: 'billing_settlement_reversal' })).toBeTruthy();
     expect(journalReversalBlocker({ source: 'manual_voucher' }, { can_reverse: false, reason: 'Fonlama hakkı ayrılmış' })).toBe('Fonlama hakkı ayrılmış');
