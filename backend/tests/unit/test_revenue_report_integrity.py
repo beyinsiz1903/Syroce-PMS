@@ -160,3 +160,31 @@ def test_catalog_ids_case_variants_and_orphans_have_stable_labels_without_changi
     assert labels("deadbeef-1234-1234-1234-123456789012") == "Envanter dışı oda tipi"
     booking = {"room_id": "suite"}
     assert labels.normalize([booking]) == [booking]  # preserve assigned-room fallback
+
+
+def test_full_comp_laundry_keeps_proven_original_net_as_discount_without_revenue():
+    values = charge_breakdown(row(charge_category='laundry', amount=0, total=0,
+        net_amount=0, vat_amount=0, tax_amount=0,
+        is_complimentary=True, complimentary_scope='full', complimentary_original_amount=25,
+        complimentary_original_tax_snapshot={'net_amount': 25, 'vat_amount': 0, 'tax_amount': 0}))
+    assert values['subtotal'] == 25
+    assert values['discount'] == 25
+    assert values['net'] == values['vat'] == values['total'] == 0
+    assert not values['issues']
+
+
+def test_full_comp_without_original_net_evidence_never_guesses_tax_basis():
+    values = charge_breakdown(row(charge_category='laundry', amount=0, total=0,
+        net_amount=0, vat_amount=0, tax_amount=0,
+        is_complimentary=True, complimentary_scope='full', complimentary_original_amount=25))
+    assert values['subtotal'] == values['discount'] == 0
+
+
+def test_full_comp_laundry_discount_uses_net_not_gross_list_value():
+    values = charge_breakdown(row(charge_category='laundry', amount=0, total=0,
+        net_amount=0, vat_amount=0, tax_amount=0,
+        is_complimentary=True, complimentary_scope='full', complimentary_original_amount=25,
+        complimentary_original_tax_snapshot={'net_amount': 20, 'vat_amount': 5, 'tax_amount': 0}))
+    assert values['subtotal'] == values['discount'] == 20
+    assert values['net'] == values['vat'] == values['total'] == 0
+    assert not values['issues']

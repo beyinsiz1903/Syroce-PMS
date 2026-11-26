@@ -58,6 +58,25 @@ def charge_breakdown(row):
     if inclusive_laundry:
         city = Decimal(0)
     discount = signed(row.get("discount_amount") or 0)
+    # Full-comp laundry retains its original tax snapshot separately from the
+    # zero-valued posting. Show only a proven original NET as the concession;
+    # never treat the gross list price as net or change posted revenue/taxes.
+    comp_net = None
+    original_tax = row.get("complimentary_original_tax_snapshot")
+    if (category == "laundry" and row.get("is_complimentary")
+            and row.get("complimentary_scope") == "full" and total == 0
+            and isinstance(original_tax, dict)
+            and original_tax.get("net_amount") is not None
+            and original_tax.get("vat_amount") is not None
+            and original_tax.get("tax_amount") is not None
+            and row.get("complimentary_original_amount") is not None):
+        original_net = money(original_tax["net_amount"])
+        original_gross = money(row["complimentary_original_amount"])
+        if (original_net >= 0 and original_gross > 0
+                and original_net + money(original_tax["vat_amount"]) + money(original_tax["tax_amount"]) == original_gross):
+            comp_net = signed(original_net)
+            if row.get("discount_amount") is None:
+                discount = comp_net
     # Extra charge_amount/amount is commonly a gross UNIT price, not a net
     # line amount. Derive net only from evidence, not the collection name.
     net = total - (vat or 0) - (city or 0) - (other or 0) if tax_known else None
