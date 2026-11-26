@@ -173,7 +173,7 @@ async def test_foreign_beo_gl_post_requires_rate(monkeypatch):
         "status": "confirmed",
         "end_date": "2027-01-02",
         "currency": "EUR",
-        "totals": {"grand_total": 100},
+        "totals": {"grand_total": 100, "tax_total": 0},
     }
     fake_db = SimpleNamespace(mice_events=_EventCollection([event]))
     monkeypatch.setattr(mice, "get_system_db", lambda: fake_db)
@@ -200,7 +200,7 @@ async def test_foreign_beo_gl_post_preserves_foreign_metadata(monkeypatch):
         "status": "confirmed",
         "end_date": "2027-01-02",
         "currency": "EUR",
-        "totals": {"grand_total": 100},
+        "totals": {"grand_total": 100, "tax_total": 0},
     }
     fake_db = SimpleNamespace(mice_events=_EventCollection([event]))
     posted = AsyncMock(return_value={"id": "journal-1"})
