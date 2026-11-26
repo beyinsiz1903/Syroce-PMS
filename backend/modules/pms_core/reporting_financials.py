@@ -88,10 +88,10 @@ def stamp_reporting_values(payment: dict, reporting_currency: str = REPORTING_CU
             payment["reporting_amount"] = float(payment["received_amount"])
     if payment.get("reporting_amount") is not None:
         payment["reporting_currency"] = reporting_currency
-    payment.setdefault(
-        "exchange_rate_date",
-        str(payment.get("business_date") or payment.get("payment_date") or payment.get("processed_at") or "")[:10] or None,
-    )
+    if not payment.get("exchange_rate_date"):
+        payment["exchange_rate_date"] = str(
+            payment.get("business_date") or payment.get("payment_date") or payment.get("processed_at") or ""
+        )[:10] or None
     return payment
 
 

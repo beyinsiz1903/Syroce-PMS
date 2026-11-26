@@ -690,3 +690,35 @@ def test_aggregate_diagnostic_does_not_expose_posting_actor_email():
     with pytest.raises(v.OperationalValuationError) as failure:
         v.source_tax_components(source)
     assert "operator-private@example.com" not in str(failure.value)
+
+
+@pytest.mark.parametrize('missing_date', [None, ''])
+@pytest.mark.parametrize('refund', [False, True])
+def test_native_try_identity_receipt_does_not_need_an_fx_date(missing_date, refund):
+    payment = {'id': 'native-try', 'booking_id': 'stay', 'folio_id': 'folio',
+        'business_date': DAY, 'currency': 'TRY', 'amount': 25, 'method': 'cash',
+        'received_currency': 'TRY', 'received_amount': 25, 'exchange_rate': 1,
+        'reporting_currency': 'TRY', 'reporting_amount': 25, 'exchange_rate_date': missing_date,
+        'payment_type': 'refund' if refund else 'interim'}
+    before = deepcopy(payment)
+    result = plan(payments=[payment])
+    assert result['payment_total_try'] == (-25 if refund else 25)
+    assert normalize_journal_lines(result['lines'])[1:] == (25, 25)
+    assert result['manifest']['sources'][0]['receipt_binding']['kind'] == 'native_try_identity'
+    assert payment == before
+    for change in ({'currency': 'USD'}, {'received_currency': 'USD'}, {'business_date': '2026-10-02'},
+                   {'reporting_currency': 'USD'}, {'received_amount': 24}, {'reporting_amount': 24},
+                   {'exchange_rate': 2}, {'exchange_rate_date': '2026-10-02'}):
+        with pytest.raises(v.OperationalValuationError):
+            plan(payments=[{**payment, **change}])
+
+
+def test_unbound_fx_receipt_error_identifies_only_safe_source_fields():
+    payment = {'id': 'unbound-fx', 'booking_id': 'stay', 'currency': 'USD', 'amount': 20,
+        'method': 'card', 'reporting_currency': 'TRY', 'reporting_amount': 1000,
+        'business_date': DAY, 'exchange_rate_date': None, 'guest_email': 'private@example.com',
+        'token': 'must-not-leak'}
+    with pytest.raises(v.OperationalValuationError, match='source day') as failure:
+        plan(payments=[payment])
+    assert '"id": "unbound-fx"' in str(failure.value)
+    assert 'private@example.com' not in str(failure.value) and 'must-not-leak' not in str(failure.value)
