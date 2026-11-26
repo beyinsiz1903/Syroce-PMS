@@ -14,13 +14,10 @@ env:
       LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
 # The current app enables push only on explicit opt-in. Open the frontdesk More screen instead of assuming a role-specific landing screen or old labels.
-- openLink: "syrocepms:///(frontdesk)/more"
-# iOS may request confirmation before opening this app link.
 - runFlow:
-    when:
-      visible: "Open in.*Syroce PMS.*"
-    commands:
-      - tapOn: "Open"
+    file: ../helpers/open_link.yaml
+    env:
+      TARGET_LINK: "syrocepms:///(frontdesk)/more"
 # The notification card is below the role and module sections.
 - scrollUntilVisible:
     element:
