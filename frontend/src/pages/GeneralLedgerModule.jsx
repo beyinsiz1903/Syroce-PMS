@@ -271,6 +271,7 @@ export const voucherActionNames = (status, mode) => mode === 'authorized_self' ?
 }[status] || []);
 
 export function journalReversalBlocker(entry, control) {
+  if (['night_audit', 'night_audit_correction'].includes(entry.source)) return 'Gün sonu kaynak fişi bağımsız çevrilemez; özgün gün sonu kaynak değerlemesiyle birlikte uzlaştırılmalıdır.';
   if (entry.source === 'spa_settlement') return 'SPA tahsilat/iade fişi bağımsız çevrilemez; özgün SPA tahsilat kaydıyla birlikte uzlaştırılmalıdır.';
   if (entry.source === 'mice') return 'MICE kaynaklı gelir fişi bağımsız çevrilemez; organizasyon kaynağı ve cari hesapla birlikte uzlaştırılmalıdır.';
   if (['pos_direct', 'pos_refund'].includes(entry.source)) return 'POS kaynaklı fiş için özgün adisyonun iade akışını kullanın; bağımsız muhasebe ters kaydı açılamaz.';

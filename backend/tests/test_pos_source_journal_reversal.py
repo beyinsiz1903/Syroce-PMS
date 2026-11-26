@@ -64,3 +64,18 @@ async def test_spa_settlement_reversal_preserves_original_receipt_or_refund(monk
             reason="Sentetik SPA kaynak koruması", idempotency_key=f"spa-source-{kind}"), SimpleNamespace(tenant_id="A"))
     assert exc.value.status_code == 409 and "SPA" in exc.value.detail
     post.assert_not_awaited()
+
+@pytest.mark.parametrize('source', ['night_audit', 'night_audit_correction'])
+async def test_night_audit_source_reversal_rejects_before_any_posting(monkeypatch, source):
+    original = {'id': 'j', 'tenant_id': 'A', 'status': 'posted', 'source': source,
+                'source_ref': 'synthetic-run', 'date': '2026-11-12', 'lines': []}
+    database = SimpleNamespace(gl_journal_entries=SimpleNamespace(find_one=AsyncMock(side_effect=[original, None])),
+        billing_instruments=SimpleNamespace(find_one=AsyncMock(return_value=None)))
+    monkeypatch.setattr(gl, 'db', database)
+    post = AsyncMock()
+    monkeypatch.setattr(gl, 'post_journal_entry', post)
+    with pytest.raises(HTTPException) as exc:
+        await gl._reverse_journal('j', gl.JournalReversalIn(date='2026-11-12', reason='Sentetik kaynak testi',
+            idempotency_key='night-source-test'), SimpleNamespace(tenant_id='A'))
+    assert exc.value.status_code == 409 and 'Gün sonu' in exc.value.detail
+    post.assert_not_awaited()
