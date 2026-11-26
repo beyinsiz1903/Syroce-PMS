@@ -625,3 +625,39 @@ def test_tax_preflight_reports_all_missing_sources_before_building_any_journal()
     rows = json.loads(str(failure.value).split(': ', 1)[1])
     assert [row['id'] for row in rows] == ['parking', 'transfer']
     assert [row['total'] for row in rows] == [150, 850]
+
+
+@pytest.mark.parametrize("posted_by,tax_amount", [("night_audit", 0), ("operator", 10)])
+def test_ambiguous_aggregate_tax_identifies_source_without_changing_or_leaking_it(posted_by, tax_amount):
+    source = {"id": "ambiguous-charge", "booking_id": "stay", "folio_id": "folio",
+              "charge_category": "laundry", "currency": "TRY", "total": 120,
+              "tax_amount": tax_amount, "vat_amount": 10, "posted_by": posted_by,
+              "guest_email": "private@example.com", "token": "must-not-leak"}
+    before = deepcopy(source)
+    with pytest.raises(v.OperationalValuationError, match="Aggregate room tax") as failure:
+        v.source_tax_components(source)
+    message = str(failure.value)
+    assert '"id": "ambiguous-charge"' in message
+    assert '"folio_id": "folio"' in message
+    assert '"charge_category": "laundry"' in message
+    assert "private@example.com" not in message and "must-not-leak" not in message
+    assert source == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing_vat", [None, 25])
+async def test_linked_laundry_vat_is_not_misread_as_additional_tax(existing_vat):
+    charge = {"id": "wash-charge", "source_laundry_order_id": "wash", "source_ledger_entry_id": "ledger",
+              "booking_id": "stay", "folio_id": "folio", "currency": "TRY", "business_date": DAY,
+              "charge_category": "laundry", "total": 150, "vat_amount": existing_vat}
+    ledger = {"id": "ledger", "tenant_id": "hotel", "booking_id": "stay", "folio_id": "folio",
+              "currency": "TRY", "business_date": DAY, "entry_type": "charge",
+              "idempotency_key": "laundry:wash", "amount": 150, "tax_amount": 25}
+    db = SimpleNamespace(folio_ledger=SimpleNamespace(find_one=AsyncMock(return_value=ledger)))
+    before = deepcopy(charge)
+    resolved = (await v.resolve_laundry_tax_evidence(db, "hotel", [charge]))[0]
+    assert v.source_tax_components(resolved) == (2500, 0)
+    assert resolved["tax_amount"] == 0 and resolved["vat_amount"] == 25
+    assert charge == before and ledger["tax_amount"] == 25
+    conflicting = {**charge, "vat_amount": 24}
+    assert await v.resolve_laundry_tax_evidence(db, "hotel", [conflicting]) == [conflicting]
