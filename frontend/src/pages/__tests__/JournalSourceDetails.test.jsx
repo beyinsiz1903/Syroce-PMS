@@ -27,3 +27,12 @@ it('keeps unsealed, reversed and missing-line evidence explicit', () => {
   expect(screen.getByText(/Özgün mühür bilgisi yok/)).toBeInTheDocument();
   expect(screen.getByText(/satır ayrıntıları yok/)).toBeInTheDocument();
 });
+
+it('preserves cents for large base and foreign journal amounts', () => {
+  render(<JournalSourceDetails journal={{ lines: [
+    { account_code: '600', debit_minor: 0, credit_minor: 575765, currency: 'USD', foreign_amount_minor: 125001 },
+  ] }} />);
+  const cells = within(screen.getByText('600 · Hesap adı yok').closest('tr')).getAllByRole('cell');
+  expect(cells[2]).toHaveTextContent('₺5.757,65');
+  expect(cells[3]).toHaveTextContent('$1,250.01');
+});

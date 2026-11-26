@@ -22,10 +22,10 @@ export function JournalSourceDetails({ journal, accounts = [], currency = 'TRY' 
         <thead><tr><th className="text-left">Hesap</th><th className="text-right">Borç</th><th className="text-right">Alacak</th><th className="text-right">Özgün döviz tutarı</th></tr></thead>
         <tbody>{(journal.lines || []).map((line, index) => <tr key={line.line_no ?? index}>
           <td className="py-2">{line.account_code} · {line.account_name || names.get(line.account_code) || 'Hesap adı yok'}</td>
-          <td className="text-right">{formatCurrency(amount(line, 'debit'), currency)}</td>
-          <td className="text-right">{formatCurrency(amount(line, 'credit'), currency)}</td>
+          <td className="text-right">{formatCurrency(amount(line, 'debit'), currency, { decimals: 2, compactDecimals: false })}</td>
+          <td className="text-right">{formatCurrency(amount(line, 'credit'), currency, { decimals: 2, compactDecimals: false })}</td>
           <td className="text-right">{line.currency && (line.foreign_amount_minor != null || line.foreign_amount != null)
-            ? formatCurrency(line.foreign_amount_minor != null ? line.foreign_amount_minor / 100 : line.foreign_amount, line.currency) : '—'}</td>
+            ? formatCurrency(line.foreign_amount_minor != null ? line.foreign_amount_minor / 100 : line.foreign_amount, line.currency, { decimals: 2, compactDecimals: false }) : '—'}</td>
         </tr>)}</tbody>
       </table></div>
       {!(journal.lines || []).length && <p>Bu kaydın satır ayrıntıları yok; kaynak incelemesi gerekli.</p>}
