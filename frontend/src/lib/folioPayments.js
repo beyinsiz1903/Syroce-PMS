@@ -52,4 +52,5 @@ export const folioEventTitle = event => {
 };
 export const canVoidFolioEvent = event => event.type === 'payment' && event.can_void !== false
   && signedFolioPayment(timelinePayment(event)) > 0 && !isNonCashPayment(timelinePayment(event))
-  && !['billing_settlement_id', 'security_fund_id', 'concession_id', 'provider_ref', 'mice_event_id'].some(key => event[key]);
+  && String(event.payment_type || '').toLowerCase() !== 'deposit'
+  && !['deposit_id', 'billing_settlement_id', 'security_fund_id', 'concession_id', 'provider_ref', 'mice_event_id'].some(key => event[key]);
