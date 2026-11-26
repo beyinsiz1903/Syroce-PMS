@@ -60,11 +60,14 @@ async def test_cashier_failure_cannot_acknowledge_or_keep_mobile_payment(ledger_
 async def seed_cash_shift(ledger_db, monkeypatch):
     await seed_extra(ledger_db)
     monkeypatch.setattr(cashier_service, "db", ledger_db)
-    monkeypatch.setattr(cashier_service, "stamp_open_business_date", AsyncMock())
-    monkeypatch.setattr(mobile, "stamp_open_business_date", AsyncMock())
+    from core.business_date_service import stamp_open_business_date
+
+    await ledger_db.tenant_settings.update_one({"tenant_id": "A"}, {"$set": {"business_date": "2026-11-13"}}, upsert=True)
+    monkeypatch.setattr(cashier_service, "stamp_open_business_date", stamp_open_business_date)
+    monkeypatch.setattr(mobile, "stamp_open_business_date", stamp_open_business_date)
     monkeypatch.setattr(mobile, "claim_short_window_dedup", AsyncMock(return_value={"status": "acquired", "lock_id": "lock"}))
     monkeypatch.setattr(mobile, "release_idempotency", AsyncMock())
-    await ledger_db.cashier_shifts.insert_one({"tenant_id": "A", "id": "shift", "status": "open", "cash_in": 0, "transactions": []})
+    await ledger_db.cashier_shifts.insert_one({"tenant_id": "A", "id": "shift", "status": "open", "business_date": "2026-11-13", "cash_in": 0, "transactions": []})
 
 
 async def test_mobile_cash_and_projection_commit_together(ledger_db, monkeypatch):

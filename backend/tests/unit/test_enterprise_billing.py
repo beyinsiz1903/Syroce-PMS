@@ -415,10 +415,13 @@ async def test_cashier_storage_failure_propagates_to_financial_transaction(monke
 
     from domains.pms import cashier_service
 
-    shifts = SimpleNamespace(find_one=AsyncMock(return_value={'_id': 'shift', 'status': 'open'}),
+    shifts = SimpleNamespace(find_one=AsyncMock(return_value={'_id': 'shift', 'status': 'open', 'business_date': '2026-10-24'}),
         update_one=AsyncMock(side_effect=RuntimeError('synthetic storage failure')))
     monkeypatch.setattr(cashier_service, 'db', SimpleNamespace(cashier_shifts=shifts))
-    monkeypatch.setattr(cashier_service, 'stamp_open_business_date', AsyncMock(return_value='2026-10-24'))
+    async def stamp_day(database, tenant_id, document):
+        document['business_date'] = '2026-10-24'
+        return document['business_date']
+    monkeypatch.setattr(cashier_service, 'stamp_open_business_date', stamp_day)
     session = object()
     with pytest.raises(RuntimeError, match='synthetic storage failure'):
         await cashier_service.record_cash_transaction(tenant_id='A', amount=100, method='cash', direction='in',
