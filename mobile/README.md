@@ -20,9 +20,13 @@ yanıt verir.
 `EXPO_PUBLIC_QUICKID_URL` Quick-ID kimlik tarama servisi. Üretimde API ile
 aynı `https://pms.syroce.com` origin'i üzerinden ters proxy edilir.
 
-### Demo hesabı
+### Test hesabı
 
-- `info@syroce.com` / `Syroce2026`
+Mobil testler yalnız ayrılmış test otelindeki hesaplarla çalıştırılır. Güncel
+parolalar depoya veya test akışlarına yazılmaz. Otomatik smoke testinde
+`SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_GUEST_EMAIL` ve
+`SMOKE_GUEST_PASSWORD` değerlerini GitHub Actions secret'larından sağlayın.
+Gerçek tesis veya misafir hesabı kullanmayın.
 
 ## Kapsam
 
