@@ -3,9 +3,6 @@ name: "Login (smoke)"
 tags:
   - smoke
   - auth
-env:
-  SMOKE_EMAIL: info@syroce.com
-  SMOKE_PASSWORD: Syroce2026
 ---
 - runFlow:
     file: ../helpers/login.yaml

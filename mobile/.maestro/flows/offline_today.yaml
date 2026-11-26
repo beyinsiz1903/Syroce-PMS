@@ -4,9 +4,6 @@ tags:
   - smoke
   - android-only
   - offline
-env:
-  SMOKE_EMAIL: info@syroce.com
-  SMOKE_PASSWORD: Syroce2026
 ---
 # NOTE: Android-only — the network-toggle scripts shell out to `adb`.
 # See README → "Offline flow prerequisites" for the iOS workaround.

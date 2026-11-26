@@ -4,9 +4,6 @@ tags:
   - smoke
   - android-only
   - security
-env:
-  SMOKE_EMAIL: info@syroce.com
-  SMOKE_PASSWORD: Syroce2026
 ---
 # NOTE: requires an Android emulator with at least one fingerprint
 # enrolled (id=1). See README → "Biometric flow prerequisites".
