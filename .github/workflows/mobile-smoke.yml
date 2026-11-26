@@ -197,6 +197,9 @@ jobs:
     timeout-minutes: 45
     env:
       MAESTRO_VERSION: "2.12.1"
+      # Cold hosted iOS runners can exceed the default 120-second XCTest
+      # startup window. Keep this bounded; flow assertions are unchanged.
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: "180000"
       IOS_RUNTIME: "iOS-26-2"
       IOS_DEVICE: "iPhone 17"
       BUILD_URL: ${{ needs.resolve.outputs.ios_build_url }}
