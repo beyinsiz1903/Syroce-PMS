@@ -202,8 +202,8 @@ jobs:
                   # acquisition retries to this install; do not alter the runner's sources
                   # or disable TLS/package signature/hash verification.
                   apt_dir=$(mktemp -d "${RUNNER_TEMP}/playwright-apt.XXXXXX")
-                  trap 'rm -r -- "$apt_dir"' EXIT
-                  mkdir "$apt_dir/sources.list.d"
+                  trap 'sudo rm -r -- "$apt_dir"' EXIT
+                  mkdir -p "$apt_dir/sources.list.d" "$apt_dir/lists/partial"
                   printf '%s\n' \
                       'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble main restricted universe multiverse' \
                       'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse' \
@@ -211,6 +211,7 @@ jobs:
                       > "$apt_dir/sources.list"
                   printf '%s\n' \
                       "Dir::Etc::sourcelist \"$apt_dir/sources.list\";" \
+                      "Dir::State::lists \"$apt_dir/lists\";" \
                       "Dir::Etc::sourceparts \"$apt_dir/sources.list.d\";" \
                       'Acquire::Retries "2";' \
                       'Acquire::http::Timeout "20";' \
@@ -218,6 +219,8 @@ jobs:
                       'Acquire::Languages "none";' \
                       'APT::Update::Error-Mode "any";' \
                       > "$apt_dir/apt.conf"
+                  # Isolate package indexes too: stale runner mirror indexes must not
+                  # participate in candidate selection for these private sources.
                   # Pass APT_CONFIG after sudo: sudo normally strips it from the environment.
                   sudo env APT_CONFIG="$apt_dir/apt.conf" "$(command -v node)" \
                       frontend/node_modules/playwright/cli.js install-deps chromium

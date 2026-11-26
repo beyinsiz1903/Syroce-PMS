@@ -67,6 +67,7 @@ def test_browser_install_scopes_verified_sources_and_propagates_failure(tmp_path
     observed = json.loads(evidence.read_text())
     assert observed["args"] == ["frontend/node_modules/playwright/cli.js", "install-deps", "chromium"]
     assert observed["parts"] == []
+    assert f'Dir::State::lists \"{Path(observed["config_path"]).parent}/lists\";' in observed["config"]
     assert 'Acquire::Retries "2";' in observed["config"]
     assert 'Acquire::https::Timeout "20";' in observed["config"]
     assert 'APT::Update::Error-Mode "any";' in observed["config"]
