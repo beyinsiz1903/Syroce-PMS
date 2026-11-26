@@ -17,9 +17,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
+from core.booking_atomicity import with_resource_locks
 from core.database import db
 from core.security import get_current_user, security
-from domains.pms.pos_extensions._idem import idempotent_insert
+from domains.pms.pos_extensions._idem import ensure_idem_index
+from domains.pms.pos_fnb.day_write_guard import assert_day_writable, posting_day, prepare_day_lock
 from modules.pms_core.role_permission_service import (
     require_module_role,  # v89 DW
 )
@@ -232,27 +234,40 @@ async def create_quick_order_mobile(
         "created_by": current_user.username,
     }
 
-    # Idempotency gate (Task #373): aynı (tenant, idempotency_key) ile gelen
-    # retry/çift-dokunma yeni sipariş YARATMAZ — mevcut sipariş replay döner.
-    # create-order ile AYNI unique index'i paylaşır (ux_pos_orders_tenant_idemp).
+    day = await posting_day(db, current_user.tenant_id)
+    order["business_date"] = day
+    await prepare_day_lock(db)
     if idempotency_key:
         try:
-            effective_order, replay = await idempotent_insert(
-                db.pos_orders,
-                current_user.tenant_id,
-                idempotency_key,
-                order,
-                index_name="ux_pos_orders_tenant_idemp",
+            await ensure_idem_index(db.pos_orders, index_name="ux_pos_orders_tenant_idemp")
+        except Exception as exc:
+            raise HTTPException(503, "POS idempotency koruması geçici olarak kullanılamıyor") from exc
+
+    async def persist(session):
+        # A retry may read its original result after closure; it must not write.
+        if idempotency_key:
+            prior = await db.pos_orders.find_one(
+                {"tenant_id": current_user.tenant_id, "idempotency_key": idempotency_key},
+                session=session,
             )
-        except Exception:
-            raise HTTPException(
-                status_code=503,
-                detail="POS idempotency koruması geçici olarak kullanılamıyor — biraz sonra tekrar deneyin",
+            if prior:
+                return prior, True
+        await assert_day_writable(db, current_user.tenant_id, day, session)
+        # Read again after the shared day lock so concurrent retries converge.
+        if idempotency_key:
+            prior = await db.pos_orders.find_one(
+                {"tenant_id": current_user.tenant_id, "idempotency_key": idempotency_key},
+                session=session,
             )
-    else:
-        await db.pos_orders.insert_one(order)
-        order.pop("_id", None)
-        effective_order, replay = order, False
+            if prior:
+                return prior, True
+        await db.pos_orders.insert_one(dict(order), session=session)
+        return order, False
+
+    effective_order, replay = await with_resource_locks(
+        client=db.client, db=db, tenant_id=current_user.tenant_id,
+        locks_collection="pos_closure_locks", resources=[], callback=persist,
+    )
 
     return {
         "message": "Order created successfully",

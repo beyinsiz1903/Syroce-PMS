@@ -8,6 +8,7 @@ import pytest
 from domains.pms.pos_extensions import pos_print_spool
 from domains.pms.pos_fnb import pos_fnb_service_v2 as pos_service_module
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
+from tests.pos_day_fixture_helpers import open_pos_day_collections
 
 
 class _Collection:
@@ -50,7 +51,7 @@ async def test_refund_write_rejects_amount_that_exceeds_current_remaining_balanc
         [{"id": "sale-1", "tenant_id": "tenant-1", "status": "completed", "refunded_amount": 50.0}]
     )
     orders = _Collection([{"id": "order-1", "tenant_id": "tenant-1", "payment_status": "paid"}])
-    service._db = SimpleNamespace(client=object(), pos_transactions=transactions, pos_orders=orders, kitchen_orders=SimpleNamespace(update_many=AsyncMock()))
+    service._db = SimpleNamespace(**open_pos_day_collections(), client=object(), pos_transactions=transactions, pos_orders=orders, kitchen_orders=SimpleNamespace(update_many=AsyncMock()))
     monkeypatch.setattr(pos_service_module, "with_resource_locks", _within_transaction)
 
     result = await service._persist_refund_and_state(
@@ -59,7 +60,7 @@ async def test_refund_write_rejects_amount_that_exceeds_current_remaining_balanc
         sale_id="sale-1",
         paid=100.0,
         refund_amount=60.0,
-        refund_doc={"id": "refund-1", "tenant_id": "tenant-1"},
+        refund_doc={"transaction_date": "2026-11-12", "id": "refund-1", "tenant_id": "tenant-1"},
     )
 
     assert result is None
@@ -75,7 +76,7 @@ async def test_refund_write_updates_sale_order_and_refund_together(monkeypatch):
         [{"id": "sale-1", "tenant_id": "tenant-1", "status": "completed", "refunded_amount": 40.0}]
     )
     orders = _Collection([{"id": "order-1", "tenant_id": "tenant-1", "payment_status": "paid"}])
-    service._db = SimpleNamespace(client=object(), pos_transactions=transactions, pos_orders=orders, kitchen_orders=SimpleNamespace(update_many=AsyncMock()))
+    service._db = SimpleNamespace(**open_pos_day_collections(), client=object(), pos_transactions=transactions, pos_orders=orders, kitchen_orders=SimpleNamespace(update_many=AsyncMock()))
     monkeypatch.setattr(pos_service_module, "with_resource_locks", _within_transaction)
 
     result = await service._persist_refund_and_state(
@@ -84,7 +85,7 @@ async def test_refund_write_updates_sale_order_and_refund_together(monkeypatch):
         sale_id="sale-1",
         paid=100.0,
         refund_amount=60.0,
-        refund_doc={"id": "refund-1", "tenant_id": "tenant-1", "payment_type": "refund", "created_at": "2026-11-12T10:00:00+00:00"},
+        refund_doc={"transaction_date": "2026-11-12", "id": "refund-1", "tenant_id": "tenant-1", "payment_type": "refund", "created_at": "2026-11-12T10:00:00+00:00"},
     )
 
     assert result["refund_status"] == "full"

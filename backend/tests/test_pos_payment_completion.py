@@ -41,6 +41,7 @@ def context():
 async def test_mixed_payment_must_equal_order_total():
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        tenant_settings=Collection([{ "tenant_id": "tenant-1", "business_date": "2026-10-18"}]),
         pos_transactions=Collection(),
         pos_orders=Collection([{"id": "order-1", "tenant_id": "tenant-1", "status": "pending", "payment_status": "unpaid", "grand_total": 120}]),
     )

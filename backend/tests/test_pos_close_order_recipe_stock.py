@@ -7,6 +7,7 @@ restores the consumed stock idempotently.
 from types import SimpleNamespace
 
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
+from tests.pos_day_fixture_helpers import open_pos_day_collections
 
 
 # ── Minimal in-memory Mongo-ish collection (supports the operators used) ──
@@ -111,6 +112,7 @@ def _ctx(tenant_id="t1"):
 def _build_db(**overrides):
     db = SimpleNamespace(
         tenant_settings=InMemoryCollection([{"tenant_id": "t1", "business_date": "2026-10-18"}]),
+        **open_pos_day_collections(),
         client=_FakeClient(),
         pos_transactions=InMemoryCollection(),
         pos_orders=InMemoryCollection(),

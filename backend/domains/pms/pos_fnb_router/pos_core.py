@@ -718,9 +718,9 @@ async def create_pos_transaction(
         "created_at": datetime.now(UTC).isoformat(),
     }
 
-    transaction_copy = transaction.copy()
-    await db.pos_transactions.insert_one(transaction_copy)
-    return transaction
+    from domains.pms.pos_fnb.day_write_guard import persist_direct_transaction
+
+    return await persist_direct_transaction(db, current_user.tenant_id, transaction)
 
 
 # ── POST /pos/check-split ──

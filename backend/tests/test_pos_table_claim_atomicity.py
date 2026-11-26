@@ -6,6 +6,7 @@ import pytest
 
 from domains.pms.pos_fnb import pos_fnb_service_v2 as pos_service_module
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2, PosTableUnavailable
+from tests.pos_day_fixture_helpers import open_pos_day_collections
 
 
 class _AlreadyClaimedTable:
@@ -45,6 +46,7 @@ async def test_losing_table_claim_creates_no_order_or_kitchen_rows(monkeypatch):
     orders = _Recorder()
     kitchen = _Recorder()
     service._db = SimpleNamespace(
+        **open_pos_day_collections(),
         client=object(),
         table_layouts=_AlreadyClaimedTable(),
         pos_orders=orders,
@@ -57,7 +59,7 @@ async def test_losing_table_claim_creates_no_order_or_kitchen_rows(monkeypatch):
             tenant_id="tenant-1",
             outlet_id="outlet-1",
             table_number="12",
-            order_doc={"id": "order-1", "created_at": "2026-10-09T00:00:00+00:00"},
+            order_doc={"business_date": "2026-10-09", "id": "order-1", "created_at": "2026-10-09T00:00:00+00:00"},
             kitchen_docs=[{"id": "kitchen-1"}],
         )
 
@@ -72,6 +74,7 @@ async def test_successful_claim_persists_the_order_and_all_kitchen_rows(monkeypa
     orders = _Recorder()
     kitchen = _Recorder()
     service._db = SimpleNamespace(
+        **open_pos_day_collections(),
         client=object(),
         table_layouts=table,
         pos_orders=orders,
@@ -83,7 +86,7 @@ async def test_successful_claim_persists_the_order_and_all_kitchen_rows(monkeypa
         tenant_id="tenant-1",
         outlet_id="outlet-1",
         table_number="12",
-        order_doc={"id": "order-1", "created_at": "2026-10-09T00:00:00+00:00"},
+        order_doc={"business_date": "2026-10-09", "id": "order-1", "created_at": "2026-10-09T00:00:00+00:00"},
         kitchen_docs=[{"id": "kitchen-1"}, {"id": "kitchen-2"}],
     )
 

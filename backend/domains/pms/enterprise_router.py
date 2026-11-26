@@ -603,6 +603,12 @@ async def _pos_business_date(tenant_id: str, session=None) -> str:
 
 async def _checked_pos_preview(tenant_id, day, session=None):
     session_args = {"session": session} if session is not None else {}
+    # Legacy open tabs are not settled sales, but must not disappear from the
+    # day-close admission check. Undated tabs require explicit reconciliation.
+    if await db.pos_transactions.find_one({"tenant_id": tenant_id, "status": {"$in": ["open", "pending", "draft"]},
+        "$or": [{"business_date": day}, {"business_date": {"$in": [None, ""]}, "transaction_date": day},
+                {"business_date": {"$in": [None, ""]}, "transaction_date": {"$in": [None, ""]}}]}, **session_args):
+        raise HTTPException(409, detail="Önce iş gününün açık eski POS adisyonlarını mutabık hale getirin")
     if await db.pos_orders.find_one(
         {
             "tenant_id": tenant_id,
@@ -642,6 +648,9 @@ async def create_pos_closure(
         raise HTTPException(422, detail="Kapanış gerekçesi gereklidir")
 
     async def commit(session):
+        from domains.pms.pos_fnb.day_write_guard import touch_day_lock
+
+        await touch_day_lock(db, tenant_id, day, session)
         current_day = await _pos_business_date(tenant_id, session=session)
         if day > current_day:
             raise HTTPException(409, detail="Gelecek iş günü kapatılamaz")

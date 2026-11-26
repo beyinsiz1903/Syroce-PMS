@@ -110,7 +110,9 @@ class PosFnbService:
             "processed_by": ctx.actor_id,
             "created_at": datetime.now(UTC).isoformat(),
         }
-        await self._db.pos_transactions.insert_one(txn.copy())
+        from domains.pms.pos_fnb.day_write_guard import persist_direct_transaction
+
+        txn = await persist_direct_transaction(self._db, ctx.tenant_id, txn)
         return ServiceResult.success(txn)
 
     # ------------------------------------------------------------------

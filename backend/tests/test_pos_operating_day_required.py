@@ -5,8 +5,8 @@ import pytest
 from fastapi import HTTPException
 
 from tests.test_pos_final_consistency_replica import ctx, menu, paid
-
-pytest_plugins = ("tests.test_pos_final_consistency_replica",)
+from tests.test_pos_final_consistency_replica import db as db
+from tests.test_pos_final_consistency_replica import service as service
 
 
 @pytest.mark.asyncio
