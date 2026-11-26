@@ -244,7 +244,7 @@ async def test_transfer_booking_single_slot_charge(_patch):
     _seed_resource(_patch, "V1", "VIP Araç", "transfer_vehicle", 200.0)
 
     res = await _create_booking(
-        tr.BookingIn(resource_id="V1", room_number="101",
+        tr.BookingIn(vat_rate=20, resource_id="V1", room_number="101",
                      pickup_at=datetime(2026, 7, 1, 14, 30)),
         _user("concierge"),
     )
@@ -261,13 +261,13 @@ async def test_double_booking_overlap_rejected(_patch):
     _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
 
     await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=2),
+        tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-01", num_days=2),
         _user("front_desk"),
     )
     # Overlapping second booking (2026-07-02 collides) -> 409, nothing claimed.
     with pytest.raises(HTTPException) as exc:
         await _create_booking(
-            tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-02", num_days=2),
+            tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-02", num_days=2),
             _user("front_desk"),
         )
     assert exc.value.status_code == 409
@@ -282,11 +282,11 @@ async def test_non_overlapping_same_resource_ok(_patch):
     _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
 
     await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
+        tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
         _user("front_desk"),
     )
     res2 = await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-02", num_days=1),
+        tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-02", num_days=1),
         _user("front_desk"),
     )
     assert res2["folio_charge"]["charged"] is True
@@ -303,7 +303,7 @@ async def test_no_open_folio_routes_to_late_charge(_patch):
     _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
 
     res = await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=2),
+        tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-01", num_days=2),
         _user("front_desk"),
     )
     assert res["folio_charge"]["charged"] is False
@@ -322,7 +322,7 @@ async def test_no_active_booking_fails_closed(_patch):
     # No PMS booking -> no active guest.
     _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
     res = await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
+        tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
         _user("front_desk"),
     )
     assert res["folio_charge"]["charged"] is False
@@ -342,7 +342,7 @@ async def test_idempotency_key_returns_prior_no_recharge(_patch):
     _seed_open_folio(_patch)
     _seed_resource(_patch, "V1", "VIP Araç", "transfer_vehicle", 200.0)
 
-    payload = tr.BookingIn(
+    payload = tr.BookingIn(vat_rate=20,
         resource_id="V1", room_number="101",
         pickup_at=datetime(2026, 7, 1, 9, 0), idempotency_key="K1",
     )
@@ -363,7 +363,7 @@ async def test_cancel_releases_slot_locks(_patch):
     _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
 
     res = await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=2),
+        tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-01", num_days=2),
         _user("front_desk"),
     )
     assert len(_patch.transport_slot_locks.docs) == 2
@@ -378,7 +378,7 @@ async def test_cancel_releases_slot_locks(_patch):
 
     # Slot now re-bookable.
     res2 = await _create_booking(
-        tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
+        tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
         _user("front_desk"),
     )
     assert res2["folio_charge"]["charged"] is True
@@ -388,7 +388,7 @@ async def test_booking_rbac_denies_guest(_patch):
     _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
     with pytest.raises(HTTPException) as exc:
         await _create_booking(
-            tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
+            tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1),
             _user("guest"),
         )
     assert exc.value.status_code == 403
@@ -399,7 +399,7 @@ async def test_missing_schedule_rejected(_patch):
     # parking without start_date/num_days -> 400
     with pytest.raises(HTTPException) as exc:
         await _create_booking(
-            tr.BookingIn(resource_id="P1", room_number="101"), _user("front_desk")
+            tr.BookingIn(vat_rate=20, resource_id="P1", room_number="101"), _user("front_desk")
         )
     assert exc.value.status_code == 400
 
@@ -488,3 +488,26 @@ async def test_parking_analytics_summarises_operations(_patch):
     }
     assert result["valet"]["active"] == 1
     assert result["lpr"] == {"events": 2, "entries": 1, "exits": 1}
+
+
+async def test_missing_service_vat_rejects_guest_booking_before_sources_or_locks(_patch):
+    _seed_room(_patch)
+    _seed_booking(_patch)
+    _seed_open_folio(_patch)
+    _seed_resource(_patch, "P1", "Otopark A", "parking_spot", 50.0)
+    before = len(_patch.transport_bookings.docs)
+    with pytest.raises(HTTPException) as error:
+        await _create_booking(tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", num_days=1), _user("front_desk"))
+    assert error.value.status_code == 422 and "KDV" in error.value.detail
+    assert len(_patch.transport_bookings.docs) == before
+    assert not _patch.transport_slot_locks.docs
+
+
+async def test_existing_legacy_booking_replay_does_not_infer_or_rewrite_tax(_patch):
+    prior = {"id": tr._stable_booking_id(TENANT, "legacy-no-tax"), "tenant_id": TENANT, "total": 50}
+    _patch.transport_bookings.docs.append(dict(prior))
+    response = await _create_booking(tr.BookingIn(resource_id="P1", room_number="101", start_date="2026-07-01", idempotency_key="legacy-no-tax"), _user("front_desk"))
+    assert response["idempotent"] is True
+    assert response["booking"] == prior
+    assert "vat_rate" not in _patch.transport_bookings.docs[0]
+    assert not _patch.transport_slot_locks.docs
