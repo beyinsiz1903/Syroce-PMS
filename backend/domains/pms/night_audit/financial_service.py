@@ -220,6 +220,21 @@ class FinancialService:
         for fol in open_folios_list:
             fol["balance"] = round(fol.get("balance", 0), 2)
 
+        # Unknown tax in one source invalidates net/tax for that currency,
+        # without discarding its known gross amount or other currencies.
+        unknown_currencies = set()
+        for doc in charge_docs:
+            group_id = doc.get("_id")
+            code = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
+            cat = (group_id.get("category") if isinstance(group_id, dict) else group_id) or "other"
+            entry = revenue_by_category[cat]
+            verified = entry.setdefault("verified_amount_by_currency", dict(entry["amount_by_currency"]))
+            if doc.get("tax_unknown_count", 0):
+                unknown_currencies.add(code)
+                verified[code] = None
+        verified_revenue = {code: None if code in unknown_currencies else value for code, value in revenue_by_currency.items()}
+        verified_tax = {code: None if code in unknown_currencies else value for code, value in tax_by_currency.items()}
+
         for entry in revenue_by_category.values():
             for key in ("amount", "tax", "total"):
                 entry[key] = _legacy_scalar(entry[key], entry[key + "_by_currency"])
@@ -235,6 +250,7 @@ class FinancialService:
                 "revenue": {
                     "total": _legacy_scalar(total_revenue, revenue_by_currency),
                     "total_by_currency": revenue_by_currency,
+                    "verified_total_by_currency": verified_revenue,
                     "total_with_tax": _legacy_scalar(total_revenue + total_tax, revenue_with_tax_by_currency),
                     "total_with_tax_by_currency": revenue_with_tax_by_currency,
                     "by_category": revenue_by_category,
@@ -243,6 +259,7 @@ class FinancialService:
                 "tax": {
                     "total": _legacy_scalar(total_tax, tax_by_currency),
                     "total_by_currency": tax_by_currency,
+                    "verified_total_by_currency": verified_tax,
                     "breakdown": tax_breakdown,
                 },
                 "payments": {

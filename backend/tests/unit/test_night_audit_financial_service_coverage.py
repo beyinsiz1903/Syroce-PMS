@@ -124,11 +124,12 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
     assert result.data["revenue"] == {
         "total": 1050.12,
         "total_by_currency": {"TRY": 1050.12},
+        "verified_total_by_currency": {"TRY": 1050.12},
         "total_with_tax": 1155.14,
         "total_with_tax_by_currency": {"TRY": 1155.14},
         "by_category": {
-            "room": {"amount": 1000.12, "tax": 100.01, "total": 1100.14, "count": 2, "amount_by_currency": {"TRY": 1000.12}, "tax_by_currency": {"TRY": 100.01}, "total_by_currency": {"TRY": 1100.14}},
-            "other": {"amount": 50.0, "tax": 5.0, "total": 55.0, "count": 1, "amount_by_currency": {"TRY": 50.0}, "tax_by_currency": {"TRY": 5.0}, "total_by_currency": {"TRY": 55.0}},
+            "room": {"amount": 1000.12, "tax": 100.01, "total": 1100.14, "count": 2, "amount_by_currency": {"TRY": 1000.12}, "tax_by_currency": {"TRY": 100.01}, "total_by_currency": {"TRY": 1100.14}, "verified_amount_by_currency": {"TRY": 1000.12}},
+            "other": {"amount": 50.0, "tax": 5.0, "total": 55.0, "count": 1, "amount_by_currency": {"TRY": 50.0}, "tax_by_currency": {"TRY": 5.0}, "total_by_currency": {"TRY": 55.0}, "verified_amount_by_currency": {"TRY": 50.0}},
         },
         "charges_count": 3,
     }

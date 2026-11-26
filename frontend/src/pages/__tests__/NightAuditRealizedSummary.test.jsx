@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
@@ -37,4 +37,21 @@ it.each([null, { ...simulation, status: 'completed' }])('does not promote missin
  await waitFor(() => expect(card('Son Oda Geliri')).toHaveTextContent('Tamamlanan gerçek gün sonu bulunamadı'));
  expect(card('Son Oda Geliri')).not.toHaveTextContent('4.324,32');
  expect(card('Son Tahsilat')).not.toHaveTextContent('4.900,00');
+});
+
+it('waits for history before selecting finance day instead of racing current day', async () => {
+ const normal = get.getMockImplementation();
+ let releaseHistory;
+ const ready = new Promise(resolve => { releaseHistory = resolve; });
+ get.mockImplementation(async (url, config) => {
+  if (url === '/night-audit/history') await ready;
+  return normal(url, config);
+ });
+ mount();
+ await waitFor(() => expect(get).toHaveBeenCalledWith('/night-audit/business-date'));
+ await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+ expect(get.mock.calls.filter(([url]) => url === '/night-audit/financial-summary')).toEqual([]);
+ await act(async () => { releaseHistory(); });
+ await waitFor(() => expect(get).toHaveBeenCalledWith('/night-audit/financial-summary', { params: { date: '2026-11-11' } }));
+ expect(get.mock.calls.filter(([url]) => url === '/night-audit/financial-summary').every(([, config]) => config.params.date === '2026-11-11')).toBe(true);
 });

@@ -307,3 +307,22 @@ async def test_missing_tax_component_evidence_stays_unknown(ledger_db, tax_field
         OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin"), "2026-10-25")).data
     assert result["tax"]["breakdown"]["by_currency"]["TRY"] == expected
     assert result["tax_breakdown_incomplete_count"] == 1
+
+
+async def test_summary_does_not_certify_unknown_tax_as_zero_in_one_currency(ledger_db):
+    day = "2026-11-12"
+    await ledger_db.folio_charges.insert_many([
+        {"tenant_id": "qa", "id": "legacy", "business_date": day,
+         "total": 380, "currency": "TRY", "charge_category": "minibar"},
+        {"tenant_id": "qa", "id": "known", "business_date": day,
+         "total": 30, "amount": 25, "tax_amount": 5, "currency": "USD",
+         "charge_category": "spa", "tax_breakdown": {"vat": 5}},
+    ])
+    service = FinancialService(); service._db = ledger_db
+    result = (await service.get_daily_financial_summary(
+        OperationContext(tenant_id="qa", actor_id="qa", actor_role="admin"), day)).data
+    assert result["revenue"]["verified_total_by_currency"] == {"TRY": None, "USD": 25}
+    assert result["tax"]["verified_total_by_currency"] == {"TRY": None, "USD": 5}
+    assert result["revenue"]["by_category"]["minibar"]["verified_amount_by_currency"] == {"TRY": None}
+    assert result["revenue"]["total_with_tax_by_currency"] == {"TRY": 380, "USD": 30}
+    assert result["net_position_by_currency"] == {"TRY": 380, "USD": 30}

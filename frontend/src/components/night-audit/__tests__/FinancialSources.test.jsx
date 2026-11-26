@@ -37,3 +37,20 @@ it('warns when aggregate tax is known but its component split is not', () => {
   expect(screen.getByTestId('open-folios-card')).toHaveTextContent('TRY');
   expect(screen.getByTestId('open-folios-card')).toHaveTextContent('USD');
 });
+
+
+it('preserves unknown net/tax per currency without hiding verified USD or gross position', () => {
+  render(<Tabs value="financial"><FinancialTab categoryLabels={{}} paymentMethodLabels={{}}
+    StatCard={({ value, label }) => <div data-testid={label}>{value}</div>}
+    financialSummary={{ business_date: '2026-11-12', tax_unknown_count: 4,
+      revenue: { total_by_currency: { TRY: 1493.33, USD: 25 }, verified_total_by_currency: { TRY: null, USD: 25 },
+        by_category: { minibar: { count: 5, amount_by_currency: { TRY: 360 }, verified_amount_by_currency: { TRY: null } } } },
+      tax: { total_by_currency: { TRY: 211.67, USD: 5 }, verified_total_by_currency: { TRY: null, USD: 5 } },
+      payments: { by_method: { cash: { amount: 477.01, amount_by_currency: { TRY: 477.01 }, count: 8 } } }, open_folios: {}, net_position_by_currency: { TRY: 1227.99, USD: 30 } }} /></Tabs>);
+  expect(screen.getByTestId('cm.components_nightaudit_tabs_FinancialTab.toplam_gelir')).toHaveTextContent('Doğrulanamadı (TRY)');
+  expect(screen.getByTestId('cm.components_nightaudit_tabs_FinancialTab.toplam_gelir')).toHaveTextContent('25,00');
+  expect(screen.getByTestId('cm.components_nightaudit_tabs_FinancialTab.vergi_toplami')).toHaveTextContent('Doğrulanamadı (TRY)');
+  expect(screen.getByTestId('revenue-breakdown-card')).not.toHaveTextContent('360,00');
+  expect(screen.getByTestId('payment-methods-card')).toHaveTextContent('477,01');
+  expect(screen.getByText(/Rapor iş günü:/).parentElement).not.toHaveTextContent('Son tamamlanan');
+});
