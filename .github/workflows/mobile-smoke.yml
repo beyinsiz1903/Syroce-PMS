@@ -225,11 +225,12 @@ jobs:
         timeout-minutes: 8
         id: boot
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           xcrun simctl list devices --json > /tmp/sim.json
           UDID=$(node -e '
             const d = JSON.parse(require("fs").readFileSync("/tmp/sim.json","utf8")).devices;
             for (const r of Object.keys(d)) {
+              if (!r.endsWith(process.env.IOS_RUNTIME)) continue;
               for (const dev of d[r]) {
                 if (dev.name === process.env.IOS_DEVICE && dev.isAvailable) {
                   process.stdout.write(dev.udid); process.exit(0);
