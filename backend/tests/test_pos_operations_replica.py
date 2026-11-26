@@ -51,7 +51,7 @@ async def setup_checkout(db, *, order_id="order1", points=10):
     quote = await quote_checkout(db, "t1", order, options)
     txn = {"id": "sale-" + order_id, "tenant_id": "t1", "order_id": order_id, "status": "completed",
            "checkout_quote": quote, "total_amount": quote["payable"], "payment_method": "cash",
-           "created_at": "2026-10-09", "processed_by": "u1",
+           "created_at": "2026-10-09", "transaction_date": "2026-10-09", "processed_by": "u1",
            "order_status_before_payment": "pending", "payment_status_before_payment": "unpaid",
            "order_snapshot": {"grand_total": 100, "order_items": []}}
     service = PosFnbServiceV2()
@@ -71,7 +71,7 @@ async def test_checkout_coupon_loyalty_fx_and_refund_share_one_sale(db):
     for index, amount in enumerate([40, 49]):
         await service._persist_refund_and_state(
             tenant_id="t1", order_id=order["id"], sale_id=txn["id"], paid=89, refund_amount=amount,
-            refund_doc={"id": f"refund{index}", "tenant_id": "t1", "order_id": order["id"], "created_at": "2026-10-09"},
+            refund_doc={"id": f"refund{index}", "tenant_id": "t1", "order_id": order["id"], "created_at": "2026-10-09", "transaction_date": "2026-10-09"},
         )
     assert (await db.loyalty_pos_accounts.find_one({}))["balance"] == 100
     assert (await db.pos_orders.find_one({}))["stock_restore_status"] == "pending"
