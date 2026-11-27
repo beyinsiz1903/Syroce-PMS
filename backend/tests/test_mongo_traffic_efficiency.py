@@ -50,7 +50,11 @@ async def test_worker_processes_new_work_after_idle(monkeypatch):
         if len(delays) == 3:
             raise asyncio.CancelledError()
 
-    monkeypatch.setattr(worker.asyncio, "sleep", sleep)
+    shared_sleep = asyncio.sleep
+    # Do not patch the process-wide asyncio module: Redis/background tasks
+    # share it and can consume the fake cancellation or spin without yielding.
+    monkeypatch.setattr(worker, "asyncio", SimpleNamespace(sleep=sleep))
+    assert asyncio.sleep is shared_sleep, "Worker sleep stub must not change shared event-loop scheduling"
     with pytest.raises(asyncio.CancelledError):
         await worker.ari_push_worker_loop()
     assert delays == [10, 20, 5]
