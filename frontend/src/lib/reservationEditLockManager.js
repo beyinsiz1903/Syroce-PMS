@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 export const RESERVATION_EDIT_LOCK_LEASE_SECONDS = 60;
 export const RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS = 20;
 export const RESERVATION_EDIT_LOCK_HEADER = 'X-Reservation-Lock-ID';
+export const RESERVATION_EDIT_LOCK_CHANGED_EVENT = 'syroce:reservation-edit-lock-changed';
 
 const VIEW_RELEASE_GRACE_MS = 15000;
 const MANAGER_KEY = '__syroceReservationEditLockManagerV1';
@@ -57,6 +58,12 @@ function createManager() {
   let viewMonitorTimer = null;
   let acquirePromise = null;
   let lastBlockedToastAt = 0;
+  const notify = (lease) => {
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(
+      RESERVATION_EDIT_LOCK_CHANGED_EVENT,
+      { detail: { bookingId: lease.bookingId, status: lease.status } },
+    ));
+  };
 
   const clearHeartbeat = () => {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
@@ -153,6 +160,7 @@ function createManager() {
       } catch (_error) {
         if (current === owned) {
           current.status = 'lost';
+          notify(current);
           clearHeartbeat();
           toast.error('Rezervasyon düzenleme kilidi kaybedildi. Pencere salt okunur kaldı.');
         }
@@ -192,6 +200,7 @@ function createManager() {
       .then((response) => {
         if (current !== owned) return null;
         owned.status = 'acquired';
+        notify(owned);
         owned.expiresAt = response?.data?.expires_at || null;
         startHeartbeat();
         startViewMonitor();
@@ -200,6 +209,7 @@ function createManager() {
       .catch((error) => {
         if (current === owned) {
           owned.status = error?.response?.status === 409 ? 'blocked' : 'lost';
+          notify(owned);
           startViewMonitor();
           const now = Date.now();
           if (now - lastBlockedToastAt > 5000) {

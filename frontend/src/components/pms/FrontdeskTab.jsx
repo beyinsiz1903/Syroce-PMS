@@ -855,6 +855,10 @@ const FrontdeskTab = ({
                       {booking.status === 'confirmed' && (
                         <Button size="sm" className={`h-9 ${isDirty ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#C09D63] hover:bg-[#B08D55]'} text-white`}
                           onClick={async () => {
+                            if (setReservationDetailId) {
+                              setReservationDetailId(booking.id);
+                              return;
+                            }
                             if (isDirty) {
                               if (!await confirmDialog({ message: tf('dirtyWarning'), variant: 'danger' })) return;
                             }
