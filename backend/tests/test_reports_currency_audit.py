@@ -46,7 +46,7 @@ USER = SimpleNamespace(tenant_id="tenant-A", role="admin")
 
 @pytest.fixture
 def report_db(monkeypatch):
-    db = SimpleNamespace(**{key: Collection() for key in ("bookings", "folios", "companies", "payments", "folio_charges", "accounting_invoices", "purchase_orders", "extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions", "cari_accounts", "cari_transactions", "city_ledger_accounts", "city_ledger_transactions")})
+    db = SimpleNamespace(**{key: Collection() for key in ("bookings", "folios", "companies", "payments", "folio_charges", "accounting_invoices", "purchase_orders", "extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions", "cari_accounts", "cari_transactions", "city_ledger_accounts", "city_ledger_transactions", "currency_rates", "gl_journal_entries")})
     monkeypatch.setattr(reports, "db", db)
     monkeypatch.setattr(reports, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-15"}))
     monkeypatch.setattr(reports, "_enforce", lambda *_: None)
@@ -156,10 +156,11 @@ async def test_company_aging_separates_two_currencies_for_one_company(report_db,
     monkeypatch.setattr(reports, "folio_snapshots", AsyncMock(return_value={"f1": {"currency": "TRY", "balance_by_currency": {"TRY": 100}}, "f2": {"currency": "EUR", "balance_by_currency": {"EUR": 20}}}))
     result = await reports._compute_company_aging("tenant-A")
     assert result["total_ar"] is None
-    assert result["total_ar_by_currency"] == {"TRY": 100, "EUR": 20}
-    assert result["company_count"] == 1 and len(result["companies"]) == 2
+    assert result["total_ar_by_currency"] == {"TRY": None}
+    assert result["valuation_complete"] is False
+    assert result["company_count"] == 1 and len(result["companies"]) == 1
     wb = await workbook(await reports.export_company_aging_excel(USER))
-    assert {row[2] for row in list(wb.active.values)[2:]} == {"TRY", "EUR"}
+    assert {row[2] for row in list(wb.active.values)[2:] if row[0] in {"Company", "TOTAL"}} == {"TRY"}
 
 
 async def test_company_aging_cannot_export_an_incomplete_balance_as_success(report_db, monkeypatch):
@@ -176,7 +177,8 @@ async def test_company_aging_keeps_debt_even_when_company_metadata_is_missing(re
     report_db.folios.rows = [{"id": "f1", "company_id": "deleted-company", "currency": "EUR"}]
     monkeypatch.setattr(reports, "folio_snapshots", AsyncMock(return_value={"f1": {"currency": "EUR", "balance_by_currency": {"EUR": 42.5}}}))
     result = await reports._compute_company_aging("tenant-A")
-    assert result["total_ar_by_currency"] == {"EUR": 42.5}
+    assert result["total_ar_by_currency"] == {"TRY": None}
+    assert result["valuation_complete"] is False
     assert result["companies"][0]["company_name"] == "Şirket kaydı bulunamadı"
 
 
@@ -187,9 +189,10 @@ async def test_finance_snapshot_never_mixes_debt_or_substitutes_partial_invoice_
     monkeypatch.setattr(reports, "folio_snapshots", AsyncMock(return_value={"f1": {"currency": "TRY", "balance_by_currency": {"TRY": 100}}, "f2": {"currency": "EUR", "balance_by_currency": {"EUR": 20}}}))
     result = await reports.get_finance_snapshot.__wrapped__(USER)
     assert result["pending_ar"]["total"] is None
-    assert result["pending_ar"]["by_currency"]["EUR"]["total"] == 20
+    assert result["pending_ar"]["by_currency"]["TRY"]["total"] is None
+    assert result["pending_ar"]["complete"] is False
     assert result["accounting_invoices"]["pending_total"] is None
-    assert result["accounting_invoices"]["by_currency"] == {"TRY": 60, "EUR": 15}
+    assert result["accounting_invoices"]["by_currency"] == {"TRY": None}
     assert result["mtd_collections"]["collection_rate_percentage"] is None
     assert not result["mtd_collections"]["collection_rate_complete"]
 
@@ -421,13 +424,13 @@ async def test_finance_refresh_bypasses_stale_json_cache(report_db, monkeypatch)
     result = await reports.get_finance_snapshot(current_user=USER, _nocache=True)
     assert result["report_date"] == "2026-10-15"
     fake_cache.get.assert_not_called()
-    assert ":report_finance_snapshot_v4:" in fake_cache.set.call_args.args[0]
+    assert ":report_finance_snapshot_property_v5:" in fake_cache.set.call_args.args[0]
 
 
 @pytest.mark.parametrize("handler,kwargs,prefix", [
     ("get_market_segment_report", {"start_date": "2026-10-01", "end_date": "2026-10-15"}, "report_market_segment_v4"),
-    ("get_company_aging_report", {}, "report_company_aging_v4"),
-    ("get_finance_snapshot", {}, "report_finance_snapshot_v4"),
+    ("get_company_aging_report", {}, "report_company_aging_property_v5"),
+    ("get_finance_snapshot", {}, "report_finance_snapshot_property_v5"),
     ("get_cost_summary", {}, "report_cost_summary_v3"),
     ("get_mtd_cost_summary", {}, "finance_mtd_cost_summary_v3"),
 ])

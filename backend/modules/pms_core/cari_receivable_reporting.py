@@ -13,7 +13,7 @@ DEBITS = {"charge", "transfer_in"}
 CREDITS = {"payment", "adjustment", "transfer_out"}
 
 
-def allocated_chunks(rows, code, native, opening):
+def allocated_chunks(rows, code, native, opening, *, include_sources=False):
     """Age only explicit, currency/cent-exact complete credit allocations.
 
     No FIFO inference here. A single missing, foreign, excessive or duplicate
@@ -48,7 +48,7 @@ def allocated_chunks(rows, code, native, opening):
             total += amount
         if total != money(row["amount"]):
             return None
-    return [(value, report_day(debits[key].get("due_date"))) for key, value in left.items() if value > 0]
+    return [(value, report_day(debits[key].get("due_date")), debits[key]) if include_sources else (value, report_day(debits[key].get("due_date"))) for key, value in left.items() if value > 0]
 
 
 def account_id(account):
@@ -73,7 +73,7 @@ def account_positions(accounts, transactions, *, source, fallback_currency, toda
         seen.add(key)
         aliases = {str(account[k]) for k in ("id", "account_id", "legacy_id", "_id") if account.get(k) is not None}
         rows = [row for alias in aliases for row in grouped.get(alias, [])]
-        by_currency, credits, dates = defaultdict(list), set(), defaultdict(list)
+        by_currency, credits, dates, source_records = defaultdict(list), set(), defaultdict(list), defaultdict(list)
         source_ids = set()
         try:
             native = currency_code(account.get("currency"), fallback_currency)
@@ -81,6 +81,7 @@ def account_positions(accounts, transactions, *, source, fallback_currency, toda
             if opening:
                 by_currency[native].append(opening)
                 dates[native].append(None)
+                source_records[native].append({"id": public_key+":opening", "amount": opening, "currency": native, "business_date": account.get("opening_balance_date")})
             for row in rows:
                 if row.get("voided") or row.get("deleted") or row.get("status") not in {None, "completed", "posted"}:
                     continue
@@ -94,6 +95,7 @@ def account_positions(accounts, transactions, *, source, fallback_currency, toda
                     raise ValueError("Unknown account transaction amount/type")
                 code = currency_code(row.get("currency") or native)
                 by_currency[code].append(amount if kind in DEBITS else -amount)
+                source_records[code].append(row if kind in DEBITS else None)
                 if kind in CREDITS:
                     credits.add(code)
                 else:
@@ -123,15 +125,30 @@ def account_positions(accounts, transactions, *, source, fallback_currency, toda
                 # Charge-only sources can be aged independently. Once an
                 # unallocated credit exists, claiming an invoice age is unsafe.
                 age_unknown = code in credits or not anchors or any(day is None for day in anchors) or public_key in failures
-                allocated = allocated_chunks(rows, code, native, opening) if code in credits and public_key not in failures else None
-                if allocated is not None and all(anchor is not None for _, anchor in allocated) and sum((v for v, _ in allocated), money(0)) == balance:
+                allocated = allocated_chunks(rows, code, native, opening, include_sources=True) if code in credits and public_key not in failures else None
+                if allocated is not None and all(anchor is not None for _, anchor, _ in allocated) and sum((v for v, _, _ in allocated), money(0)) == balance:
                     chunks = allocated
                 elif age_unknown:
-                    chunks = [(balance, None)]
+                    chunks = [(balance, None, None)]
                 else:
-                    chunks = [(value, anchor) for value, anchor in zip(by_currency[code], anchors, strict=True) if value > 0]
-                for index, (value, anchor) in enumerate(chunks):
-                    positions.append({"currency": code, "balance": rounded(value), "source": source,
+                    chunks = [(value, anchor, source_row) for value, anchor, source_row in zip(by_currency[code], anchors, source_records[code], strict=True) if value > 0]
+                for index, (value, anchor, allocation_source) in enumerate(chunks):
+                    source_fields = ("id", "currency", "amount", "business_date", "transaction_date", "created_at", "posted_at", "reporting_amount", "reporting_currency", "exchange_rate_date")
+                    candidates = [{**{field: row[field] for field in source_fields if field in row}, "currency": currency_code(row.get("currency"), native)}
+                        for row in rows if not row.get("voided") and not row.get("deleted") and row.get("status") in {None, "completed", "posted"}
+                        and row.get("transaction_type") in DEBITS and currency_code(row.get("currency"), native) == code]
+                    if opening and code == native:
+                        candidates.append({"id": public_key+":opening", "currency": native, "amount": opening, "business_date": account.get("opening_balance_date")})
+                    proof = {}
+                    if allocation_source is not None:
+                        proof["valuation_parts"] = [{"amount": rounded(value), "source": {field: allocation_source[field] for field in source_fields if field in allocation_source}}]
+                    elif allocated is not None and sum((part[0] for part in allocated), money(0)) == value:
+                        proof["valuation_parts"] = [{"amount": rounded(part_value), "source": {field: source_row[field] for field in source_fields if field in source_row}} for part_value, _, source_row in allocated]
+                    elif sum((money(row["amount"]) for row in candidates), money(0)) == value:
+                        proof["valuation_parts"] = [{"amount": row["amount"], "source": row} for row in candidates]
+                    else:
+                        proof["valuation_candidates"] = candidates
+                    positions.append({"currency": code, "balance": rounded(value), "source": source, **proof,
                         "account_id": key, "account_key": public_key, "company_id": account.get("company_id"),
                         "company_name": name, "corporate_code": account.get("corporate_code") or key,
                         "age_unknown": anchor is None, "age_days": max((today - anchor).days, 0) if anchor else None,

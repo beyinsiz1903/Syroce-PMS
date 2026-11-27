@@ -40,12 +40,13 @@ async def test_company_reports_do_not_cancel_euro_debt_with_lira_credit(ledger_d
     await ledger_db.payments.insert_one({"tenant_id": "A", "folio_id": "f", "amount": 200, "currency": "TRY", "status": "paid"})
     aging = await reports._compute_company_aging("A")
     snapshot = await reports.get_finance_snapshot.__wrapped__(USER)
-    assert aging["total_ar_by_currency"] == {"EUR": 100}
+    assert aging["total_ar_by_currency"] == {"TRY": None}
     assert aging["companies"][0]["company_name"] == "Company"
-    assert snapshot["pending_ar"]["by_currency"]["EUR"]["total"] == 100
-    assert snapshot["pending_ar"]["total"] == aging["total_ar"] == 100
+    assert snapshot["pending_ar"]["by_currency"]["TRY"]["total"] is None
+    assert snapshot["pending_ar"]["total"] is None
+    assert aging["total_ar"] is None  # no historical foreign valuation is invented
     sheet = (await workbook(await reports.export_company_aging_excel(USER))).active
-    assert list(sheet.values)[2][2:4] == ("EUR", 100)
+    assert list(sheet.values)[2][2:4] == ("TRY", None)
     # Read-only reporting must not weaken the operational settlement guard.
     with pytest.raises(HTTPException) as error:
         await utils.calculate_folio_balance("f", "A")
@@ -59,8 +60,8 @@ async def test_company_reports_resolve_legacy_currency_from_booking_before_prope
     await ledger_db.payments.insert_one({"tenant_id": "A", "folio_id": "f", "amount": 5, "status": "paid"})
     aging = await reports._compute_company_aging("A")
     snapshot = await reports.get_finance_snapshot.__wrapped__(USER)
-    assert aging["total_ar_by_currency"] == {"EUR": 25}
-    assert snapshot["pending_ar"]["by_currency"] == {"EUR": {"total": 25, "0-30_days": 0, "30-60_days": 0, "60_plus_days": 25, "overdue_invoices_count": 1}}
+    assert aging["total_ar_by_currency"] == {"TRY": None}
+    assert snapshot["pending_ar"]["by_currency"] == {"TRY": {"total": None, "0-30_days": 0, "30-60_days": 0, "60_plus_days": None, "overdue_invoices_count": 1}}
 
 
 async def test_missing_native_currency_uses_property_currency_not_the_try_reporting_unit(ledger_db, monkeypatch):
@@ -72,8 +73,9 @@ async def test_missing_native_currency_uses_property_currency_not_the_try_report
     await ledger_db.bookings.insert_one({"tenant_id": "A", "status": "confirmed", "check_in": "2026-10-07", "check_out": "2026-10-08", "total_amount": 20})
     snapshot = await reports.get_finance_snapshot.__wrapped__(USER)
     assert snapshot["accounting_invoices"]["by_currency"] == {"EUR": 15}
-    assert snapshot["todays_collections"]["amount"] == 0
-    assert snapshot["todays_collections"]["conversion_issue_count"] == 1
+    assert snapshot["todays_collections"]["amount"] == 5
+    assert snapshot["todays_collections"]["currency"] == "EUR"
+    assert snapshot["todays_collections"]["conversion_issue_count"] == 0
     assert snapshot["mtd_collections"]["revenue_by_currency"] == {"EUR": 30}
     costs = await reports._compute_mtd_cost_summary("A")
     assert costs["total_mtd_costs_by_currency"] == {"EUR": 10}
@@ -95,16 +97,17 @@ async def test_cost_summary_legacy_and_native_profit_reconcile_to_displayed_tota
 
 
 async def test_finance_snapshot_does_not_include_voided_or_deleted_pending_invoices(ledger_db):
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-10-07", "from_currency": "EUR", "to_currency": "TRY", "rate": 50})
     await ledger_db.accounting_invoices.insert_many(
         [
-            {"tenant_id": "A", "status": "partial", "total": 100, "amount_paid": 25, "currency": "EUR"},
+            {"tenant_id": "A", "status": "partial", "total": 100, "amount_paid": 25, "currency": "EUR", "invoice_date": "2026-10-07"},
             {"tenant_id": "A", "status": "pending", "total": 999, "currency": "TRY", "voided": True},
             {"tenant_id": "A", "status": "pending", "total": 999, "currency": "TRY", "deleted": True},
             {"tenant_id": "B", "status": "pending", "total": 999, "currency": "TRY"},
         ]
     )
     snapshot = await reports.get_finance_snapshot.__wrapped__(USER)
-    assert snapshot["accounting_invoices"] == {"pending_count": 1, "pending_total": 75, "by_currency": {"EUR": 75}}
+    assert snapshot["accounting_invoices"] == {"pending_count": 1, "pending_total": 3750, "by_currency": {"TRY": 3750}}
 
 
 async def test_mixed_currency_folio_is_counted_once_in_overdue_document_count(ledger_db):
@@ -121,7 +124,7 @@ async def test_invalid_ledger_record_cannot_be_presented_or_exported_as_a_comple
     await ledger_db.folio_charges.insert_many([{"tenant_id": "A", "folio_id": name, "total": value} for name, value in [("good", 25), ("bad", "invalid-legacy-amount")]])
     aging = await reports._compute_company_aging("A")
     snapshot = await reports.get_finance_snapshot.__wrapped__(USER)
-    assert aging["total_ar_by_currency"] == {"EUR": 25}
+    assert aging["total_ar_by_currency"] == {"TRY": None}
     for result in (aging, snapshot["pending_ar"]):
         assert result["complete"] is False
         assert result["failed_folio_ids"] == ["bad"]

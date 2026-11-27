@@ -8,13 +8,13 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }));
 
-function mockApi({ tasksFail = false, ar = {}, flash = {}, rooms = {} } = {}) {
+function mockApi({ tasksFail = false, ar = {}, flash = {}, rooms = {}, finance = {} } = {}) {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/reports/daily-flash')) return Promise.resolve({ data: { date: '2026-09-15', occupancy: { occupancy_rate: 75, occupied_rooms: 3, total_rooms: 4 },
       revenue: { total_revenue: 0, total_revenue_by_currency: { EUR: 25.75, TRY: 1000.49 }, adr_by_currency: { EUR: 12.25 }, rev_par_by_currency: { EUR: 6.25 } }, ...flash } });
     if (url === '/housekeeping/room-status') return Promise.resolve({ data: rooms });
     if (url.startsWith('/reports/finance-snapshot')) return Promise.resolve({ data: { pending_ar: { total: null, by_currency: { EUR: { total: 42.50 } }, ...ar },
-      todays_collections: { amount: 321.45, currency: 'TRY', payment_count: 1 }, mtd_collections: { amount: 1000.55, currency: 'TRY', collection_rate_percentage: 50 } } });
+      todays_collections: { amount: 321.45, currency: 'TRY', payment_count: 1 }, mtd_collections: { amount: 1000.55, currency: 'TRY', collection_rate_percentage: 50 }, ...finance } });
     if (url === '/pms/staff-tasks?limit=5') return tasksFail ? Promise.reject(new Error('forbidden')) : Promise.resolve({ data: { tasks: [{ id: '1', title: 'Oda kontrolü' }] } });
     return Promise.resolve({ data: {} });
   });
@@ -176,4 +176,13 @@ describe('MobileGM report response mapping', () => {
     expect(dialog.getByText('Direkt Rezervasyon:').parentElement).toHaveTextContent('100%');
     expect(dialog.getByText('4 gece')).toBeInTheDocument();
   });
+});
+
+
+it('does not present an unavailable historical collection valuation as zero', async () => {
+  mockApi({ finance: { todays_collections: { currency: 'TRY', amount: null, payment_count: 1 },
+    mtd_collections: { currency: 'TRY', amount: null, collection_rate_percentage: null } } });
+  render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+  await screen.findByText('75.0%');
+  expect(screen.getAllByText('Doğrulanamadı').length).toBeGreaterThanOrEqual(2);
 });
