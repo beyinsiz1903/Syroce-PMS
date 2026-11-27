@@ -115,6 +115,10 @@ export default function RevenueSection({ reportDate, reportPeriod = 'monthly' })
           {source.booking_id && <a className="underline" href={`/pms?edit=${encodeURIComponent(source.booking_id)}#bookings`}>Kaynak rezervasyonu aç</a>}
         </div>)}
       </details>}
+      {data.reconciliation?.concession_unknown_count > 0 && <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">
+        <p>{data.reconciliation.concession_unknown_count} ikram kaydının özgün net/vergi dökümü eksik; ara toplam ve indirim doğrulanamadı. İşlenmiş net gelir ve vergi bundan ayrı hesaplanır.</p>
+        <details><summary>İkramın özgün kaynakları</summary>{(data.reconciliation.concession_unknown_sources || []).map((source, index) => <p key={`${source.source}-${source.id}-${index}`}>{source.date} · {source.source} / {source.id || 'kimlik eksik'} · Liste bedeli: {moneyText(source.original_gross, source.currency)}</p>)}</details>
+      </div>}
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Dönem kırılımı</h3><label className="text-sm print:hidden">Grafik para birimi <select aria-label="Gelir grafik para birimi" className="rounded border bg-background p-2" value={currency} onChange={e => setCurrency(e.target.value)}>{(currencies.length ? currencies : ['TRY']).map(code => <option key={code}>{code}</option>)}</select></label></div>
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Günlük işlenen tutar · {currency}</CardTitle></CardHeader><CardContent>
         <ResponsiveContainer width="100%" height={230}><AreaChart data={trend}>

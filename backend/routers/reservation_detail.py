@@ -3308,6 +3308,13 @@ async def add_extra_charge_detail(
                 "gross": total, "net": float(net), "vat": float(vat), "basis": "manual_entry"})
     else:
         charge.update(net_amount=None, vat_amount=None, tax_amount=None, tax_evidence_status="missing")
+    if full_comp:
+        original_gross = Decimal(str(requested_total))
+        original_net = (original_gross / (1 + Decimal(str(data.vat_rate)) / 100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        charge["complimentary_original_tax_snapshot"] = {
+            "net_amount": float(original_net), "vat_amount": float(original_gross - original_net), "tax_amount": 0.0,
+            "basis": "explicit_manual_vat_rate", "vat_rate": data.vat_rate, "currency": booking_currency,
+        }
     # Report and cashier date filters are based on the hotel's open business
     # date, not the server's UTC calendar day.  Without this stamp a charge
     # posted after midnight (before night audit) disappears into the next

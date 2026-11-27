@@ -45,7 +45,8 @@ async def post_charge(database, tenant_id, appt, actor_id, actor_name, *, sessio
     code = str(booking.get('currency') or folio.get('currency') or 'TRY').upper()
     if str(appt.get('currency') or '').upper() != code or str(folio.get('currency') or code).upper() != code:
         raise HTTPException(409, 'SPA hizmeti ve folyo para birimi farklı; kur tahminiyle aktarım yapılamaz')
-    net, vat, gross, original = amounts(appt, booking.get('is_complimentary') and booking.get('complimentary_scope') == 'full')
+    full_comp = booking.get('is_complimentary') and booking.get('complimentary_scope') == 'full'
+    net, vat, gross, original = amounts(appt, full_comp)
     identity = 'spa:' + tenant_id + ':' + str(appt['id'])
     cid = str(uuid5(NAMESPACE_URL, identity))
     existing = await database.folio_charges.find_one({'tenant_id': tenant_id, 'id': cid}, {'_id': 0}, session=session)
@@ -63,6 +64,11 @@ async def post_charge(database, tenant_id, appt, actor_id, actor_name, *, sessio
         'currency': code, 'voided': False, 'source_spa_appointment_id': appt['id'],
         'posted_by': actor_name, 'posted_by_id': actor_id, 'date': appt['completed_at'], 'posted_at': appt['completed_at'],
         'is_complimentary': gross == 0, 'complimentary_original_amount': float(original) if gross == 0 else None}
+    if full_comp:
+        original_net, original_vat, _, _ = amounts(appt)
+        charge.update(complimentary_scope='full', complimentary_original_tax_snapshot={
+            'net_amount': float(original_net), 'vat_amount': float(original_vat), 'tax_amount': 0.0,
+            'basis': 'spa_appointment_tax_snapshot', 'currency': code})
     await stamp_open_business_date(database, tenant_id, charge)
     from modules.pms_core.automatic_folio_routing import route_new_charge
 
