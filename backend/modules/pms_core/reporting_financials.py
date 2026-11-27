@@ -43,6 +43,36 @@ def report_payment_period_match(first: str, last: str, *, date_fields=("payment_
     return query
 
 
+def report_payment_calendar_match(first: str, last: str, timezone_name: str) -> dict:
+    """Select an actual local calendar day, without changing PMS accounting dates.
+
+    Timestamp strings (including explicit offsets) and BSON dates are instants.
+    Legacy date-only values are already calendar dates. Keep the first populated
+    field authoritative so a later fallback cannot duplicate a transaction.
+    """
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        timezone_name = "Europe/Istanbul"
+    selected = None
+    for field in reversed(("processed_at", "payment_date", "date", "created_at")):
+        selected = {"$cond": [{"$in": [{"$ifNull": ["$" + field, None]}, [None, ""]]}, selected, "$" + field]}
+    as_string = {"$convert": {"input": "$$source", "to": "string", "onError": "", "onNull": ""}}
+    local_day = {"$cond": [
+        {"$regexMatch": {"input": as_string, "regex": r"^\d{4}-\d{2}-\d{2}$"}},
+        as_string,
+        {"$dateToString": {"date": {"$convert": {"input": "$$source", "to": "date", "onError": None, "onNull": None}},
+                           "format": "%Y-%m-%d", "timezone": timezone_name, "onNull": ""}},
+    ]}
+    return {"$expr": {"$let": {"vars": {"source": selected}, "in": {
+        "$let": {"vars": {"day": local_day}, "in": {"$and": [
+            {"$gte": ["$$day", first]}, {"$lte": ["$$day", last]},
+        ]}},
+    }}}}
+
+
 def report_payment_identity(payment: dict) -> tuple:
     """Return the real-world transaction identity used by report totals."""
     payment_type = str(payment.get("payment_type") or "payment").strip().lower()
