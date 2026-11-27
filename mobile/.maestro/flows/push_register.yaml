@@ -17,11 +17,11 @@ tags:
     permissions:
       notifications: deny
 
-# The current app enables push only on explicit opt-in. Open the frontdesk More screen instead of assuming a role-specific landing screen or old labels.
-- runFlow:
-    file: ../helpers/open_link.yaml
-    env:
-      TARGET_LINK: "syrocepms:///(frontdesk)/more"
+# Navigate through the actual role and profile controls. This does not create
+# a custom-scheme system prompt above subsequent login flows.
+- runFlow: ../helpers/frontdesk.yaml
+- tapOn:
+    id: "frontdesk-header-profile"
 # The notification card is below the role and module sections.
 - scrollUntilVisible:
     element:

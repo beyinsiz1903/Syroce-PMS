@@ -10,12 +10,8 @@ tags:
       LOGIN_EMAIL: ${SMOKE_EMAIL}
       LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
-# Admin and manager accounts may land on their own dashboard.
-# Open the authorized frontdesk route explicitly; route permissions still apply.
-- runFlow:
-    file: ../helpers/open_link.yaml
-    env:
-      TARGET_LINK: "syrocepms:///(frontdesk)"
+# Navigate through the actual role UI, preserving app permission checks.
+- runFlow: ../helpers/frontdesk.yaml
 
 # Wait for the Today screen to settle, then start the quick check-in
 # flow from the primary CTA on the home tab.
