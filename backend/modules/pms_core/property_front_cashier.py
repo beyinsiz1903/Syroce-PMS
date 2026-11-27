@@ -10,6 +10,7 @@ def property_front_cashier(charges, payments, rates):
     methods = set()
     for row in charges:
         acc.add("charges", charge_amount(row), row)
+    charge_issue_count = len(acc.issues)
     for row in deduplicate_report_payments(payments):
         method = str(row.get("payment_method") or row.get("method") or "other").strip().lower()
         acc.add("offsets", effective_folio_payment(row), row)
@@ -35,4 +36,6 @@ def property_front_cashier(charges, payments, rates):
         "balance_basis": "selected_day_charge_less_folio_offsets; not_remaining_receivable"},
         "payments": {"reporting_currency": base, "total_paid": collection,
             "by_method": {method: acc.total("method:"+method) for method in methods},
-            "totals_by_currency": {base: collection}, "currency_policy": acc.metadata()}}
+            "totals_by_currency": {base: collection}, "currency_policy": acc.metadata(),
+            "conversion_issue_count": len(acc.issues[charge_issue_count:]),
+            "conversion_issues": acc.issues[charge_issue_count:]}}
