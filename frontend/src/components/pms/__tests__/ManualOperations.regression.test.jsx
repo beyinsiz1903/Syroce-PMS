@@ -288,6 +288,19 @@ describe('PMS manually discovered operation regressions', () => {
     expect(onFolioUpdated).toHaveBeenCalledTimes(2);
   });
 
+  it('opens the reservation confirmation before the arrival shortcut can post a check-in', () => {
+    const open = vi.fn();
+    const checkIn = vi.fn();
+    mountFrontdesk({ arrivals: [{ id: 'arrival-confirm', status: 'confirmed',
+      check_in: '2026-11-13', check_out: '2026-11-16',
+      guest: { name: 'Berkay Erdem' }, room: { room_number: '103', status: 'dirty' } }],
+      setReservationDetailId: open, handleCheckIn: checkIn });
+    fireEvent.click(screen.getByTestId('checkin-arrival-confirm'));
+    expect(open).toHaveBeenCalledWith('arrival-confirm');
+    expect(checkIn).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('forwards the dirty-room confirmation as force_clean', async () => {
     const handleCheckIn = vi.fn();
     render(

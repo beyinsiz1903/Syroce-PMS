@@ -34,6 +34,7 @@ import { performCheckout } from '@/utils/offlineCheckout';
 import { useTranslation } from 'react-i18next';
 import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+import { confirmReservationCheckIn } from '@/lib/checkinConfirmation';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 import { reservationDisplaySummary, reservationPaymentSummary } from './reservation-detail/paymentSummary';
 import { exelyReservationDetails } from '@/utils/exelyReservation';
@@ -108,6 +109,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('general');
   const [checkinAlertOpen, setCheckinAlertOpen] = useState(false);
+  const [checkinPending, setCheckinPending] = useState(false);
+  const checkinInFlight = useRef(false);
   const [offlineFallback, setOfflineFallback] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [pricingRepairing, setPricingRepairing] = useState(false);
@@ -949,6 +952,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       : 'bg-amber-600 hover:bg-amber-700'
                   }`}
                   data-testid="btn-checkin"
+                  disabled={checkinPending}
                 >
                   {hasRoomAssignment ? (
                     <><LogIn className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.giris_yap')}</>
@@ -1318,12 +1322,21 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         onClose={() => setCheckinAlertOpen(false)}
         confirmLabel="Girişi Onayla"
         onConfirm={async () => {
+          if (checkinInFlight.current) return;
+          checkinInFlight.current = true;
+          setCheckinPending(true);
           setCheckinAlertOpen(false);
           try {
-            await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true`);
+            await confirmReservationCheckIn(bookingId);
             
             await finishOperation('checked_in');
-          } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
+          } catch (e) {
+            toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
+            await loadData();
+          } finally {
+            checkinInFlight.current = false;
+            setCheckinPending(false);
+          }
         }}
       />
     </div>

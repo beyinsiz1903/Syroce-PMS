@@ -264,7 +264,7 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith(
-      '/frontdesk/checkin/booking-test?create_folio=true',
+      '/frontdesk/checkin/booking-test?create_folio=true', null, { timeout: 15000 },
     ));
     await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
       bookingId: 'booking-test',
@@ -282,7 +282,7 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith(
-      '/frontdesk/checkin/booking-test?create_folio=true',
+      '/frontdesk/checkin/booking-test?create_folio=true', null, { timeout: 15000 },
     ));
     expect(post.mock.calls.some(([url]) => url.includes('early-checkin'))).toBe(false);
     await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
@@ -298,7 +298,7 @@ describe('ReservationDetailModal operation URLs', () => {
       onOperationComplete={onOperationComplete} allBookings={[]} />);
     fireEvent.click(await screen.findByTestId('btn-checkin'));
     fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/frontdesk/checkin/booking-test?create_folio=true'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/frontdesk/checkin/booking-test?create_folio=true', null, { timeout: 15000 }));
     expect(post.mock.calls.some(([url]) => url.includes('force_clean'))).toBe(false);
     await act(async () => {});
     expect(onOperationComplete).not.toHaveBeenCalled();
