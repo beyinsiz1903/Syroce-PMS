@@ -54,7 +54,7 @@ const FrontCashierReport = ({ summary, payments, reportDate }) => (
   <div className="min-w-0 space-y-5" data-testid="section-front-cashier">
     <SectionHeader title="Ön Kasa Raporu" description={`${reportDate} tarihli folyo ve tahsilat özeti`} />
     <ReportConversionNotice payments={payments} />
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="front-cashier-kpis grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Folyo İşlem Tutarı" value={<CurrencyBreakdown totals={summary.charge_total_by_currency} fallback={summary.charge_total} />} icon={ReceiptText} color="amber" />
       <KPICard title="Toplam Tahsilat" value={<ReportingAmount payments={payments} amount={payments.total_paid} />} icon={HandCoins} color="green" />
       <KPICard title="Nakit Tahsilat" value={<ReportingAmount payments={payments} amount={payments.by_method?.cash} />} icon={Banknote} color="blue" />

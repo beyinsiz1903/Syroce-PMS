@@ -77,7 +77,7 @@ export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevCurren
     <KpiCard
       icon={Icon}
       label={title}
-      value={<div className="min-w-0 [overflow-wrap:anywhere]">{displayVal}</div>}
+      value={<div className="report-kpi-value min-w-0 [overflow-wrap:anywhere]">{displayVal}</div>}
       sub={sub}
       intent={intent}
       data-testid={`kpi-${(title || '').toString().toLowerCase().replace(/\s+/g, '-')}`}
