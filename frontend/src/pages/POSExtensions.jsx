@@ -10,6 +10,7 @@ const money = (value, currency = cachedTenantCurrency()) => formatCurrency(value
 export function ShiftAuditDetails({ shift }) {
   return <div className="mt-2 space-y-1 text-xs text-gray-500">
     <p>Vardiya no: {shift.id || '—'}</p>
+    {shift.business_date ? <p>İş günü: {shift.business_date}</p> : <p>İş günü kaydı yok; açılış tarihinden türetilmez.</p>}
     <p>Açılış: {formatHotelEventTimestamp(shift.opened_at)}</p>
     {shift.status === 'closed' && <p>Kapanış: {formatHotelEventTimestamp(shift.closed_at)}</p>}
     <p>{HOTEL_EVENT_TIME_ZONE_LABEL}</p>

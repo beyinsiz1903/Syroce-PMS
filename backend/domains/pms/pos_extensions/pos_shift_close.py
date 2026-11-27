@@ -17,6 +17,7 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.security import get_current_user
+from domains.pms.pos_fnb.day_write_guard import posting_day
 from models.schemas import User
 
 from ._idem import ensure_compound_unique
@@ -101,6 +102,7 @@ async def _expected_cash_for_shift(tenant_id: str, shift: dict) -> dict:
 async def open_shift(body: ShiftOpen, current_user: User = Depends(get_current_user)):
     await _ensure_shift_indexes()
     settings = await db.hotel_settings.find_one({'tenant_id': current_user.tenant_id}, {'_id': 0, 'currency': 1}) or {}
+    business_date = await posting_day(db, current_user.tenant_id)
     cashier = body.cashier_id or current_user.id
     doc = {
         "id": str(uuid.uuid4()),
@@ -108,6 +110,7 @@ async def open_shift(body: ShiftOpen, current_user: User = Depends(get_current_u
         "outlet_id": body.outlet_id,
         "cashier_id": cashier,
         "opening_cash": float(body.opening_cash),
+        "business_date": business_date,
         'currency': str(settings.get('currency') or 'TRY').upper(),
         "status": "open",
         "opened_at": _now(),
