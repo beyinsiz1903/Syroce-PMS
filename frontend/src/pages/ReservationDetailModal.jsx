@@ -33,7 +33,7 @@ import { confirmDialog } from '@/lib/dialogs';
 import { performCheckout } from '@/utils/offlineCheckout';
 import { useTranslation } from 'react-i18next';
 import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
-import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+import { reservationEditLockManager, RESERVATION_EDIT_LOCK_CHANGED_EVENT } from '@/lib/reservationEditLockManager';
 import { confirmReservationCheckIn } from '@/lib/checkinConfirmation';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 import { reservationDisplaySummary, reservationPaymentSummary } from './reservation-detail/paymentSummary';
@@ -111,6 +111,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [checkinAlertOpen, setCheckinAlertOpen] = useState(false);
   const [checkinPending, setCheckinPending] = useState(false);
   const checkinInFlight = useRef(false);
+  const [editLeaseBlocked, setEditLeaseBlocked] = useState(false);
   const [offlineFallback, setOfflineFallback] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [pricingRepairing, setPricingRepairing] = useState(false);
@@ -128,6 +129,18 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const loadGenerationRef = useRef(0);
   const tabsListRef = useRef(null);
   const openedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    setEditLeaseBlocked(false);
+    const changed = ({ detail }) => {
+      if (detail?.bookingId === bookingId) {
+        setEditLeaseBlocked(detail.status !== 'acquired');
+        if (detail.status !== 'acquired') setCheckinAlertOpen(false);
+      }
+    };
+    window.addEventListener(RESERVATION_EDIT_LOCK_CHANGED_EVENT, changed);
+    return () => window.removeEventListener(RESERVATION_EDIT_LOCK_CHANGED_EVENT, changed);
+  }, [bookingId]);
 
   useEffect(() => {
     openedAtRef.current = Date.now();
@@ -169,6 +182,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         const res = await axios.get(`/pms/reservations/${bookingId}/full-detail`);
         if (!res?.data?.booking) throw new Error('Reservation detail response is incomplete');
         if (generation !== loadGenerationRef.current) return;
+        const lease = reservationEditLockManager?.getCurrent();
+        setEditLeaseBlocked(lease?.bookingId === bookingId && lease.status !== 'acquired');
         setData(res.data);
         setOfflineFallback(null);
         setLoading(false);
@@ -263,7 +278,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   };
 
   const bookingStatus = String(data?.booking?.status || '').toLowerCase();
-  const readOnly = Boolean(data?.read_only);
+  const readOnly = Boolean(data?.read_only || editLeaseBlocked);
   const isEarlyCheckout = isEarlyCheckoutDate(data?.booking?.check_out, data?.business_date);
   const canCheckIn = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
   const canLateCheckout = !readOnly && bookingStatus === 'checked_in';
@@ -589,6 +604,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     >
       <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" />
       <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl border border-white/70 shadow-[0_24px_80px_rgba(15,23,42,0.28)] flex flex-col overflow-hidden">
+        {editLeaseBlocked && <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-900">
+          <span>Rezervasyon başka bir pencerede düzenleniyor veya işlem kilidinin süresi doldu. Bu görünüm salt okunur; değişiklik gönderilmedi.</span>
+          <Button size="sm" variant="outline" onClick={loadData}>Kilidi yeniden denetle</Button>
+        </div>}
         {/* Sabit çalışma alanı başlığı: kimlik, operasyon ve konaklama özeti tek bakışta. */}
         <div className="flex min-h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-2.5 lg:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1322,7 +1341,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         onClose={() => setCheckinAlertOpen(false)}
         confirmLabel="Girişi Onayla"
         onConfirm={async () => {
-          if (checkinInFlight.current) return;
+          if (readOnly || checkinInFlight.current) return;
           checkinInFlight.current = true;
           setCheckinPending(true);
           setCheckinAlertOpen(false);

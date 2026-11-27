@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import ReservationDetailModal, { isEarlyCheckoutDate } from '@/pages/ReservationDetailModal';
+import { reservationEditLockManager, RESERVATION_EDIT_LOCK_CHANGED_EVENT } from '@/lib/reservationEditLockManager';
 
 const { get, post, confirmDialog, axiosMock } = vi.hoisted(() => {
   const get = vi.fn();
@@ -69,6 +70,34 @@ describe('ReservationDetailModal operation URLs', () => {
   });
 
   afterEach(() => cleanup());
+
+  it('keeps a competing lease read-only and allows an explicit recheck after release', async () => {
+    const lease = vi.spyOn(reservationEditLockManager, 'getCurrent').mockReturnValue({
+      bookingId: 'booking-test', status: 'blocked',
+    });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('başka bir pencerede');
+    expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+    lease.mockReturnValue({ bookingId: 'booking-test', status: 'acquired' });
+    fireEvent.click(screen.getByRole('button', { name: 'Kilidi yeniden denetle' }));
+    expect(await screen.findByTestId('btn-checkin')).toBeEnabled();
+    expect(post).not.toHaveBeenCalled();
+    lease.mockRestore();
+  });
+
+  it('removes an open check-in confirmation when its lease is lost', async () => {
+    render(<ReservationDetailModal bookingId="booking-lost" onClose={() => {}} allBookings={[]} />);
+    fireEvent.click(await screen.findByTestId('btn-checkin'));
+    expect(await screen.findByRole('button', { name: 'Girişi onayla' })).toBeVisible();
+    act(() => window.dispatchEvent(new CustomEvent(RESERVATION_EDIT_LOCK_CHANGED_EVENT, {
+      detail: { bookingId: 'booking-lost', status: 'lost' },
+    })));
+    expect(screen.getByRole('alert')).toHaveTextContent('salt okunur');
+    expect(screen.queryByRole('button', { name: 'Girişi onayla' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
 
   it('keeps the workspace accessible while the overflow menu switches panels', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
