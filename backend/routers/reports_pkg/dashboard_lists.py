@@ -1518,7 +1518,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     from modules.pms_core.property_report_projections import property_income_report, property_revenue_kpis
     from modules.pms_core.property_reporting_currency import load_historical_rates
     property_rates = await load_historical_rates(db, tenant_id, date_type.fromisoformat(charge_range_start), today_start.date(),
-        base_currency=native_currency, currencies={charge_currency(row) for row in period_charges})
+        base_currency=native_currency, currencies={charge_currency(row) for row in period_charges} | {currency_code(row.get("currency"), native_currency) for row in all_payments})
     base = property_rates.currency
     def projected(rows, metrics, first, last):
         return property_revenue_kpis(rows, metrics, first, last, property_rates)
@@ -1567,11 +1567,16 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     for row in property_trend:
         row["label"] = datetime.fromisoformat(row["date"]).strftime("%d %b")
 
+    from modules.pms_core.property_front_cashier import property_front_cashier
+    property_cashier = property_front_cashier(daily_charges, all_payments, property_rates)
+
     return {
-        "property_reporting": {"currency": base, "currency_policy": period_kpis["currency_policy"],
+        "property_reporting": {**property_cashier, "currency": base, "currency_policy": period_kpis["currency_policy"],
             "summary": property_summary, "booking_sources": property_sources, "room_type_occupancy": property_room_types, "period_metrics": performance_view(period_performance, period_kpis),
             "period_comparison": property_comparison, "revenue_trend": property_trend,
-            "daily_analysis": {"room_revenue": day_kpis["room_revenue"], "room_revenue_by_currency": day_kpis["room_revenue_by_currency"],
+            "daily_analysis": {"collections": property_cashier["payments"]["total_paid"],
+                "collections_by_currency": property_cashier["payments"]["totals_by_currency"],
+                "room_revenue": day_kpis["room_revenue"], "room_revenue_by_currency": day_kpis["room_revenue_by_currency"],
                 "posted_room_revenue": day_kpis["room_revenue"], "posted_room_revenue_by_currency": day_kpis["room_revenue_by_currency"],
                 "adr": day_kpis["adr"], "adr_by_currency": day_kpis["adr_by_currency"],
                 "revpar": day_kpis["rev_par"], "revpar_by_currency": day_kpis["rev_par_by_currency"], "revenue_source": "posted"}},

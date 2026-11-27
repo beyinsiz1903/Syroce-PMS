@@ -7,7 +7,7 @@ try:
 except ImportError:  # pragma: no cover - minimal workers/tests
     cache = None
 
-BASIC_DASHBOARD_CACHE_PREFIX = "reports_basic_dashboard_v5"
+BASIC_DASHBOARD_CACHE_PREFIX = "reports_basic_dashboard_property_v6"
 RECEIVABLE_REPORT_CACHE_PREFIXES = ("report_company_aging_v4", "report_company_aging_property_v5", "report_finance_snapshot_v4", "report_finance_snapshot_property_v5")
 
 

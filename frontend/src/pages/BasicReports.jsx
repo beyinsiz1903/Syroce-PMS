@@ -248,7 +248,7 @@ const BasicReports = ({
   const rawData = dashboardResult?.date === reportDate && dashboardResult?.period === reportPeriod ? dashboardResult.data : null;
   const propertyView = rawData?.property_reporting;
   const data = rawData && propertyView ? { ...rawData, ...propertyView,
-    ...Object.fromEntries(['summary', 'period_comparison', 'daily_analysis', 'booking_sources'].map(key =>
+    ...Object.fromEntries(['summary', 'period_comparison', 'daily_analysis', 'booking_sources', 'front_cashier', 'payments'].map(key =>
       [key, { ...rawData[key], ...propertyView[key] }])) } : rawData;
   const reportDateEditedRef = useRef(false);
   const [loading, setLoading] = useState(false);
