@@ -1055,7 +1055,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
 
 
 @router.get("/folio/reports/revenue-by-category")
-@cached(ttl=30, key_prefix="posted_revenue_category_v3")
+@cached(ttl=30, key_prefix="posted_revenue_category_property_v4")
 async def revenue_by_category(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -1068,7 +1068,6 @@ async def revenue_by_category(
 
     from modules.pms_core.report_room_types import room_revenue_by_type
     from modules.pms_core.reporting_ledger import posted_revenue_rows
-    from modules.pms_core.revenue_report import build_revenue_report
 
     if not date_to:
         date_to = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
@@ -1084,8 +1083,17 @@ async def revenue_by_category(
     if (last - first).days > 365:
         raise HTTPException(422, "En fazla 366 günlük aralık seçin.")
     charges = await posted_revenue_rows(current_user.tenant_id, first, last, database=db)
-    result = build_revenue_report(charges, first, last)
-    result["room_type_revenue"] = await room_revenue_by_type(charges, current_user.tenant_id, database=db)
+    from modules.pms_core.property_report_projections import property_income_report
+    from modules.pms_core.property_reporting_currency import load_historical_rates
+
+    try:
+        rates = await load_historical_rates(db, current_user.tenant_id, first, last,
+            currencies={row.get("currency") for row in charges})
+    except ValueError as error:
+        raise HTTPException(409, "Otelin rapor para birimi doğrulanamadı; ayarları kontrol edin.") from error
+    result = property_income_report(charges, first, last, rates)
+    result["room_type_revenue"] = await room_revenue_by_type(charges, current_user.tenant_id,
+        database=db, reporting_rates=rates)
     result["snapshot"] = hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()
     return result
 
@@ -1119,6 +1127,10 @@ async def revenue_by_category_excel(
     for row in result["rows"]:
         for code, values in row["by_currency"].items():
             sheet.append([row["label"], code, values["count"], *[values[field] for field in FIELDS]])
+    rounding = result.get("currency_policy", {}).get("rounding_difference_by_field", {})
+    if rounding:
+        sheet.append(["Kur yuvarlama farkı (kategori–toplam)", result["reporting_currency"], 0,
+            *[rounding.get(field, 0) for field in FIELDS]])
     for code, values in result["totals_by_currency"].items():
         sheet.append(["TOPLAM", code, values["count"], *[values[field] for field in FIELDS]])
     for row in sheet.iter_rows(min_row=5, min_col=4):
@@ -1160,6 +1172,21 @@ async def revenue_by_category_excel(
     concessions.append(["Kaynak", "Hareket kimliği", "Tarih", "Para birimi", "Kategori", "Özgün liste bedeli (vergi dahil)"])
     for source in result["reconciliation"].get("concession_unknown_sources", []):
         concessions.append([source["source"], source["id"], source["date"], source["currency"], source["category"], source["original_gross"]])
+    sheet.append(["Rapor para birimi", result.get("reporting_currency")])
+    sheet.append(["Kur esası", "İşlemin iş günündeki kayıtlı kur; bugünkü kurla tahmin yapılmaz."])
+    if result.get("original_currency_breakdown"):
+        native = workbook.create_sheet("Özgün Döviz Girdileri")
+        native.append(["Kaynak tutarlar; rapor toplamına tekrar eklenmez."])
+        native.append(["Para birimi", "İşlem", "Net", "Vergi dahil"])
+        for code, values in result["original_currency_breakdown"].items():
+            native.append([code, values["count"], values["verified_net"], values["total"]])
+    fx = workbook.create_sheet("Kur Kanıtı")
+    fx.append(["Rapor para birimi", result.get("reporting_currency")])
+    fx.append(["İş günü", "Özgün para birimi", "Kur", "Kur tarihi", "Kanıt türü", "Kaynak kimliği"])
+    for rate in result.get("currency_policy", {}).get("rates", []):
+        fx.append([rate["business_date"], rate["source_currency"], rate["rate"], rate.get("date"), rate.get("kind"), rate.get("id")])
+    for issue in result.get("currency_policy", {}).get("missing_rates", []):
+        fx.append([issue.get("date"), issue.get("currency"), None, None, "Tarihî kur eksik", issue.get("id")])
     for page in workbook:
         for row in page:
             for cell in row:

@@ -71,7 +71,7 @@ async def enrich_booking_room_labels(database, tenant_id, bookings):
     return result
 
 
-async def room_revenue_by_type(charges, tenant_id, *, database):
+async def room_revenue_by_type(charges, tenant_id, *, database, reporting_rates=None):
     from modules.pms_core.report_money import add_amount, rounded_totals
     from modules.pms_core.reporting_ledger import charge_amount, charge_category
 
@@ -88,6 +88,8 @@ async def room_revenue_by_type(charges, tenant_id, *, database):
     room_map = {str(row["id"]): row for row in rooms}
     labels = await load_room_type_labels(database, tenant_id, rooms)
     totals = {}
+    from modules.pms_core.property_reporting_currency import PropertyAccumulator
+    accumulator = PropertyAccumulator(reporting_rates) if reporting_rates else None
     for charge in charges:
         if charge_category(charge) != "room":
             continue
@@ -95,4 +97,7 @@ async def room_revenue_by_type(charges, tenant_id, *, database):
         room = room_map.get(str(booking.get("room_id")), {})
         label = labels(booking.get("room_type_id") or booking.get("room_type") or room.get("room_type_id") or room.get("room_type"))
         add_amount(totals.setdefault(label, {}), charge.get("currency"), charge_amount(charge))
-    return [{"name": label, "revenue_by_currency": rounded_totals(values)} for label, values in sorted(totals.items())]
+        if accumulator:
+            accumulator.add(label, charge_amount(charge), charge)
+    return [{"name": label, "revenue_by_currency": ({reporting_rates.currency: accumulator.total(label)}
+        if accumulator else rounded_totals(values))} for label, values in sorted(totals.items())]

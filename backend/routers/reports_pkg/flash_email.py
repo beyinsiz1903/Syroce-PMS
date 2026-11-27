@@ -16,14 +16,13 @@ from core.email import send_email
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import add_amount, amounts_text, money, resolve_ledger_currencies, rounded, rounded_totals
+from modules.pms_core.report_money import add_amount, amounts_text, resolve_ledger_currencies, rounded
 from modules.pms_core.report_money import currency_code as normalize_currency
 from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection
-from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+from modules.pms_core.reporting_ledger import posted_revenue_rows
 from modules.pms_core.revenue_categories import FNB_CATEGORIES
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.room_revenue_reporting import room_adr_by_currency
 from modules.pms_core.stay_night_metrics import (
     NON_COMMERCIAL_STATUSES,
     allocated_revenue_for_night,
@@ -73,7 +72,7 @@ def _flash_money(revenue, field, fallback_currency):
     breakdown = revenue.get(field + "_by_currency")
     if field == "rev_par":
         breakdown = breakdown or revenue.get("revpar_by_currency")
-    return escape(amounts_text(breakdown if breakdown else {fallback_currency: revenue.get(field) or 0}))
+    return escape(amounts_text(breakdown if breakdown else {fallback_currency: revenue.get(field)}))
 
 def _report_date(value: str | None, field: str = "date"):
     if not value:
@@ -93,10 +92,12 @@ def _add_currency(total: dict[str, float], currency: str, amount: float) -> None
 
 
 def _rounded_currency(total: dict[str, float]) -> dict[str, float]:
-    return rounded_totals(total)
+    return {code: None if amount is None else rounded(amount) for code, amount in sorted(total.items())}
 
 
 def _single_currency(total: dict[str, float]) -> float | None:
+    if any(amount is None for amount in total.values()):
+        return None
     values = [amount for amount in total.values() if amount != 0]
     return rounded(values[0]) if len(values) == 1 else (0.0 if not values else None)
 
@@ -120,7 +121,7 @@ async def send_flash_report_now(
 
 
 @sub_router.get("/reports/flash-report")
-@cached(ttl=15, key_prefix="flash_report_v2")
+@cached(ttl=15, key_prefix="flash_report_property_v3")
 async def get_flash_report(
     date: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -152,20 +153,30 @@ async def get_flash_report(
     payments = await db.payments.find({"tenant_id": current_user.tenant_id, **report_payment_day_match(key)},
         {"_id": 0}).to_list(None)
     payments = await resolve_ledger_currencies(payments, current_user.tenant_id, database=db)
-    collected = {}
-    for payment in deduplicate_report_payments(payments):
-        _add_currency(collected, _currency(payment), effective_collection(payment))
-    collected = _rounded_currency(collected)
+    # Compatibility for an older canonical response during a rolling restart.
+    if not revenue.get("currency"):
+        collected = {}
+        for payment in deduplicate_report_payments(payments):
+            _add_currency(collected, _currency(payment), effective_collection(payment))
+        collected = _rounded_currency(collected)
+    else:
+        from modules.pms_core.property_reporting_currency import PropertyAccumulator, load_historical_rates
+        property_rates = await load_historical_rates(db, current_user.tenant_id, target_day, target_day,
+            base_currency=revenue.get("currency"), currencies={_currency(row) for row in payments})
+        cash = PropertyAccumulator(property_rates)
+        for payment in deduplicate_report_payments(payments):
+            cash.add("collected", effective_collection(payment), payment)
+        collected = {property_rates.currency: cash.total("collected")}
     categories = revenue.get("category_revenue_by_currency", {})
     total = revenue["total_revenue_by_currency"]
-    outstanding = {code: amount - collected.get(code, 0) for code, amount in total.items()}
+    outstanding = {code: None if amount is None or collected.get(code) is None else amount - collected.get(code, 0) for code, amount in total.items()}
     for code in collected.keys() - total.keys():
-        outstanding[code] = -collected[code]
+        outstanding[code] = None if collected[code] is None else -collected[code]
     fields = {"total": total, "room": revenue["room_revenue_by_currency"], "fb": revenue["fb_revenue_by_currency"],
         "spa": categories.get("spa", {}), "minibar": categories.get("minibar", {}), "laundry": categories.get("laundry", {}),
         "collected": collected, "outstanding": _rounded_currency(outstanding)}
     ancillary = ("room", "fb", "spa", "minibar", "laundry")
-    fields["other"] = _rounded_currency({code: amount - sum(fields[field].get(code, 0) for field in ancillary) for code, amount in total.items()})
+    fields["other"] = _rounded_currency({code: None if amount is None or any(fields[field].get(code) is None for field in ancillary if code in fields[field]) else amount - sum(fields[field].get(code, 0) for field in ancillary) for code, amount in total.items()})
     room_ids = [b["room_id"] for b in active if b.get("room_id") and not b.get("room_number")]
     room_rows = await db.rooms.find({"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}}, {"_id": 0, "id": 1, "room_number": 1}).to_list(None) if room_ids else []
     room_names = {row["id"]: row.get("room_number") for row in room_rows}
@@ -357,7 +368,7 @@ async def email_daily_flash(
 
 
 @sub_router.get("/reports/daily-flash")
-@cached(ttl=15, key_prefix="report_daily_flash_v3")
+@cached(ttl=15, key_prefix="report_daily_flash_property_v4")
 async def get_daily_flash_report(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -407,38 +418,27 @@ async def get_daily_flash_report(
     total_by_currency = _rounded_currency(total_by_currency)
     room_by_currency = _rounded_currency(room_by_currency)
     fb_by_currency = _rounded_currency(fb_by_currency)
-    other_by_currency = _rounded_currency({
-        currency: amount - room_by_currency.get(currency, 0) - fb_by_currency.get(currency, 0)
-        for currency, amount in total_by_currency.items()
-    })
-
-    # Calculate ADR and RevPAR
-    adr_by_currency = room_adr_by_currency(room_by_currency, metrics)
-    rev_par_by_currency = _rounded_currency({currency: money(amount) / total_rooms if total_rooms else 0 for currency, amount in room_by_currency.items()})
     from modules.pms_core.room_revenue_reporting import room_period_performance
 
     room_postings = any(_charge_category(charge) == "room" for charge in charges)
     operational = room_period_performance(metrics, {day_key: room_by_currency} if room_postings else {})
 
+    from modules.pms_core.property_report_projections import property_revenue_kpis
+    from modules.pms_core.property_reporting_currency import load_historical_rates
+    rates = await load_historical_rates(db, current_user.tenant_id, target_date, target_date,
+        currencies={_currency(charge) for charge in charges})
+    property_kpis = property_revenue_kpis(charges, metrics, target_date, target_date, rates)
+    other = None if any(property_kpis[key] is None for key in ("total_revenue", "room_revenue", "fb_revenue")) else round(
+        property_kpis["total_revenue"] - property_kpis["room_revenue"] - property_kpis["fb_revenue"], 2)
     return {
         "date": day_key,
         "occupancy": {"occupied_rooms": occupied_rooms, "total_rooms": total_rooms, "occupancy_rate": occupancy_rate},
         "movements": {"arrivals": arrivals, "departures": departures, "stayovers": max(occupied_rooms - arrivals, 0)},
         "performance": metric.get("performance"),
         "revenue": {
-            "total_revenue": _single_currency(total_by_currency),
-            "total_revenue_by_currency": total_by_currency,
-            "room_revenue": _single_currency(room_by_currency),
-            "room_revenue_by_currency": room_by_currency,
-            "fb_revenue": _single_currency(fb_by_currency),
-            "fb_revenue_by_currency": fb_by_currency,
-            "other_revenue": _single_currency(other_by_currency),
-            "other_revenue_by_currency": other_by_currency,
-            "category_revenue_by_currency": {category: _rounded_currency(values) for category, values in category_by_currency.items()},
-            "adr": _single_currency(adr_by_currency),
-            "adr_by_currency": adr_by_currency,
-            "rev_par": _single_currency(rev_par_by_currency),
-            "rev_par_by_currency": rev_par_by_currency,
+            **property_kpis,
+            "other_revenue": other,
+            "other_revenue_by_currency": {rates.currency: other},
             "sold_rooms": sold_rooms,
             "basis": "posted_folio_charges_plus_untransferred_pos",
             "amount_basis": "gross_including_recorded_taxes",
@@ -496,19 +496,19 @@ async def _weekly_management_payload(current_user):
         posted_revenue_rows(current_user.tenant_id, week_start, week_end, database=db),
         load_stay_night_metrics(db, current_user.tenant_id, week_start, week_end, actual_only=True),
     )
-    revenue, room_revenue = {}, {}
-    for row in charges:
-        _add_currency(revenue, _currency(row), charge_amount(row))
-        if charge_category(row) == "room":
-            _add_currency(room_revenue, _currency(row), charge_amount(row))
-    revenue, room_revenue = _rounded_currency(revenue), _rounded_currency(room_revenue)
+    from modules.pms_core.property_report_projections import property_revenue_kpis
+    from modules.pms_core.property_reporting_currency import load_historical_rates
+    rates = await load_historical_rates(db, current_user.tenant_id, week_start, week_end,
+        currencies={_currency(row) for row in charges})
+    values = property_revenue_kpis(charges, metrics, week_start, week_end, rates)
+    revenue, room_revenue = values["total_revenue_by_currency"], values["room_revenue_by_currency"]
     occupied = sum(row["occupied_rooms"] for row in metrics)
     available = sum(row["total_rooms"] for row in metrics)
     occupancy = round(occupied / available * 100, 2) if available else 0
-    adr = room_adr_by_currency(room_revenue, metrics)
-    revpar = {code: rounded(money(amount) / available) if available else 0 for code, amount in room_revenue.items()}
+    adr, revpar = values["adr_by_currency"], values["rev_par_by_currency"]
     return {
         "week_start": week_start.isoformat(), "week_ending": week_end.isoformat(),
+        "currency": rates.currency, "currency_policy": values["currency_policy"],
         "total_bookings": bookings,
         "total_revenue": _single_currency(revenue), "total_revenue_by_currency": revenue,
         "room_revenue": _single_currency(room_revenue), "room_revenue_by_currency": room_revenue,

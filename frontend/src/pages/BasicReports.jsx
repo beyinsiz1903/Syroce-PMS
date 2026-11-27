@@ -245,7 +245,11 @@ const BasicReports = ({
   const [dashboardResult, setDashboardResult] = useState(null);
   const [reportPeriod, setReportPeriod] = useState("monthly");
   const [reportDate, setReportDate] = useState(businessDate);
-  const data = dashboardResult?.date === reportDate && dashboardResult?.period === reportPeriod ? dashboardResult.data : null;
+  const rawData = dashboardResult?.date === reportDate && dashboardResult?.period === reportPeriod ? dashboardResult.data : null;
+  const propertyView = rawData?.property_reporting;
+  const data = rawData && propertyView ? { ...rawData, ...propertyView,
+    ...Object.fromEntries(['summary', 'period_comparison', 'daily_analysis', 'booking_sources'].map(key =>
+      [key, { ...rawData[key], ...propertyView[key] }])) } : rawData;
   const reportDateEditedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [reportRefreshedAt, setReportRefreshedAt] = useState(null);

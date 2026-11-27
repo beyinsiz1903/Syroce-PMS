@@ -518,7 +518,8 @@ async def get_financial_summary(
         if cached is not None:
             return cached
     result = await financial_service.get_daily_financial_summary(ctx, date)
-    payload = result.data
+    from modules.pms_core.property_financial_summary import property_financial_summary
+    payload = await property_financial_summary(db, ctx.tenant_id, result.data, date)
     _cache.set(cache_key, payload, ttl=_FIN_CACHE_TTL)
     return payload
 

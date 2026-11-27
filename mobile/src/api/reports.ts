@@ -62,6 +62,9 @@ export function getDailyFlash(date?: string): Promise<DailyFlash> {
 
 export type RevenuePeriod = {
   start_date: string; end_date: string; revenue_basis?: string;
+  currency?: string;
+  currency_policy?: { missing_rate_count: number; complete: boolean };
+  original_currency_breakdown?: Record<string, { total: number | null; verified_net: number | null }>;
   total_revenue_by_currency?: Record<string, number>;
   adr_by_currency?: Record<string, number>;
   rev_par_by_currency?: Record<string, number>;

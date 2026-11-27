@@ -121,3 +121,33 @@ describe('one-snapshot revenue report', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Yazdır / PDF' })); expect(window.print).toHaveBeenCalledOnce();
   });
 });
+
+it('shows one property-currency headline and confines original FX to an income drilldown', async () => {
+  const data = payload();
+  data.reporting_currency = 'TRY';
+  data.currency_policy = { missing_rate_count: 0 };
+  data.rows = [{ category: 'room', label: 'Konaklama', count: 2, by_currency: { TRY: { ...values(1500), verified_net: 1250 } } }];
+  data.totals_by_currency = { TRY: { ...values(1500), verified_net: 1250 } };
+  data.original_currency_breakdown = { USD: { total: 30, verified_net: 25 } };
+  axios.get.mockResolvedValueOnce({ data });
+  renderReport();
+  const table = await screen.findByRole('table', { name: 'Kategori bazlı gelir' });
+  expect(within(table).queryByText(/USD|EUR/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Rapor para birimi: TRY/)).toBeInTheDocument();
+  expect(screen.getByRole('table', { name: 'Özgün döviz girdileri' }).closest('details')).not.toHaveAttribute('open');
+});
+
+it('does not chart a missing historical conversion as a measured zero', async () => {
+  const data = payload();
+  data.reporting_currency = 'TRY';
+  data.currency_policy = { missing_rate_count: 1 };
+  data.revenue_trend = [{ date: '2026-10-01', revenue_by_currency: { TRY: null } }];
+  data.room_type_revenue = [{ name: 'Standart', revenue_by_currency: { TRY: null } }];
+  axios.get.mockResolvedValueOnce({ data });
+  renderReport();
+  await screen.findByRole('table');
+  expect(screen.getByText(/kaynakta tarihî kur eksik/)).toBeInTheDocument();
+  const series = [...document.querySelectorAll('[data-series]')].map(node => JSON.parse(node.dataset.series));
+  expect(series[0][0].value).toBeNull();
+  expect(series[1][0].value).toBeNull();
+});

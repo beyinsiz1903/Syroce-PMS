@@ -346,7 +346,7 @@ export default function GMOverview() {
         <Card>
           <Muted>Operasyon tarihi · {operations.data?.date || 'Doğrulanamadı'} · doluluk, güncel fiziksel oda durumudur.</Muted>
           <Muted>Finansal iş günü · {financial.data?.business_date || roomKpis.date || 'Doğrulanamadı'}</Muted>
-          <Muted>Gelir: iş gününde işlenen tahakkuklar, tahsilat değil. ADR/RevPAR: aynı iş gününün işlenmiş oda geliri; para birimleri ayrı gösterilir.</Muted>
+          <Muted>Gelir: iş gününde işlenen tahakkuklar, tahsilat değil. ADR/RevPAR: aynı iş gününün vergi hariç işlenmiş oda geliri. Tutarlar otel para biriminde, özgün işlem gününün kayıtlı kuruyla gösterilir.</Muted>
           {roomKpis.postingPending && <Muted>Oda tahakkukları henüz tam işlenmemiş; bu oranlar yalnız işlenmiş tutarları içerir.</Muted>}
           {!historical.length && <Muted>İşlenmiş gelir trendi için doğrulanmış seri alınamadı.</Muted>}
           <Button title="Dövizli finans raporlarını aç" variant="secondary" onPress={() => router.push(ROUTES.reportDetail)} disabled={!financeReports} />

@@ -79,3 +79,15 @@ test('screen and share use the same currency buckets and actual PMS business day
   assert.match(share, /kısmi/);
   assert.match(financeShareText({}), /Bekleyen alacak: —/);
 });
+
+test('property-currency posted KPI is used unchanged and missing historical FX is unavailable', () => {
+  const value = { date: '2026-11-12', revenue: {
+    currency: 'TRY', basis: 'posted_folio_charges_plus_untransferred_pos',
+    adr_by_currency: { TRY: 625 }, rev_par_by_currency: { TRY: 125 },
+  } };
+  const result = postedRoomKpis(value, '2026-11-12');
+  assert.match(result.adr, /625,00/);
+  assert.match(result.revpar, /125,00/);
+  assert.doesNotMatch(result.adr, /USD|EUR/);
+  assert.equal(postedRoomKpis({ ...value, revenue: { ...value.revenue, adr_by_currency: { TRY: null } } }).adr, '—');
+});

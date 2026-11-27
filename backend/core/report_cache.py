@@ -21,5 +21,5 @@ def invalidate_receivable_report_caches(tenant_id: str) -> None:
 def invalidate_financial_report_caches(tenant_id: str) -> None:
     if cache is None:
         return
-    for prefix in ("folio_revenue_by_category_v2", "posted_revenue_category_v3", BASIC_DASHBOARD_CACHE_PREFIX):
+    for prefix in ("folio_revenue_by_category_v2", "posted_revenue_category_v3", "posted_revenue_category_property_v4", "report_revenue_property_v4", "report_daily_flash_property_v4", "flash_report_property_v3", BASIC_DASHBOARD_CACHE_PREFIX):
         cache.invalidate_tenant_cache(tenant_id, prefix, include_role_variants=True)

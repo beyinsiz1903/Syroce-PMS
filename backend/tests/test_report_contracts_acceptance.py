@@ -178,7 +178,9 @@ async def test_basic_revenue_matches_standard_ledger_zero_totals_pos_refunds_and
     )
     result = await dashboard_lists._basic_dashboard_impl.__wrapped__(USER, True, "2026-10-02", "daily")
     standard = await standard_reports.get_revenue_report.__wrapped__("2026-10-02", "2026-10-02", current_user=USER)
-    assert result["summary"]["today_revenue_by_currency"] == standard["total_revenue_by_currency"] == {"EUR": 20, "TRY": 27}
+    assert result["summary"]["today_revenue_by_currency"] == {"EUR": 20, "TRY": 27}  # legacy source contract
+    assert result["property_reporting"]["summary"]["today_revenue_by_currency"] == standard["total_revenue_by_currency"] == {"TRY": None}
+    assert standard["currency_policy"]["missing_rate_count"] == 1
 
 
 async def test_cash_movements_have_one_processed_day_and_unknown_fx_is_not_try(ledger_db):

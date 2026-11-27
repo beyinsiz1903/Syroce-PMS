@@ -150,19 +150,19 @@ export async function getFinancialSummary(
     revenue: {
       total_by_currency: res.revenue.total_by_currency,
       total_with_tax_by_currency: res.revenue.total_with_tax_by_currency,
-      total: res.revenue?.total ?? 0,
-      total_with_tax: res.revenue?.total_with_tax ?? 0,
+      total: (res.revenue?.total === null ? NaN : res.revenue?.total ?? 0),
+      total_with_tax: (res.revenue?.total_with_tax === null ? NaN : res.revenue?.total_with_tax ?? 0),
       by_category: res.revenue?.by_category ?? {},
       charges_count: res.revenue?.charges_count ?? 0,
     },
     tax: {
       total_by_currency: res.tax.total_by_currency,
-      total: res.tax?.total ?? 0,
+      total: (res.tax?.total === null ? NaN : res.tax?.total ?? 0),
       breakdown: res.tax?.breakdown ?? {},
     },
     payments: {
       total_by_currency: res.payments.total_by_currency,
-      total: res.payments?.total ?? 0,
+      total: (res.payments?.total === null ? NaN : res.payments?.total ?? 0),
       by_method: res.payments?.by_method ?? {},
       payments_count: res.payments?.payments_count ?? 0,
     },
@@ -172,12 +172,12 @@ export async function getFinancialSummary(
       receivable_count: res.open_folios?.receivable_count ?? 0,
       overpayment_count: res.open_folios?.overpayment_count ?? 0,
       balance: {
-        total: res.open_folios?.balance?.total ?? 0,
-        receivable: res.open_folios?.balance?.receivable ?? 0,
-        overpayment: res.open_folios?.balance?.overpayment ?? 0,
+        total: (res.open_folios?.balance?.total === null ? NaN : res.open_folios?.balance?.total ?? 0),
+        receivable: (res.open_folios?.balance?.receivable === null ? NaN : res.open_folios?.balance?.receivable ?? 0),
+        overpayment: (res.open_folios?.balance?.overpayment === null ? NaN : res.open_folios?.balance?.overpayment ?? 0),
       },
     },
-    net_position: res.net_position ?? 0,
+    net_position: (res.net_position === null ? NaN : res.net_position ?? 0),
     audit_status: res.audit_status ?? 'not_run',
   };
 }

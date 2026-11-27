@@ -174,3 +174,22 @@ async def test_fnb_summary_keeps_posted_native_currencies_separate(ledger_db):
     report = await dashboard()
     assert report['summary']['posted_room_revenue'] is None
     assert report['summary']['posted_room_revenue_by_currency'] == {'EUR': 80, 'TRY': 200}
+
+
+async def test_property_view_uses_one_currency_net_adr_and_historical_rate(ledger_db):
+    await seed_stay(ledger_db)
+    await ledger_db.currency_rates.insert_many([
+        {"tenant_id": "A", "effective_date": "2026-10-07", "from_currency": "TRY", "to_currency": "EUR", "rate": .02},
+        {"tenant_id": "A", "effective_date": "2026-11-27", "from_currency": "TRY", "to_currency": "EUR", "rate": .04},
+    ])
+    await ledger_db.folio_charges.insert_many([
+        {"tenant_id": "A", "booking_id": "b", "business_date": "2026-10-07", "category": "room", "currency": "EUR", "amount": 100, "vat_amount": 20, "tax_amount": 0, "total": 120},
+        {"tenant_id": "A", "booking_id": "b", "business_date": "2026-10-07", "category": "room", "currency": "TRY", "amount": 160, "vat_amount": 40, "tax_amount": 0, "total": 200},
+    ])
+    result = (await dashboard())["property_reporting"]
+    assert result["summary"]["today_revenue_by_currency"] == {"EUR": 124}
+    assert result["period_metrics"]["room_revenue_net_by_currency"] == {"EUR": 103.2}
+    assert result["period_metrics"]["adr_by_currency"] == {"EUR": 103.2}
+    assert result["revenue_trend"][0]["revenue_by_currency"] == {"EUR": 124}
+    assert result["booking_sources"]["revenue_by_currency"] == {"direct": {"EUR": 124}}
+    assert [row["revenue_by_currency"] for row in result["room_type_occupancy"].values()] == [{"EUR": 124}]

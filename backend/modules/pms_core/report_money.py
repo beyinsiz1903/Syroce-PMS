@@ -36,7 +36,7 @@ def single_amount(totals: dict) -> float | None:
 
 
 def amounts_text(totals: dict) -> str:
-    return " · ".join(f"{code} {amount:,.2f}" for code, amount in rounded_totals(totals).items()) or "0.00"
+    return " · ".join(f"{code} Doğrulanamadı" if amount is None else f"{code} {rounded(amount):,.2f}" for code, amount in sorted(totals.items())) or "0.00"
 
 
 async def resolve_ledger_currencies(rows: list[dict], tenant_id: str, *, database, fallback_currency: str | None = None) -> list[dict]:
