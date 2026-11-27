@@ -64,6 +64,7 @@ async def test_official_list_keeps_status_projection_and_all_actual_occupants(le
 
 
 async def test_weekly_screen_and_email_share_full_currency_preserving_ledger(ledger_db):
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-10-01", "from_currency": "EUR", "to_currency": "TRY", "rate": 50})
     await ledger_db.rooms.insert_many([{"tenant_id": "A", "id": "r1"}, {"tenant_id": "A", "id": "r2"}])
     await ledger_db.bookings.insert_many(
         [
@@ -105,17 +106,17 @@ async def test_weekly_screen_and_email_share_full_currency_preserving_ledger(led
     await ledger_db.pos_orders.insert_one({"tenant_id": "A", "id": "pos", "status": "closed", "business_date": "2026-10-02", "grand_total": 40, "currency": "TRY"})
     await ledger_db.pos_transactions.insert_one({"tenant_id": "A", "id": "refund", "status": "refunded", "business_date": "2026-10-02", "total_amount": -5, "currency": "EUR"})
     result = await flash_email.get_weekly_management_summary(current_user=USER)
-    assert result["total_revenue_by_currency"] == {"EUR": 15, "TRY": 150}
-    assert result["total_revenue"] is None
+    assert result["total_revenue_by_currency"] == {"TRY": 900}
+    assert result["total_revenue"] == 900
     assert result["total_bookings"] == 2
-    assert result["key_metrics"]["adr_by_currency"] == {"TRY": 100}
+    assert result["key_metrics"]["adr_by_currency"] == {"TRY": None}  # room posting/tax evidence incomplete
     assert result["key_metrics"]["occupancy"] == round(2 / 14 * 100, 2)
     await flash_email.send_weekly_management_email({"email": "recipient@example.test"}, credentials=None)
     email = await ledger_db.email_reports.find_one({"report_type": "weekly_summary"})
     assert email["report_data"]["total_revenue_by_currency"] == result["total_revenue_by_currency"]
     assert email["report_data"]["total_bookings"] == result["total_bookings"]
     html = flash_email.send_email.await_args.kwargs["html"]
-    assert "EUR 15.00" in html and "TRY 150.00" in html
+    assert "TRY 900.00" in html and "EUR 15.00" not in html
     assert "999" not in html
 
 

@@ -208,6 +208,7 @@ async def test_invalid_day_does_not_silently_select_another_report(day):
 
 async def test_daily_and_standard_revenue_share_signed_pos_ledger_and_transfer_deduplication(ledger_db, monkeypatch):
     monkeypatch.setattr(standard_reports, "db", ledger_db)
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-10-07", "from_currency": "EUR", "to_currency": "TRY", "rate": 50})
     await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": "2026-10-07", "category": "room", "total": 100, "currency": "EUR", "source_pos_order_id": "room"})
     await ledger_db.pos_orders.insert_many(
         [
@@ -224,4 +225,6 @@ async def test_daily_and_standard_revenue_share_signed_pos_ledger_and_transfer_d
     )
     data = await result()
     canonical = await standard_reports.get_revenue_report.__wrapped__("2026-10-07", "2026-10-07", USER)
-    assert data["revenue"]["total_by_currency"] == canonical["total_revenue_by_currency"] == {"EUR": 150, "TRY": 24}
+    assert data["revenue"]["total_by_currency"] == {"EUR": 150, "TRY": 24}  # unchanged posting source
+    assert canonical["total_revenue_by_currency"] == {"TRY": 7524}
+    assert canonical["original_currency_breakdown"]["EUR"]["total"] == 150
