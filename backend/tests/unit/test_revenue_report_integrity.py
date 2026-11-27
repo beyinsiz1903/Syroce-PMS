@@ -210,9 +210,17 @@ def test_missing_concession_does_not_hide_verified_revenue_or_claim_zero_discoun
 @pytest.mark.parametrize("category", ["minibar", "spa", "parking", "transfer", "other"])
 def test_other_full_comp_sources_use_original_net_without_posting_list_revenue(category):
     values = charge_breakdown(row(charge_category=category, report_source="extra",
-        subtotal=0, amount=0, total=0, net_amount=0, vat_amount=0, tax_amount=0,
+        subtotal=0, discount_amount=0, amount=0, total=0, net_amount=0, vat_amount=0, tax_amount=0,
         is_complimentary=True, complimentary_scope="full", complimentary_original_amount=150,
         complimentary_original_tax_snapshot={"net_amount": 125, "vat_amount": 25, "tax_amount": 0}))
     assert values["subtotal"] == values["discount"] == 125
     assert values["net"] == values["vat"] == values["total"] == 0
     assert not values["issues"]
+
+
+def test_legacy_zero_discount_default_does_not_prove_zero_original_concession():
+    values = charge_breakdown(row(charge_category="spa", subtotal=0, discount_amount=0, amount=0, total=0,
+        vat_amount=0, tax_amount=0, is_complimentary=True, complimentary_original_amount=150))
+    assert values["concession_unknown"]
+    assert values["subtotal"] is values["discount"] is None
+    assert values["net"] == values["vat"] == values["total"] == 0

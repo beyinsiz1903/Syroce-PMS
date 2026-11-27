@@ -62,6 +62,7 @@ def charge_breakdown(row):
     # zero-valued posting. Show only a proven original NET as the concession;
     # never treat the gross list price as net or change posted revenue/taxes.
     comp_net = None
+    concession_default = discount == 0
     original_comp_gross = None
     full_comp_source = (row.get("is_complimentary")
         and (row.get("complimentary_scope") == "full" or row.get("complimentary_original_amount") is not None) and total == 0)
@@ -79,7 +80,7 @@ def charge_breakdown(row):
         if (original_net >= 0 and original_gross > 0
                 and original_net + money(original_tax["vat_amount"]) + money(original_tax["tax_amount"]) == original_gross):
             comp_net = signed(original_net)
-            if row.get("discount_amount") is None:
+            if concession_default:
                 discount = comp_net
     # Extra charge_amount/amount is commonly a gross UNIT price, not a net
     # line amount. Derive net only from evidence, not the collection name.
@@ -97,10 +98,10 @@ def charge_breakdown(row):
         # by missing positive taxes (e.g. amount=1, total=0). Surface it.
         difference = total - money(rounded(row["amount"]))
     subtotal = signed(row["subtotal"]) if row.get("subtotal") is not None else net + discount if net is not None else None
-    if comp_net is not None and row.get("discount_amount") is None:
+    if comp_net is not None and concession_default:
         subtotal = comp_net
     concession_unknown = bool(full_comp_source and comp_net is None
-        and row.get("discount_amount") is None and original_comp_gross != 0)
+        and concession_default and original_comp_gross != 0)
     if concession_unknown:
         subtotal = discount = None
     subtotal_difference = subtotal - discount - net if subtotal is not None and net is not None else Decimal(0)

@@ -66,3 +66,35 @@ async def test_department_full_comp_preserves_original_tax_without_changing_post
     assert values["subtotal"] == values["discount"] == 125
     assert values["net"] == values["vat"] == values["total"] == 0
     assert db.folio_charges.insert_one.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_spa_full_comp_keeps_appointment_tax_snapshot_and_zero_posting(monkeypatch):
+    from domains.spa import folio as spa
+
+    booking = {"id": "b", "currency": "TRY", "status": "checked_in", "is_complimentary": True, "complimentary_scope": "full"}
+    folio = {"id": "f", "currency": "TRY"}
+    db = SimpleNamespace(
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value=booking)),
+        folio_charges=SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock()),
+        folio_postings=SimpleNamespace(insert_one=AsyncMock()),
+        folios=SimpleNamespace(update_one=AsyncMock()),
+    )
+    monkeypatch.setattr(spa, "select_booking_folio", AsyncMock(return_value=folio))
+    monkeypatch.setattr(spa, "folio_snapshots", AsyncMock(return_value={"f": {"balance_by_currency": {"TRY": 0}}}))
+    monkeypatch.setattr(spa, "refresh_booking_payment_state", AsyncMock())
+    monkeypatch.setattr(spa, "audit_log", AsyncMock())
+    async def stamp(_db, _tenant, charge):
+        charge["business_date"] = "2026-11-13"
+    monkeypatch.setattr(spa, "stamp_open_business_date", stamp)
+    monkeypatch.setattr(automatic_folio_routing, "route_new_charge", AsyncMock(return_value=None))
+    result = await spa.post_charge(db, "test", {"id": "s", "reservation_id": "b", "currency": "TRY", "price": 150, "tax_rate": .2, "service_name": "Synthetic massage", "completed_at": "2026-11-13T10:00:00Z"}, "actor", "Operator", session=object())
+    charge = result["charge"]
+    assert charge["total"] == charge["vat_amount"] == charge["amount"] == result["posting"]["amount"] == 0
+    assert charge["complimentary_original_amount"] == 150
+    assert charge["complimentary_original_tax_snapshot"]["net_amount"] == 125
+    assert charge["complimentary_original_tax_snapshot"]["vat_amount"] == 25
+    values = charge_breakdown({**charge, "report_source": "folio"})
+    assert values["subtotal"] == values["discount"] == 125
+    assert values["net"] == values["vat"] == values["total"] == 0
+    assert db.folio_charges.insert_one.await_count == db.folio_postings.insert_one.await_count == 1
