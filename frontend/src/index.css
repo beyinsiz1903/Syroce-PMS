@@ -1227,6 +1227,18 @@ code {
     max-width: none !important;
   }
 
+  /* A4 portrait has too little width for four monetary KPI cards. Preserve
+     every digit in the default PDF instead of wrapping a decimal mid-value. */
+  .report-document .front-cashier-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .report-document .front-cashier-kpis .report-kpi-value {
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+    white-space: nowrap;
+  }
+
   .report-print-header {
     margin-bottom: 16px;
   }
