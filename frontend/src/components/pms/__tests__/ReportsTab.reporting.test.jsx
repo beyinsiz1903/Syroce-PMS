@@ -35,6 +35,20 @@ describe('ReportsTab reporting contracts', () => {
     expect(screen.getByTestId('reports-revenue')).not.toHaveClass('text-2xl');
   });
 
+  it('explains the property currency and incomplete posted-room KPIs', async () => {
+    mockApi();
+    const get = axios.get.getMockImplementation();
+    axios.get.mockImplementation(url => url.startsWith('/reports/revenue?') ? Promise.resolve({ data: {
+      reporting_currency: 'TRY', posting_pending: true, total_revenue_by_currency: { TRY: 1250 },
+      adr_by_currency: { TRY: null }, rev_par_by_currency: { TRY: null }, currency_policy: { missing_rate_count: 1 },
+    } }) : get(url));
+    render(<ReportsTab />);
+    expect(await screen.findByText(/Rapor para birimi: TRY/)).toHaveTextContent('vergi hariç');
+    expect(screen.getByText(/oda ücretleri henüz tam işlenmedi/)).toBeInTheDocument();
+    expect(screen.getByText(/Tarihî kur kanıtı eksik/)).toBeInTheDocument();
+    expect(screen.getByTestId('reports-adr')).toHaveTextContent('Doğrulanamadı');
+  });
+
   it('renders each market currency and does not compare them in one pie', async () => {
     mockApi();
     render(<ReportsTab />);

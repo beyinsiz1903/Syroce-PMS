@@ -197,15 +197,14 @@ async def test_finance_snapshot_never_mixes_debt_or_substitutes_partial_invoice_
     assert not result["mtd_collections"]["collection_rate_complete"]
 
 
-async def test_mtd_profit_and_cost_rankings_are_separate_by_currency(report_db, monkeypatch):
+async def test_mtd_cost_without_historical_fx_is_unavailable_not_a_partial_total(report_db, monkeypatch):
     report_db.purchase_orders.rows = [{"currency": "TRY", "total_amount": 100, "category": "food"}, {"currency": "EUR", "total_amount": 10, "category": "food"}]
     report_db.folio_charges.rows = [{"currency": "TRY", "total": 200}, {"currency": "EUR", "total": 30}]
     monkeypatch.setattr(reports, "load_stay_night_metrics", AsyncMock(return_value=[{"occupied_rooms": 2, "total_rooms": 10}]))
     result = await reports._compute_mtd_cost_summary("tenant-A")
     assert result["total_mtd_costs"] is None and result["top_3_categories"] == []
     assert result["financial_metrics"]["gross_profit"] is None
-    assert result["financial_metrics"]["by_currency"]["TRY"]["gross_profit"] == 100
-    assert result["financial_metrics"]["by_currency"]["EUR"]["gross_profit"] == 20
+    assert result["financial_metrics"]["by_currency"] == {"TRY": {"mtd_costs": None, "mtd_revenue": None, "gross_profit": None, "profit_margin_percentage": None, "cost_to_revenue_ratio": None}}
 
 
 def test_flash_document_money_uses_original_currencies_not_tenant_symbol():
@@ -430,8 +429,8 @@ async def test_finance_refresh_bypasses_stale_json_cache(report_db, monkeypatch)
     ("get_market_segment_report", {"start_date": "2026-10-01", "end_date": "2026-10-15"}, "report_market_segment_v4"),
     ("get_company_aging_report", {}, "report_company_aging_property_v5"),
     ("get_finance_snapshot", {}, "report_finance_snapshot_property_v5"),
-    ("get_cost_summary", {}, "report_cost_summary_v3"),
-    ("get_mtd_cost_summary", {}, "finance_mtd_cost_summary_v3"),
+    ("get_cost_summary", {}, "report_cost_summary_property_v4"),
+    ("get_mtd_cost_summary", {}, "finance_mtd_cost_summary_property_v4"),
 ])
 async def test_changed_financial_reports_cannot_reuse_pre_deploy_cached_totals(report_db, monkeypatch, handler, kwargs, prefix):
     import cache_manager

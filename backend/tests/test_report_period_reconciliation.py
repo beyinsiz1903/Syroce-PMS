@@ -87,12 +87,13 @@ async def test_missing_native_currency_uses_property_currency_not_the_try_report
 
 
 async def test_cost_summary_legacy_and_native_profit_reconcile_to_displayed_totals(ledger_db):
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-10-07", "from_currency": "EUR", "to_currency": "TRY", "rate": 1})
     await ledger_db.purchase_orders.insert_one({"tenant_id": "A", "status": "received", "created_at": "2026-10-07", "total_amount": 0.005, "currency": "EUR", "category": "food"})
     await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": "2026-10-07", "total": 2.664, "currency": "EUR", "category": "room"})
     costs = await reports._compute_mtd_cost_summary("A")
     financial = costs["financial_metrics"]
     assert financial["mtd_revenue"] == 2.66 and financial["mtd_costs"] == 0.01
-    assert financial["gross_profit"] == financial["by_currency"]["EUR"]["gross_profit"] == 2.65
+    assert financial["gross_profit"] == financial["by_currency"]["TRY"]["gross_profit"] == 2.65
     assert costs["top_3_categories"][0]["amount"] == costs["cost_categories"]["fnb"] == 0.01
 
 
