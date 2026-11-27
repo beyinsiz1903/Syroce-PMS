@@ -347,14 +347,15 @@ const CashierTab = () => {
     lines.push(['Saat dilimi', CASHIER_TIME_ZONE_LABEL].map(escape).join(','));
     lines.push(['Olusturuldu', formatCashierTimestamp(periodData.generated_at, { seconds: true }), periodData.generated_by || ''].map(escape).join(','));
     lines.push('');
+    lines.push(['Kapsam', 'Nakit hareketleri secili doneme; kapanis sayimlari ve farklari vardiyalarin tamamina aittir.'].map(escape).join(','));
     lines.push(['TOPLAMLAR'].map(escape).join(','));
     lines.push(['Vardiya sayisi', t.shift_count || 0].map(escape).join(','));
-    lines.push(['Acilis toplam (TRY)', (t.opening_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Donemde acilan vardiyalarin acilisi (TRY)', (t.opening_total || 0).toFixed(2)].map(escape).join(','));
     lines.push(['Nakit giris (TRY)', (t.cash_in_total || 0).toFixed(2)].map(escape).join(','));
     lines.push(['Nakit cikis (TRY)', (t.cash_out_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Beklenen (TRY)', (t.expected_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Sayilan kapanis (TRY)', (t.closing_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Fark (TRY)', (t.difference_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Donem net nakit hareketi (TRY)', ((t.cash_in_total || 0) - (t.cash_out_total || 0)).toFixed(2)].map(escape).join(','));
+    lines.push(['Donemde kapanan vardiyalarin sayim toplami (TRY)', (t.closing_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Vardiyalarin kendi kapanis farklari (TRY)', (t.difference_total || 0).toFixed(2)].map(escape).join(','));
     lines.push(['Islem sayisi', t.transaction_count || 0].map(escape).join(','));
     lines.push('');
     lines.push(['YONTEM BAZINDA', 'Giris (TRY)', 'Cikis (TRY)', 'Net (TRY)', 'Adet'].map(escape).join(','));
@@ -1047,7 +1048,7 @@ const CashierTab = () => {
                   <p className="text-base font-bold text-amber-700">{formatTry(reportData.cash_out)}</p>
                 </div>
                 <div className="p-3 rounded bg-gray-100 border border-gray-300">
-                  <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
+                  <p className="text-[10px] text-gray-600 uppercase">Dönem net nakit hareketi</p>
                   <p className="text-base font-bold text-gray-800">{formatTry(reportData.expected_amount)}</p>
                 </div>
               </div>
@@ -1222,9 +1223,11 @@ const CashierTab = () => {
                   <div><span className="text-gray-500">Raporu Alan:</span> {periodData.generated_by || '-'}</div>
                 </div>
 
+                <p className="rounded border p-3 text-xs text-gray-600">Nakit giriş ve çıkışlar seçili dönemi kapsar. Kapanış sayımları ve farkları, bu dönemde kapanan vardiyaların tamamına aittir; yalnız dönem hareketleriyle karşılaştırılmaz.</p>
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
-                    <p className="text-[10px] text-emerald-600 uppercase">{t('cm.components_pms_CashierTab.acilis_toplam')}</p>
+                    <p className="text-[10px] text-emerald-600 uppercase">Dönemde açılan vardiyaların açılışı</p>
                     <p className="text-base font-bold text-emerald-700">{formatTry(periodData.totals?.opening_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-blue-50 border border-blue-200">
@@ -1236,15 +1239,15 @@ const CashierTab = () => {
                     <p className="text-base font-bold text-amber-700">{formatTry(periodData.totals?.cash_out_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-gray-100 border border-gray-300">
-                    <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
-                    <p className="text-base font-bold text-gray-800">{formatTry(periodData.totals?.expected_total)}</p>
+                    <p className="text-[10px] text-gray-600 uppercase">Dönem net nakit hareketi</p>
+                    <p className="text-base font-bold text-gray-800">{formatTry((periodData.totals?.cash_in_total || 0) - (periodData.totals?.cash_out_total || 0))}</p>
                   </div>
                   <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
-                    <p className="text-[10px] text-indigo-600 uppercase">{t('cm.components_pms_CashierTab.sayilan')}</p>
+                    <p className="text-[10px] text-indigo-600 uppercase">Kapanış sayımları toplamı</p>
                     <p className="text-base font-bold text-indigo-700">{formatTry(periodData.totals?.closing_total)}</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                    <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>{t('cm.components_pms_CashierTab.fark_toplam')}</p>
+                    <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Vardiyaların kendi kapanış farkları</p>
                     <p className={`text-base font-bold ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>{formatTry(periodData.totals?.difference_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-slate-50 border border-slate-200">
