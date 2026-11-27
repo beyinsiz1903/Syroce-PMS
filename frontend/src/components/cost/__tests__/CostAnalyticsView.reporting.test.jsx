@@ -29,7 +29,7 @@ describe('property-currency expense analytics', () => {
     const originalRevoke = URL.revokeObjectURL;
     URL.createObjectURL = vi.fn(blob => { captured = blob; return 'blob:test'; });
     URL.revokeObjectURL = vi.fn();
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const click = vi.spyOn(window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     try {
       render(<CostAnalyticsView />);
       await screen.findAllByText('₺1.100,00');
