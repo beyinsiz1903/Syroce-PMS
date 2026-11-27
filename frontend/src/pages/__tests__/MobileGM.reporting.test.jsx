@@ -102,8 +102,8 @@ describe('MobileGM report response mapping', () => {
       operational_adr_by_currency: { TRY: 2030, EUR: 35.6 }, operational_revpar_by_currency: { TRY: 654.84, EUR: 11.48 } } } });
     render(<MobileGM user={{}} tenant={{ id: 't' }} />);
     expect(await screen.findByText('ADR: İşlenmeyi bekliyor')).toBeInTheDocument();
-    expect(screen.getByText(/Tahakkuk ADR:/)).toHaveTextContent('2.030,00');
-    expect(screen.getByText(/Tahakkuk RevPAR:/)).toHaveTextContent('654,84');
+    expect(screen.queryByText(/Tahakkuk ADR:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Tahakkuk RevPAR:/)).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('kesinleşmiş gelir değildir');
     fireEvent.click(screen.getByRole('button', { name: 'Tam Dashboard' }));
     const dialog = screen.getByRole('dialog');

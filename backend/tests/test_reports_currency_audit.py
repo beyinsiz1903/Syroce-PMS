@@ -296,8 +296,7 @@ async def test_flash_excel_preserves_pending_vs_measured_zero_and_separate_accru
         assert (label, None, "İşlenmeyi bekliyor") in values if pending else (label, "TRY", 0) in values
         if pending:
             assert not any(row[0] == label and isinstance(row[2], (float, int)) for row in values)
-    assert ("Accrued ADR (not posted revenue)", "EUR", 110) in values
-    assert ("Accrued ADR (not posted revenue)", "TRY", 4200) in values
+    assert not any(row[0].startswith("Accrued") for row in values)
     assert ("Total Revenue", "TRY", None) in values  # Missing revenue must not become a measured zero.
     assert wb.active.column_dimensions["A"].width >= 46
     assert wb.active.column_dimensions["C"].width >= 26
