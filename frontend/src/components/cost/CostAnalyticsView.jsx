@@ -62,20 +62,14 @@ export default function CostAnalyticsView() {
   const businessDate = useBusinessDate();
 
   const [loading, setLoading] = useState(true);
-  const [expenses, setExpenses] = useState([]);
+  const [report, setReport] = useState(null);
   const [range, setRange] = useState(null);
   const startDate = range?.start ?? `${businessDate.slice(0, 7)}-01`;
   const endDate = range?.end ?? businessDate;
-  const [selectedCurrency, setSelectedCurrency] = useState('');
   const [loadError, setLoadError] = useState(false);
   const requestId = useRef(0);
-  const currencies = useMemo(() => [...new Set(expenses.map(exp => {
-    const code = String(exp.currency || tenantCurrency).trim().toUpperCase();
-    return code === 'TL' ? 'TRY' : code;
-  }))].sort(), [expenses, tenantCurrency]);
-  const currencyCode = currencies.includes(selectedCurrency) ? selectedCurrency
-    : currencies.includes(tenantCurrency) ? tenantCurrency : currencies[0] || tenantCurrency;
-  const fmtMoney = value => formatCurrency(value, currencyCode, { decimals: 2 });
+  const currencyCode = report?.reporting_currency || tenantCurrency;
+  const fmtMoney = value => value == null || !Number.isFinite(Number(value)) ? 'Doğrulanamadı' : formatCurrency(value, currencyCode, { decimals: 2, compactDecimals: false });
 
   const categoryLabel = useCallback(
     (key) => t(`costAnalytics.categories.${key}`, { defaultValue: key }),
@@ -90,8 +84,9 @@ export default function CostAnalyticsView() {
       const params = {};
       if (startDate) params.start_date = startDate;
       if (endDate) params.end_date = endDate;
-      const res = await axios.get('/accounting/expenses', { params });
-      if (id === requestId.current) setExpenses(Array.isArray(res.data) ? res.data : []);
+      const res = await axios.get('/reports/expense-accruals', { params });
+      if (!res.data?.reporting_currency || !res.data.categories || !('total_expenses' in res.data)) throw new Error('Gider raporu yanıtı eksik');
+      if (id === requestId.current) setReport(res.data);
     } catch (err) {
       console.error('Cost analytics load failed', {
         status: err?.response?.status ?? 'NOT_RECORDED',
@@ -100,7 +95,7 @@ export default function CostAnalyticsView() {
       if (id === requestId.current) {
         toast.error(t('costAnalytics.loadError'));
         setLoadError(true);
-        setExpenses([]);
+        setReport(null);
       }
     } finally {
       if (id === requestId.current) setLoading(false);
@@ -112,23 +107,9 @@ export default function CostAnalyticsView() {
     return () => { requestId.current += 1; };
   }, [loadExpenses]);
 
-  const { totalCosts, byCategory, entriesCount } = useMemo(() => {
-    const buckets = {};
-    let total = 0;
-    let count = 0;
-    expenses.forEach((exp) => {
-      const raw = String(exp.currency || tenantCurrency).trim().toUpperCase();
-      if ((raw === 'TL' ? 'TRY' : raw) !== currencyCode) return;
-      const cat = exp.category || 'other';
-      const amt = Number(exp.total_amount ?? exp.amount ?? 0) || 0;
-      if (!buckets[cat]) buckets[cat] = { total: 0, count: 0 };
-      buckets[cat].total = Math.round((buckets[cat].total + amt) * 100) / 100;
-      buckets[cat].count += 1;
-      total = Math.round((total + amt) * 100) / 100;
-      count += 1;
-    });
-    return { totalCosts: total, byCategory: buckets, entriesCount: count };
-  }, [expenses, tenantCurrency, currencyCode]);
+  const totalCosts = report?.total_expenses ?? null;
+  const entriesCount = report?.count ?? 0;
+  const byCategory = useMemo(() => Object.fromEntries(Object.entries(report?.categories || {}).map(([key, value]) => [key, { total: value.amount, count: value.count }])), [report]);
 
   const categoryData = useMemo(
     () =>
@@ -138,14 +119,14 @@ export default function CostAnalyticsView() {
           name: categoryLabel(key),
           total: data.total,
           count: data.count,
-          avg: data.count > 0 ? data.total / data.count : 0,
+          avg: data.total == null ? null : data.count > 0 ? data.total / data.count : 0,
         }))
-        .sort((a, b) => b.total - a.total),
+        .sort((a, b) => Number(a.total == null) - Number(b.total == null) || (b.total || 0) - (a.total || 0)),
     [byCategory, categoryLabel]
   );
 
   const periodDays = daysBetween(startDate, endDate);
-  const dailyAvg = totalCosts / periodDays;
+  const dailyAvg = totalCosts == null ? null : totalCosts / periodDays;
 
   const exportCsv = useCallback(() => {
     const headers = [
@@ -157,16 +138,17 @@ export default function CostAnalyticsView() {
       t('costAnalytics.headers.share'),
     ];
     const rows = categoryData.map((c) => {
-      const share = totalCosts > 0 ? ((c.total / totalCosts) * 100).toFixed(2) : '0';
-      return [currencyCode, c.name, c.count, c.total.toFixed(2), c.avg.toFixed(2), `${share}%`];
+      const share = totalCosts == null || c.total == null ? '—' : totalCosts > 0 ? ((c.total / totalCosts) * 100).toFixed(2) : '0';
+      return [currencyCode, c.name, c.count, c.total == null ? 'Doğrulanamadı' : c.total.toFixed(2), c.avg == null ? 'Doğrulanamadı' : c.avg.toFixed(2), `${share}%`];
     });
+    if (report?.currency_policy?.category_rounding_difference) rows.push([currencyCode, 'Kur yuvarlama farkı (gider kaydı değildir)', '', report.currency_policy.category_rounding_difference.toFixed(2), '', '']);
     rows.push([
       currencyCode,
       t('costAnalytics.headers.totalRow'),
       entriesCount,
-      totalCosts.toFixed(2),
-      entriesCount > 0 ? (totalCosts / entriesCount).toFixed(2) : '0.00',
-      '100%',
+      totalCosts == null ? 'Doğrulanamadı' : totalCosts.toFixed(2),
+      totalCosts == null ? 'Doğrulanamadı' : entriesCount > 0 ? (totalCosts / entriesCount).toFixed(2) : '0.00',
+      totalCosts == null ? '—' : totalCosts > 0 ? '100%' : '0%',
     ]);
     const csv = [headers, ...rows]
       .map((r) => r.map(csvEscape).join(','))
@@ -181,7 +163,7 @@ export default function CostAnalyticsView() {
     a.remove();
     URL.revokeObjectURL(url);
     toast.success(t('costAnalytics.exportSuccess'));
-  }, [categoryData, totalCosts, entriesCount, startDate, endDate, t, currencyCode]);
+  }, [categoryData, totalCosts, entriesCount, startDate, endDate, t, currencyCode, report]);
 
   const numberFmt = useMemo(
     () => new Intl.NumberFormat(i18n.language || 'tr-TR'),
@@ -226,12 +208,7 @@ export default function CostAnalyticsView() {
               className="w-40"
             />
           </div>
-          <div>
-            <Label htmlFor="cost-currency" className="text-xs text-gray-600">Para birimi</Label>
-            <select id="cost-currency" value={currencyCode} onChange={e => setSelectedCurrency(e.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
-              {(currencies.length ? currencies : [tenantCurrency]).map(code => <option key={code} value={code}>{code}</option>)}
-            </select>
-          </div>
+          <p className="py-2 text-sm">Rapor para birimi: {currencyCode}</p>
           <Button variant="outline" onClick={loadExpenses} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             {t('costAnalytics.refresh')}
@@ -243,7 +220,9 @@ export default function CostAnalyticsView() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">Gider tahakkukları · {currencyCode}. Para birimleri birbirine eklenmez; oranlar ve CSV yalnız seçili para birimindedir.</p>
+      <p className="text-xs text-muted-foreground">Gider tahakkukları · {currencyCode}. İşlemin günündeki kayıtlı kur kullanılır; ekran ve CSV aynı otel para birimindedir.</p>
+      {!!report?.currency_policy?.category_rounding_difference && <p className="text-xs text-muted-foreground">Kategori toplamı ile genel toplam arasındaki kur yuvarlaması: {fmtMoney(report.currency_policy.category_rounding_difference)}. Yeni gider kaydı değildir.</p>}
+      {report?.currency_policy?.complete === false && <p role="status" className="rounded-md border border-amber-300 p-3 text-sm">Tarihî kur veya tutar kanıtı eksik. Etkilenen gider toplamları doğrulanamadı; eksik kayıtlar sıfır sayılmadı.</p>}
       {loading ? <p role="status">Rapor yükleniyor…</p> : loadError ? <p role="alert">{t('costAnalytics.loadError')}</p> : <>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-red-50 to-red-100 border-red-200">
@@ -323,9 +302,9 @@ export default function CostAnalyticsView() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {categoryData.length === 0 ? (
+            {categoryData.length === 0 || totalCosts == null ? (
               <div className="text-center text-gray-400 py-12">
-                {t('costAnalytics.empty')}
+                {totalCosts == null ? 'Doğrulanamadı' : t('costAnalytics.empty')}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -354,9 +333,9 @@ export default function CostAnalyticsView() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {categoryData.length === 0 ? (
+            {categoryData.length === 0 || totalCosts == null ? (
               <div className="text-center text-gray-400 py-12">
-                {t('costAnalytics.empty')}
+                {totalCosts == null ? 'Doğrulanamadı' : t('costAnalytics.empty')}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -390,13 +369,13 @@ export default function CostAnalyticsView() {
           <CardTitle className="text-base">{t('costAnalytics.detailsTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
-          {categoryData.length === 0 ? (
-            <div className="text-center text-gray-400 py-8">{t('costAnalytics.empty')}</div>
+          {categoryData.length === 0 || totalCosts == null ? (
+            <div className="text-center text-gray-400 py-8">{totalCosts == null ? 'Doğrulanamadı' : t('costAnalytics.empty')}</div>
           ) : (
             <div className="space-y-2">
               {categoryData.map((cat, idx) => {
                 const share =
-                  totalCosts > 0 ? ((cat.total / totalCosts) * 100).toFixed(1) : '0';
+                  totalCosts == null || cat.total == null ? '—' : totalCosts > 0 ? ((cat.total / totalCosts) * 100).toFixed(1) : '0';
                 return (
                   <div
                     key={cat.key}
@@ -428,7 +407,7 @@ export default function CostAnalyticsView() {
         </CardContent>
       </Card>
 
-      {categoryData.length > 0 && (
+      {categoryData.length > 0 && totalCosts != null && (
         <div className="rounded-md border border-blue-100 bg-blue-50/60 p-4 text-sm text-gray-700 flex items-start gap-3">
           <ReceiptText className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
           <div>
