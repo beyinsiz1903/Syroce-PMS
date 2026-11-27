@@ -1531,7 +1531,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "room_revenue_net": kpis["room_revenue_net"], "room_revenue_net_by_currency": kpis["room_revenue_net_by_currency"],
             "adr": kpis["adr"], "adr_by_currency": kpis["adr_by_currency"],
             "revpar": kpis["rev_par"], "revpar_by_currency": kpis["rev_par_by_currency"],
-            "revenue_source": "posted", "adr_basis": kpis["adr_basis"]}
+            "revenue_source": "posted", "adr_basis": kpis["adr_basis"], "posting_pending": kpis["posting_pending"]}
     property_summary = {"today_revenue": day_kpis["total_revenue"],
         "today_revenue_by_currency": day_kpis["total_revenue_by_currency"],
         "today_room_revenue": day_kpis["room_revenue"], "today_room_revenue_by_currency": day_kpis["room_revenue_by_currency"],

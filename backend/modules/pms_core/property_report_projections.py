@@ -3,7 +3,7 @@ from copy import deepcopy
 from datetime import timedelta
 
 from modules.pms_core.property_reporting_currency import PropertyAccumulator
-from modules.pms_core.report_money import money, rounded
+from modules.pms_core.report_money import currency_code, money, rounded
 from modules.pms_core.reporting_ledger import charge_amount
 from modules.pms_core.revenue_categories import is_revenue_charge, revenue_department
 from modules.pms_core.revenue_report import FIELDS, build_revenue_report, charge_breakdown, revenue_day
@@ -97,10 +97,22 @@ def property_revenue_kpis(charges, metrics, first, last, rates):
             acc.add("fb_revenue", charge_amount(source), source)
     sold = sum(int(row.get("sold_rooms", row.get("occupied_rooms")) or 0) for row in metrics)
     capacity = sum(int(row.get("total_rooms") or 0) for row in metrics)
+    posted = {(revenue_day(source).isoformat(), currency_code(source.get("currency")))
+        for source in charges if revenue_day(source) is not None and charge_breakdown(source)["category"] == "room"}
+    pending_days = []
+    for metric in metrics:
+        day = str(metric.get("date") or "")[:10]
+        if not day or not int(metric.get("sold_rooms", metric.get("occupied_rooms")) or 0):
+            continue
+        codes = {currency_code(code) for code, count in (metric.get("sold_rooms_by_currency") or {}).items() if count}
+        missing = any((day, code) not in posted for code in codes) if codes else not any(key[0] == day for key in posted)
+        if missing:
+            pending_days.append(day)
     gross, tax = acc.total("room_proof_gross"), acc.total("room_proof_tax")
-    room_net = None if gross is None or tax is None else rounded(money(gross)-money(tax))
+    room_net = None if pending_days or gross is None or tax is None else rounded(money(gross)-money(tax))
     result = {"currency": rates.currency, "currency_policy": acc.metadata(),
-        "room_nights_sold": sold, "available_room_nights": capacity}
+        "room_nights_sold": sold, "available_room_nights": capacity,
+        "posting_pending": bool(pending_days), "posting_gap_days": pending_days}
     for key in ("total_revenue", "room_revenue", "room_revenue_net", "fb_revenue"):
         result[key] = room_net if key == "room_revenue_net" else acc.total(key)
         result[key + "_by_currency"] = {rates.currency: result[key]}

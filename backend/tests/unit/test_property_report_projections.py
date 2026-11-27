@@ -60,3 +60,12 @@ def test_gl_rounding_identity_derives_net_after_gross_and_aggregate_tax():
     assert report["totals"]["verified_net"] == .02
     kpis = property_revenue_kpis([row], [{"sold_rooms": 1, "total_rooms": 1}], DAY, DAY, book)
     assert kpis["adr"] == .02
+
+
+def test_unposted_paid_room_currency_is_pending_not_a_complete_zero_or_partial_adr():
+    metrics = [{"date": str(DAY), "sold_rooms": 2, "sold_rooms_by_currency": {"TRY": 1, "USD": 1}, "total_rooms": 10}]
+    result = property_revenue_kpis([source("TRY", 120, 100, 20)], metrics, DAY, DAY, rates())
+    assert result["posting_pending"] and result["adr_by_currency"] == {"TRY": None}
+    assert result["total_revenue"] == 120
+    result = property_revenue_kpis([source("TRY", 0, 0, 0), source("USD", 0, 0, 0)], metrics, DAY, DAY, rates())
+    assert not result["posting_pending"] and result["adr"] == 0

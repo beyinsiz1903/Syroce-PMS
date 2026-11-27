@@ -36,6 +36,7 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
       <KPICard title={occupiedLabel} value={occupied} icon={BedDouble} color="purple" />
       <KPICard title={capacityLabel} value={capacity} icon={Hotel} color="cyan" />
     </div>
+    {metrics.posting_pending && <p role="status" className="text-sm text-amber-800">Oda gecelerinin bir bölümünde gelir henüz işlenmemiş; ADR/RevPAR doğrulanamadı. Tahmini fiyat bu alana eklenmez.</p>}
     {netBasis && <p className="text-sm text-slate-600">Tutarlar otel para biriminde, özgün işlem gününün kayıtlı kuruyla gösterilir. ADR ve RevPAR vergi hariç işlenmiş oda gelirine dayanır.</p>}
     {hasMultipleCurrencies && <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
       Döviz tutarları birbirine eklenmez. Ortalama oda fiyatı ve satılabilir oda başına gelir her para birimi için ayrı hesaplanır.
