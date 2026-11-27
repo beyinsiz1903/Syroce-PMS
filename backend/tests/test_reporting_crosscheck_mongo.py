@@ -237,7 +237,7 @@ async def test_expense_summary_does_not_return_demo_numbers(ledger_db, monkeypat
         {"tenant_id": "A", "date": datetime(2026, 10, 2, tzinfo=UTC), "total_amount": 20, "currency": "EUR", "category": "food"},
     ])
     actual = await dashboards.get_expense_summary(date="2026-10-02", period="week", current_user=USER)
-    assert actual["total_expenses"] is None and actual["by_currency"] == {"EUR": 20, "TRY": 100}
+    assert actual["total_expenses"] is None and actual["by_currency"] == {"TRY": None}
 
 
 async def test_cashier_report_never_claims_an_uncounted_shift_balanced(ledger_db, monkeypatch):

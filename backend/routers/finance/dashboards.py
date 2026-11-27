@@ -73,40 +73,33 @@ async def get_expense_summary(
             raise HTTPException(422, "Dönem today, week veya month olmalıdır")
 
         from core.tenant_currency import get_tenant_currency
-        from modules.pms_core.reporting_financials import report_payment_period_match
 
         tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
-        rows = await db.expenses.find({"tenant_id": current_user.tenant_id,
-            **report_payment_period_match(start_date.isoformat(), end_date.isoformat(), date_fields=("date", "expense_date", "created_at"))}, {"_id": 0}).to_list(None)
-        totals, categories = {}, {}
-        for row in rows:
-            amount = row.get("total_amount", row.get("amount", 0))
-            category = str(row.get("category") or "other")
-            add_amount(totals, row.get("currency") or tenant_currency, amount)
-            add_amount(categories.setdefault(category, {}), row.get("currency") or tenant_currency, amount)
-        expenses = {key: {"category": key, "amount": single_amount(values), "by_currency": rounded_totals(values), "breakdown": {}} for key, values in categories.items()}
-        total_expenses = single_amount(totals)
-
-        # Calculate daily average for the period
-        days_in_period = (end_date - start_date).days + 1
-        daily_avg = total_expenses / days_in_period if total_expenses is not None else None
-
-        return {
-            "period": period,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "total_expenses": total_expenses,
-            "by_currency": rounded_totals(totals),
-            "daily_average": round(daily_avg, 2) if daily_avg is not None else None,
-            "categories": expenses,
-            "top_expense": max(expenses.values(), key=lambda item: item["amount"])["category"] if expenses and len(totals) <= 1 else None,
-            "source": "expense_accruals",
-        }
+        from modules.pms_core.property_expense_report import property_expense_report
+        result = await property_expense_report(db, current_user.tenant_id, start_date, end_date, tenant_currency)
+        return {**result, "period": period}
 
     except HTTPException:
         raise
     except ValueError as exc:
         raise HTTPException(422, "Geçersiz tarih veya tutar") from exc
+
+
+@router.get("/reports/expense-accruals")
+async def get_expense_accrual_report(start_date: str, end_date: str,
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_finance_reports"))):
+    from datetime import date as report_date
+
+    from core.tenant_currency import get_tenant_currency
+    from modules.pms_core.property_expense_report import property_expense_report
+    try:
+        first, last = report_date.fromisoformat(start_date), report_date.fromisoformat(end_date)
+    except ValueError as exc:
+        raise HTTPException(422, "Tarihler YYYY-MM-DD olmalı") from exc
+    if first.isoformat() != start_date or last.isoformat() != end_date or first > last or last == report_date.max or (last-first).days > 365:
+        raise HTTPException(422, "Geçerli, en fazla 366 günlük tarih aralığı seçin")
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    return await property_expense_report(db, current_user.tenant_id, first, last, currency)
 
 
 @router.get("/finance/cash-flow-dashboard")
