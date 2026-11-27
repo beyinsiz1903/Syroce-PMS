@@ -29,23 +29,21 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('Reporting cross-page integrity', () => {
-  it('isolates expense amounts, shares and CSV by selected currency and uses PMS dates', async () => {
-    axios.get.mockResolvedValue({ data: [{ currency: 'TRY', category: 'food', total_amount: 100 }, { currency: 'EUR', category: 'food', total_amount: 20 }] });
+  it('shares one property-valued expense result between screen and CSV for PMS dates', async () => {
+    axios.get.mockResolvedValue({ data: { reporting_currency: 'TRY', total_expenses: 1100, count: 2, categories: { food: { amount: 1100, count: 2 } }, currency_policy: { complete: true } } });
     render(<CostAnalyticsView />);
-    await screen.findAllByText('₺100,00');
-    expect(axios.get).toHaveBeenCalledWith('/accounting/expenses', { params: { start_date: '2026-10-01', end_date: '2026-10-02' } });
+    await screen.findAllByText('₺1.100,00');
+    expect(axios.get).toHaveBeenCalledWith('/reports/expense-accruals', { params: { start_date: '2026-10-01', end_date: '2026-10-02' } });
     expect(screen.queryByText('₺120,00')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Para birimi'), { target: { value: 'EUR' } });
-    expect((await screen.findAllByText(/20,00\s*€/)).length).toBeGreaterThan(0);
-    expect(screen.queryByText('₺100,00')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Para birimi')).not.toBeInTheDocument();
     let blob;
     vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(value => { blob = value; return 'blob:costs'; }); static revokeObjectURL = vi.fn(); });
     vi.spyOn(window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     fireEvent.click(screen.getByRole('button', { name: 'costAnalytics.exportCsv' }));
     const csv = await new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsText(blob); });
-    expect(csv).toContain('"EUR"');
-    expect(csv).toContain('"20.00"');
-    expect(csv).not.toContain('"100.00"');
+    expect(csv).toContain('"TRY"');
+    expect(csv).toContain('"1100.00"');
+    expect(csv).not.toContain('"EUR"');
   });
 
   it('does not turn a failed expense load into a verified zero report', async () => {
