@@ -20,9 +20,10 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
     snapshots = await folio_snapshots(database, tenant_id, folios,
         fallback_currency=rates.currency, include_booking_extras=True)
     days = [source_day(row) for snap in snapshots.values() for row in snap["charges"] + snap["payments"]]
-    first = min([business_day] + [day for day in days if day])
-    if first < business_day:
-        rates = await load_historical_rates(database, tenant_id, date.fromisoformat(first), last, base_currency=rates.currency)
+    days += [str(snap["folio"].get("opening_balance_date") or "")[:10] for snap in snapshots.values() if snap["opening_by_currency"]]
+    first, latest = min([business_day] + [day for day in days if day]), max([business_day] + [day for day in days if day])
+    if first != business_day or latest != business_day:
+        rates = await load_historical_rates(database, tenant_id, date.fromisoformat(first), date.fromisoformat(latest), base_currency=rates.currency)
     report = property_income_report(charges, last, last, rates)
     base = rates.currency
     result = deepcopy(payload)
@@ -33,30 +34,31 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
             acc.add(key, payment["amount"], payment)
     balances = []
     for snap in snapshots.values():
-        ledger = PropertyAccumulator(rates)
-        # A settled foreign-currency debt is zero, regardless of the cash
-        # settlement rate. Realized FX belongs in GL, never reopened AR.
+        # Preserve debit and credit buckets across native currencies. A net
+        # base-currency zero is not proof that unlike debts were settled.
         for code, native_balance in snap["balance_by_currency"].items():
             if not native_balance:
                 continue
+            ledger = PropertyAccumulator(rates)
             candidates = ([row for row in snap["charges"] if row["currency"] == code]
                 if native_balance > 0 else [row for row in snap["payments"] if row["currency"] == code])
             if code in snap["opening_by_currency"]:
-                candidates.append({**snap["folio"], "currency": code})
+                candidates.append({"id": snap["folio"].get("id"), "currency": code, "business_date": snap["folio"].get("opening_balance_date")})
             if code == base:
                 ledger.add("balance", native_balance, {"currency": base})
-                continue
-            quotes = [(source, rates.quote(code, source_day(source), source)) for source in candidates]
-            known = {quote[0] for _, quote in quotes if quote is not None}
-            if not quotes or any(quote is None for _, quote in quotes) or len(known) != 1:
-                ledger.unavailable.add("balance")
-                ledger.issues.append({"id": snap["folio"].get("id"), "currency": code,
-                    "reason": "receivable_allocation_valuation_unverified", "reporting_currency": base})
             else:
-                ledger.add("balance", native_balance, quotes[0][0])
-        value = ledger.total("balance")
-        balances.append(value)
-        acc.issues.extend(issue for issue in ledger.issues if issue not in acc.issues)
+                quotes = [(source, rates.quote(code, source_day(source), source)) for source in candidates]
+                known = {quote[0] for _, quote in quotes if quote is not None}
+                missing = not quotes or any(quote is None for _, quote in quotes)
+                if missing or len(known) != 1:
+                    ledger.unavailable.add("balance")
+                    ledger.issues.append({"id": snap["folio"].get("id"), "currency": code,
+                        "reason": "historical_exchange_rate_missing" if missing else "receivable_allocation_valuation_unverified",
+                        "reporting_currency": base})
+                else:
+                    ledger.add("balance", native_balance, quotes[0][0])
+            balances.append(ledger.total("balance"))
+            acc.issues.extend(issue for issue in ledger.issues if issue not in acc.issues)
     balance = dict.fromkeys(("total", "receivable", "overpayment")) if any(value is None for value in balances) else {
         "total": round(sum(balances), 2), "receivable": round(sum(max(value, 0) for value in balances), 2),
         "overpayment": round(sum(min(value, 0) for value in balances), 2)}
@@ -65,7 +67,8 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
     result["currency"] = result["reporting_currency"] = base
     result["currency_policy"] = {**acc.metadata(), "revenue": report["currency_policy"],
         "complete": acc.metadata()["complete"] and report["currency_policy"]["complete"] and balance["total"] is not None,
-        "missing_rate_count": len(acc.issues) + report["currency_policy"]["missing_rate_count"]}
+        "missing_rate_count": sum(issue["reason"] == "historical_exchange_rate_missing" for issue in acc.issues) + report["currency_policy"]["missing_rate_count"],
+        "unverified_valuation_count": sum(issue["reason"] == "receivable_allocation_valuation_unverified" for issue in acc.issues)}
     result["revenue"].update(total=total["verified_net"], total_by_currency={base: total["verified_net"]},
         verified_total_by_currency={base: total["verified_net"]}, total_with_tax=total["total"],
         total_with_tax_by_currency={base: total["total"]},
@@ -80,7 +83,7 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
     result["payments"].update(total=paid, total_by_currency={base: paid},
         by_method={method: {**row, "amount": acc.total("payment:" + method), "amount_by_currency": {base: acc.total("payment:" + method)}}
             for method, row in result["payments"]["by_method"].items()})
-    result["open_folios"].update(balance=balance, balance_by_currency={base: balance})
+    result["open_folios"].update(balance=balance, balance_by_currency={base: balance}, balance_basis="current_open_folio_carrying_value")
     result["net_position"] = None if total["total"] is None or paid is None else round(total["total"]-paid, 2)
     result["net_position_by_currency"] = {base: result["net_position"]}
     return result

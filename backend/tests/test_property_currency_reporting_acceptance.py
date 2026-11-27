@@ -76,3 +76,24 @@ async def test_partially_settled_foreign_ar_is_not_reduced_by_cash_fx_gain(ledge
         {"revenue": {}, "tax": {}, "payments": {"by_method": {}}, "open_folios": {}}, DAY)
     assert result["payments"]["total"] == 600
     assert result["open_folios"]["balance"]["total"] == 1000  # 20 USD still due, carrying rate 50
+
+
+async def test_base_net_zero_does_not_hide_unsettled_debt_and_credit_in_different_currencies(ledger_db):
+    await seed(ledger_db)
+    await ledger_db.payments.insert_one({"tenant_id": "A", "id": "credit", "folio_id": "f", "business_date": DAY,
+        "currency": "EUR", "amount": 20, "method": "cash", "reporting_currency": "TRY", "reporting_amount": 1000})
+    result = await property_financial_summary(ledger_db, "A",
+        {"revenue": {}, "tax": {}, "payments": {"by_method": {}}, "open_folios": {}}, DAY)
+    assert result["open_folios"]["balance"] == {"total": 0, "receivable": 1000, "overpayment": -1000}
+
+
+async def test_multiple_ar_carrying_rates_require_allocation_evidence_not_a_guess(ledger_db):
+    await seed(ledger_db)
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-11-13", "from_currency": "USD", "to_currency": "TRY", "rate": 60})
+    await ledger_db.folio_charges.insert_one({"tenant_id": "A", "id": "next-sale", "folio_id": "f", "business_date": "2026-11-13",
+        "charge_category": "room", "currency": "USD", "total": 10, "amount": 10, "vat_amount": 0, "tax_amount": 0})
+    result = await property_financial_summary(ledger_db, "A",
+        {"revenue": {}, "tax": {}, "payments": {"by_method": {}}, "open_folios": {}}, DAY)
+    assert result["open_folios"]["balance"]["total"] is None
+    assert result["currency_policy"]["missing_rate_count"] == 0
+    assert result["currency_policy"]["unverified_valuation_count"] == 1
