@@ -1,0 +1,18 @@
+appId: com.syroce.pms
+name: "Navigate through the authorized staff role switcher"
+---
+# Use the same UI a person uses. Custom scheme launches can leave an iOS
+# SpringBoard confirmation above the app, invisible to the driver hierarchy.
+# Existing front-desk users need no role change; all-access managers use the
+# app's role picker. The target screen remains mandatory.
+- runFlow:
+    when:
+      notVisible:
+        id: "smoke-today-quick-checkin"
+    commands:
+      - tapOn:
+          text: "Ön Büro"
+- extendedWaitUntil:
+    visible:
+      id: "smoke-today-quick-checkin"
+    timeout: 30000

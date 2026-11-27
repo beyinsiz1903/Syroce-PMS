@@ -46,3 +46,20 @@ name: "Shared login commands (credentials supplied by caller)"
 - tapOn:
     text: "Not Now"
     optional: true
+
+# iOS 26's Passwords sheet is missing from the XCTest hierarchy (native
+# screenshots in run46003794381). The text tap above cannot dismiss it there.
+# On the pinned iPhone17 simulator, decline at the observed Not Now button;
+# never press Save or change Passwords/AutoFill security settings. If the sheet
+# is absent this point lies on read-only dashboard/navigation content. Every
+# caller still asserts its own destination after this shared login helper.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - takeScreenshot: artifacts/login-before-password-sheet-dismissal
+      - tapOn:
+          point: "31%,63%"
+          retryTapIfNoChange: false
+      - waitForAnimationToEnd
+      - takeScreenshot: artifacts/login-after-password-sheet-dismissal

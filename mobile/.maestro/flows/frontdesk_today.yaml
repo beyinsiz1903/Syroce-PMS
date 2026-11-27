@@ -10,12 +10,8 @@ tags:
       LOGIN_EMAIL: ${SMOKE_EMAIL}
       LOGIN_PASSWORD: ${SMOKE_PASSWORD}
 
-# Admin and manager accounts may land on their own dashboard.
-# Open the authorized frontdesk route explicitly; route permissions still apply.
-- runFlow:
-    file: ../helpers/open_link.yaml
-    env:
-      TARGET_LINK: "syrocepms:///(frontdesk)"
+# Navigate through the actual role UI, preserving app permission checks.
+- runFlow: ../helpers/frontdesk.yaml
 
 # After login the front_desk role lands on the "Bugün" tab. We assert
 # the canonical labels rendered by mobile/app/(frontdesk)/index.tsx so
