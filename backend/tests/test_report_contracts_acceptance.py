@@ -294,3 +294,46 @@ async def test_cash_exchange_keeps_event_day_separate_from_an_older_open_busines
     assert [row["id"] for row in first["payments"]["currency_exchanges"]] == ["fx"]
     assert first["cash_movements"]["currency_exchanges"] == []
     assert [row["id"] for row in second["cash_movements"]["currency_exchanges"]] == ["fx"]
+
+
+async def test_cash_calendar_uses_tenant_midnight_not_utc(ledger_db):
+    await ledger_db.tenant_settings.insert_one({'tenant_id': 'A', 'timezone': 'Europe/Istanbul'})
+    await ledger_db.payments.insert_many([
+        {'tenant_id': 'A', 'id': 'before', 'processed_at': '2026-11-26T20:59:59Z', 'amount': 1, 'currency': 'TRY', 'method': 'cash'},
+        {'tenant_id': 'A', 'id': 'receipt', 'processed_at': '2026-11-26T21:31:19Z', 'business_date': '2026-11-13', 'amount': 1500, 'currency': 'TRY', 'method': 'cash'},
+        {'tenant_id': 'A', 'id': 'refund', 'processed_at': datetime(2026, 11, 26, 21, 32, tzinfo=UTC), 'business_date': '2026-11-13', 'amount': -1500, 'currency': 'TRY', 'method': 'cash', 'payment_type': 'refund'},
+        {'tenant_id': 'A', 'id': 'offset', 'processed_at': '2026-11-27T00:35:00+03:00', 'amount': 2, 'currency': 'TRY', 'method': 'cash'},
+        {'tenant_id': 'A', 'id': 'legacy', 'payment_date': '2026-11-27', 'amount': 3, 'currency': 'TRY', 'method': 'cash'},
+        {'tenant_id': 'A', 'id': 'next', 'processed_at': '2026-11-27T21:00:00Z', 'amount': 4, 'currency': 'TRY', 'method': 'cash'},
+        {'tenant_id': 'B', 'id': 'other', 'processed_at': '2026-11-26T21:31:19Z', 'amount': 9000, 'currency': 'TRY', 'method': 'cash'},
+    ])
+    first = await dashboard_lists._basic_dashboard_impl(USER, True, '2026-11-26', 'daily')
+    second = await dashboard_lists._basic_dashboard_impl(USER, True, '2026-11-27', 'daily')
+    assert {row['id'] for row in first['cash_movements']['rows']} == {'before'}
+    assert {row['id'] for row in second['cash_movements']['rows']} == {'receipt', 'refund', 'offset', 'legacy'}
+    assert second['cash_movements']['total_paid'] == 5
+    accounting = await dashboard_lists._basic_dashboard_impl(USER, True, '2026-11-13', 'daily')
+    assert {row['id'] for row in accounting['payments']['rows']} == {'receipt', 'refund'}
+
+
+@pytest.mark.parametrize('zone,day,start,end', [
+    ('Europe/Berlin', '2026-03-29', '2026-03-28T23:00:00Z', '2026-03-29T22:00:00Z'),
+    ('Europe/Berlin', '2026-10-25', '2026-10-24T22:00:00Z', '2026-10-25T23:00:00Z'),
+    ('invalid-zone', '2026-11-27', '2026-11-26T21:00:00Z', '2026-11-27T21:00:00Z'),
+])
+async def test_cash_calendar_dst_and_authoritative_timestamp(ledger_db, zone, day, start, end):
+    from datetime import timedelta
+
+    from modules.pms_core.reporting_financials import report_payment_calendar_match
+
+    before = datetime.fromisoformat(start.replace('Z', '+00:00')) - timedelta(seconds=1)
+    await ledger_db.payments.insert_many([
+        {'tenant_id': 'A', 'id': 'start', 'processed_at': start},
+        {'tenant_id': 'A', 'id': 'before', 'processed_at': before, 'payment_date': day},
+        {'tenant_id': 'A', 'id': 'end', 'processed_at': end, 'payment_date': day},
+        {'tenant_id': 'A', 'id': 'malformed', 'processed_at': 'bad', 'payment_date': day},
+        {'tenant_id': 'A', 'id': 'fallback', 'processed_at': '', 'payment_date': day},
+        {'tenant_id': 'B', 'id': 'foreign', 'processed_at': start},
+    ])
+    rows = await ledger_db.payments.find({'tenant_id': 'A', **report_payment_calendar_match(day, day, zone)}).to_list(None)
+    assert {row['id'] for row in rows} == {'start', 'fallback'}

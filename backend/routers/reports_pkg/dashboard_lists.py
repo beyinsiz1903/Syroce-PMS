@@ -25,6 +25,7 @@ from modules.pms_core.reporting_financials import (
     deduplicate_report_payments,
     effective_folio_payment,
     is_valid_payment,
+    report_payment_calendar_match,
     report_payment_day_match,
     report_payment_period_match,
     reporting_collection_amount,
@@ -646,6 +647,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     from core.tenant_currency import get_tenant_currency
 
     native_currency = currency_code((await get_tenant_currency(tenant_id))[0])
+    calendar_settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1})
+    calendar_timezone = str((calendar_settings or {}).get("timezone") or "Europe/Istanbul")
     if period == "daily":
         month_start = today_start
         trend_start = today_start
@@ -785,10 +788,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         db.payments.find(
             {
                 "tenant_id": tenant_id,
-                **report_payment_period_match(
-                    target_day, target_day, use_business_date=False,
-                    date_fields=("processed_at", "payment_date", "date", "created_at"),
-                ),
+                **report_payment_calendar_match(target_day, target_day, calendar_timezone),
             },
             {"_id": 0},
         ).to_list(None),
