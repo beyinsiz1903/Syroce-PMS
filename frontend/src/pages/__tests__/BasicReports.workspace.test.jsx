@@ -31,6 +31,24 @@ beforeEach(() => {
 });
 
 describe('Complete active report workspace', () => {
+  it('uses property cashier values while preserving non-monetary source counts', async () => {
+    fetchJson.mockResolvedValue({ ...payload('2026-10-07'),
+      front_cashier: { charge_total_by_currency: { USD: 100 }, charge_count: 3 },
+      payments: { total_paid: 20, reporting_currency: 'USD', by_method: { cash: 20 } },
+      property_reporting: { currency: 'TRY',
+        front_cashier: { charge_total_by_currency: { TRY: 5000 }, non_cash_total: 0,
+          net_cash_movement_by_currency: { TRY: 1000 }, daily_balance_change_by_currency: { TRY: 4000 } },
+        payments: { total_paid: 1000, reporting_currency: 'TRY', by_method: { cash: 1000 } },
+      },
+    });
+    open('front_cashier');
+    const section = await screen.findByTestId('section-front-cashier');
+    expect(section).toHaveTextContent('₺5.000,00');
+    expect(section).toHaveTextContent('₺1.000,00');
+    expect(section).not.toHaveTextContent('$100');
+    expect(within(screen.getByText('Folyo hareketi').parentElement).getByText('3')).toBeInTheDocument();
+  });
+
   it('lands old occupancy bookmarks on the single forecast workspace', async () => {
     open('occupancy');
     expect(screen.getByTestId('report-active-content')).toHaveAttribute('data-report-section', 'forecast_reports');

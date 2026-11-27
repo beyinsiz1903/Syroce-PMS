@@ -4,6 +4,17 @@ import { describe, expect, it } from 'vitest';
 import ManagerDailyReports from '../ManagerDailyReports';
 
 describe('ManagerDailyReports', () => {
+  it('does not render missing property valuations as zero or a balanced day', () => {
+    render(<ManagerDailyReports section="front_cashier" reportDate="2026-11-12" data={{
+      front_cashier: { charge_total_by_currency: { EUR: null },
+        net_cash_movement_by_currency: { EUR: null }, daily_balance_change_by_currency: { EUR: null },
+        uncollected_charges_by_currency: { EUR: null }, non_cash_total: null },
+      payments: { reporting_currency: 'EUR', total_paid: null, by_method: { card: null } },
+    }} />);
+    expect(screen.getAllByText('Doğrulanamadı').length).toBeGreaterThanOrEqual(4);
+    expect(screen.queryByText('Günlük folyo ve tahsilat dengeli')).not.toBeInTheDocument();
+  });
+
   it.each([[4, 0, '4'], [null, 1, '—']])('distinguishes declared people from registered profiles and unknown counts', (total, unknown, label) => {
     render(<ManagerDailyReports section="daily_analysis" reportDate="2026-10-24" data={{ daily_analysis: {
       in_house_guests: total, registered_guest_profiles: 2, in_house_party: { unknown_booking_count: unknown },

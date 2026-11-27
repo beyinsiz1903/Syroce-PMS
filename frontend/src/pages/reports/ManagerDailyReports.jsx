@@ -12,7 +12,7 @@ const PAYMENT_METHOD_LABELS = {
   transfer: 'Havale / EFT', city_ledger: 'Cari hesap', agency: 'Acente', online: 'Çevrim içi',
 };
 const formatPaymentMethod = method => PAYMENT_METHOD_LABELS[String(method || '').toLowerCase()] || method || '-';
-const ReportingAmount = ({ payments, amount }) => formatCurrency(amount || 0, payments?.reporting_currency || 'TRY');
+const ReportingAmount = ({ payments, amount }) => amount == null ? 'Doğrulanamadı' : formatCurrency(amount, payments?.reporting_currency || 'TRY');
 const ReceivedDetail = ({ row }) => {
   const receivedCurrency = row.received_currency || row.currency || 'TRY';
   if (row.conversion_missing) return <div className="text-xs font-normal text-rose-600">Alınan: {formatCurrency(row.received_amount ?? row.amount, receivedCurrency)}<span className="block">Tarihsel kur eksik; TL toplamına dahil edilmedi</span></div>;
@@ -26,7 +26,7 @@ const ReceivedDetail = ({ row }) => {
 const CurrencyBreakdown = ({ totals = {}, fallback, currency }) => {
   const entries = Object.entries(totals);
   return entries.length
-    ? <>{entries.map(([code, amount]) => <span className="block" key={code}>{formatCurrency(amount, code)}</span>)}</>
+    ? <>{entries.map(([code, amount]) => <span className="block" key={code}>{amount == null ? 'Doğrulanamadı' : formatCurrency(amount, code)}</span>)}</>
     : <>{fallback == null ? '-' : formatCurrency(fallback, currency)}</>;
 };
 
@@ -34,7 +34,8 @@ const BalanceEffect = ({ totals = {}, fallback }) => {
   const entries = Object.entries(totals);
   const values = entries.length ? entries : [[undefined, Number(fallback || 0)]];
   return <div className="space-y-1">{values.map(([code, rawAmount]) => {
-    const amount = Number(rawAmount || 0);
+    if (rawAmount == null) return <div key={code}>Doğrulanamadı</div>;
+    const amount = Number(rawAmount);
     const label = amount < 0
       ? 'Önceki bakiyeden tahsilat'
       : amount > 0
@@ -57,7 +58,7 @@ const FrontCashierReport = ({ summary, payments, reportDate }) => (
       <KPICard title="Folyo İşlem Tutarı" value={<CurrencyBreakdown totals={summary.charge_total_by_currency} fallback={summary.charge_total} />} icon={ReceiptText} color="amber" />
       <KPICard title="Toplam Tahsilat" value={<ReportingAmount payments={payments} amount={payments.total_paid} />} icon={HandCoins} color="green" />
       <KPICard title="Nakit Tahsilat" value={<ReportingAmount payments={payments} amount={payments.by_method?.cash} />} icon={Banknote} color="blue" />
-      <KPICard title="Kart / Havale Tahsilatı" value={<ReportingAmount payments={payments} amount={Object.entries(payments.by_method || {}).filter(([method]) => method !== 'cash').reduce((sum, [, amount]) => sum + Number(amount || 0), 0)} />} icon={CreditCard} color="purple" />
+      <KPICard title="Kart / Havale Tahsilatı" value={<ReportingAmount payments={payments} amount={summary.non_cash_total} />} icon={CreditCard} color="purple" />
     </div>
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
       <div><p className="text-gray-500">Folyo hareketi</p><p className="font-bold text-lg">{summary.charge_count || 0}</p></div>
