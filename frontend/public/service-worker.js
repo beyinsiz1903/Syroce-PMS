@@ -7,7 +7,8 @@
 // CACHE_NAME'e geçer (activate handler eskileri siler).
 // v1.4.0: tüm Vite lazy-route varlıklarının build manifestinden precache'i,
 // çevrimdışı SPA navigation fallback'i ve static/data cache ayrımı eklendi.
-const CACHE_VERSION = 'v1.4.2';
+// v1.4.3: financial reports never replay pre-deploy/offline monetary snapshots.
+const CACHE_VERSION = 'v1.4.3';
 const STATIC_CACHE_NAME = `hotel-pms-static-${CACHE_VERSION}`;
 const DATA_CACHE_NAME = `hotel-pms-data-${CACHE_VERSION}`;
 const CACHE_PREFIX = 'hotel-pms-';
@@ -179,11 +180,6 @@ const ROUTE_STRATEGIES = [
     cacheDuration: 2 * 60 * 1000,
   },
   {
-    pattern: /\/api\/reports/,
-    strategy: CACHE_STRATEGIES.STALE_WHILE_REVALIDATE,
-    cacheDuration: 60 * 60 * 1000, // 1 hour
-  },
-  {
     pattern: /\.(js|css|png|jpg|jpeg|svg|woff|woff2)$/,
     strategy: CACHE_STRATEGIES.CACHE_FIRST,
     cacheDuration: 7 * 24 * 60 * 60 * 1000, // 7 days
@@ -278,6 +274,15 @@ self.addEventListener('fetch', (event) => {
   // Widget HTML carries a live, agency-specific frame-ancestors policy. It
   // must neither fall back to nor replace the shared offline SPA shell.
   if (url.pathname === '/agency-widget' || url.pathname.startsWith('/api/marketplace/v1/widget/')) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
+
+  // A stale monetary snapshot can use a previous currency policy, tax basis,
+  // or business-day scope. Financial reports must get a fresh server result;
+  // offline/network failures remain visible, never a cached successful total.
+  if (/\/api\/(reports|finance|accounting|dashboard|kpis|widgets)(\/|$)/.test(url.pathname)
+      || url.pathname === '/api/pms/financial-summary') {
     event.respondWith(fetch(request, { cache: 'no-store' }));
     return;
   }
