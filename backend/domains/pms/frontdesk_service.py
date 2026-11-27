@@ -139,7 +139,9 @@ class FrontdeskService:
         booking_status = booking.get("status")
         if booking_status == "checked_in":
             return ServiceResult.fail("Guest already checked in", "ALREADY_CHECKED_IN")
-        if booking_status not in {"confirmed", "guaranteed"}:
+        # Match the canonical atomic check-in boundary: a direct pending stay
+        # may enter after all date, identity and room readiness guards pass.
+        if booking_status not in {"pending", "confirmed", "guaranteed"}:
             return ServiceResult.fail("Booking status is not eligible for check-in", "INVALID_BOOKING_STATUS")
 
         room_id = booking.get("room_id")
@@ -249,7 +251,7 @@ class FrontdeskService:
             {
                 "id": booking_id,
                 "tenant_id": ctx.tenant_id,
-                "status": {"$in": ["confirmed", "guaranteed"]},
+                "status": booking_status,
             },
             {"$set": {"status": "checked_in", "checked_in_at": checked_in_time.isoformat(), "checked_in_business_date": checkin_day.isoformat()}},
         )

@@ -71,12 +71,13 @@ async def test_confirmed_booking_without_room_returns_controlled_failure_without
 
 
 @pytest.mark.asyncio
-async def test_checkin_rejects_non_eligible_status_before_room_lookup():
+@pytest.mark.parametrize("status", ["cancelled", "checked_out", "no_show", "draft"])
+async def test_checkin_rejects_non_eligible_status_before_room_lookup(status):
     service = _service_with_db(
         {
             "id": "booking-a",
             "tenant_id": "tenant-a",
-            "status": "cancelled",
+            "status": status,
             "room_id": "room-a",
         }
     )
@@ -92,7 +93,7 @@ async def test_checkin_rejects_non_eligible_status_before_room_lookup():
     service._db.rooms.find_one.assert_not_awaited()
 
 
-@pytest.mark.parametrize("status", ["pending_mapping", "confirmed"])
+@pytest.mark.parametrize("status", ["pending_mapping", "confirmed", "pending"])
 async def test_mapping_quarantine_cannot_become_a_stay_even_after_legacy_room_assignment(status):
     service = _service_with_db({"id": "hold", "tenant_id": "tenant-a", "status": status,
                                "room_id": "room-a", "booking_source": "ota_unmatched_hold"})
@@ -184,12 +185,13 @@ async def test_frontdesk_route_maps_room_assignment_failure_to_http_400(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_successful_checkin_scopes_room_folio_booking_and_guest_to_tenant():
+@pytest.mark.parametrize("status", ["pending", "confirmed", "guaranteed"])
+async def test_successful_checkin_scopes_room_folio_booking_and_guest_to_tenant(status):
     service = _service_with_db(
         {
             "id": "booking-a",
             "tenant_id": "tenant-a",
-            "status": "confirmed",
+            "status": status,
             "room_id": "room-a",
             "guest_id": "guest-a",
             "check_in": "2026-08-17",
@@ -218,6 +220,8 @@ async def test_successful_checkin_scopes_room_folio_booking_and_guest_to_tenant(
     }
     assert service._db.folios.find_one.await_args.args[0]["tenant_id"] == "tenant-a"
     assert service._db.bookings.update_one.await_args.args[0]["tenant_id"] == "tenant-a"
+    assert service._db.bookings.update_one.await_args.args[0]["status"] == status
+    service._db.folios.insert_one.assert_not_awaited()
     assert service._db.rooms.update_one.await_args.args[0]["tenant_id"] == "tenant-a"
     assert service._db.guests.update_one.await_args.args[0] == {
         "id": "guest-a",
@@ -226,12 +230,47 @@ async def test_successful_checkin_scopes_room_folio_booking_and_guest_to_tenant(
 
 
 @pytest.mark.asyncio
-async def test_standard_frontdesk_checkin_blocks_future_arrival_for_business_date():
+@pytest.mark.parametrize("room_status", ["dirty", "cleaning", "maintenance", "out_of_service"])
+async def test_pending_checkin_keeps_room_readiness_guards(room_status):
+    service = _service_with_db(
+        {"id": "pending-a", "tenant_id": "tenant-a", "status": "pending",
+         "room_id": "room-a", "guest_id": "guest-a", "check_in": "2026-08-17"},
+        {"id": "room-a", "tenant_id": "tenant-a", "status": room_status, "room_number": "105"},
+    )
+    result = await FrontdeskService.checkin.__wrapped__(service, _context(), "pending-a")
+    assert not result.ok and result.code == "ROOM_NOT_READY"
+    service._db.bookings.update_one.assert_not_awaited()
+    service._db.rooms.update_one.assert_not_awaited()
+    service._db.folios.insert_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pending_checkin_stale_status_cannot_occupy_room_or_increment_guest(monkeypatch):
+    service = _service_with_db(
+        {"id": "pending-a", "tenant_id": "tenant-a", "status": "pending",
+         "room_id": "room-a", "guest_id": "guest-a", "check_in": "2026-08-17"},
+        {"id": "room-a", "tenant_id": "tenant-a", "status": "inspected", "room_number": "105"},
+    )
+    service._db.bookings.update_one.return_value = SimpleNamespace(modified_count=0)
+    enqueue = AsyncMock()
+    monkeypatch.setattr("domains.pms.frontdesk_service._enqueue_kbs_after_frontdesk_transition", enqueue)
+    result = await FrontdeskService.checkin.__wrapped__(service, _context(), "pending-a")
+    assert not result.ok and result.code == "CHECKIN_STATE_CONFLICT"
+    assert service._db.bookings.update_one.await_args.args[0]["status"] == "pending"
+    service._db.rooms.update_one.assert_not_awaited()
+    service._db.guests.update_one.assert_not_awaited()
+    service._db.folios.insert_one.assert_not_awaited()
+    enqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["pending", "confirmed", "guaranteed"])
+async def test_standard_frontdesk_checkin_blocks_future_arrival_for_business_date(status):
     service = _service_with_db(
         {
             "id": "booking-future",
             "tenant_id": "tenant-a",
-            "status": "confirmed",
+            "status": status,
             "room_id": "room-a",
             "guest_id": "guest-a",
             "check_in": "2026-08-26",
