@@ -1131,6 +1131,7 @@ async def revenue_by_category_excel(
         sheet.column_dimensions[key].width = 22
     sheet.append(["Eksik vergi kırılımlı işlem", result["reconciliation"]["tax_unknown_count"]])
     sheet.append(["Uyumsuz kaynak hareketi", result["reconciliation"]["issue_count"]])
+    sheet.append(["Özgün ikram dökümü eksik işlem", result["reconciliation"].get("concession_unknown_count", 0)])
     if result["reconciliation"].get("demo_reconstructed_count"):
         sheet.append(["DEMO RECONSTRUCTION — NOT HISTORICALLY VERIFIED", result["reconciliation"]["demo_reconstructed_count"]])
     trend = workbook.create_sheet("Günlük Tutarlar")
@@ -1154,6 +1155,11 @@ async def revenue_by_category_excel(
     for source in result["reconciliation"].get("tax_unknown_sources", []):
         missing_tax.append([source["source"], source["id"], source["date"], source["currency"], source["category"], source["total"]])
     missing_tax.freeze_panes = "A4"
+    concessions = workbook.create_sheet("Eksik İkram Dökümleri")
+    concessions.append(["Not", "Özgün net/vergi bilinmiyor; indirim sıfır kabul edilmez. İşlenmiş gelir/vergi değiştirilmez."])
+    concessions.append(["Kaynak", "Hareket kimliği", "Tarih", "Para birimi", "Kategori", "Özgün liste bedeli (vergi dahil)"])
+    for source in result["reconciliation"].get("concession_unknown_sources", []):
+        concessions.append([source["source"], source["id"], source["date"], source["currency"], source["category"], source["original_gross"]])
     for page in workbook:
         for row in page:
             for cell in row:

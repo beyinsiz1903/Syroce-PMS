@@ -62,6 +62,11 @@ def charge_breakdown(row):
     # zero-valued posting. Show only a proven original NET as the concession;
     # never treat the gross list price as net or change posted revenue/taxes.
     comp_net = None
+    original_comp_gross = None
+    full_comp_laundry = (category == "laundry" and row.get("is_complimentary")
+        and row.get("complimentary_scope") == "full" and total == 0)
+    if full_comp_laundry and row.get("complimentary_original_amount") is not None:
+        original_comp_gross = money(row["complimentary_original_amount"])
     original_tax = row.get("complimentary_original_tax_snapshot")
     if (category == "laundry" and row.get("is_complimentary")
             and row.get("complimentary_scope") == "full" and total == 0
@@ -93,6 +98,10 @@ def charge_breakdown(row):
         # by missing positive taxes (e.g. amount=1, total=0). Surface it.
         difference = total - money(rounded(row["amount"]))
     subtotal = signed(row["subtotal"]) if row.get("subtotal") is not None else net + discount if net is not None else None
+    concession_unknown = bool(full_comp_laundry and comp_net is None
+        and row.get("discount_amount") is None and original_comp_gross != 0)
+    if concession_unknown:
+        subtotal = discount = None
     subtotal_difference = subtotal - discount - net if subtotal is not None and net is not None else Decimal(0)
     issues = []
     if difference:
@@ -101,7 +110,8 @@ def charge_breakdown(row):
         issues.append("Ara toplam − indirim ile net uyuşmuyor")
     return {"subtotal": subtotal, "discount": discount, "net": net, "vat": vat, "city_tax": city,
         "other_tax": other, "difference": difference, "total": total, "issues": issues,
-        "tax_unknown": not tax_known, "category": category}
+        "tax_unknown": not tax_known, "category": category,
+        "concession_unknown": concession_unknown, "original_comp_gross": original_comp_gross}
 
 
 def _bucket():
@@ -128,6 +138,7 @@ def build_revenue_report(charges, first, last):
     grouped, totals, departments, days = {}, {}, {}, {}
     issues, issue_count, unknown_count, reconstructed_count = [], 0, 0, 0
     unknown_sources = []
+    concession_unknown_count, concession_sources = 0, []
     for row in charges:
         if not is_revenue_charge(row):
             continue
@@ -146,6 +157,11 @@ def build_revenue_report(charges, first, last):
         dept[code] = dept.get(code, Decimal(0)) + values["total"]
         by_day = days.setdefault(day.isoformat(), {})
         by_day[code] = by_day.get(code, Decimal(0)) + values["total"]
+        concession_unknown_count += values["concession_unknown"]
+        if values["concession_unknown"] and len(concession_sources) < 100:
+            concession_sources.append({"source": row.get("report_source"), "id": str(row.get("id") or ""),
+                "date": day.isoformat(), "currency": code, "category": category,
+                "original_gross": rounded(values["original_comp_gross"]) if values["original_comp_gross"] is not None else None})
         unknown_count += values["tax_unknown"]
         if values["tax_unknown"] and len(unknown_sources) < 100:
             unknown_sources.append({"source": row.get("report_source"), "id": str(row.get("id") or ""),
@@ -183,7 +199,10 @@ def build_revenue_report(charges, first, last):
     return {"date_from": first.isoformat(), "date_to": last.isoformat(), "rows": rows,
         "totals": legacy, "totals_by_currency": totals, "revenue_trend": trend,
         "departments_by_currency": {dept: {code: rounded(value) for code, value in sorted(values.items())} for dept, values in departments.items()},
-        "reconciliation": {"issue_count": issue_count, "tax_unknown_count": unknown_count, "issues": issues,
+        "reconciliation": {"concession_unknown_count": concession_unknown_count,
+            "concession_unknown_sources": concession_sources,
+            "concession_unknown_sources_truncated": concession_unknown_count > len(concession_sources),
+            "issue_count": issue_count, "tax_unknown_count": unknown_count, "issues": issues,
             "tax_unknown_sources": unknown_sources, "tax_unknown_sources_truncated": unknown_count > len(unknown_sources),
             **({"demo_reconstructed_count": reconstructed_count, "historical_source_verified": False} if reconstructed_count else {})},
         "basis": "posted_ledger_gross", "definitions": {

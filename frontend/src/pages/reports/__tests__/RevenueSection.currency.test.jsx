@@ -26,6 +26,18 @@ beforeEach(() => {
   window.print = vi.fn();
 });
 describe('one-snapshot revenue report', () => {
+  it('distinguishes unknown original concession from verified zero posted revenue', async () => {
+    const data = payload();
+    data.reconciliation = { concession_unknown_count: 1, concession_unknown_sources: [{ source: 'folio', id: 'old-comp', date: '2026-10-01', currency: 'TRY', original_gross: 25 }], tax_unknown_count: 0, issue_count: 0 };
+    data.rows[0].by_currency.TRY = { ...data.rows[0].by_currency.TRY, subtotal: null, discount: null, net: 0, verified_net: 0, total: 0 };
+    axios.get.mockResolvedValueOnce({ data });
+    renderReport();
+    await screen.findByRole('table');
+    expect(screen.getByText(/1 ikram kaydının özgün net/)).toBeInTheDocument();
+    expect(screen.getByText(/folio \/ old-comp/)).toHaveTextContent('₺25,00');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Vergi / indirim ayrıntıları' }));
+    expect(within(screen.getByRole('table')).getAllByText('Doğrulanamadı (TRY)').length).toBeGreaterThan(0);
+  });
   it('identifies missing-tax sources without treating zero gross as verified tax', async () => {
     const data = payload();
     data.reconciliation.tax_unknown_sources = [{ source: 'folio', id: 'zero-source', date: '2026-10-01', currency: 'TRY', category: 'other', total: 0, description: 'İkram kaydı', booking_id: 'booking-A' }];
