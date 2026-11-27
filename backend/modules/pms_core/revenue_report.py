@@ -58,18 +58,17 @@ def charge_breakdown(row):
     if inclusive_laundry:
         city = Decimal(0)
     discount = signed(row.get("discount_amount") or 0)
-    # Full-comp laundry retains its original tax snapshot separately from the
+    # Full-comp sources retain their original tax snapshot separately from the
     # zero-valued posting. Show only a proven original NET as the concession;
     # never treat the gross list price as net or change posted revenue/taxes.
     comp_net = None
     original_comp_gross = None
-    full_comp_laundry = (category == "laundry" and row.get("is_complimentary")
-        and row.get("complimentary_scope") == "full" and total == 0)
-    if full_comp_laundry and row.get("complimentary_original_amount") is not None:
+    full_comp_source = (row.get("is_complimentary")
+        and (row.get("complimentary_scope") == "full" or row.get("complimentary_original_amount") is not None) and total == 0)
+    if full_comp_source and row.get("complimentary_original_amount") is not None:
         original_comp_gross = money(row["complimentary_original_amount"])
     original_tax = row.get("complimentary_original_tax_snapshot")
-    if (category == "laundry" and row.get("is_complimentary")
-            and row.get("complimentary_scope") == "full" and total == 0
+    if (full_comp_source
             and isinstance(original_tax, dict)
             and original_tax.get("net_amount") is not None
             and original_tax.get("vat_amount") is not None
@@ -98,7 +97,9 @@ def charge_breakdown(row):
         # by missing positive taxes (e.g. amount=1, total=0). Surface it.
         difference = total - money(rounded(row["amount"]))
     subtotal = signed(row["subtotal"]) if row.get("subtotal") is not None else net + discount if net is not None else None
-    concession_unknown = bool(full_comp_laundry and comp_net is None
+    if comp_net is not None and row.get("discount_amount") is None:
+        subtotal = comp_net
+    concession_unknown = bool(full_comp_source and comp_net is None
         and row.get("discount_amount") is None and original_comp_gross != 0)
     if concession_unknown:
         subtotal = discount = None

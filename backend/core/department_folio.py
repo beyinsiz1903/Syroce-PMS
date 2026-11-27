@@ -52,7 +52,7 @@ async def post_source_charge(db, tenant_id, source, actor_id, *, session):
     if tax is not None and tax > gross:
         raise HTTPException(409, "Kaynak vergi tutarı toplamdan büyük")
     full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
-    original = gross
+    original, original_tax = gross, tax
     if full_comp:
         gross, tax = Decimal(0), Decimal(0) if tax is not None else None
     fingerprint = hashlib.sha256(json.dumps({**source, "folio_id": folio["id"]}, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
@@ -119,6 +119,13 @@ async def post_source_charge(db, tenant_id, source, actor_id, *, session):
         "is_complimentary": bool(full_comp),
         "complimentary_original_amount": float(original) if full_comp else None,
     }
+    if full_comp:
+        charge["complimentary_scope"] = "full"
+        if original_tax is not None:
+            charge["complimentary_original_tax_snapshot"] = {
+                "net_amount": float(original - original_tax), "vat_amount": float(original_tax), "tax_amount": 0.0,
+                "basis": "department_source_tax", "currency": code,
+            }
     if kind in {"transfer", "parking"}:
         charge["line_no"] = 0
     if kind == "mice":
