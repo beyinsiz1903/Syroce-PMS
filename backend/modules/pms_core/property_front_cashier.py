@@ -35,7 +35,7 @@ def property_front_cashier(charges, payments, rates):
         "reporting_currency": base, "currency_policy": acc.metadata(),
         "balance_basis": "selected_day_charge_less_folio_offsets; not_remaining_receivable"},
         "payments": {"reporting_currency": base, "total_paid": collection,
-            "by_method": {method: acc.total("method:"+method) for method in methods},
+            "by_method": {"cash": cash, **{method: acc.total("method:"+method) for method in methods}},
             "totals_by_currency": {base: collection}, "currency_policy": acc.metadata(),
             "conversion_issue_count": len(acc.issues[charge_issue_count:]),
             "conversion_issues": acc.issues[charge_issue_count:]}}

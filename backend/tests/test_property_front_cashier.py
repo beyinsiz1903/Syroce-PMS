@@ -38,3 +38,4 @@ def test_empty_eur_property_does_not_default_to_try():
     r = property_front_cashier([], [], HistoricalRates('EUR'))
     assert r['front_cashier']['charge_total_by_currency'] == {'EUR': 0}
     assert r['payments']['reporting_currency'] == 'EUR'
+    assert r['payments']['by_method']['cash'] == 0
