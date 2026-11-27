@@ -29,6 +29,9 @@ class Collection:
         self.projections.append(projection)
         return self
 
+    def sort(self, *_args):
+        return self
+
     async def to_list(self, limit):
         self.limits.append(limit)
         return self.rows[:limit] if limit is not None else self.rows
@@ -249,13 +252,19 @@ async def test_flash_and_standard_revenue_share_posted_ledger_and_export_numeric
             {"id": "free", "grand_total": 0, "total_amount": 10, "currency": "TRY"},
             {"id": "transferred", "grand_total": 200, "currency": "TRY"}]))
     db.pos_transactions, db.pos_menu_transactions, db.transactions = Collection(), Collection(), Collection()
+    db.hotel_settings = Collection([{"tenant_id": USER.tenant_id, "currency": "TRY"}])
+    db.currency_rates = Collection([{"tenant_id": USER.tenant_id, "effective_date": "2026-10-01", "from_currency": "EUR", "to_currency": "TRY", "rate": 50}])
+    db.gl_journal_entries = Collection()
+    for collection in (db.folio_charges, db.extra_charges, db.pos_orders):
+        for row in collection.rows:
+            row["business_date"] = "2026-10-01"
     monkeypatch.setattr(flash_email, "db", db)
     monkeypatch.setattr(flash_email, "load_stay_night_metrics", AsyncMock(return_value=[{"occupied_rooms": 1, "sold_rooms": 1, "total_rooms": 2, "occupancy_rate": 50}]))
     monkeypatch.setattr(tenant_currency, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
     report = await flash_email.get_daily_flash_report.__wrapped__("2026-10-01", USER)
-    assert report["revenue"]["total_revenue_by_currency"] == {"TRY": 224, "EUR": -5}
+    assert report["revenue"]["total_revenue_by_currency"] == {"TRY": -26}
     assert report["revenue"]["fb_revenue_by_currency"] == {"TRY": 24}
-    assert report["revenue"]["other_revenue_by_currency"]["EUR"] == -5
+    assert report["revenue"]["other_revenue_by_currency"]["TRY"] == -250
     assert db.pos_orders.queries[0]["status"] == {"$in": ["closed", "completed", "paid"]}
     assert db.pos_orders.limits == [None]
     monkeypatch.setattr(flash_email, "get_daily_flash_report", SimpleNamespace(__wrapped__=AsyncMock(return_value=report)))
@@ -263,8 +272,8 @@ async def test_flash_and_standard_revenue_share_posted_ledger_and_export_numeric
         wb = await workbook(await flash_email.export_daily_flash_excel("2026-10-01", USER))
         values = list(wb.active.values)
         assert values[1] == ("Metric", "Currency", "Value")
-        assert ("Total Revenue", "EUR", -5) in values
-        assert ("Total Revenue", "TRY", 224) in values
+        assert ("Total Revenue", "TRY", -26) in values
+        assert not any(row[0] == "Total Revenue" and row[1] == "EUR" for row in values)
 
 
 @pytest.mark.parametrize("pending", [True, False])
@@ -307,10 +316,12 @@ async def test_scheduled_finance_payload_keeps_currency_and_comp_exclusion(monke
     from core import business_date_service, database, tenant_currency
     from modules.pms_core import stay_night_metrics
     raw_db = SimpleNamespace(folio_charges=Collection([
-        {"total": 200, "currency": "TRY", "charge_category": "room"},
-        {"total": 40, "currency": "EUR", "charge_category": "room"}]))
+        {"total": 200, "currency": "TRY", "charge_category": "room", "business_date": "2026-10-01", "vat_amount": 0, "tax_amount": 0},
+        {"total": 40, "currency": "EUR", "charge_category": "room", "business_date": "2026-10-01", "vat_amount": 0, "tax_amount": 0}]))
     for key in ("extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions"):
         setattr(raw_db, key, Collection())
+    raw_db.currency_rates = Collection([{"effective_date": "2026-10-01", "from_currency": "EUR", "to_currency": "TRY", "rate": 50}])
+    raw_db.gl_journal_entries = Collection()
     monkeypatch.setattr(database, "_raw_db", raw_db)
     monkeypatch.setattr(business_date_service, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-01"}))
     monkeypatch.setattr(tenant_currency, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
@@ -318,8 +329,8 @@ async def test_scheduled_finance_payload_keeps_currency_and_comp_exclusion(monke
     result = await report_scheduler._build_report_payload({"tenant_id": "t", "report_type": "financial"}, datetime(2026, 10, 15, tzinfo=UTC))
     rows = {row["label"]: row["value"] for row in result["rows"]}
     assert result["range"] == "2026-10-01"
-    assert rows["Toplam gelir (para birimine göre)"] == "EUR 40.00 · TRY 200.00"
-    assert rows["ADR (Ortalama Günlük Fiyat)"] == "EUR 20.00 · TRY 100.00"
+    assert rows["Toplam gelir (para birimine göre)"] == "TRY 2,200.00"
+    assert rows["ADR (Ortalama Günlük Fiyat)"] == "TRY 1,100.00"
     assert raw_db.folio_charges.limits == [None]
 
 

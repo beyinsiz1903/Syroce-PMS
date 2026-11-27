@@ -90,11 +90,11 @@ async def test_flash_distinguishes_pending_room_prices_from_posted_revenue(ledge
     await ledger_db.bookings.insert_one({"tenant_id": "A", "id": "b1", "room_id": "r1", "check_in": DAY, "check_out": "2026-09-06", "status": "checked_in", "currency": "TRY", "total_amount": 5500})
     await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": DAY, "category": "mini_bar", "total": 20, "currency": "TRY"})
     data = await flash_email.get_daily_flash_report.__wrapped__(DAY, USER)
-    assert data["revenue"]["adr_by_currency"] == {}
+    assert data["revenue"]["adr_by_currency"] == {"TRY": None}
     assert data["revenue"]["posting_pending"] is True
     assert data["revenue"]["operational_adr_by_currency"] == {"TRY": 5500}
     assert data["revenue"]["category_revenue_by_currency"]["minibar"] == {"TRY": 20}
-    assert data["revenue"]["fb_revenue_by_currency"] == {}
+    assert data["revenue"]["fb_revenue_by_currency"] == {"TRY": 0}
 
 
 @pytest.mark.parametrize("collection", ["folio_charges", "extra_charges"])

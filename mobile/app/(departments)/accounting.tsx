@@ -410,7 +410,7 @@ export default function AccountingScreen() {
   const vatChartData: ChartDatum[] = useMemo(() => {
     if (!summary?.currency) return [];
     return Object.entries(summary.tax.breakdown)
-      .map(([rate, amount]) => ({ label: `%${rate}`, value: amount ?? 0 }))
+      .map(([rate, amount]) => ({ label: ({ vat: 'KDV', accommodation_tax: 'Konaklama vergisi', other_tax: 'Diğer vergi' } as Record<string, string>)[rate] || rate, value: amount ?? 0 }))
       .filter((d) => d.value > 0);
   }, [summary]);
 
@@ -430,11 +430,12 @@ export default function AccountingScreen() {
   // tahsilatı ve aralarındaki fark. Bu fark kâr/zarar değildir.
   const cashFlowBars: ChartDatum[] = useMemo(() => {
     if (!summary?.currency) return [];
-    return [
+    const values = [
       { label: a.revenueWithTax, value: summary.revenue.total_with_tax },
       { label: a.payments, value: summary.payments.total },
       { label: a.netPosition, value: summary.net_position },
     ];
+    return values.every(item => Number.isFinite(item.value)) ? values : [];
   }, [summary, a.revenueWithTax, a.payments, a.netPosition]);
 
   const fmtTRY = (n: number) => reportAmountLabel(n, summary?.currency);

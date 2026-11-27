@@ -65,6 +65,7 @@ async def test_live_loader_is_tenant_scoped_includes_stayovers_and_business_date
     monkeypatch.setattr(flash_email, "db", ledger_db)
     monkeypatch.setattr(flash_email, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": DAY.isoformat()}))
     monkeypatch.setattr(standard_reports, "_posted_revenue_rows", AsyncMock(return_value=[]))
+    await ledger_db.hotel_settings.insert_one({"tenant_id": "A", "currency": "TRY"})
     await ledger_db.rooms.insert_many([{"tenant_id": "A", **room} for room in ROOMS])
     await ledger_db.bookings.insert_many([
         {"tenant_id": "A", **stay(source_channel="direct")},

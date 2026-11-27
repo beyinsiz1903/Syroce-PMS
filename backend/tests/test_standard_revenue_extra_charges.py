@@ -16,18 +16,26 @@ class _Cursor:
         return self.rows
 
 
+@pytest.fixture(autouse=True)
+def configured_reporting_currency(monkeypatch):
+    from modules.pms_core import property_reporting_currency
+    from modules.pms_core.property_reporting_currency import HistoricalRates
+    # These adapter fixtures intentionally omit a real rate store.
+    monkeypatch.setattr(property_reporting_currency, "load_historical_rates", AsyncMock(return_value=HistoricalRates("TRY")))
+
+
 @pytest.mark.asyncio
 async def test_revenue_report_includes_unabsorbed_manual_extra_categories(monkeypatch):
     folio_charges = SimpleNamespace(
         find=lambda *_args, **_kwargs: _Cursor([
-            {"charge_category": "room", "total": 1000},
+            {"charge_category": "room", "total": 1000, "business_date": "2026-09-26", "currency": "TRY"},
         ])
     )
     extra_charges = SimpleNamespace(
         find=lambda *_args, **_kwargs: _Cursor([
-            {"category": "room", "total": 2000},
-            {"category": "minibar", "charge_amount": 250},
-            {"category": "spa", "amount": 500},
+            {"category": "room", "total": 2000, "business_date": "2026-09-26", "currency": "TRY"},
+            {"category": "minibar", "charge_amount": 250, "business_date": "2026-09-26", "currency": "TRY"},
+            {"category": "spa", "amount": 500, "business_date": "2026-09-26", "currency": "TRY"},
         ])
     )
     pos_orders = SimpleNamespace(find=lambda *_args, **_kwargs: _Cursor([]))
@@ -62,8 +70,8 @@ async def test_revenue_report_includes_unabsorbed_manual_extra_categories(monkey
 async def test_revenue_report_never_adds_unlike_currencies_and_excludes_comp_from_adr(monkeypatch):
     folio_charges = SimpleNamespace(
         find=lambda *_args, **_kwargs: _Cursor([
-            {"charge_category": "room", "total": 5000, "currency": "TRY"},
-            {"charge_category": "room", "total": 100, "currency": "EUR"},
+            {"charge_category": "room", "total": 5000, "currency": "TRY", "business_date": "2026-10-01"},
+            {"charge_category": "room", "total": 100, "currency": "EUR", "business_date": "2026-10-01"},
         ])
     )
     empty = SimpleNamespace(find=lambda *_args, **_kwargs: _Cursor([]))
@@ -90,10 +98,11 @@ async def test_revenue_report_never_adds_unlike_currencies_and_excludes_comp_fro
     )
 
     assert result["total_revenue"] is None
-    assert result["total_revenue_by_currency"] == {"TRY": 5000.0, "EUR": 100.0}
+    assert result["total_revenue_by_currency"] == {"TRY": None}
+    assert result["original_currency_breakdown"]["EUR"]["total"] == 100
     assert result["room_nights_sold"] == 2
-    assert result["adr_by_currency"] == {"TRY": 2500.0, "EUR": 50.0}
-    assert result["mixed_currency"] is True
+    assert result["adr_by_currency"] == {"TRY": None}
+    assert result["mixed_currency"] is False
 
 
 @pytest.mark.asyncio

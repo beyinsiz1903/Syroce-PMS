@@ -131,6 +131,7 @@ async def test_flash_rejects_bad_recipient_list_before_any_delivery(recipients):
 
 
 async def test_flash_pdf_email_and_screen_keep_the_selected_business_date_and_native_amounts(ledger_db, monkeypatch):
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-10-01", "from_currency": "EUR", "to_currency": "TRY", "rate": 50})
     await ledger_db.folio_charges.insert_many(
         [
             {"tenant_id": "A", "business_date": "2026-10-01", "category": "room", "total": 10, "currency": "EUR"},
@@ -150,11 +151,11 @@ async def test_flash_pdf_email_and_screen_keep_the_selected_business_date_and_na
     screen = await flash_email.get_daily_flash_report.__wrapped__("2026-10-01", USER)
     pdf = await flash_email.get_daily_flash_pdf(current_user=USER, date_str="2026-10-01")
     result = await flash_email.email_daily_flash({"recipients": [" recipient@example.test ", "recipient@example.test"], "date_str": "2026-10-01"}, USER)
-    assert screen["revenue"]["total_revenue_by_currency"] == {"EUR": 10}
-    assert pdf.body.startswith(b"%PDF") and "EUR 10.00" in rendered[0] and "9,999" not in rendered[0]
+    assert screen["revenue"]["total_revenue_by_currency"] == {"TRY": 500}
+    assert pdf.body.startswith(b"%PDF") and "TRY 500.00" in rendered[0] and "9,999" not in rendered[0]
     assert flash_email.send_email.await_count == 1
     assert "2026-10-01" in flash_email.send_email.await_args.kwargs["subject"]
-    assert "EUR 10.00" in flash_email.send_email.await_args.kwargs["html"]
+    assert "TRY 500.00" in flash_email.send_email.await_args.kwargs["html"]
     assert not result["success"]
 
 
@@ -239,21 +240,24 @@ async def test_transfer_date_filter_keeps_final_day_iso_and_bson_rows(ledger_db)
 
 
 async def test_native_adr_uses_same_denominator_on_all_reports_and_previous_period(ledger_db):
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-10-06", "from_currency": "EUR", "to_currency": "TRY", "rate": 50})
     await ledger_db.rooms.insert_many([{"tenant_id": "A", "id": "r1"}, {"tenant_id": "A", "id": "r2"}])
     for day, departure in [("2026-10-06", "2026-10-07"), ("2026-10-07", "2026-10-08")]:
         for room, currency, amount in [("r1", "TRY", 100), ("r2", "EUR", 40)]:
             await ledger_db.bookings.insert_one(
                 {"tenant_id": "A", "id": day + room, "room_id": room, "status": "checked_out", "check_in": day, "check_out": departure, "currency": currency, "total_amount": amount}
             )
-            await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": day, "category": "room", "total": amount, "currency": currency})
+            await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": day, "category": "room", "total": amount, "amount": amount, "vat_amount": 0, "tax_amount": 0, "currency": currency})
     standard = await standard_reports.get_revenue_report.__wrapped__("2026-10-07", "2026-10-07", USER)
     basic = await dashboard_lists._basic_dashboard_impl.__wrapped__(USER, True, "2026-10-07", "daily")
     flash = await flash_email.get_daily_flash_report.__wrapped__("2026-10-07", USER)
     # One paid room in each currency: do not divide either bucket by both.
     weekly = await flash_email._weekly_management_payload(USER)
     expected = {"TRY": 100, "EUR": 40}
-    assert standard["adr_by_currency"] == flash["revenue"]["adr_by_currency"] == basic["summary"]["adr_by_currency"] == expected
-    assert weekly["key_metrics"]["adr_by_currency"] == expected
+    assert standard["adr_by_currency"] == flash["revenue"]["adr_by_currency"] == basic["property_reporting"]["summary"]["adr_by_currency"] == {"TRY": 1050}
+    assert basic["summary"]["adr_by_currency"] == expected
+    assert weekly["key_metrics"]["adr_by_currency"] == {"TRY": 1050}
+    assert basic["property_reporting"]["period_comparison"]["prev_month_adr_by_currency"] == {"TRY": 1050}
     assert basic["period_comparison"]["prev_month_adr_by_currency"] == expected
     assert basic["period_comparison"]["prev_month_adr"] == 0  # Legacy scalar is never a sum of currencies.
 
@@ -349,7 +353,7 @@ async def test_adr_half_cent_rounding_is_consistent(ledger_db):
     await ledger_db.bookings.insert_many(
         [{"tenant_id": "A", "id": r, "room_id": r, "status": "checked_out", "check_in": "2026-10-07", "check_out": "2026-10-08", "total_amount": 2.675, "currency": "TRY"} for r in ("r1", "r2")]
     )
-    await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": "2026-10-07", "total": 5.35, "currency": "TRY", "category": "room"})
+    await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": "2026-10-07", "total": 5.35, "amount": 5.35, "vat_amount": 0, "tax_amount": 0, "currency": "TRY", "category": "room"})
     standard = await standard_reports.get_revenue_report.__wrapped__("2026-10-07", "2026-10-07", USER)
     basic = await dashboard_lists._basic_dashboard_impl.__wrapped__(USER, True, "2026-10-07", "daily")
     flash = await flash_email.get_daily_flash_report.__wrapped__("2026-10-07", USER)

@@ -12,6 +12,9 @@ class _Cursor:
     def __init__(self, rows):
         self.rows = rows
 
+    def sort(self, *_args):
+        return self
+
     async def to_list(self, _limit):
         return list(self.rows)
 
@@ -30,7 +33,7 @@ class _Collection:
 
 class _DB(SimpleNamespace):
     def __init__(self, **values):
-        super().__init__(**{key: _Collection([]) for key in ("pos_transactions", "pos_menu_transactions", "transactions", "rooms", "room_types", "folios", "bookings")}, **values)
+        super().__init__(**{key: _Collection([]) for key in ("pos_transactions", "pos_menu_transactions", "transactions", "rooms", "room_types", "folios", "bookings", "currency_rates", "gl_journal_entries")}, **values)
 
 
 @pytest.mark.asyncio
@@ -71,6 +74,7 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
         ),
         pos_orders=_Collection([]),
     )
+    fake_db.currency_rates.rows = [{"tenant_id": "tenant-1", "effective_date": "2026-09-23", "from_currency": "EUR", "to_currency": "TRY", "rate": 2}]
     monkeypatch.setattr(folio_router, "db", fake_db)
 
     result = await folio_router.revenue_by_category.__wrapped__(
@@ -85,11 +89,12 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
     assert rows["beverage"]["count"] == 1
     assert rows["beverage"]["subtotal"] is None
     assert rows["beverage"]["net"] is None  # missing tax evidence is not zero tax
-    assert rows["beverage"]["total"] == 200
-    assert result["totals"]["total"] is None  # never add EUR and TRY
+    assert rows["beverage"]["total"] == 400
+    assert result["totals"]["total"] == 1400  # valued at the explicit historical rate
     assert rows["room"]["by_currency"]["TRY"]["total"] == 1000
-    assert rows["beverage"]["by_currency"]["EUR"]["total"] == 200
-    assert {code: values["total"] for code, values in result["totals_by_currency"].items()} == {"TRY": 1000, "EUR": 200}
+    assert rows["beverage"]["by_currency"]["TRY"]["total"] == 400
+    assert result["original_currency_breakdown"]["EUR"]["total"] == 200
+    assert {code: values["total"] for code, values in result["totals_by_currency"].items()} == {"TRY": 1400}
     assert result["reconciliation"]["tax_unknown_count"] == 2
 
 

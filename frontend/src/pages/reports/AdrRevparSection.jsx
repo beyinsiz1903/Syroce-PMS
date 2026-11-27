@@ -10,6 +10,7 @@ import { formatCurrencyBreakdown, roomRevenueSourceLabel } from '@/lib/reportCur
 const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
   const isDaily = reportPeriod === 'daily';
   const metrics = periodMetrics || s;
+  const netBasis = metrics.adr_basis === 'posted_room_net_excluding_recorded_taxes_per_paid_room_night';
   const periodLabel = isDaily ? 'Seçili Gün' : '30 Gün';
   const previousLabel = isDaily ? 'Önceki gün ortalama oda fiyatı' : 'Önceki 30 gün ortalama oda fiyatı';
   const previousAdr = pc.prev_month_adr_by_currency ? formatCurrencyBreakdown(pc.prev_month_adr_by_currency, pc.prev_month_adr) : 'Döviz bilgisi mevcut değil';
@@ -35,6 +36,8 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
       <KPICard title={occupiedLabel} value={occupied} icon={BedDouble} color="purple" />
       <KPICard title={capacityLabel} value={capacity} icon={Hotel} color="cyan" />
     </div>
+    {metrics.posting_pending && <p role="status" className="text-sm text-amber-800">Oda gecelerinin bir bölümünde gelir henüz işlenmemiş; ADR/RevPAR doğrulanamadı. Tahmini fiyat bu alana eklenmez.</p>}
+    {netBasis && <p className="text-sm text-slate-600">Tutarlar otel para biriminde, özgün işlem gününün kayıtlı kuruyla gösterilir. ADR ve RevPAR vergi hariç işlenmiş oda gelirine dayanır.</p>}
     {hasMultipleCurrencies && <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
       Döviz tutarları birbirine eklenmez. Ortalama oda fiyatı ve satılabilir oda başına gelir her para birimi için ayrı hesaplanır.
     </div>}
@@ -47,10 +50,10 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
             <div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-slate-600">{previousLabel}</span><span className="font-bold text-slate-900">{previousAdr}</span></div>
             <div className="flex justify-between"><span className="text-sm text-slate-600">{occupiedLabel}</span><span className="font-bold text-slate-900">{occupied}</span></div>
             {sold !== null && <div className="flex justify-between" data-testid="adr-sold-nights"><span className="text-sm text-slate-600">Satılan Oda-Gecesi (ortalama fiyatın paydası)</span><span className="font-bold text-slate-900">{sold}</span></div>}
-            <div className="flex justify-between"><span className="text-sm text-slate-600">Oda Geliri</span><span className="font-bold text-slate-900">{formatCurrencyBreakdown(metrics.room_revenue_by_currency, metrics.room_revenue ?? s.today_room_revenue)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">{netBasis ? 'Net Oda Geliri (vergi hariç)' : 'Oda Geliri'}</span><span className="font-bold text-slate-900">{formatCurrencyBreakdown(netBasis ? metrics.room_revenue_net_by_currency : metrics.room_revenue_by_currency, netBasis ? metrics.room_revenue_net : metrics.room_revenue ?? s.today_room_revenue)}</span></div>
             <div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-slate-600">Gelir Kaynağı</span><span className="font-medium text-slate-700">{roomRevenueSourceLabel(metrics.revenue_source)}</span></div>
             {sold !== null && <p className="text-xs text-slate-500" data-testid="adr-formula">
-              Ortalama fiyat = oda geliri ÷ satılan gece{sold !== occupied ? ` (${Math.abs(occupied - sold)} gece dolu ama satılmamış: ücretsiz veya kurum içi kullanım)` : ''}.
+              Ortalama fiyat = {netBasis ? 'vergi hariç işlenmiş oda geliri' : 'oda geliri'} ÷ satılan gece{sold !== occupied ? ` (${Math.abs(occupied - sold)} gece dolu ama satılmamış: ücretsiz veya kurum içi kullanım)` : ''}.
             </p>}
           </div>
         </CardContent>

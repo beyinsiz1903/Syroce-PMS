@@ -63,8 +63,8 @@ export default function RevenueSection({ reportDate, reportPeriod = 'monthly' })
   const currencies = Object.keys(data?.totals_by_currency || {});
   const visibleFields = details ? fields : fields.filter(([key]) => ['net', 'total'].includes(key));
   const rows = data?.rows || [];
-  const trend = (data?.revenue_trend || []).map(row => ({ ...row, label: dayText(row.date), value: row.revenue_by_currency?.[currency] ?? 0 }));
-  const roomTypes = (data?.room_type_revenue || []).map(row => ({ ...row, value: row.revenue_by_currency?.[currency] ?? 0 }));
+  const trend = (data?.revenue_trend || []).map(row => ({ ...row, label: dayText(row.date), value: row.revenue_by_currency?.[currency] ?? (data?.currency_policy?.missing_rate_count ? null : 0) }));
+  const roomTypes = (data?.room_type_revenue || []).map(row => ({ ...row, value: row.revenue_by_currency?.[currency] ?? (data?.currency_policy?.missing_rate_count ? null : 0) }));
   const download = async () => {
     if (!data || exporting) return;
     const requestedScope = scope;
@@ -91,6 +91,8 @@ export default function RevenueSection({ reportDate, reportPeriod = 'monthly' })
       <Button variant="outline" onClick={() => window.print()} disabled={!data || loading}>Yazdır / PDF</Button>
     </div>
     <p className="text-sm font-medium">{first} – {last} · İşlenen tutarlar (vergi dahil, iade düşülmüş, bahşiş hariç)</p>
+    {data?.reporting_currency && <p className="text-sm text-muted-foreground">Rapor para birimi: {data.reporting_currency} · İşlemin iş günündeki kayıtlı kur kullanılır.</p>}
+    {data?.currency_policy?.missing_rate_count > 0 && <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">{data.currency_policy.missing_rate_count} kaynakta tarihî kur eksik; etkilenen toplamlar doğrulanamadı. Bugünkü kurla tahmin yapılmadı.</div>}
     {loading && <p role="status">Yükleniyor…</p>}
     {error && <p role="alert" className="rounded border border-destructive p-3 text-destructive">{error}</p>}
     {!data && !loading && <p>Veri alınamadı.</p>}
@@ -119,7 +121,9 @@ export default function RevenueSection({ reportDate, reportPeriod = 'monthly' })
         <p>{data.reconciliation.concession_unknown_count} ikram kaydının özgün net/vergi dökümü eksik; ara toplam ve indirim doğrulanamadı. İşlenmiş net gelir ve vergi bundan ayrı hesaplanır.</p>
         <details><summary>İkramın özgün kaynakları</summary>{(data.reconciliation.concession_unknown_sources || []).map((source, index) => <p key={`${source.source}-${source.id}-${index}`}>{source.date} · {source.source} / {source.id || 'kimlik eksik'} · Liste bedeli: {moneyText(source.original_gross, source.currency)}</p>)}</details>
       </div>}
-      <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Dönem kırılımı</h3><label className="text-sm print:hidden">Grafik para birimi <select aria-label="Gelir grafik para birimi" className="rounded border bg-background p-2" value={currency} onChange={e => setCurrency(e.target.value)}>{(currencies.length ? currencies : ['TRY']).map(code => <option key={code}>{code}</option>)}</select></label></div>
+      {Object.keys(data.currency_policy?.rounding_difference_by_field || {}).length > 0 && <p className="text-xs text-muted-foreground">Kategori tutarları ile genel toplam arasındaki kur yuvarlaması: {Object.entries(data.currency_policy.rounding_difference_by_field).map(([field, value]) => `${fields.find(([key]) => key === field)?.[1] || field}: ${moneyText(value, data.reporting_currency)}`).join(' · ')}. Yeni satış veya vergi kaydı değildir.</p>}
+      {data.original_currency_breakdown && <details className="rounded-lg border p-3 text-sm"><summary>Özgün döviz girdileri</summary><p className="my-2 text-xs">Kaynak tutarlardır; ana para birimindeki rapor toplamına ayrıca eklenmez.</p><table className="w-full text-sm" aria-label="Özgün döviz girdileri"><thead><tr><th className="text-left">Para birimi</th><th className="text-right">Net</th><th className="text-right">Vergi dahil</th></tr></thead><tbody>{Object.entries(data.original_currency_breakdown).map(([code, values]) => <tr key={code}><th className="text-left">{code}</th><td className="text-right">{moneyText(values.verified_net, code)}</td><td className="text-right">{moneyText(values.total, code)}</td></tr>)}</tbody></table></details>}
+      <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Dönem kırılımı</h3><label className={`text-sm print:hidden ${currencies.length < 2 ? 'hidden' : ''}`}>Grafik para birimi <select aria-label="Gelir grafik para birimi" className="rounded border bg-background p-2" value={currency} onChange={e => setCurrency(e.target.value)}>{(currencies.length ? currencies : ['TRY']).map(code => <option key={code}>{code}</option>)}</select></label></div>
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Günlük işlenen tutar · {currency}</CardTitle></CardHeader><CardContent>
         <ResponsiveContainer width="100%" height={230}><AreaChart data={trend}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={18} /><YAxis tickFormatter={axisText} tick={{ fontSize: 11 }} />

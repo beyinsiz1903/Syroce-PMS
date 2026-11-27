@@ -579,7 +579,7 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
     """Use shared ledger and room-night contracts for the explicit period."""
     from core.business_date_service import ensure_business_date_initialized
     from core.database import _raw_db as raw_db
-    from modules.pms_core.report_money import add_amount, amounts_text
+    from modules.pms_core.report_money import amounts_text
     from modules.pms_core.reporting_dates import date_period_match
     from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
@@ -614,27 +614,17 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
         ]
         notes = "Gerçekleşen konaklamalar; çıkış günü oda-geceye dahil edilmez."
     elif rtype in ("revenue", "adr_revpar", "financial"):
-        from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+        from modules.pms_core.property_report_projections import property_revenue_kpis
+        from modules.pms_core.property_reporting_currency import load_historical_rates
+        from modules.pms_core.reporting_ledger import posted_revenue_rows
 
         charges = await posted_revenue_rows(tenant_id, first, last, database=raw_db)
-        totals, room_totals = {}, {}
-        for item in charges:
-            add_amount(totals, item.get("currency"), charge_amount(item))
-            if charge_category(item) == "room":
-                add_amount(room_totals, item.get("currency"), charge_amount(item))
         metrics = await load_stay_night_metrics(raw_db, tenant_id, first, last, actual_only=True)
-        sold_nights = sum(day.get("sold_rooms", day["occupied_rooms"]) for day in metrics)
-        capacity = sum(day["total_rooms"] for day in metrics)
-        effective_room_totals = room_totals
-        notes = "İşlenmiş satış/iade geliri; tahsilat veya genel muhasebe mizanı değildir. Para birimleri ayrı gösterilir; kur dönüşümü yapılmaz. ADR, dönem toplam oda geliri / satılmış oda-gece; RevPAR, dönem toplam oda geliri / satılabilir oda-gecedir."
-        if not room_totals:
-            effective_room_totals = {}
-            for day in metrics:
-                for code, amount in day.get("revenue_by_currency", {}).items():
-                    add_amount(effective_room_totals, code, amount)
-            notes += " Oda geliri henüz işlenmediğinden ADR/RevPAR konaklama tahakkukuna dayanır."
-        adr = {code: float(amount) / sold_nights if sold_nights else 0 for code, amount in effective_room_totals.items()}
-        revpar = {code: float(amount) / capacity if capacity else 0 for code, amount in effective_room_totals.items()}
+        rates = await load_historical_rates(raw_db, tenant_id, first, last,
+            currencies={row.get("currency") for row in charges})
+        values = property_revenue_kpis(charges, metrics, first, last, rates)
+        totals, adr, revpar = (values[key] for key in ("total_revenue_by_currency", "adr_by_currency", "rev_par_by_currency"))
+        notes = "İşlenmiş satış/iade geliri; tahsilat veya genel muhasebe mizanı değildir. Tutarlar otel para biriminde, özgün işlem gününün kayıtlı kuruyla gösterilir. ADR/RevPAR vergi hariç işlenmiş oda gelirine dayanır; eksik kur veya vergi kanıtı tahmin edilmez."
         rows = [
             {"label": "Rapor dönemi", "value": period},
             {"label": "Toplam gelir (para birimine göre)", "value": amounts_text(totals)},
@@ -677,13 +667,16 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
         raise ValueError(f"'{rtype}' için zamanlanmış rapor hazırlayıcı tanımlı değil")
 
     if rtype in ("daily_summary", "flash_report"):
-        from modules.pms_core.reporting_ledger import charge_amount, posted_revenue_rows
+        from modules.pms_core.property_report_projections import property_revenue_kpis
+        from modules.pms_core.property_reporting_currency import load_historical_rates
+        from modules.pms_core.reporting_ledger import posted_revenue_rows
 
-        totals = {}
-        for item in await posted_revenue_rows(tenant_id, first, last, database=raw_db):
-            add_amount(totals, item.get("currency"), charge_amount(item))
-        rows.append({"label": "Toplam gelir (para birimine göre)", "value": amounts_text(totals)})
-        notes += " Gelir, işlenmiş satış ve iade kayıtlarından hesaplanır; tahsilat değildir. Para birimleri ayrı tutulur."
+        charges = await posted_revenue_rows(tenant_id, first, last, database=raw_db)
+        rates = await load_historical_rates(raw_db, tenant_id, first, last,
+            currencies={row.get("currency") for row in charges})
+        values = property_revenue_kpis(charges, metrics, first, last, rates)
+        rows.append({"label": "Toplam gelir (para birimine göre)", "value": amounts_text(values["total_revenue_by_currency"])})
+        notes += " Gelir, özgün işlem gününün kayıtlı kuruyla otel para biriminde hesaplanır; tahsilat değildir."
 
     return {
         "rows": rows, "generated_at": now.isoformat(), "range": period,

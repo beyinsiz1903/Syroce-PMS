@@ -52,7 +52,6 @@ if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
 from models.enums import UserRole
 from models.schemas import User
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────
 
 
@@ -334,7 +333,15 @@ async def test_t07_financial_summary_uses_ctx_tenant_id_from_authenticated_user(
 
     user_a = _make_user(role=UserRole.ADMIN, tenant_id="tenant-A")
 
-    with patch("domains.pms.night_audit.financial_service.financial_service", mock_fin):
+    async def project(database, tenant_id, payload, day):
+        from core.tenant_db import get_current_tenant_id
+        captured_ctx["projection_tenant"] = tenant_id
+        captured_ctx["bound_tenant"] = get_current_tenant_id()
+        return payload
+
+    with patch("domains.pms.night_audit.financial_service.financial_service", mock_fin), patch(
+        "modules.pms_core.property_financial_summary.property_financial_summary", AsyncMock(side_effect=project)
+    ):
         result = await na_router.get_financial_summary(
             date="2026-05-11",
             current_user=user_a,
@@ -347,6 +354,8 @@ async def test_t07_financial_summary_uses_ctx_tenant_id_from_authenticated_user(
     assert captured_ctx["actor_id"] == user_a.id
     # Response MUST be scoped to T_A
     assert result["tenant_id"] == "tenant-A"
+    assert captured_ctx["projection_tenant"] == captured_ctx["bound_tenant"] == "tenant-A"
+
 
 
 @pytest.mark.asyncio

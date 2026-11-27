@@ -13,14 +13,13 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import add_amount, currency_code, money, resolve_ledger_currencies, rounded, rounded_totals
+from modules.pms_core.report_money import add_amount, currency_code, resolve_ledger_currencies, rounded_totals
 from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_revenue_adjustment, report_payment_day_match
 from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
-from modules.pms_core.reporting_ledger import charge_category as _charge_category
+from modules.pms_core.reporting_ledger import charge_category as _charge_category  # noqa: F401 - shared report adapter
 from modules.pms_core.reporting_ledger import posted_revenue_rows
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.room_revenue_reporting import room_adr_by_currency
 from modules.pms_core.stay_night_metrics import (
     NON_COMMERCIAL_STATUSES,
     as_date,
@@ -121,7 +120,7 @@ async def get_occupancy_report(
 
 
 @sub_router.get("/reports/revenue")
-@cached(ttl=600, key_prefix="report_revenue_v3")
+@cached(ttl=600, key_prefix="report_revenue_property_v4")
 async def get_revenue_report(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -138,58 +137,22 @@ async def get_revenue_report(
         raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
     start_date, end_date = start.isoformat(), end.isoformat()
     metrics = await load_stay_night_metrics(db, current_user.tenant_id, start, end, actual_only=True)
-    sold_room_nights = sum(row.get("sold_rooms", row["occupied_rooms"]) for row in metrics)
-    available_room_nights = sum(row["total_rooms"] for row in metrics)
     revenue_rows = await _posted_revenue_rows(current_user.tenant_id, start, end)
-    revenue_by_type: dict[str, float] = {}
-    revenue_by_type_currency: dict[str, dict[str, float]] = {}
-    total_revenue_by_currency: dict[str, float] = {}
-    room_revenue_by_currency: dict[str, float] = {}
-    for charge in revenue_rows:
-        charge_type = _charge_category(charge)
-        amount = _charge_amount(charge)
-        currency = _currency_code(charge)
-        add_amount(revenue_by_type_currency.setdefault(charge_type, {}), currency, amount)
-        add_amount(total_revenue_by_currency, currency, amount)
-        if charge_type in {"room", "accommodation", "room_charge"}:
-            add_amount(room_revenue_by_currency, currency, amount)
-    revenue_by_type_currency = {
-        category: rounded_totals(totals)
-        for category, totals in revenue_by_type_currency.items()
-    }
-    # Legacy scalar fields are populated only for a true single-currency report.
-    # They must never be the arithmetic sum of unlike currencies.
-    for charge_type, totals in revenue_by_type_currency.items():
-        value = _single_currency_value(totals)
-        revenue_by_type[charge_type] = value if value is not None else 0.0
-    revenue_by_type = {key: round(value, 2) for key, value in revenue_by_type.items()}
-    total_revenue_by_currency = rounded_totals(total_revenue_by_currency)
-    room_revenue_by_currency = rounded_totals(room_revenue_by_currency)
-    total_revenue = _single_currency_value(total_revenue_by_currency)
-    room_revenue = _single_currency_value(room_revenue_by_currency)
-    adr_by_currency = room_adr_by_currency(room_revenue_by_currency, metrics)
-    rev_par_by_currency = {
-        currency: rounded(money(amount) / available_room_nights) if available_room_nights else 0.0
-        for currency, amount in room_revenue_by_currency.items()
-    }
+    from modules.pms_core.property_report_projections import property_revenue_kpis
+    from modules.pms_core.property_reporting_currency import load_historical_rates
+    rates = await load_historical_rates(db, current_user.tenant_id, start, end,
+        currencies={_currency_code(row) for row in revenue_rows})
+    projection = property_revenue_kpis(revenue_rows, metrics, start, end, rates)
     arrivals = await db.bookings.count_documents(
         {"tenant_id": current_user.tenant_id, **date_period_match("check_in", start, end), "status": {"$nin": list(NON_COMMERCIAL_STATUSES)}}
     )
     return {
+        **projection,
         "start_date": start_date,
         "end_date": end_date,
-        "total_revenue": total_revenue,
-        "total_revenue_by_currency": total_revenue_by_currency,
-        "room_revenue": room_revenue,
-        "room_revenue_by_currency": room_revenue_by_currency,
-        "room_nights_sold": sold_room_nights,
-        "adr": _single_currency_value(adr_by_currency),
-        "adr_by_currency": adr_by_currency,
-        "rev_par": _single_currency_value(rev_par_by_currency),
-        "rev_par_by_currency": rev_par_by_currency,
-        "revenue_by_type": revenue_by_type,
-        "revenue_by_type_currency": revenue_by_type_currency,
-        "mixed_currency": len([value for value in total_revenue_by_currency.values() if value]) > 1,
+        "revenue_by_type": {key: values[rates.currency] for key, values in projection["category_revenue_by_currency"].items()},
+        "revenue_by_type_currency": projection["category_revenue_by_currency"],
+        "mixed_currency": False,
         "bookings_count": arrivals,
         "revenue_basis": "posted_folio_and_reservation_charges",
     }

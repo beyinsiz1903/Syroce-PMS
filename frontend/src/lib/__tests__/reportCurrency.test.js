@@ -33,3 +33,9 @@ describe('formatCurrencyBreakdown', () => {
     expect(isMixedCurrencyBreakdown({ TRY: 1, EUR: 0 })).toBe(false);
   });
 });
+
+
+it('does not render an unavailable historical valuation as zero or a partial sum', () => {
+  expect(formatCurrencyBreakdown({ TRY: null }, 0, 'TRY')).toBe('Doğrulanamadı');
+  expect(formatCurrencyBreakdown({ TRY: 100, USD: null }, 100, 'TRY')).toBe('Doğrulanamadı');
+});

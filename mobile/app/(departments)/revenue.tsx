@@ -403,8 +403,15 @@ export default function RevenueScreen() {
       contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{t.title}</H1>
-      <Muted>İşlenmiş gelir dönemi · {periodQ.data?.start_date || '—'} → {periodQ.data?.end_date || '—'}. Para birimleri ayrı gösterilir; eksik döviz bilgisiyle tutar tahmin edilmez.</Muted>
+      <Muted>İşlenmiş gelir dönemi · {periodQ.data?.start_date || '—'} → {periodQ.data?.end_date || '—'}. Tutarlar otel para biriminde ({periodQ.data?.currency || '—'}), özgün işlem gününün kayıtlı kuruyla gösterilir. ADR/RevPAR vergi hariç işlenmiş oda geliridir.</Muted>
 
+      {!!periodQ.data?.currency_policy?.missing_rate_count && <Muted>Tarihî kur eksik; etkilenen tutarlar doğrulanamadı. Bugünkü kurla tahmin yapılmaz.</Muted>}
+      {periodQ.data?.original_currency_breakdown && <Card>
+        <Body style={{ fontWeight: '600' }}>Özgün döviz girdileri</Body>
+        <Muted>Kaynak tutarlardır; otel para birimindeki toplama tekrar eklenmez.</Muted>
+        {Object.entries(periodQ.data.original_currency_breakdown).map(([code, value]) =>
+          <Body key={code}>{code} · {reportAmountLabel(value.total, code)}</Body>)}
+      </Card>}
       <SectionTitle title={t.cockpit} />
       {periodQ.isLoading || periodQ.error ? (
         <DepartmentListState

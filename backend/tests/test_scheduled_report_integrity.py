@@ -49,14 +49,14 @@ def schedule(**overrides):
 
 
 async def test_weekly_finance_covers_seven_business_days_and_uses_room_night_denominators(ledger_db):
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": "2026-10-01", "from_currency": "EUR", "to_currency": "TRY", "rate": 50})
     await ledger_db.rooms.insert_many([{"tenant_id": "A", "id": "r1"}, {"tenant_id": "A", "id": "r2"}])
     await ledger_db.bookings.insert_one(
         {"tenant_id": "A", "id": "b", "room_id": "r1", "status": "checked_out", "check_in": "2026-10-01", "check_out": "2026-10-08", "total_amount": 700, "currency": "TRY"}
     )
     await ledger_db.folio_charges.insert_many(
         [
-            {"tenant_id": "A", "business_date": "2026-10-01", "total": 300, "category": "room", "currency": " TL "},
-            {"tenant_id": "A", "business_date": datetime(2026, 10, 7, 23, tzinfo=UTC), "total": 400, "category": "room", "currency": "TRY"},
+            *[{"tenant_id": "A", "business_date": f"2026-10-{day:02}", "total": 100, "amount": 100, "vat_amount": 0, "tax_amount": 0, "category": "room", "currency": "TRY"} for day in range(1, 8)],
             {"tenant_id": "A", "business_date": "2026-10-07", "total": 20, "category": "food", "currency": "EUR"},
             {"tenant_id": "A", "business_date": "2026-10-08", "total": 9999, "category": "room", "currency": "TRY"},
             {"tenant_id": "B", "business_date": "2026-10-01", "total": 9999, "category": "room", "currency": "TRY"},
@@ -65,7 +65,7 @@ async def test_weekly_finance_covers_seven_business_days_and_uses_room_night_den
     payload = await scheduler._build_report_payload(schedule(), NOW)
     rows = {row["label"]: row["value"] for row in payload["rows"]}
     assert (payload["start_date"], payload["end_date"]) == ("2026-10-01", "2026-10-07")
-    assert rows["Toplam gelir (para birimine göre)"] == "EUR 20.00 · TRY 700.00"
+    assert rows["Toplam gelir (para birimine göre)"] == "TRY 1,700.00"
     assert rows["ADR (Ortalama Günlük Fiyat)"] == "TRY 100.00"
     assert rows["RevPAR (Oda Başı Gelir)"] == "TRY 50.00"
     assert "2026-10-01" in scheduler._payload_to_csv("Revenue", payload).decode("utf-8-sig")
@@ -189,7 +189,7 @@ async def test_weekly_occupancy_counts_completed_arrivals_and_actual_room_nights
     assert rows["Dolu oda-gece"] == 2
     assert rows["Satılabilir oda-gece"] == 14
     assert rows["Doluluk %"] == 14.29
-    assert rows["Toplam gelir (para birimine göre)"] == "0.00"
+    assert rows["Toplam gelir (para birimine göre)"] == "TRY 0.00"
 
 
 async def test_uncertain_delivery_and_legacy_partial_history_are_not_blindly_retried(ledger_db):

@@ -7,7 +7,7 @@ export function currencyBreakdownEntries(breakdown, locale = 'tr-TR') {
   return Object.entries(breakdown || {})
     .map(([currency, amount]) => ({
       currency: String(currency || '').trim().toUpperCase(),
-      amount: Number(amount),
+      amount: amount == null ? NaN : Number(amount),
     }))
     .filter(({ currency, amount }) => currency && Number.isFinite(amount) && amount !== 0)
     .sort((left, right) => left.currency.localeCompare(right.currency))
@@ -22,6 +22,7 @@ export function isMixedCurrencyBreakdown(breakdown) {
 }
 
 export function formatCurrencyBreakdown(breakdown, fallbackAmount = 0, fallbackCurrency = 'TRY', locale = 'tr-TR') {
+  if (Object.values(breakdown || {}).some(value => value == null)) return 'Doğrulanamadı';
   const entries = currencyBreakdownEntries(breakdown, locale);
   if (entries.length === 0) {
     const zeroCurrencies = Object.entries(breakdown || {})

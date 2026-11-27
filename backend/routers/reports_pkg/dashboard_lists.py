@@ -1515,7 +1515,66 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     prev_revenue = _single_currency_amount(prev_revenue_by_currency)
     ly_revenue = _single_currency_amount(ly_revenue_by_currency)
 
+    from modules.pms_core.property_report_projections import property_income_report, property_revenue_kpis
+    from modules.pms_core.property_reporting_currency import load_historical_rates
+    property_rates = await load_historical_rates(db, tenant_id, date_type.fromisoformat(charge_range_start), today_start.date(),
+        base_currency=native_currency, currencies={charge_currency(row) for row in period_charges})
+    base = property_rates.currency
+    def projected(rows, metrics, first, last):
+        return property_revenue_kpis(rows, metrics, first, last, property_rates)
+    day_kpis = projected(daily_period_charges, [today_metric], today_start.date(), today_start.date())
+    period_kpis = projected(month_charges, metric_rows, trend_start.date(), today_start.date())
+    prev_kpis = projected(previous_charges, prev_metrics, previous_start.date(), (previous_end-timedelta(days=1)).date())
+    def performance_view(old, kpis):
+        return {**old, "currency": base, "currency_policy": kpis["currency_policy"],
+            "room_revenue": kpis["room_revenue"], "room_revenue_by_currency": kpis["room_revenue_by_currency"],
+            "room_revenue_net": kpis["room_revenue_net"], "room_revenue_net_by_currency": kpis["room_revenue_net_by_currency"],
+            "adr": kpis["adr"], "adr_by_currency": kpis["adr_by_currency"],
+            "revpar": kpis["rev_par"], "revpar_by_currency": kpis["rev_par_by_currency"],
+            "revenue_source": "posted", "adr_basis": kpis["adr_basis"], "posting_pending": kpis["posting_pending"]}
+    property_summary = {"today_revenue": day_kpis["total_revenue"],
+        "today_revenue_by_currency": day_kpis["total_revenue_by_currency"],
+        "today_room_revenue": day_kpis["room_revenue"], "today_room_revenue_by_currency": day_kpis["room_revenue_by_currency"],
+        "posted_room_revenue": day_kpis["room_revenue"], "posted_room_revenue_by_currency": day_kpis["room_revenue_by_currency"],
+        "adr": day_kpis["adr"], "adr_by_currency": day_kpis["adr_by_currency"],
+        "revpar": day_kpis["rev_par"], "revpar_by_currency": day_kpis["rev_par_by_currency"],
+        "fnb_revenue": day_kpis["fb_revenue"], "fnb_revenue_by_currency": day_kpis["fb_revenue_by_currency"],
+        "room_revenue_source": "posted"}
+    property_comparison = {}
+    for prefix, rows, first, last in (("week", week_charges, week_start.date(), today_start.date()),
+            ("month", month_charges, trend_start.date(), today_start.date()),
+            ("prev_month", previous_charges, previous_start.date(), (previous_end-timedelta(days=1)).date()),
+            ("last_year", ly_charges, last_year_start.date(), (last_year_end-timedelta(days=1)).date())):
+        value = projected(rows, [], first, last)["total_revenue"]
+        property_comparison[prefix+"_revenue"] = value
+        property_comparison[prefix+"_revenue_by_currency"] = {base: value}
+    property_comparison.update(prev_month_adr=prev_kpis["adr"], prev_month_adr_by_currency=prev_kpis["adr_by_currency"],
+        prev_period_revpar=prev_kpis["rev_par"], prev_period_revpar_by_currency=prev_kpis["rev_par_by_currency"])
+    from modules.pms_core.property_reporting_currency import PropertyAccumulator
+    grouped_values = PropertyAccumulator(property_rates)
+    for charge in attributed_charges:
+        booking = revenue_bookings.get(str(charge.get("booking_id"))) or {}
+        src = (str(booking.get("booking_source") or "direct").strip() or "direct") if booking else "unassigned"
+        room_type = booking.get("room_type") or rooms_by_id.get(str(booking.get("room_id")), {}).get("room_type")
+        kind = _normalized_room_type(type_labels(room_type)) if room_type else "Eşleştirilmemiş"
+        grouped_values.add("source:"+src, charge_amount(charge), charge)
+        grouped_values.add("type:"+kind, charge_amount(charge), charge)
+    property_sources = {"revenue": {key: grouped_values.total("source:"+key) for key in source_distribution},
+        "revenue_by_currency": {key: {base: grouped_values.total("source:"+key)} for key in source_distribution}}
+    property_room_types = {key: {**row, "revenue": grouped_values.total("type:"+key),
+        "revenue_by_currency": {base: grouped_values.total("type:"+key)}} for key, row in room_type_occ.items()}
+    property_trend = property_income_report(month_charges, trend_start.date(), today_start.date(), property_rates)["revenue_trend"]
+    for row in property_trend:
+        row["label"] = datetime.fromisoformat(row["date"]).strftime("%d %b")
+
     return {
+        "property_reporting": {"currency": base, "currency_policy": period_kpis["currency_policy"],
+            "summary": property_summary, "booking_sources": property_sources, "room_type_occupancy": property_room_types, "period_metrics": performance_view(period_performance, period_kpis),
+            "period_comparison": property_comparison, "revenue_trend": property_trend,
+            "daily_analysis": {"room_revenue": day_kpis["room_revenue"], "room_revenue_by_currency": day_kpis["room_revenue_by_currency"],
+                "posted_room_revenue": day_kpis["room_revenue"], "posted_room_revenue_by_currency": day_kpis["room_revenue_by_currency"],
+                "adr": day_kpis["adr"], "adr_by_currency": day_kpis["adr_by_currency"],
+                "revpar": day_kpis["rev_par"], "revpar_by_currency": day_kpis["rev_par_by_currency"], "revenue_source": "posted"}},
         "date": today.strftime("%Y-%m-%d"),
         "summary": {
             "total_rooms": available_rooms_today,
