@@ -502,6 +502,19 @@ describe('FoliosTab — sade ödeme akışı', () => {
     expect(screen.getByText('İPTAL')).toBeInTheDocument();
   });
 
+  it('keeps a voided FX receipt auditable without restoring its balance effect', () => {
+    render(<FoliosTab {...singleFolioProps({
+      booking: { ...booking, currency: 'TRY' },
+      payments: [{ id: 'voided-fx', amount: 50, currency: 'TRY', received_amount: 0.9,
+        received_currency: 'EUR', exchange_rate: 0.018, method: 'cash', voided: true }],
+    })} />);
+    expect(screen.getByTestId('voided-payment-source-voided-fx')).toHaveTextContent('Özgün hesap tutarı: 50 TL');
+    expect(screen.getByTestId('voided-payment-source-voided-fx')).toHaveTextContent('Özgün alınan tutar: 0,9 EUR');
+    expect(screen.getByTestId('voided-payment-source-voided-fx')).toHaveTextContent('Kayıtlı kur: 0,018');
+    expect(screen.getByTestId('folio-event-amount-voided-fx')).toHaveTextContent('+0 TL');
+    expect(screen.queryByTestId('received-currency-voided-fx')).not.toBeInTheDocument();
+  });
+
   it('konaklama, ekstralar ve ön ödemeyi ayrı ve anlaşılır gösterir', () => {
     render(
       <FoliosTab
