@@ -97,3 +97,12 @@ async def test_multiple_ar_carrying_rates_require_allocation_evidence_not_a_gues
     assert result["open_folios"]["balance"]["total"] is None
     assert result["currency_policy"]["missing_rate_count"] == 0
     assert result["currency_policy"]["unverified_valuation_count"] == 1
+
+
+async def test_invalid_legacy_opening_date_is_unavailable_without_crashing_report(ledger_db):
+    await seed(ledger_db)
+    await ledger_db.folios.insert_one({"tenant_id": "A", "id": "legacy", "status": "open", "currency": "EUR", "opening_balance": 100, "opening_balance_date": "unknown"})
+    result = await property_financial_summary(ledger_db, "A",
+        {"revenue": {"charges_count": 999}, "tax": {}, "payments": {"by_method": {}, "payments_count": 999}, "open_folios": {}}, DAY)
+    assert result["open_folios"]["balance"]["total"] is None
+    assert result["revenue"]["charges_count"] == result["payments"]["payments_count"] == 1

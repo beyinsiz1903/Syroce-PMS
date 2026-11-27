@@ -20,7 +20,7 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
     snapshots = await folio_snapshots(database, tenant_id, folios,
         fallback_currency=rates.currency, include_booking_extras=True)
     days = [source_day(row) for snap in snapshots.values() for row in snap["charges"] + snap["payments"]]
-    days += [str(snap["folio"].get("opening_balance_date") or "")[:10] for snap in snapshots.values() if snap["opening_by_currency"]]
+    days += [source_day({"business_date": snap["folio"].get("opening_balance_date")}) for snap in snapshots.values() if snap["opening_by_currency"]]
     first, latest = min([business_day] + [day for day in days if day]), max([business_day] + [day for day in days if day])
     if first != business_day or latest != business_day:
         rates = await load_historical_rates(database, tenant_id, date.fromisoformat(first), date.fromisoformat(latest), base_currency=rates.currency)
@@ -69,7 +69,7 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
         "complete": acc.metadata()["complete"] and report["currency_policy"]["complete"] and balance["total"] is not None,
         "missing_rate_count": sum(issue["reason"] == "historical_exchange_rate_missing" for issue in acc.issues) + report["currency_policy"]["missing_rate_count"],
         "unverified_valuation_count": sum(issue["reason"] == "receivable_allocation_valuation_unverified" for issue in acc.issues)}
-    result["revenue"].update(total=total["verified_net"], total_by_currency={base: total["verified_net"]},
+    result["revenue"].update(charges_count=total["count"], total=total["verified_net"], total_by_currency={base: total["verified_net"]},
         verified_total_by_currency={base: total["verified_net"]}, total_with_tax=total["total"],
         total_with_tax_by_currency={base: total["total"]},
         by_category={row["category"]: {"amount": row["by_currency"][base]["verified_net"],
@@ -80,10 +80,12 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
     result["tax"].update(total=tax, total_by_currency={base: tax}, verified_total_by_currency={base: tax},
         breakdown={"vat": total["vat"], "accommodation_tax": total["city_tax"], "other_tax": total["other_tax"]})
     paid = acc.total("payments")
-    result["payments"].update(total=paid, total_by_currency={base: paid},
+    result["payments"].update(payments_count=len(payments), total=paid, total_by_currency={base: paid},
         by_method={method: {**row, "amount": acc.total("payment:" + method), "amount_by_currency": {base: acc.total("payment:" + method)}}
             for method, row in result["payments"]["by_method"].items()})
-    result["open_folios"].update(balance=balance, balance_by_currency={base: balance}, balance_basis="current_open_folio_carrying_value")
+    result["open_folios"].update(balance=balance, balance_by_currency={base: balance}, balance_basis="current_open_folio_carrying_value",
+        count=len(snapshots), receivable_count=sum(any(value > 0 for value in snap["balance_by_currency"].values()) for snap in snapshots.values()),
+        overpayment_count=sum(any(value < 0 for value in snap["balance_by_currency"].values()) for snap in snapshots.values()))
     result["net_position"] = None if total["total"] is None or paid is None else round(total["total"]-paid, 2)
     result["net_position_by_currency"] = {base: result["net_position"]}
     return result
