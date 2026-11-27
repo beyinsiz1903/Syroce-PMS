@@ -33,6 +33,29 @@ tags:
 # Run46007559648 shows CoreSimulator accepting the URI at13:45:01 but
 # SpringBoard delivering it at13:46:07, after the previous30s assertion failed.
 # Keep the exact destination assertion and allow bounded OS delivery latency.
+# The native run46010846574/attempt2 screenshots prove the system Open sheet
+# can arrive after the normal text tap and is absent from XCTest hierarchy.
+# In this isolated no-booking guest fixture, poll the screenshot-proven Open
+# position on pinned iPhone17. Stop as soon as the destination is visible;
+# never change Simulator security settings or remove the destination asserts.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - repeat:
+          times: 7
+          while:
+            notVisible:
+              id: "smoke-digital-key"
+          commands:
+            - runScript: ../scripts/wait_ios_link_sheet.js
+            - takeScreenshot: artifacts/guest-link-before-open-poll
+            - tapOn:
+                point: "68%,54%"
+                retryTapIfNoChange: false
+            - waitForAnimationToEnd
+            - takeScreenshot: artifacts/guest-link-after-open-poll
+
 - extendedWaitUntil:
     visible:
       id: "smoke-digital-key"
