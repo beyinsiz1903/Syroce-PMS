@@ -29,6 +29,7 @@ export function createCheckinConfirmation(client) {
         uncertain.delete(id);
         return result;
       } catch (error) {
+        if (error?.isReservationEditLockError || error?.code === 'RESERVATION_EDIT_LOCK_REQUIRED') throw error;
         const status = Number(error?.response?.status || 0);
         if (status && status !== 408 && status < 500) throw error;
         uncertain.add(id);

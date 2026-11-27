@@ -63,4 +63,10 @@ describe('confirmed check-in recovery', () => {
     expect(client.get).not.toHaveBeenCalled();
     expect(client.post).toHaveBeenCalledTimes(1);
   });
+  it('preserves a local expired-lease rejection without mistaking it for a lost response', async () => {
+    const denied = Object.assign(new Error('Lease lost'), { code: 'RESERVATION_EDIT_LOCK_REQUIRED' });
+    const client = { post: vi.fn().mockRejectedValue(denied), get: vi.fn() };
+    await expect(createCheckinConfirmation(client)('stay')).rejects.toBe(denied);
+    expect(client.get).not.toHaveBeenCalled();
+  });
 });
