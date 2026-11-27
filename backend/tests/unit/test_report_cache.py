@@ -18,7 +18,7 @@ def test_financial_report_cache_invalidation_uses_glob_safe_prefixes(monkeypatch
         call("tenant-1", "report_revenue_property_v4", include_role_variants=True),
         call("tenant-1", "report_daily_flash_property_v4", include_role_variants=True),
         call("tenant-1", "flash_report_property_v3", include_role_variants=True),
-        call("tenant-1", "reports_basic_dashboard_v5", include_role_variants=True),
+        call("tenant-1", "reports_basic_dashboard_property_v6", include_role_variants=True),
     ]
 
 
