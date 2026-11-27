@@ -1,4 +1,11 @@
 @media print {
+  /* Safari can split a multi-currency table row despite cell-level rules.
+     The bounded category summary fits on one page, so move its whole card. */
+  .revenue-category-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+  }
+
   /* Safari otherwise fragments a multi-currency cell between printed pages. */
   .revenue-category-scroll {
     overflow: visible !important;

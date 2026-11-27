@@ -35,6 +35,8 @@ it('marks only the selected portalled Z document for printing, never the history
   expect(document.querySelectorAll('[data-cashier-print-document]')).toHaveLength(1);
   expect(report).not.toHaveTextContent('Other private history');
   expect(report).not.toHaveTextContent('99999');
+  expect(report).toHaveTextContent('Beklenen');
+  expect(report).not.toHaveTextContent('Dönem net nakit hareketi');
   expect(report).toHaveTextContent('31.10.2026 19:34');
   expect(report).toHaveTextContent('31.10.2026 19:45');
   expect(report).toHaveTextContent('Selected <script>note</script>');
@@ -119,4 +121,21 @@ it('does not revive a result after closing and reopening the period dialog', asy
   fireEvent.click(screen.getByRole('button', { name: 'cm.components_pms_CashierTab.donem_raporu', exact: true }));
   expect(screen.queryByRole('button', { name: 'CSV', exact: true })).toBeNull();
   expect(screen.getByRole('dialog')).not.toHaveAttribute('data-cashier-print-document');
+});
+
+
+it('keeps a partial-period cash net separate from whole-shift closing counts', async () => {
+  const normal = get.getMockImplementation();
+  get.mockImplementation(async (path, ...args) => path === '/cashier/period-report'
+    ? { data: { ...period(), totals: { opening_total: 38089.51, cash_in_total: 712.01, cash_out_total: 235,
+      expected_total: 38566.52, closing_total: 38089.51, difference_total: 0, transaction_count: 22, shift_count: 2 } } }
+    : normal(path, ...args));
+  const { dialog } = await openPeriod();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Getir', exact: true }));
+  await screen.findByRole('button', { name: 'CSV', exact: true });
+  expect(dialog).toHaveTextContent('477.01 TRY');
+  expect(dialog).not.toHaveTextContent('38566.52 TRY');
+  expect(dialog).toHaveTextContent('Dönem net nakit hareketi');
+  expect(dialog).toHaveTextContent('Kapanış sayımları toplamı');
+  expect(dialog).toHaveTextContent('Vardiyaların kendi kapanış farkları');
 });
