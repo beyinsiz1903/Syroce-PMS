@@ -141,6 +141,7 @@ export default function CostAnalyticsView() {
       const share = totalCosts == null || c.total == null ? '—' : totalCosts > 0 ? ((c.total / totalCosts) * 100).toFixed(2) : '0';
       return [currencyCode, c.name, c.count, c.total == null ? 'Doğrulanamadı' : c.total.toFixed(2), c.avg == null ? 'Doğrulanamadı' : c.avg.toFixed(2), `${share}%`];
     });
+    if (report?.currency_policy?.category_rounding_difference) rows.push([currencyCode, 'Kur yuvarlama farkı (gider kaydı değildir)', '', report.currency_policy.category_rounding_difference.toFixed(2), '', '']);
     rows.push([
       currencyCode,
       t('costAnalytics.headers.totalRow'),
@@ -162,7 +163,7 @@ export default function CostAnalyticsView() {
     a.remove();
     URL.revokeObjectURL(url);
     toast.success(t('costAnalytics.exportSuccess'));
-  }, [categoryData, totalCosts, entriesCount, startDate, endDate, t, currencyCode]);
+  }, [categoryData, totalCosts, entriesCount, startDate, endDate, t, currencyCode, report]);
 
   const numberFmt = useMemo(
     () => new Intl.NumberFormat(i18n.language || 'tr-TR'),
@@ -220,6 +221,7 @@ export default function CostAnalyticsView() {
       </div>
 
       <p className="text-xs text-muted-foreground">Gider tahakkukları · {currencyCode}. İşlemin günündeki kayıtlı kur kullanılır; ekran ve CSV aynı otel para birimindedir.</p>
+      {!!report?.currency_policy?.category_rounding_difference && <p className="text-xs text-muted-foreground">Kategori toplamı ile genel toplam arasındaki kur yuvarlaması: {fmtMoney(report.currency_policy.category_rounding_difference)}. Yeni gider kaydı değildir.</p>}
       {report?.currency_policy?.complete === false && <p role="status" className="rounded-md border border-amber-300 p-3 text-sm">Tarihî kur veya tutar kanıtı eksik. Etkilenen gider toplamları doğrulanamadı; eksik kayıtlar sıfır sayılmadı.</p>}
       {loading ? <p role="status">Rapor yükleniyor…</p> : loadError ? <p role="alert">{t('costAnalytics.loadError')}</p> : <>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

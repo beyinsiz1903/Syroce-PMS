@@ -22,8 +22,10 @@ async def property_expense_report(database, tenant_id, first, last, base):
     total = acc.total("total")
     categories = {key: {"category": key, "count": count, "amount": acc.total("category:"+key),
         "by_currency": {base: acc.total("category:"+key)}, "breakdown": {}} for key, count in counts.items()}
+    policy = acc.metadata()
+    policy["category_rounding_difference"] = rounded(money(total)-sum((money(row["amount"]) for row in categories.values()), money(0))) if total is not None else None
     return {"reporting_currency": base, "currency": base, "start_date": first.isoformat(), "end_date": last.isoformat(),
         "total_expenses": total, "by_currency": {base: total}, "count": len(rows), "categories": categories,
         "daily_average": rounded(money(total)/((last-first).days+1)) if total is not None else None,
         "top_expense": max(categories, key=lambda key: categories[key]["amount"]) if total is not None and categories else None,
-        "currency_policy": acc.metadata(), "source": "expense_accruals", "amount_basis": "recorded_expense_total"}
+        "currency_policy": policy, "source": "expense_accruals", "amount_basis": "recorded_expense_total"}

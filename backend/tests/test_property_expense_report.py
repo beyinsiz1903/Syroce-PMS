@@ -45,3 +45,13 @@ async def test_daily_currency_groups_are_rounded_once(ledger_db):
 async def test_empty_eur_property_is_a_verified_eur_zero(ledger_db):
     result = await property_expense_report(ledger_db, "A", FIRST, FIRST, "EUR")
     assert result["by_currency"] == {"EUR": 0} and result["count"] == 0
+
+
+async def test_category_rounding_difference_is_explicit_not_a_new_expense(ledger_db):
+    await ledger_db.currency_rates.insert_one({"tenant_id": "A", "effective_date": DAY, "from_currency": "USD", "to_currency": "TRY", "rate": 4.5})
+    await ledger_db.expenses.insert_many([{"tenant_id": "A", "date": DAY, "currency": "USD", "amount": 0.01, "category": key} for key in ["food", "supplies"]])
+    result = await property_expense_report(ledger_db, "A", FIRST, FIRST, "TRY")
+    assert result["total_expenses"] == 0.09
+    assert result["categories"]["food"]["amount"] == result["categories"]["supplies"]["amount"] == 0.05
+    assert result["currency_policy"]["category_rounding_difference"] == -0.01
+    assert result["count"] == 2
