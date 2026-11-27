@@ -12,6 +12,10 @@ tags:
       LOGIN_EMAIL: ${SMOKE_GUEST_EMAIL}
       LOGIN_PASSWORD: ${SMOKE_GUEST_PASSWORD}
 
+# Expo route groups are not public URL segments (Expo Router notation docs).
+# Stop the app so this exercises an actual cold link with the saved guest session.
+- stopApp
+
 # Deep-link straight to the guest digital key screen. The screen is
 # registered as href:null in (guest)/_layout.tsx (no tab bar entry), so
 # we use the expo scheme `syrocepms` defined in app.json. The screen
@@ -22,7 +26,7 @@ tags:
 - runFlow:
     file: ../helpers/open_link.yaml
     env:
-      TARGET_LINK: "syrocepms:///(guest)/digitalKey"
+      TARGET_LINK: "syrocepms:///digitalKey"
 
 # The guest fixture intentionally has no hotel/booking grants. The destination
 # must still mount its real empty state; never substitute a staff session.
