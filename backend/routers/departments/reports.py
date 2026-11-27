@@ -33,7 +33,7 @@ from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.report_money import add_amount, currency_code, money, resolve_ledger_currencies, rounded, rounded_totals, single_amount
 from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import REPORTING_CURRENCY, report_payment_day_match, report_payment_period_match, reporting_collection_summary
-from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+from modules.pms_core.reporting_ledger import charge_amount, posted_revenue_rows
 from modules.pms_core.reservation_reporting import reservation_value
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
 from modules.pms_core.stay_night_metrics import (
@@ -1015,114 +1015,18 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
     # high-volume property's purchase ledger.
     ).to_list(None)
 
-    # Map purchase order categories to cost categories
-    category_mapping = {
-        "cleaning": "Housekeeping",
-        "linens": "Housekeeping",
-        "amenities": "Housekeeping",
-        "food": "F&B",
-        "beverage": "F&B",
-        "kitchen": "F&B",
-        "maintenance": "Technical",
-        "electrical": "Technical",
-        "plumbing": "Technical",
-        "hvac": "Technical",
-        "furniture": "General Expenses",
-        "office": "General Expenses",
-        "it": "General Expenses",
-        "other": "General Expenses",
-    }
-
-    # Aggregate costs by category
-    category_names = ("Housekeeping", "F&B", "Technical", "General Expenses")
-    costs_by_currency = {}
-    categories_by_currency = {}
-
-    for po in purchase_orders:
-        category = str(po.get("category") or "other").strip().lower()
-        cost_category = category_mapping.get(category, "General Expenses")
-        total_amount = money(po.get("total_amount") or 0)
-        code = currency_code(po.get("currency"), native_currency)
-        add_amount(costs_by_currency, code, total_amount)
-        add_amount(categories_by_currency.setdefault(cost_category, {}), code, total_amount)
-
+    from modules.pms_core.property_cost_report import property_cost_report
+    from modules.pms_core.property_reporting_currency import load_historical_rates
     metrics = await load_stay_night_metrics(db, tenant_id, month_start, today, actual_only=True)
-    total_room_nights = sum(day["occupied_rooms"] for day in metrics)
-    total_available_room_days = sum(day["total_rooms"] for day in metrics)
-
-    mtd_charges = await posted_revenue_rows(tenant_id, month_start, today, database=db, fallback_currency=native_currency)
-    revenue_by_currency, room_revenue_by_currency = {}, {}
-    for charge in mtd_charges:
-        add_amount(revenue_by_currency, charge.get("currency"), charge_amount(charge))
-        if charge_category(charge) == "room":
-            add_amount(room_revenue_by_currency, charge.get("currency"), charge_amount(charge))
-
-    costs_by_currency = rounded_totals(costs_by_currency)
-    revenue_by_currency = rounded_totals(revenue_by_currency)
-    categories_by_currency = {name: rounded_totals(values) for name, values in categories_by_currency.items()}
-    currencies = set(costs_by_currency) | set(revenue_by_currency)
-    mixed = len(currencies) > 1
-    financial_by_currency = {}
-    for code in sorted(currencies):
-        cost, revenue = costs_by_currency.get(code, 0), revenue_by_currency.get(code, 0)
-        profit = money(revenue) - money(cost)
-        financial_by_currency[code] = {
-            "mtd_costs": cost, "mtd_revenue": revenue, "gross_profit": rounded(profit),
-            "profit_margin_percentage": round(float(profit / money(revenue) * 100), 1) if revenue else 0,
-            "cost_to_revenue_ratio": round(float(money(cost) / money(revenue) * 100), 1) if revenue else 0,
-        }
-    only_financial = next(iter(financial_by_currency.values()), {}) if not mixed else {}
-    cost_per_room = {code: rounded(money(amount) / total_room_nights) if total_room_nights else 0 for code, amount in costs_by_currency.items()}
-    revpar = {code: rounded(money(amount) / total_available_room_days) if total_available_room_days else 0 for code, amount in room_revenue_by_currency.items()}
-    per_room_cost, mtd_revpar = single_amount(cost_per_room), single_amount(revpar)
-    cost_currency = next(iter(costs_by_currency), native_currency)
-    total_mtd_costs = money(costs_by_currency.get(cost_currency, 0))
-    top_3_categories = sorted([
-        {"name": name, "amount": categories_by_currency.get(name, {}).get(cost_currency, 0)} for name in category_names
-    ], key=lambda row: row["amount"], reverse=True)[:3] if len(costs_by_currency) <= 1 else []
-    return {
-        "report_date": today.isoformat(),
-        "period": f"{month_start.isoformat()} to {today.isoformat()}",
-        "currency": next(iter(currencies)) if len(currencies) == 1 else None,
-        "mixed_currency": mixed,
-        "total_mtd_costs": single_amount(costs_by_currency),
-        "total_mtd_costs_by_currency": costs_by_currency,
-        "cost_categories_by_currency": categories_by_currency,
-        "cost_categories": {
-            key: single_amount(categories_by_currency.get(name, {}))
-            for key, name in (("housekeeping", "Housekeeping"), ("fnb", "F&B"), ("technical", "Technical"), ("general_expenses", "General Expenses"))
-        },
-        "top_3_categories": [
-            {"name": cat["name"], "amount": cat["amount"], "percentage": round(float(money(cat["amount"]) / total_mtd_costs * 100), 1) if total_mtd_costs > 0 else 0} for cat in top_3_categories
-        ],
-        "top_3_categories_by_currency": {
-            code: sorted([
-                {"name": name, "amount": rounded(values.get(code, 0))}
-                for name, values in categories_by_currency.items() if code in values
-            ], key=lambda row: row["amount"], reverse=True)[:3] for code in costs_by_currency
-        },
-        "per_room_metrics": {
-            "total_room_nights": total_room_nights,
-            "cost_per_room_night": per_room_cost,
-            "cost_per_room_night_by_currency": cost_per_room,
-            "mtd_revpar": mtd_revpar,
-            "mtd_revpar_by_currency": revpar,
-            "cost_to_revpar_ratio": None if mixed else (round((per_room_cost / mtd_revpar * 100), 1) if mtd_revpar > 0 else 0),
-        },
-        "financial_metrics": {
-            "mtd_revenue": single_amount(revenue_by_currency),
-            "mtd_costs": single_amount(costs_by_currency),
-            "gross_profit": None if mixed else only_financial.get("gross_profit", 0),
-            "profit_margin_percentage": None if mixed else only_financial.get("profit_margin_percentage", 0),
-            "cost_to_revenue_ratio": None if mixed else only_financial.get("cost_to_revenue_ratio", 0),
-            "by_currency": financial_by_currency,
-        },
-    }
+    charges = await posted_revenue_rows(tenant_id, month_start, today, database=db, fallback_currency=native_currency)
+    rates = await load_historical_rates(db, tenant_id, month_start, today, base_currency=native_currency,
+        currencies={currency_code(row.get("currency"), native_currency) for row in [*purchase_orders, *charges]})
+    return property_cost_report(purchase_orders, charges, metrics, month_start, today, rates)
 
 
 # ── GET /reports/cost-summary ──
 @router.get("/reports/cost-summary")
-@cached(ttl=600, key_prefix="report_cost_summary_v3")
+@cached(ttl=600, key_prefix="report_cost_summary_property_v4")
 async def get_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -1134,7 +1038,7 @@ async def get_cost_summary(
 
 # ── GET /finance/mtd-cost-summary ──
 @router.get("/finance/mtd-cost-summary")
-@cached(ttl=600, key_prefix="finance_mtd_cost_summary_v3")
+@cached(ttl=600, key_prefix="finance_mtd_cost_summary_property_v4")
 async def get_mtd_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
