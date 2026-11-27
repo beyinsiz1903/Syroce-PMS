@@ -200,7 +200,7 @@ def test_receivable_cache_invalidation_is_tenant_scoped_and_includes_role_varian
     cache = Mock()
     monkeypatch.setattr(report_cache, "cache", cache)
     report_cache.invalidate_receivable_report_caches("A")
-    assert cache.invalidate_tenant_cache.call_count == 2
+    assert cache.invalidate_tenant_cache.call_count == 4
     for prefix in report_cache.RECEIVABLE_REPORT_CACHE_PREFIXES:
         cache.invalidate_tenant_cache.assert_any_call("A", prefix, include_role_variants=True)
 

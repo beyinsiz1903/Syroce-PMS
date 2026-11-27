@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
-import FlashReportContent from '../FlashReportContent';
+import FlashReportContent, { selectFlashCurrency } from '../FlashReportContent';
 
 vi.mock('axios', () => ({ default: { get: vi.fn() } }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
@@ -11,6 +11,19 @@ vi.mock('@/hooks/useBusinessDate', () => ({ useBusinessDate: () => '2026-09-15' 
 
 describe('Flash report accounting UI', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('preserves unknown base valuations instead of displaying measured zero', async () => {
+    const data = { date: '2026-11-12', occupancy: { total: 31 },
+      revenue: { total_by_currency: { TRY: null }, collected_by_currency: { TRY: null } },
+      kpi: { adr_by_currency: { TRY: null }, revpar_by_currency: { TRY: null } },
+      departments: [{ name: 'SPA', amount_by_currency: { TRY: null } }] };
+    expect(selectFlashCurrency(data, 'TRY').revenue.total).toBeNull();
+    axios.get.mockResolvedValue({ data });
+    render(<FlashReportContent />);
+    expect(await screen.findByTestId('flash-kpi-adr')).toHaveTextContent('Doğrulanamadı');
+    expect(screen.getByTestId('flash-kpi-revpar')).toHaveTextContent('Doğrulanamadı');
+    expect(screen.getByTestId('flash-collection')).toHaveTextContent('Doğrulanamadı');
+  });
 
   it('uses the PMS day, keeps cents, and selects one currency for every money section', async () => {
     axios.get.mockResolvedValue({ data: { date: '2026-09-15', occupancy: { total: 10, occupied: 2, rate: 20 },
@@ -33,17 +46,16 @@ describe('Flash report accounting UI', () => {
     expect(screen.queryByTestId('flash-collection')).not.toBeInTheDocument();
   });
 
-  it('shows pending room prices separately and includes their currency even without posted room revenue', async () => {
+  it('keeps unposted native-currency prices out of the management ADR', async () => {
     axios.get.mockResolvedValue({ data: { date: '2026-09-15', occupancy: { total: 10, occupied: 2, rate: 20 },
       revenue: { total_by_currency: { TRY: 20 }, collected_by_currency: {}, posting_pending: true,
         operational_adr_by_currency: { EUR: 2750 }, reservation_room_revenue_by_currency: { EUR: 5500 } },
       kpi: { adr_by_currency: {}, revpar_by_currency: {} } } });
     render(<FlashReportContent />);
-    const selector = await screen.findByRole('combobox', { name: /Rapor para birimi/ });
-    fireEvent.change(selector, { target: { value: 'EUR' } });
-    expect(screen.getByTestId('flash-posting-pending')).toHaveTextContent(/2\.750,00/);
-    expect(screen.getByTestId('flash-posting-pending')).toHaveTextContent(/5\.500,00/);
-    expect(screen.getByTestId('flash-kpi-adr')).toHaveTextContent('İşlenen ADR (vergi dahil)');
+    await screen.findByTestId('flash-posting-pending');
+    expect(screen.queryByRole('combobox', { name: /Rapor para birimi/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('flash-kpi-adr')).toHaveTextContent('İşlenmeyi bekliyor');
+    expect(screen.getByTestId('flash-kpi-adr')).toHaveTextContent('İşlenen ADR (vergi hariç)');
     expect(screen.getByRole('link', { name: 'Doluluk / Forecast’i aç' })).toHaveAttribute('href', '/app/raporlar?section=forecast_reports');
   });
 });

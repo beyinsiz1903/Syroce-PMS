@@ -436,7 +436,7 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         key=lambda x: (x["currency"], -x["total_balance"], x["company_name"]),
     )
 
-    return {
+    payload = {
         "report_date": today.isoformat(),
         "total_ar": single_amount(total_by_currency) if not failed_folios and not failed_accounts else None,
         "total_ar_by_currency": rounded_totals(total_by_currency),
@@ -454,11 +454,15 @@ async def _compute_company_aging(tenant_id: str) -> dict:
             "basis_warning": "Demo yeniden-kurma vade/mahsup bilgileri; tarihî sözleşme doğrulaması değildir."}
            if any(row.get("demo_reconstructed") for row in positions) else {}),
     }
+    from modules.pms_core.property_company_aging import property_company_aging
+    return await property_company_aging(db, tenant_id, payload, positions, folios, company_balances, today,
+        await _native_report_currency(tenant_id))
+
 
 
 # ── GET /reports/company-aging ──
 @router.get("/reports/company-aging")
-@cached(ttl=900, key_prefix="report_company_aging_v4")
+@cached(ttl=900, key_prefix="report_company_aging_property_v5")
 async def get_company_aging_report(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -493,7 +497,7 @@ async def export_company_aging_excel(
         # (Task #246 — `@cached` decorated route handler MUST NOT be invoked
         # directly; cache key derivation + Depends sentinel handling are fragile).
         report_data = await _compute_company_aging(current_user.tenant_id)
-        if not report_data["complete"]:
+        if not report_data.get("source_complete", report_data["complete"]):
             raise HTTPException(status_code=503, detail="Bazı folyo/cari bakiyeleri doğrulanamadı; eksik toplam dışa aktarılamaz")
 
         headers = ["Company / Agency", "Account Code", "Currency", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios", "Age Unknown", "Source"]
@@ -505,11 +509,11 @@ async def export_company_aging_excel(
                     company["company_name"],
                     company["corporate_code"],
                     company["currency"],
-                    round(company["total_balance"], 2),
-                    round(company["aging"]["0-7 days"], 2),
-                    round(company["aging"]["8-14 days"], 2),
-                    round(company["aging"]["15-30 days"], 2),
-                    round(company["aging"]["30+ days"], 2),
+                    None if company["total_balance"] is None else round(company["total_balance"], 2),
+                    None if company["aging"]["0-7 days"] is None else round(company["aging"]["0-7 days"], 2),
+                    None if company["aging"]["8-14 days"] is None else round(company["aging"]["8-14 days"], 2),
+                    None if company["aging"]["15-30 days"] is None else round(company["aging"]["15-30 days"], 2),
+                    None if company["aging"]["30+ days"] is None else round(company["aging"]["30+ days"], 2),
                     company["folio_count"],
                     company["unaged_balance"],
                     company["source"] + (" [DEMO RECONSTRUCTION — NOT HISTORICALLY VERIFIED]" if company.get("demo_reconstructed") else ""),
@@ -521,6 +525,20 @@ async def export_company_aging_excel(
             data.append(["TOTAL", "", code, total, "", "", "", "", ""])
 
         wb = create_excel_workbook(title=f"Company Aging Report - {report_data['report_date']}", headers=headers, data=data, sheet_name="Company Aging")
+        proof = wb.create_sheet("Değerleme Kanıtları")
+        proof.append(["Rapor para birimi", report_data.get("reporting_currency")])
+        proof.append(["Kur esası", "Özgün borcun kayıtlı iş günü kuru; kanıtı olmayan tutarlar boş bırakılır, sıfır değildir."])
+        if report_data.get("valuation_complete") is False:
+            wb.active.cell(1, 1).value += " · DEĞERLEME DOĞRULANAMADI"
+            proof.append(["TOPLAM DOĞRULANAMADI — eksik kur / mahsup değerlemesi"])
+        proof.append(["Kaynak kimliği", "Para birimi", "Açıklama"])
+        for rate in report_data.get("currency_policy", {}).get("rates", []):
+            proof.append([rate.get("folio_id"), rate.get("source_currency"),
+                f"{rate.get('business_date')} · {rate.get('rate')} · {rate.get('kind')} · {rate.get('id') or rate.get('reference') or ''}"])
+
+        for issue in report_data.get("source_issues", []):
+            proof.append([issue.get("id") or issue.get("account_id"), issue.get("currency"), issue.get("reason")])
+
 
         # Task #253 (tur-2): belt-and-suspenders save retry. create_excel_workbook
         # already sanitizes via _xlsx_sanitize_str, but if any future code path
@@ -564,7 +582,7 @@ async def export_company_aging_excel(
 
 # ── GET /reports/finance-snapshot ──
 @router.get("/reports/finance-snapshot")
-@cached(ttl=600, key_prefix="report_finance_snapshot_v4")
+@cached(ttl=600, key_prefix="report_finance_snapshot_property_v5")
 async def get_finance_snapshot(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -672,7 +690,7 @@ async def get_finance_snapshot(
         remaining = max(money(invoice.get("total")) - money(invoice.get("amount_paid") if invoice.get("amount_paid") is not None else invoice.get("paid_amount")), 0)
         add_amount(pending_invoice_by_currency, invoice.get("currency") or native_currency, remaining)
 
-    return {
+    payload = {
         "report_date": today.isoformat(),
         "business_date": today.isoformat(),
         "pending_ar": {
@@ -720,6 +738,10 @@ async def get_finance_snapshot(
             ),
         },
     }
+    from modules.pms_core.property_finance_snapshot import property_finance_snapshot
+    return await property_finance_snapshot(db, current_user.tenant_id, payload, positions, company_folios,
+        todays_payments, mtd_payments, mtd_charges, pending_invoices, month_start, today, native_currency)
+
 
 
 # ── GET /reports/revenue-detail/excel ──

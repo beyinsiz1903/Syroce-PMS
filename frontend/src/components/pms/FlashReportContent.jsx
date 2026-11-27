@@ -18,13 +18,13 @@ export const selectFlashCurrency = (report, currency) => {
   const aware = Boolean(report.revenue?.total_by_currency);
   const revenue = { ...report.revenue };
   for (const field of ['total', 'room', 'fb', 'spa', 'minibar', 'laundry', 'other', 'collected', 'outstanding']) {
-    revenue[field] = aware ? Number(revenue[`${field}_by_currency`]?.[currency] ?? 0) : revenue[field];
+    revenue[field] = aware ? revenue[`${field}_by_currency`]?.[currency] ?? null : revenue[field];
   }
   revenue.room_revenue_breakdown = (revenue.room_revenue_breakdown || []).filter(row => !row.currency || row.currency === currency);
   return { ...report, revenue, kpi: { ...report.kpi,
-    adr: aware ? Number(report.kpi?.adr_by_currency?.[currency] ?? 0) : report.kpi?.adr,
-    revpar: aware ? Number(report.kpi?.revpar_by_currency?.[currency] ?? 0) : report.kpi?.revpar },
-    departments: (report.departments || []).map(row => ({ ...row, amount: aware ? Number(row.amount_by_currency?.[currency] ?? 0) : row.amount })) };
+    adr: aware ? report.kpi?.adr_by_currency?.[currency] ?? null : report.kpi?.adr,
+    revpar: aware ? report.kpi?.revpar_by_currency?.[currency] ?? null : report.kpi?.revpar },
+    departments: (report.departments || []).map(row => ({ ...row, amount: aware ? row.amount_by_currency?.[currency] ?? null : row.amount })) };
 };
 
 const FlashReportContent = ({
@@ -48,10 +48,10 @@ const FlashReportContent = ({
   const requestId = useRef(0);
   useEffect(() => { setSelectedDate(targetDate || businessDate || pmsBusinessDate); }, [targetDate, businessDate, pmsBusinessDate]);
 
-  const currencies = [...new Set([...Object.keys(reportData?.revenue?.total_by_currency || {}), ...Object.keys(reportData?.revenue?.collected_by_currency || {}), ...Object.keys(reportData?.revenue?.operational_adr_by_currency || {})])].sort();
+  const currencies = [...new Set([...Object.keys(reportData?.revenue?.total_by_currency || {}), ...Object.keys(reportData?.revenue?.collected_by_currency || {})])].sort();
   const currencyCode = currencies.includes(requestedCurrency) ? requestedCurrency : currencies.includes(tenantCurrency) ? tenantCurrency : currencies[0] || tenantCurrency;
   const displayReport = selectFlashCurrency(reportData, currencyCode);
-  const fmtMoney = amount => formatCurrency(amount, currencyCode, { locale: 'tr-TR', decimals: 2, compactDecimals: false });
+  const fmtMoney = amount => amount == null || !Number.isFinite(Number(amount)) ? 'Doğrulanamadı' : formatCurrency(amount, currencyCode, { locale: 'tr-TR', decimals: 2, compactDecimals: false });
   const loadFlashReport = useCallback(async (force = false) => {
     const request = ++requestId.current;
     setLoading(true);
@@ -82,10 +82,10 @@ const FlashReportContent = ({
     const printWindow = window.open('', '_blank');
     if (!printWindow || !reportData) return;
     const d = displayReport;
-    const totalRev = d.revenue?.total || 0;
-    const collected = Number(d.revenue?.collected || 0);
-    const openBalance = Math.max(0, totalRev - collected);
-    const advance = Math.max(0, collected - totalRev);
+    const totalRev = d.revenue?.total;
+    const collected = d.revenue?.collected;
+    const openBalance = totalRev == null || collected == null ? null : Math.max(0, totalRev - collected);
+    const advance = totalRev == null || collected == null ? null : Math.max(0, collected - totalRev);
     printWindow.document.write(`
       <html><head><title>Günlük Flash Rapor - ${d.date}</title>
       <style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
@@ -102,12 +102,12 @@ const FlashReportContent = ({
       <p>Tarih: ${d.date} | Hazırlayan: ${new Date().toLocaleTimeString('tr-TR')}</p>
       <div class="grid">
         <div class="card"><div class="label">Doluluk</div><div class="value">${(d.occupancy?.rate || 0).toFixed(1)}%</div><div>${d.occupancy?.occupied || 0}/${d.occupancy?.total || 0} oda</div></div>
-        <div class="card"><div class="label">İşlenen ADR (vergi dahil)</div><div class="value">${fmtMoney(d.kpi?.adr || 0)}</div></div>
-        <div class="card"><div class="label">İşlenen RevPAR (vergi dahil)</div><div class="value">${fmtMoney(d.kpi?.revpar || 0)}</div></div>
+        <div class="card"><div class="label">İşlenen ADR (vergi hariç)</div><div class="value">${d.revenue?.posting_pending ? 'İşlenmeyi bekliyor' : fmtMoney(d.kpi?.adr)}</div></div>
+        <div class="card"><div class="label">İşlenen RevPAR (vergi hariç)</div><div class="value">${d.revenue?.posting_pending ? 'İşlenmeyi bekliyor' : fmtMoney(d.kpi?.revpar)}</div></div>
         <div class="card"><div class="label">Toplam Gelir</div><div class="value">${fmtMoney(totalRev)}</div></div>
       </div>
       <p>İşlenen tutarlar kayıttaki vergiler dahildir; tahsilat veya rezervasyon bedeli değildir.</p>
-      ${d.revenue?.posting_pending ? `<p>Oda ücretlerinin tamamı henüz işlenmemiş. Rezervasyon bedeline göre oda başı tutar: ${fmtMoney(d.revenue.operational_adr_by_currency?.[currencyCode] ?? 0)}.</p>` : ''}
+      ${d.revenue?.posting_pending ? `<p>Oda ücretlerinin tamamı henüz işlenmemiş. ADR / RevPAR işlenmeyi bekliyor.</p>` : ''}
       <h3>Operasyonel Durum</h3>
       <div class="grid">
         <div class="card"><div class="label">Girişler</div><div class="value">${d.operations?.arrivals || 0}</div></div>
@@ -117,7 +117,7 @@ const FlashReportContent = ({
       </div>
       <h3>Departman Bazlı Gelir</h3>
       <table><thead><tr><th>Departman</th><th style="text-align:right">Tutar</th><th style="text-align:right">Oran</th></tr></thead>
-      <tbody>${(d.departments || []).map(dep => `<tr><td>${dep.name}</td><td style="text-align:right">${fmtMoney(dep.amount || 0)}</td><td style="text-align:right">${totalRev > 0 ? ((dep.amount || 0) / totalRev * 100).toFixed(1) : 0}%</td></tr>`).join('')}</tbody></table>
+      <tbody>${(d.departments || []).map(dep => `<tr><td>${dep.name}</td><td style="text-align:right">${fmtMoney(dep.amount)}</td><td style="text-align:right">${totalRev > 0 ? ((dep.amount || 0) / totalRev * 100).toFixed(1) : 0}%</td></tr>`).join('')}</tbody></table>
       <h3>Tahsilat Durumu</h3>
       <table><tr><td>Toplam Gelir</td><td style="text-align:right">${fmtMoney(totalRev)}</td></tr>
       <tr><td>Tahsil Edilen</td><td style="text-align:right">${fmtMoney(collected)}</td></tr>
@@ -155,11 +155,11 @@ const FlashReportContent = ({
       </div>;
   }
   const d = displayReport;
-  const totalRev = d.revenue?.total || 0;
-  const collected = Number(d.revenue?.collected || 0);
-  const outstandingDue = Math.max(0, totalRev - collected);
-  const advanceCollected = Math.max(0, collected - totalRev);
-  const trevpar = d.occupancy?.total > 0 ? totalRev / d.occupancy.total : 0;
+  const totalRev = d.revenue?.total;
+  const collected = d.revenue?.collected;
+  const outstandingDue = totalRev == null || collected == null ? null : Math.max(0, totalRev - collected);
+  const advanceCollected = totalRev == null || collected == null ? null : Math.max(0, collected - totalRev);
+  const trevpar = totalRev == null ? null : d.occupancy?.total > 0 ? totalRev / d.occupancy.total : 0;
   const collectionPct = totalRev > 0 ? collected / totalRev * 100 : 0;
   const attentionItems = [
     ...(d.attention_details?.no_shows || []).map(item => ({ ...item, attentionType: 'No-show' })),
@@ -193,20 +193,19 @@ const FlashReportContent = ({
         </div>
       )}
 
-      {currencies.length > 0 && <label className="flex flex-wrap items-center gap-3 text-sm">
+      {currencies.length > 1 && <label className="flex flex-wrap items-center gap-3 text-sm">
         Rapor para birimi
         <select value={currencyCode} onChange={event => setRequestedCurrency(event.target.value)} className="rounded-md border bg-background px-3 py-2">
           {currencies.map(code => <option key={code} value={code}>{code}</option>)}
         </select>
-        <span className="text-muted-foreground">Tutarlar ayrı para birimleridir; kur dönüşümü yapılmaz.</span>
+        <span className="text-muted-foreground">Rapor, otelin para biriminde ve işlemin günündeki kayıtlı kurla gösterilir.</span>
       </label>}
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-testid="flash-scope">
         <p className="font-semibold text-slate-800">Rapor kapsamı: {d.scope?.business_date || d.date}</p>
-        <p className="mt-1">Tüm göstergeler seçili iş gününe aittir. İşlenen tutarlar kayıttaki vergiler dahildir; tahsilat o gün alınan ödemelerdir ve başka konaklamaların avans / borç tahsilatını içerebilir. ADR ve RevPAR burada yalnız işlenen oda tutarından hesaplanır.</p>
+        <p className="mt-1">Tüm göstergeler seçili iş gününe aittir. İşlenen tutarlar kayıttaki vergiler dahildir; tahsilat o gün alınan ödemelerdir ve başka konaklamaların avans / borç tahsilatını içerebilir. ADR ve RevPAR yalnız işlenen, vergi hariç oda gelirinden hesaplanır.</p>
       </div>
       {d.revenue?.posting_pending && <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950" data-testid="flash-posting-pending">
         Oda ücretlerinin tamamı henüz işlenmemiş. Aşağıdaki işlenen ADR / RevPAR, rezervasyon bedeli değildir.
-        <p>Rezervasyon bedeline göre oda başı tutar: {fmtMoney(d.revenue.operational_adr_by_currency?.[currencyCode] ?? 0)} · Rezervasyon oda bedeli: {fmtMoney(d.revenue.reservation_room_revenue_by_currency?.[currencyCode] ?? 0)}</p>
         <a className="underline" href="/app/raporlar?section=forecast_reports">Doluluk / Forecast’i aç</a>
       </div>}
 
@@ -228,8 +227,8 @@ const FlashReportContent = ({
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-emerald-700 font-medium">İşlenen ADR (vergi dahil)</p>
-                <p className="text-2xl font-bold text-emerald-900">{fmtMoney(d.kpi?.adr || 0)}</p>
+                <p className="text-xs text-emerald-700 font-medium">İşlenen ADR (vergi hariç)</p>
+                <p className="text-2xl font-bold text-emerald-900">{d.revenue?.posting_pending ? 'İşlenmeyi bekliyor' : fmtMoney(d.kpi?.adr)}</p>
                 <p className="text-xs text-emerald-600 mt-0.5">{currencies.length > 1 ? 'Seçilen para biriminin satılan oda başına katkısı' : 'Satılan oda başına oda geliri'}</p>
               </div>
               <DollarSign className="w-7 h-7 text-emerald-500" />
@@ -240,8 +239,8 @@ const FlashReportContent = ({
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-indigo-700 font-medium">İşlenen RevPAR (vergi dahil)</p>
-                <p className="text-2xl font-bold text-indigo-900">{fmtMoney(d.kpi?.revpar || 0)}</p>
+                <p className="text-xs text-indigo-700 font-medium">İşlenen RevPAR (vergi hariç)</p>
+                <p className="text-2xl font-bold text-indigo-900">{d.revenue?.posting_pending ? 'İşlenmeyi bekliyor' : fmtMoney(d.kpi?.revpar)}</p>
                 <p className="text-xs text-indigo-600 mt-0.5">Mevcut oda başına oda geliri</p>
               </div>
               <TrendingUp className="w-7 h-7 text-indigo-500" />
@@ -352,7 +351,7 @@ const FlashReportContent = ({
                     {dep.name} {isRoomRev && <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-normal">DETAY</span>}
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="font-medium text-gray-900">{fmtMoney(dep.amount || 0)}</span>
+                    <span className="font-medium text-gray-900">{fmtMoney(dep.amount)}</span>
                     <span className="text-xs text-gray-500 w-12 text-right">{pct.toFixed(1)}%</span>
                   </div>
                 </div>

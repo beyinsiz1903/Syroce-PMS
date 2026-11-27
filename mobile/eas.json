@@ -66,6 +66,14 @@
         "buildType": "app-bundle",
         "autoIncrement": "versionCode"
       }
+    },
+    "pilot-simulator": {
+      "extends": "pilot",
+      "distribution": "internal",
+      "ios": {
+        "simulator": true,
+        "autoIncrement": false
+      }
     }
   },
   "submit": {

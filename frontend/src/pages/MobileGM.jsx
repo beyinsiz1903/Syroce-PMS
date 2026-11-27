@@ -28,6 +28,9 @@ import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/curre
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import AccountProjectionRepair from '@/components/pms/AccountProjectionRepair';
 
+const snapshotAmountText = (value, currency) => typeof value === 'number' && Number.isFinite(value) && currency
+  ? formatMoney(value, currency, { decimals: 2, compactDecimals: false }) : 'Doğrulanamadı';
+
 const MobileGM = ({ user, tenant, embedded = false }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -40,8 +43,6 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
   const roomPostingPending = dailyFlash?.revenue?.posting_pending === true;
   const adrDisplay = roomPostingPending ? 'İşlenmeyi bekliyor' : dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.adr_by_currency, dailyFlash.revenue?.adr) : '—';
   const revparDisplay = roomPostingPending ? 'İşlenmeyi bekliyor' : dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.rev_par_by_currency, dailyFlash.revenue?.rev_par) : '—';
-  const accruedAdr = dailyFlash?.revenue?.operational_adr_by_currency;
-  const accruedRevpar = dailyFlash?.revenue?.operational_revpar_by_currency;
   const arIncomplete = financeSnapshot?.pending_ar?.complete === false;
   const mixedLedgerCount = financeSnapshot?.pending_ar?.mixed_ledger_folio_ids?.length || 0;
   const unagedDebt = financeSnapshot?.pending_ar?.unaged_balance_by_currency || {};
@@ -329,7 +330,6 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   <p className="text-xs text-green-600 mt-1">
                     ADR: {adrDisplay}
                   </p>
-                  {roomPostingPending && accruedAdr && Object.keys(accruedAdr).length > 0 && <p className="text-xs text-green-600 mt-1">Tahakkuk ADR: {formatCurrencyBreakdown(accruedAdr)}</p>}
                 </div>
                 <DollarSign className="w-10 h-10 text-green-300" />
               </div>
@@ -344,7 +344,6 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   <p className="text-2xl font-bold text-indigo-700">
                     {revparDisplay}
                   </p>
-                  {roomPostingPending && accruedRevpar && Object.keys(accruedRevpar).length > 0 && <p className="text-xs text-indigo-600 mt-1">Tahakkuk RevPAR: {formatCurrencyBreakdown(accruedRevpar)}</p>}
                 </div>
                 <Target className="w-10 h-10 text-indigo-300" />
               </div>
@@ -467,7 +466,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   </p>
                 </div>
                 <p className="text-xl font-bold text-green-700">
-                  {formatCurrency(financeSnapshot.todays_collections?.amount, financeSnapshot.todays_collections?.currency)}
+                  {snapshotAmountText(financeSnapshot.todays_collections?.amount, financeSnapshot.todays_collections?.currency)}
                 </p>
               </div>
               <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
@@ -478,7 +477,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   </p>
                 </div>
                 <p className="text-xl font-bold text-blue-700">
-                  {formatCurrency(financeSnapshot.mtd_collections?.amount, financeSnapshot.mtd_collections?.currency)}
+                  {snapshotAmountText(financeSnapshot.mtd_collections?.amount, financeSnapshot.mtd_collections?.currency)}
                 </p>
               </div>
             </CardContent>
@@ -650,7 +649,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
               <CardContent className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bugünkü Tahsilat:</span>
-                  <span className="font-bold text-green-700">{formatCurrency(financeSnapshot?.todays_collections?.amount, financeSnapshot?.todays_collections?.currency)}</span>
+                  <span className="font-bold text-green-700">{snapshotAmountText(financeSnapshot?.todays_collections?.amount, financeSnapshot?.todays_collections?.currency)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bekleyen Alacaklar:</span>

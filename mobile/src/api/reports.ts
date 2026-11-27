@@ -10,31 +10,31 @@ export type FinanceSnapshot = {
   pending_ar: {
     total: number | null;
     complete?: boolean;
-    by_currency?: Record<string, { total: number; '0-30_days': number; '30-60_days': number; '60_plus_days': number; overdue_invoices_count: number }>;
+    by_currency?: Record<string, { total: number | null; '0-30_days': number | null; '30-60_days': number | null; '60_plus_days': number | null; overdue_invoices_count: number }>;
     overdue_breakdown: {
-      '0-30_days': number;
-      '30-60_days': number;
-      '60_plus_days': number;
+      '0-30_days': number | null;
+      '30-60_days': number | null;
+      '60_plus_days': number | null;
     };
     overdue_invoices_count: number;
   };
   todays_collections: {
     currency?: string;
-    amount: number;
+    amount: number | null;
     payment_count: number;
-    by_method?: Record<string, { amount: number; count: number }>;
+    by_method?: Record<string, { amount: number | null; count: number }>;
     conversion_issue_count?: number;
   };
   mtd_collections: {
     currency?: string;
-    amount: number;
+    amount: number | null;
     collection_rate_percentage: number | null;
     collection_rate_complete?: boolean;
     conversion_issue_count?: number;
   };
   accounting_invoices: {
     pending_count: number;
-    pending_total: number;
+    pending_total: number | null;
     by_currency?: Record<string, number>;
   };
 };
@@ -108,15 +108,15 @@ export type CompanyAgingEntry = {
   currency?: string;
   company_id?: string;
   account_id?: string;
-  unaged_balance?: number;
+  unaged_balance?: number | null;
   company_name: string;
   corporate_code: string;
-  total_balance: number;
+  total_balance: number | null;
   aging: {
-    '0-7 days': number;
-    '8-14 days': number;
-    '15-30 days': number;
-    '30+ days': number;
+    '0-7 days': number | null;
+    '8-14 days': number | null;
+    '15-30 days': number | null;
+    '30+ days': number | null;
   };
   folio_count: number;
 };
@@ -124,7 +124,7 @@ export type CompanyAgingEntry = {
 export type CompanyAgingReport = {
   report_date: string;
   total_ar: number | null;
-  total_ar_by_currency?: Record<string, number>;
+  total_ar_by_currency?: Record<string, number | null>;
   complete?: boolean;
   aging_complete?: boolean;
   company_count: number;

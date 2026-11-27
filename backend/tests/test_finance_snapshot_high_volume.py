@@ -56,7 +56,7 @@ async def test_finance_snapshot_reads_complete_financial_collections(monkeypatch
         _nocache=True,
     )
 
-    assert result["accounting_invoices"] == {"pending_count": 0, "pending_total": 0}
+    assert result["accounting_invoices"] == {"pending_count": 0, "pending_total": 0, "by_currency": {"TRY": 0}}
     assert folios.cursor.limits == [None]
     assert payments.cursor.limits == [None, None]
     assert charges.cursor.limits == [None]

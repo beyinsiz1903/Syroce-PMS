@@ -310,7 +310,11 @@ mutlaka yeni bir EAS Build ister.
 3. `npm run check` ile yerel mobil kalite kapısını geçir.
 4. `eas build --profile pilot` ile iç dağıtım build'ini al; iOS ve
    Android için `buildNumber` / `versionCode` otomatik artar.
-5. **Smoke test (CI üzerinden zorunlu)** — Build başarıyla bittiğinde
+5. Aynı commit'ten `eas build --profile pilot-simulator --platform ios`
+   ile simülatör paketini al. Bu profil `pilot` API adreslerini devralır;
+   store imzalı IPA simülatöre kurulmaz. Store build ve simülatör build'inin
+   mobil kaynak ağacı ile API adresleri eşleşmelidir.
+6. **Smoke test (CI üzerinden zorunlu)** — Build başarıyla bittiğinde
    GitHub Actions'taki `Mobile Smoke (post EAS build)` iş akışı otomatik
    ya da manuel olarak tetiklenir; build artifact'i indirilir, iOS
    Simulator / Android Emulator'a kurulur ve `mobile/scripts/smoke.sh`
@@ -319,15 +323,15 @@ mutlaka yeni bir EAS Build ister.
    tetiklenir, otomatik webhook bağlanır ve sonuçlar PR'a yorumlanır:
    [Otomatik smoke CI hook'u](#otomatik-smoke-ci-hooku). Yerel akış
    detayı: [`.maestro/README.md`](.maestro/README.md).
-6. CI smoke yeşil olduktan sonra `eas submit --profile pilot` ile
+7. CI smoke yeşil olduktan sonra `eas submit --profile pilot` ile
    TestFlight + Play Internal'a yükle.
-7. İç test (en az 24 saat, regresyon listesi) → onaylandıktan sonra
+8. İç test (en az 24 saat, regresyon listesi) → onaylandıktan sonra
    `--profile production` ile üretim build'i ve submission. Üretim
    build'inde de aynı CI smoke akışı tekrar çalıştırılır (`profile:
    production` girdisi ile); gerçek QA hesapları için repo secret'ları
    `SMOKE_EMAIL` / `SMOKE_PASSWORD` / `SMOKE_GUEST_EMAIL` /
    `SMOKE_GUEST_PASSWORD` doldurulmuş olmalı.
-8. OTA hotfix gerekiyorsa `eas update` (aynı pazarlama sürümünde).
+9. OTA hotfix gerekiyorsa `eas update` (aynı pazarlama sürümünde).
 
 > **Smoke başarısız olursa:** `eas submit` koşturulmaz. Hatanın kaynağı
 > Maestro çıktı log'undan (Actions run → `maestro-ios-debug` /

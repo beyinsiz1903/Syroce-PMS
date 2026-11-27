@@ -32,7 +32,45 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
         method = str(payment.get("payment_method") or payment.get("method") or "other")
         for key in ("payments", "payment:" + method):
             acc.add(key, payment["amount"], payment)
-    balances = []
+    ar_rates = []
+    values, valuation_issues = folio_carrying_values(snapshots, rates, evidence=ar_rates)
+    balances = list(values.values())
+    acc.issues.extend(issue for issue in valuation_issues if issue not in acc.issues)
+    balance = dict.fromkeys(("total", "receivable", "overpayment")) if any(value is None for value in balances) else {
+        "total": round(sum(balances), 2), "receivable": round(sum(max(value, 0) for value in balances), 2),
+        "overpayment": round(sum(min(value, 0) for value in balances), 2)}
+    total = report["totals"]
+    tax = None if any(total[key] is None for key in ("vat", "city_tax", "other_tax")) else round(sum(total[key] for key in ("vat", "city_tax", "other_tax")), 2)
+    result["currency"] = result["reporting_currency"] = base
+    result["currency_policy"] = {**acc.metadata(), "revenue": report["currency_policy"], "rates": [*acc.metadata()["rates"], *ar_rates],
+        "complete": acc.metadata()["complete"] and report["currency_policy"]["complete"] and balance["total"] is not None,
+        "missing_rate_count": sum(issue["reason"] == "historical_exchange_rate_missing" for issue in acc.issues) + report["currency_policy"]["missing_rate_count"],
+        "unverified_valuation_count": sum(issue["reason"] == "receivable_allocation_valuation_unverified" for issue in acc.issues)}
+    result["revenue"].update(charges_count=total["count"], total=total["verified_net"], total_by_currency={base: total["verified_net"]},
+        verified_total_by_currency={base: total["verified_net"]}, total_with_tax=total["total"],
+        total_with_tax_by_currency={base: total["total"]},
+        by_category={row["category"]: {"amount": row["by_currency"][base]["verified_net"],
+            "total": row["total"], "tax": None if any(row[key] is None for key in ("vat", "city_tax", "other_tax")) else round(sum(row[key] for key in ("vat", "city_tax", "other_tax")), 2),
+            "count": row["count"]} for row in report["rows"]})
+    if report.get("original_currency_breakdown"):
+        result["revenue"]["original_currency_breakdown"] = report["original_currency_breakdown"]
+    result["tax"].update(total=tax, total_by_currency={base: tax}, verified_total_by_currency={base: tax},
+        breakdown={"vat": total["vat"], "accommodation_tax": total["city_tax"], "other_tax": total["other_tax"]})
+    paid = acc.total("payments")
+    result["payments"].update(payments_count=len(payments), total=paid, total_by_currency={base: paid},
+        by_method={method: {**row, "amount": acc.total("payment:" + method), "amount_by_currency": {base: acc.total("payment:" + method)}}
+            for method, row in result["payments"]["by_method"].items()})
+    result["open_folios"].update(balance=balance, balance_by_currency={base: balance}, balance_basis="current_open_folio_carrying_value",
+        count=len(snapshots), receivable_count=sum(any(value > 0 for value in snap["balance_by_currency"].values()) for snap in snapshots.values()),
+        overpayment_count=sum(any(value < 0 for value in snap["balance_by_currency"].values()) for snap in snapshots.values()))
+    result["net_position"] = None if total["total"] is None or paid is None else round(total["total"]-paid, 2)
+    result["net_position_by_currency"] = {base: result["net_position"]}
+    return result
+
+
+def folio_carrying_values(snapshots, rates, *, evidence=None):
+    """Value outstanding native buckets without inventing payment allocations."""
+    base, values, issues = rates.currency, {}, []
     for snap in snapshots.values():
         # Preserve debit and credit buckets across native currencies. A net
         # base-currency zero is not proof that unlike debts were settled.
@@ -57,35 +95,8 @@ async def property_financial_summary(database, tenant_id, payload, business_day)
                         "reporting_currency": base})
                 else:
                     ledger.add("balance", native_balance, quotes[0][0])
-            balances.append(ledger.total("balance"))
-            acc.issues.extend(issue for issue in ledger.issues if issue not in acc.issues)
-    balance = dict.fromkeys(("total", "receivable", "overpayment")) if any(value is None for value in balances) else {
-        "total": round(sum(balances), 2), "receivable": round(sum(max(value, 0) for value in balances), 2),
-        "overpayment": round(sum(min(value, 0) for value in balances), 2)}
-    total = report["totals"]
-    tax = None if any(total[key] is None for key in ("vat", "city_tax", "other_tax")) else round(sum(total[key] for key in ("vat", "city_tax", "other_tax")), 2)
-    result["currency"] = result["reporting_currency"] = base
-    result["currency_policy"] = {**acc.metadata(), "revenue": report["currency_policy"],
-        "complete": acc.metadata()["complete"] and report["currency_policy"]["complete"] and balance["total"] is not None,
-        "missing_rate_count": sum(issue["reason"] == "historical_exchange_rate_missing" for issue in acc.issues) + report["currency_policy"]["missing_rate_count"],
-        "unverified_valuation_count": sum(issue["reason"] == "receivable_allocation_valuation_unverified" for issue in acc.issues)}
-    result["revenue"].update(charges_count=total["count"], total=total["verified_net"], total_by_currency={base: total["verified_net"]},
-        verified_total_by_currency={base: total["verified_net"]}, total_with_tax=total["total"],
-        total_with_tax_by_currency={base: total["total"]},
-        by_category={row["category"]: {"amount": row["by_currency"][base]["verified_net"],
-            "total": row["total"], "tax": None if any(row[key] is None for key in ("vat", "city_tax", "other_tax")) else round(sum(row[key] for key in ("vat", "city_tax", "other_tax")), 2),
-            "count": row["count"]} for row in report["rows"]})
-    if report.get("original_currency_breakdown"):
-        result["revenue"]["original_currency_breakdown"] = report["original_currency_breakdown"]
-    result["tax"].update(total=tax, total_by_currency={base: tax}, verified_total_by_currency={base: tax},
-        breakdown={"vat": total["vat"], "accommodation_tax": total["city_tax"], "other_tax": total["other_tax"]})
-    paid = acc.total("payments")
-    result["payments"].update(payments_count=len(payments), total=paid, total_by_currency={base: paid},
-        by_method={method: {**row, "amount": acc.total("payment:" + method), "amount_by_currency": {base: acc.total("payment:" + method)}}
-            for method, row in result["payments"]["by_method"].items()})
-    result["open_folios"].update(balance=balance, balance_by_currency={base: balance}, balance_basis="current_open_folio_carrying_value",
-        count=len(snapshots), receivable_count=sum(any(value > 0 for value in snap["balance_by_currency"].values()) for snap in snapshots.values()),
-        overpayment_count=sum(any(value < 0 for value in snap["balance_by_currency"].values()) for snap in snapshots.values()))
-    result["net_position"] = None if total["total"] is None or paid is None else round(total["total"]-paid, 2)
-    result["net_position_by_currency"] = {base: result["net_position"]}
-    return result
+            values[(str(snap["folio"].get("id")), code)] = ledger.total("balance")
+            if evidence is not None:
+                evidence.extend({**row, "folio_id": snap["folio"].get("id")} for row in ledger.metadata()["rates"])
+            issues.extend(issue for issue in ledger.issues if issue not in issues)
+    return values, issues

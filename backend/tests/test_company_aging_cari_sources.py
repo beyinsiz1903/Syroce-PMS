@@ -150,6 +150,7 @@ async def test_transfer_company_folio_residual_plus_cari_debt_counted_exactly_on
 
 async def test_three_currencies_and_both_account_sources_remain_separate(ledger_db, monkeypatch):
     monkeypatch.setattr(reports, "db", ledger_db)
+    await ledger_db.currency_rates.insert_many([{ "tenant_id": "A", "effective_date": "2026-10-01", "from_currency": code, "to_currency": "TRY", "rate": rate } for code, rate in [("EUR", 50), ("USD", 45)]])
     for i, code in enumerate(("TRY", "EUR", "USD"), 1):
         await ledger_db.cari_accounts.insert_one({"tenant_id": "A", **account(id=code, currency=code, balance=i * 100)})
         await ledger_db.cari_transactions.insert_one({"tenant_id": "A", **charge(id=code, cari_account_id=code, currency=code, amount=i * 100)})
@@ -158,8 +159,8 @@ async def test_three_currencies_and_both_account_sources_remain_separate(ledger_
     await ledger_db.cari_accounts.insert_one({"tenant_id": "B", **account(balance=999999)})
     await ledger_db.cari_transactions.insert_one({"tenant_id": "B", **charge(amount=999999)})
     result = await reports._compute_company_aging("A")
-    assert result["complete"] and result["total_ar"] is None
-    assert result["total_ar_by_currency"] == {"TRY": 100, "EUR": 225, "USD": 300}
+    assert result["complete"] and result["total_ar"] == 24850
+    assert result["total_ar_by_currency"] == {"TRY": 24850}
     assert result["company_count"] == 4
 
 
@@ -168,7 +169,7 @@ async def test_legacy_projection_mismatch_is_not_exported_as_complete(ledger_db,
     await ledger_db.cari_accounts.insert_one({"tenant_id": "A", **account()})
     result = await reports._compute_company_aging("A")
     assert result["complete"] is False and result["total_ar"] is None
-    assert result["total_ar_by_currency"] == {"TRY": 100}
+    assert result["total_ar_by_currency"] == {"TRY": None}
     assert result["companies"][0]["unaged_balance"] == 100
     with pytest.raises(HTTPException) as error:
         await reports.export_company_aging_excel(USER)

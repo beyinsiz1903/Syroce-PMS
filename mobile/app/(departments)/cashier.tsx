@@ -33,7 +33,7 @@ import {
 } from '../../src/api/folio';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
 import { getFinanceSnapshot } from '../../src/api/reports';
-import { reportCountLabel, reportMoneyTotalsLabel } from '../../src/utils/reportPresentation';
+import { reportAmountLabel, reportCountLabel, reportMoneyTotalsLabel } from '../../src/utils/reportPresentation';
 
 const t = tr.departments.cashier;
 
@@ -69,8 +69,9 @@ const BreakdownTile: React.FC<{
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: number;
+  currency?: string;
   tint: string;
-}> = ({ icon, label, value, tint }) => {
+}> = ({ icon, label, value, currency, tint }) => {
   const c = useTheme();
   return (
     <View
@@ -104,7 +105,7 @@ const BreakdownTile: React.FC<{
         numberOfLines={1}
         adjustsFontSizeToFit
       >
-        {formatCurrency(value)}
+        {reportAmountLabel(value, currency)}
       </Text>
     </View>
   );
@@ -248,8 +249,9 @@ export default function CashierScreen() {
   const shiftCollection = collectionBreakdown(transactions, shiftQ.data?.summary);
   const daily = financeQ.data?.todays_collections;
   const dailyMethods = daily?.by_method || {};
+  const collectionCurrency = daily?.currency || shift?.currency;
   const methodAmount = (...keys: string[]) =>
-    keys.reduce((sum, key) => sum + (dailyMethods[key]?.amount ?? 0), 0);
+    keys.reduce((sum, key) => sum + (dailyMethods[key]?.amount === null ? NaN : dailyMethods[key]?.amount ?? 0), 0);
   const assignedDaily = methodAmount(
     'cash',
     'card',
@@ -266,7 +268,7 @@ export default function CashierScreen() {
         card: methodAmount('card', 'credit_card', 'debit_card'),
         transfer: methodAmount('bank_transfer', 'transfer'),
         online: methodAmount('online'),
-        other: Math.max(0, daily.amount - assignedDaily),
+        other: typeof daily.amount === 'number' && Number.isFinite(daily.amount) ? Math.max(0, daily.amount - assignedDaily) : NaN,
       }
     : shiftCollection;
 
@@ -342,26 +344,30 @@ export default function CashierScreen() {
               numberOfLines={1}
               adjustsFontSizeToFit
             >
-              {formatCurrency(collection.total, daily?.currency || shift?.currency || 'TRY')}
+              {reportAmountLabel(collection.total, collectionCurrency)}
             </Text>
             <Muted style={{ fontSize: 12, marginBottom: spacing.md }}>{t.collectionHint}</Muted>
+            {!!daily?.conversion_issue_count && <Muted>Geçmiş kur kanıtı eksik; tahsilat toplamı doğrulanamadı.</Muted>}
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <BreakdownTile
                 icon="cash-outline"
                 label={t.methods.cash}
                 value={collection.cash}
+                currency={collectionCurrency}
                 tint={c.success}
               />
               <BreakdownTile
                 icon="card-outline"
                 label={t.methods.card}
                 value={collection.card}
+                currency={collectionCurrency}
                 tint={c.info}
               />
               <BreakdownTile
                 icon="business-outline"
                 label={t.digital}
                 value={collection.transfer + collection.online + collection.other}
+                currency={collectionCurrency}
                 tint={c.vip}
               />
             </View>

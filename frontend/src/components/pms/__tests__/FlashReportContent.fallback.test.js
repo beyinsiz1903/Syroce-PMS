@@ -15,13 +15,13 @@ describe('FlashReportContent currency selection', () => {
     expect(eur.revenue.room_revenue_breakdown).toEqual([{ currency: 'EUR', daily_rate: 20.25 }]);
     expect(eur.departments[0].amount).toBe(20.25);
     expect(selectFlashCurrency(report, 'TRY').revenue.total).toBe(1000.49);
-    expect(selectFlashCurrency(report, 'TRY').revenue.collected).toBe(0);
+    expect(selectFlashCurrency(report, 'TRY').revenue.collected).toBeNull();
     expect(report.revenue.total).toBeNull();
   });
 
   it('does not invent a TRY total for a mixed-currency report', () => {
     const report = { revenue: { total_by_currency: { EUR: 50 } }, kpi: {} };
-    expect(selectFlashCurrency(report, 'TRY').revenue.total).toBe(0);
+    expect(selectFlashCurrency(report, 'TRY').revenue.total).toBeNull();
     expect(selectFlashCurrency(null, 'TRY')).toBeNull();
   });
 
