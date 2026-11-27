@@ -856,6 +856,17 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                   {item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}
                 </div>
                 {(item.created_at || item.posted_at || item.processed_at) && <p className="mt-1 text-[11px] text-slate-500">Kayda alınma: {fmtTs(item.created_at || item.posted_at || item.processed_at)}</p>}
+                {item._type === 'payment' && item.voided && !isNonCashPayment(item) && (
+                  <div className="mt-1 space-y-0.5 text-xs text-slate-600" data-testid={`voided-payment-source-${item.id || i}`}>
+                    <p>Özgün hesap tutarı: {item.amount != null && Number.isFinite(Number(item.amount))
+                      ? fmtCurrency(Math.abs(Number(item.amount)), item.currency || currency) : 'Doğrulanamadı'}</p>
+                    {received && <p>Özgün alınan tutar: {fmtCurrency(Math.abs(received.amount), received.currency)}</p>}
+                    {item.exchange_rate != null && Number.isFinite(Number(item.exchange_rate)) && Number(item.exchange_rate) > 0 && (
+                      <p>Kayıtlı kur: {Number(item.exchange_rate).toLocaleString('tr-TR', { maximumFractionDigits: 12 })}</p>
+                    )}
+                    <p>İptal kaydıdır; güncel tahsilata ve bakiyeye eklenmez.</p>
+                  </div>
+                )}
                 {received && !item.voided && !isNonCashPayment(item) && (
                   <div className="mt-1 text-xs font-semibold text-emerald-700" data-testid={`received-currency-${item.id || i}`}>
                     {refund ? 'İade edilen:' : 'Alınan:'} {fmtCurrency(Math.abs(received.amount), received.currency)}
