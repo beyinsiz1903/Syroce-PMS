@@ -158,6 +158,9 @@ const ReportsTab = () => {
         Şu raporlar alınamadı: {reportErrors.join(', ')}. Boş veya sıfır sonuç olarak değerlendirmeyin; Yenile ile tekrar deneyin.
       </p>}
       <p className="text-xs text-slate-500">Gerçekleşen dönem: {`${businessDate.slice(0, 7)}-01`} – {businessDate} (PMS iş günü)</p>
+      {(revenue?.reporting_currency || revenue?.currency) && <p className="text-xs text-slate-500">Rapor para birimi: {revenue.reporting_currency || revenue.currency} · İşlemin günündeki kayıtlı kur. ADR / RevPAR vergi hariç oda geliridir.</p>}
+      {revenue?.posting_pending && <p role="status" className="rounded-lg border border-amber-200 p-3 text-sm text-amber-800">Seçili dönemde oda ücretleri henüz tam işlenmedi. ADR / RevPAR bu dönem için doğrulanamıyor; eksik tutarlar sıfır sayılmadı.</p>}
+      {revenue?.currency_policy?.missing_rate_count > 0 && <p role="status" className="rounded-lg border border-amber-200 p-3 text-sm text-amber-800">Tarihî kur kanıtı eksik. Etkilenen tutarlar bugünkü kurla tamamlanmadı.</p>}
       {revenue?.mixed_currency && <p className="text-xs text-slate-500">ADR ve RevPAR tutarları, her para biriminin toplam oda-geceye katkısını ayrı gösterir. Kur dönüşümü yapılmadığından tek bir birleşik ADR değildir.</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 [&>*]:min-w-0">
