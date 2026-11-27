@@ -24,28 +24,14 @@ tags:
     env:
       TARGET_LINK: "syrocepms:///(guest)/digitalKey"
 
-# This account intentionally has no hotel/booking grants. Keep the original
-# empty digital-key mount acceptance instead of creating unrelated access.
-# On pinned iPhone17/iOS26, SpringBoard's scheme sheet is visible in screenshots
-# but absent from the Maestro hierarchy (run45995606684). Use its observed Open
-# button position only if the destination is still absent; the destination ID
-# and title remain mandatory afterward. No permissions/settings are changed.
-- runFlow:
-    when:
-      platform: iOS
-      notVisible:
-        id: "smoke-digital-key"
-    commands:
-      - takeScreenshot: artifacts/guest-link-before-system-open
-      - tapOn:
-          point: "68%,54%"
-          retryTapIfNoChange: false
-      - waitForAnimationToEnd
-      - takeScreenshot: artifacts/guest-link-after-system-open
-
+# The guest fixture intentionally has no hotel/booking grants. The destination
+# must still mount its real empty state; never substitute a staff session.
+# Run46007559648 shows CoreSimulator accepting the URI at13:45:01 but
+# SpringBoard delivering it at13:46:07, after the previous30s assertion failed.
+# Keep the exact destination assertion and allow bounded OS delivery latency.
 - extendedWaitUntil:
     visible:
       id: "smoke-digital-key"
-    timeout: 30000
+    timeout: 120000
 - assertVisible:
     text: "Dijital Anahtar"
