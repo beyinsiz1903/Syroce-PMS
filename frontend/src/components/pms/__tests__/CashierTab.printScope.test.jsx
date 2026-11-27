@@ -35,6 +35,8 @@ it('marks only the selected portalled Z document for printing, never the history
   expect(document.querySelectorAll('[data-cashier-print-document]')).toHaveLength(1);
   expect(report).not.toHaveTextContent('Other private history');
   expect(report).not.toHaveTextContent('99999');
+  expect(report).toHaveTextContent('Beklenen');
+  expect(report).not.toHaveTextContent('Dönem net nakit hareketi');
   expect(report).toHaveTextContent('31.10.2026 19:34');
   expect(report).toHaveTextContent('31.10.2026 19:45');
   expect(report).toHaveTextContent('Selected <script>note</script>');

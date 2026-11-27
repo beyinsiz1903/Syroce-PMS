@@ -1048,7 +1048,7 @@ const CashierTab = () => {
                   <p className="text-base font-bold text-amber-700">{formatTry(reportData.cash_out)}</p>
                 </div>
                 <div className="p-3 rounded bg-gray-100 border border-gray-300">
-                  <p className="text-[10px] text-gray-600 uppercase">Dönem net nakit hareketi</p>
+                  <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
                   <p className="text-base font-bold text-gray-800">{formatTry(reportData.expected_amount)}</p>
                 </div>
               </div>
