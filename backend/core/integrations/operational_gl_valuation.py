@@ -40,6 +40,32 @@ def amount(value):
     return float(Decimal(value) / 100)
 
 
+def is_full_comp_source(source):
+    return bool(source.get('is_complimentary')
+                and (source.get('complimentary_scope') == 'full'
+                     or source.get('complimentary_original_amount') is not None)
+                and minor(source.get('total', source.get('amount'))) == 0
+                and (source.get('complimentary_original_amount') is None
+                     or minor(source['complimentary_original_amount']) != 0))
+
+
+def full_comp_net(source):
+    """Use sealed list-price evidence, never reverse-engineer a tax rate."""
+    snapshot = source.get('complimentary_original_tax_snapshot')
+    if (not isinstance(snapshot, dict)
+            or any(snapshot.get(key) is None for key in ('net_amount', 'vat_amount', 'tax_amount'))
+            or source.get('complimentary_original_amount') is None):
+        raise OperationalValuationError('Full-comp original net/tax evidence is missing: ' + str(source.get('id')))
+    net, vat, other = (minor(snapshot[key]) for key in ('net_amount', 'vat_amount', 'tax_amount'))
+    gross = minor(source['complimentary_original_amount'])
+    def currency(code):
+        return 'TRY' if code in {'TL', 'TRL'} else code
+    if (min(net, vat, other) < 0 or gross <= 0 or net + vat + other != gross
+            or (snapshot.get('currency') and currency(snapshot['currency']) != currency(source.get('currency')))):
+        raise OperationalValuationError('Full-comp original net/tax evidence is inconsistent: ' + str(source.get('id')))
+    return net, snapshot
+
+
 def source_tax_components(source):
     """Validate both stored tax schemas without rewriting source evidence.
 
@@ -194,7 +220,7 @@ async def daily_sources(db, tenant_id, business_date):
     payments = await exclude_direct_cheques(db, tenant_id, payments)
     charges = [r for r in charges if not r.get("deleted") and not r.get("voided")
         and str(r.get("charge_category") or r.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}
-        and (minor(r.get("total", r.get("amount"))) or minor(r.get("tax_amount")))]
+        and (minor(r.get("total", r.get("amount"))) or minor(r.get("tax_amount")) or is_full_comp_source(r))]
     payments = [r for r in deduplicate_report_payments(payments) if (effective_collection(r) or (is_non_cash_adjustment(r) and effective_folio_payment(r)))
         and not ((r.get("mice_event_id") or r.get('source_spa_appointment_id')) and r.get("gl_journal_entry_id"))]
     security = await db.security_fund_operations.find({"tenant_id": tenant_id, "business_date": business_date}).to_list(None)
@@ -236,7 +262,7 @@ def build_plan(charges, payments, mapping, valuation, security=()):
         raise OperationalValuationError(prefix + json.dumps(missing_tax, ensure_ascii=False, sort_keys=True, default=str))
     rates = valuation["rates_to_try"]
     rows, charge_groups, payment_groups = [], {}, {}
-    payment_base_groups, adjustment_groups, fx_groups = {}, {}, {}
+    payment_base_groups, adjustment_groups, fx_groups, full_comp_groups = {}, {}, {}, {}
     for kind, sources in (("charge", charges), ("payment", payments)):
         for source in sources:
             code = "TRY" if source["currency"] in {"TL", "TRL"} else source["currency"]
@@ -270,6 +296,18 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                     row["tax_evidence"] = source["tax_evidence"]
                 gross = minor(source.get("total", source.get("amount")))
                 tax, accommodation = source_tax_components(source)
+                if is_full_comp_source(source):
+                    net, original = full_comp_net(source)
+                    if tax or accommodation:
+                        raise OperationalValuationError('Full-comp posting must preserve zero output tax')
+                    account = mapping.get('adjustment_account_code')
+                    if not account or account in {value for key, value in mapping.items()
+                            if key.endswith('_account_code') and key != 'adjustment_account_code'}:
+                        raise OperationalValuationError('Full-comp requires a separate contra-sales account')
+                    row.update(complimentary_original_net_minor=net,
+                               complimentary_original_gross_minor=minor(source['complimentary_original_amount']),
+                               complimentary_original_tax_snapshot=original)
+                    full_comp_groups[code] = full_comp_groups.get(code, 0) + net
                 if accommodation and not mapping.get("accommodation_tax_account_code"):
                     raise OperationalValuationError("An explicit accommodation-tax account is required; do not merge it into VAT")
                 row.update(gross_minor=gross, tax_minor=tax, accommodation_tax_minor=accommodation)
@@ -367,6 +405,12 @@ def build_plan(charges, payments, mapping, valuation, security=()):
             line(valuation["realised_fx_accounts"][side], abs(fx), "TRY", "credit" if fx > 0 else "debit", "Gerçekleşen tahsilat kur farkı")
         payment_total += base_paid + fx
         payment_by_account[account] = payment_by_account.get(account, 0) + base_paid + fx
+    # A fully waived source has no receivable, cash or output tax. Retain its
+    # proven original NET as gross sales and a matching contra-sales entry so
+    # the source report's concession remains auditable without taxing list price.
+    for code, value in sorted(full_comp_groups.items()):
+        line(mapping['revenue_account_code'], value, code, 'credit', 'Tam ikram öncesi kanıtlı net tutar')
+        line(mapping['adjustment_account_code'], value, code, 'debit', 'Tam ikram; tahsilat ve vergi değildir')
     # Folio offsets are not receipts or a fiscal credit note. Preserve the
     # original charge/tax rows; post a distinct contra-sales/receivable pair.
     for code, value in sorted(adjustment_groups.items()):
@@ -407,7 +451,7 @@ def build_plan(charges, payments, mapping, valuation, security=()):
     # An optional new mapping must not invalidate previously sealed days that
     # contain no adjustment. Include it only when this source batch uses it.
     manifest = {"version": 1, "valuation": valuation, "mapping": {k: mapping[k] for k in sorted(mapping)
-                if k.endswith("_account_code") and (k != "adjustment_account_code" or adjustment_groups)},
+                if k.endswith("_account_code") and (k != "adjustment_account_code" or adjustment_groups or full_comp_groups)},
                 "sources": sorted(rows, key=lambda r: (r["kind"], r["id"]))}
     manifest["source_hash"] = digest(manifest)
     return {"lines": lines, "manifest": manifest, "charge_total_try": amount(charge_total), "payment_total_try": amount(payment_total),
