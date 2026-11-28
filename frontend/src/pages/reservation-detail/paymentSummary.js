@@ -36,7 +36,8 @@ export function reservationPaymentSummary(summary, booking) {
 // or a per-room payment allocation. Never combine it with local ledger totals.
 export function reservationDisplaySummary(summary, booking) {
   const local = reservationPaymentSummary(summary, booking);
-  if (!exelyReservationDetails(booking || {}) || local.kind === 'reconciliation') return local;
+  const cancelled = ['cancelled', 'canceled'].includes(String(booking?.status || '').trim().toLowerCase());
+  if (cancelled || !exelyReservationDetails(booking || {}) || local.kind === 'reconciliation') return local;
   const snapshot = booking?.provider_prepayment;
   const currency = typeof snapshot?.booking_currency === 'string' ? snapshot.booking_currency.trim() : '';
   const candidate = snapshot?.schema_version === 1 && currency ? amount(snapshot.remaining_amount) : null;

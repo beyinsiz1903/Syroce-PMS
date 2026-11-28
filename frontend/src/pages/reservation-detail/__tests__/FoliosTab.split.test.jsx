@@ -705,3 +705,11 @@ it('requires an explicit source for cari transfer when several folios are open',
   expect(screen.queryByTestId('cari-transfer-form')).not.toBeInTheDocument();
   expect(screen.getByText('Cari aktarımı için açık hedef folyoyu seçin.')).toBeInTheDocument();
 });
+
+
+it('keeps Exely local folio balances labelled as PMS records rather than guest collection demands', () => {
+  render(<FoliosTab {...singleFolioProps({ booking: { ...booking, channel: 'exely', currency: 'USD' },
+    summary: { reservation_total_due: 100, folio_balance: 100 } })} />);
+  expect(screen.getByTestId('primary-payment-summary')).toHaveTextContent('PMS kayıt bakiyesi');
+  expect(screen.queryByText('Misafirden alınacak')).not.toBeInTheDocument();
+});
