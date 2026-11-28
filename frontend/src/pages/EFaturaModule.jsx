@@ -17,6 +17,7 @@ const EFaturaModule = () => {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState([]);
   const [posClosures, setPosClosures] = useState([]);
+  const [showAllClosures, setShowAllClosures] = useState(false);
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
@@ -248,7 +249,7 @@ const EFaturaModule = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {posClosures.slice(0, 7).map((closure) => (
+            {(showAllClosures ? posClosures : posClosures.slice(0, 7)).map((closure) => (
               <div key={closure.id} className="flex justify-between items-center p-4 bg-gray-50 rounded">
                 <div>
                   <div className="font-semibold">{new Date(closure.closure_date).toLocaleDateString()}</div>
@@ -274,6 +275,11 @@ const EFaturaModule = () => {
                 </Button>
               </div>
             ))}
+            {posClosures.length > 7 && (
+              <Button variant="outline" onClick={() => setShowAllClosures(value => !value)}>
+                {showAllClosures ? 'Son 7 kapanışı göster' : `Tüm kapanışları göster (${posClosures.length})`}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
