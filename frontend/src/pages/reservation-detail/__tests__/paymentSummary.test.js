@@ -107,3 +107,12 @@ describe('Exely reservation and local ledger scopes', () => {
     expect(reservationDisplaySummary(summary, { channel: 'direct' })).toEqual(reservationPaymentSummary(summary));
   });
 });
+
+
+it('does not present a cancelled provider quotation as a remaining stay debt', () => {
+  const booking = { status: 'cancelled', channel: 'exely', provider_prepayment: {
+    schema_version: 1, booking_currency: 'USD', remaining_amount: 100,
+  } };
+  expect(reservationDisplaySummary({ reservation_total_due: 0, folio_balance: 0, unposted_room_amount: 0 }, booking))
+    .toMatchObject({ kind: 'settled', displayAmount: 0, pmsOnly: true });
+});

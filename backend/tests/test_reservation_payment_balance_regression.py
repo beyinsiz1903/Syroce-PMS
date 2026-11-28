@@ -750,3 +750,36 @@ async def test_finance_void_payment_blocks_closed_folio_before_writes(monkeypatc
     assert exc.value.status_code == 409
     payment_update.assert_not_awaited()
     folio_update.assert_not_awaited()
+
+
+@pytest.mark.parametrize("status", ["cancelled", "canceled"])
+def test_cancelled_unposted_quote_is_not_a_guest_debt(status):
+    booking = {"status": status, "total_amount": 100, "currency": "USD", "check_in": "2026-11-29", "check_out": "2026-11-30"}
+    result = reservation_detail._build_financial_summary(booking, [], [], [], [])
+    assert result["reservation_total_due"] == result["balance"] == result["folio_balance"] == 0
+    assert result["unposted_room_amount"] == result["accommodation_total"] == result["gross_total"] == 0
+    assert booking["total_amount"] == 100
+
+
+def test_cancelled_booking_preserves_actual_fees_and_refundable_prepayment():
+    result = reservation_detail._build_financial_summary(
+        {"status": "cancelled", "total_amount": 1000},
+        [{"charge_type": "cancellation_fee", "total": 30}],
+        [{"method": "cash", "amount": 50, "payment_type": "prepayment"}], [], [],
+    )
+    assert result["reservation_total_due"] == result["folio_balance"] == -20
+    assert result["cash_collection_total"] == 50
+    assert result["gross_total"] == result["additional_charge_total"] == 30
+    assert result["unposted_room_amount"] == 0
+
+
+def test_cancelled_booking_keeps_posted_room_and_migration_ledger():
+    result = reservation_detail._build_financial_summary(
+        {"status": "cancelled", "total_amount": 1000, "migration_financial_snapshot": {"charged": 80, "paid": 30, "accommodation": 60}},
+        [{"charge_type": "room_charge", "charge_category": "room", "total": 40}], [], [], [],
+    )
+    assert result["reservation_total_due"] == result["folio_balance"] == 90
+    assert result["gross_total"] == 120
+    assert result["accommodation_total"] == 100
+    assert result["unposted_room_amount"] == 0
+    assert result["pricing_reconciliation_required"] is False

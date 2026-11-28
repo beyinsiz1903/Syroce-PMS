@@ -243,7 +243,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const additionalChargeTotal = Number(summary?.additional_charge_total ?? summary?.total_extra) || 0;
   const prepaymentTotal = Number(summary?.prepayment_total) || 0;
   const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
-  const paymentOverview = reservationPaymentSummary(summary);
+  const paymentOverview = reservationPaymentSummary(summary, booking);
 
   const completePendingRoomCharge = async () => {
     setActionError('');

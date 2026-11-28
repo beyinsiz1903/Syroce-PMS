@@ -575,6 +575,17 @@ def _build_financial_summary(
         total_charges += float(source_snapshot.get("charged") or 0)
         total_payments += float(source_snapshot.get("paid") or 0)
         room_charge_total += prior_room
+
+    # A cancelled stay's quotation is not a posted receivable. Keep actual
+    # charges, prepayments/refunds and migrated ledger balances intact.
+    is_cancelled = str(booking.get("status") or "").strip().lower() in {"cancelled", "canceled"}
+    if is_cancelled:
+        balance = reservation_total_due = folio_balance
+        accommodation_total = reservation_price_component_total + float(source_snapshot.get("accommodation") or 0)
+        gross_total = accommodation_total + additional_charge_total
+        pricing_reconciliation_difference = 0
+        pricing_reconciliation_direction = None
+
     return {
         "total_amount": booking.get("total_amount", 0),
         "opening_balance": round(opening_balance, 2),
@@ -599,7 +610,7 @@ def _build_financial_summary(
         "total_deposits": round(total_deposits, 2),
         "balance": round(balance, 2),
         "folio_balance": round(folio_balance, 2),
-        "unposted_room_amount": round(max(0, float(booking.get("total_amount", 0) or 0) - float(room_charge_total or 0)), 2),
+        "unposted_room_amount": 0 if is_cancelled else round(max(0, float(booking.get("total_amount", 0) or 0) - float(room_charge_total or 0)), 2),
         "reservation_total_due": round(reservation_total_due, 2),
         "pricing_reconciliation_required": pricing_reconciliation_difference > 0.01,
         "pricing_reconciliation_difference": pricing_reconciliation_difference,
