@@ -1146,6 +1146,12 @@ async def revenue_by_category_excel(
     sheet.append(["Özgün ikram dökümü eksik işlem", result["reconciliation"].get("concession_unknown_count", 0)])
     if result["reconciliation"].get("demo_reconstructed_count"):
         sheet.append(["DEMO RECONSTRUCTION — NOT HISTORICALLY VERIFIED", result["reconciliation"]["demo_reconstructed_count"]])
+    if result["reconciliation"].get("demo_comp_definition_sources"):
+        reconstruction = workbook.create_sheet("Sentetik Test Düzeltmeleri")
+        reconstruction.append(["Not", "Yeni %20 KDV dahil test tanımı; özgün tarihî vergi doğrulanmadı. Önceki kaynak sürümleri korunur."])
+        reconstruction.append(["Kaynak", "Kimlik", "Kaynak tarihi", "Tanım iş günü", "Politika", "Önceki sürüm hash", "Düzeltme zamanı", "Gerekçe"])
+        for source in result["reconciliation"]["demo_comp_definition_sources"]:
+            reconstruction.append([source.get(key) for key in ("source", "id", "date", "definition_business_date", "policy_id", "before_hash", "applied_at", "reason")])
     trend = workbook.create_sheet("Günlük Tutarlar")
     trend.append(["Tarih", "Para birimi", "İşlenen tutar (vergi dahil)"])
     for row in result["revenue_trend"]:
