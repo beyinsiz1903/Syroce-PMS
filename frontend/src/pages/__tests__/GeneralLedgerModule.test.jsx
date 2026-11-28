@@ -36,12 +36,12 @@ describe('GeneralLedgerModule persistent GL contract', () => {
   it('preserves operational switches and explicit optional accounts without inventing a concession account', () => {
     expect(toOperationalMappingPayload({ enabled: false, auto_pos: false, auto_night_audit: false,
       cash_account_code: ' 100.01 ', security_deposit_account_code: ' 326 ',
-      accommodation_tax_account_code: '360.02', adjustment_account_code: ' 611 ' })).toMatchObject({
+      accommodation_tax_account_code: '360.02', adjustment_account_code: ' 611 ', tip_account_code: ' 335 ' })).toMatchObject({
       enabled: false, auto_pos: false, auto_night_audit: false, cash_account_code: '100.01',
-      security_deposit_account_code: '326', accommodation_tax_account_code: '360.02', adjustment_account_code: '611',
+      security_deposit_account_code: '326', accommodation_tax_account_code: '360.02', adjustment_account_code: '611', tip_account_code: '335',
     });
     expect(toOperationalMappingPayload({})).toMatchObject({ enabled: false, adjustment_account_code: null,
-      security_deposit_account_code: null, accommodation_tax_account_code: null });
+      security_deposit_account_code: null, accommodation_tax_account_code: null, tip_account_code: null });
   });
 
   it('uses the tenant-scoped persistent journal endpoint', () => {

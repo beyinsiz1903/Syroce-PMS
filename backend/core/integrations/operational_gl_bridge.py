@@ -37,6 +37,7 @@ DEFAULT_MAPPING = {
     "security_deposit_account_code": None,
     "accommodation_tax_account_code": None,
     "adjustment_account_code": None,
+    "tip_account_code": None,
 }
 
 
@@ -68,6 +69,15 @@ def _signed_line(account_code, amount_minor, side, memo):
     if amount_minor < 0:
         side = "credit" if side == "debit" else "debit"
     return {"account_code": account_code, side: _amount(abs(amount_minor)), "memo": memo}
+
+
+def _tip_account(mapping: dict) -> str:
+    account = mapping.get("tip_account_code")
+    others = {value for key, value in mapping.items()
+              if key.endswith("_account_code") and key != "tip_account_code"}
+    if not account or account in others:
+        raise SourceValuationRequired("POS tip requires a separate explicit liability account mapping")
+    return account
 
 
 async def _require_try_source_rows(db, tenant_id, rows):
@@ -241,6 +251,10 @@ async def post_direct_pos_to_gl(
         return {"status": "skipped", "reason": "not_configured"}
     total = _minor(transaction.get("total_amount"))
     tax = _minor(transaction.get("tax_amount", order.get("tax_amount")))
+    tip = _minor(transaction.get("tip_amount", order.get("tip_amount")))
+    if tip < 0 or tax + tip > total:
+        raise OperationalGLBridgeError("POS tip/tax values are outside the settlement total")
+    tip_account = _tip_account(mapping) if tip else None
     # A fully complimentary order is a valid terminal POS transaction, but it
     # has no financial value to post.  Treat it as a successful no-op instead
     # of marking the already completed sale as a GL bridge failure.  The POS
@@ -287,10 +301,12 @@ async def post_direct_pos_to_gl(
             settlement_lines[0].update(currency=quote['currency_code'], foreign_amount=quote['amount_foreign'], exchange_rate=str(rate))
     lines = [
         *settlement_lines,
-        {"account_code": mapping["revenue_account_code"], "credit": _amount(total - tax), "memo": "POS geliri"},
+        {"account_code": mapping["revenue_account_code"], "credit": _amount(total - tax - tip), "memo": "POS geliri"},
     ]
     if tax:
         lines.append({"account_code": mapping["tax_account_code"], "credit": _amount(tax), "memo": "POS hesaplanan vergi"})
+    if tip:
+        lines.append({"account_code": tip_account, "credit": _amount(tip), "memo": "POS bahşiş yükümlülüğü"})
     try:
         entry = await post_journal_entry(
             db,
@@ -336,8 +352,32 @@ async def post_direct_pos_refund_to_gl(
     if str(original_transaction.get("currency") or order.get("currency") or "TRY").strip().upper() not in {"TRY", "TRL", "TL"}:
         raise OperationalGLBridgeError("Foreign-base POS refund requires the original sealed TRY valuation")
     original_tax = _minor(original_transaction.get('tax_amount', order.get('tax_amount')))
+    original_tip = _minor(original_transaction.get('tip_amount', order.get('tip_amount')))
+    refund_tip = 0
+    if original_tip:
+        tip_account = _tip_account(mapping)
+        # Legacy journals may have booked tips as sales. Do not create a
+        # liability reversal that the original immutable journal never held.
+        original_entry = await db.gl_journal_entries.find_one({
+            'tenant_id': tenant_id, 'id': original_transaction.get('gl_journal_entry_id'),
+            'source': 'pos_direct', 'source_ref': original_transaction['order_id'],
+        }) if original_transaction.get('gl_journal_entry_id') else None
+        sealed_tip = sum(_minor(line.get('credit')) - _minor(line.get('debit'))
+                         for line in (original_entry or {}).get('lines', [])
+                         if line.get('account_code') == tip_account)
+        if sealed_tip != original_tip:
+            raise SourceValuationRequired('Original POS tip journal requires source-linked reconciliation before refund posting')
+        if refund.get('tip_amount') is None or refund.get('tax_amount') is None:
+            raise SourceValuationRequired('POS tip refund requires original cumulative tip/tax component snapshots')
+        refund_tip = abs(_minor(refund['tip_amount']))
+        if refund_tip > original_tip:
+            raise OperationalGLBridgeError('POS refund tip exceeds the original tip')
+    elif _minor(refund.get('tip_amount')):
+        raise OperationalGLBridgeError('POS refund tip has no original tip')
     refund_tax = (abs(_minor(refund['tax_amount'])) if refund.get('tax_amount') is not None else
         int((Decimal(original_tax) * Decimal(refunded) / Decimal(paid)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)))
+    if refund_tax < 0 or refund_tip + refund_tax > refunded:
+        raise OperationalGLBridgeError('POS refund tip/tax values exceed the refund total')
 
     breakdown = original_transaction.get("payment_breakdown") or []
     settlement_lines = []
@@ -371,10 +411,12 @@ async def post_direct_pos_refund_to_gl(
             "memo": "POS iade tahsilat ters kaydı",
         })
     lines = [
-        {"account_code": mapping["revenue_account_code"], "debit": _amount(refunded - refund_tax), "memo": "POS satış iadesi"},
+        {"account_code": mapping["revenue_account_code"], "debit": _amount(refunded - refund_tax - refund_tip), "memo": "POS satış iadesi"},
     ]
     if refund_tax:
         lines.append({"account_code": mapping["tax_account_code"], "debit": _amount(refund_tax), "memo": "POS iade vergi ters kaydı"})
+    if refund_tip:
+        lines.append({"account_code": tip_account, "debit": _amount(refund_tip), "memo": "POS bahşiş iade ters kaydı"})
     lines.extend(settlement_lines)
     try:
         entry = await post_journal_entry(
