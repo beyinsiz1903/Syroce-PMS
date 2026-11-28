@@ -104,6 +104,7 @@ async def test_invalid_sale_components_cannot_create_a_journal(monkeypatch, tip,
 @pytest.mark.parametrize("tip_code,tip_type,accepted", [("335", "liability", True), ("335", "revenue", False), ("391", "liability", False)])
 async def test_mapping_requires_active_separate_liability_and_audits_choice(monkeypatch, tip_code, tip_type, accepted):
     from fastapi import HTTPException
+
     from domains.accounting import gl_router as gl
 
     db = database()
