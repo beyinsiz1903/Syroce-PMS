@@ -299,10 +299,9 @@ async def post_direct_pos_to_gl(
             if rate <= 0 or abs(converted - total) > 1:
                 raise OperationalGLBridgeError('Foreign tender rounding needs an explicit valuation before GL posting')
             settlement_lines[0].update(currency=quote['currency_code'], foreign_amount=quote['amount_foreign'], exchange_rate=str(rate))
-    lines = [
-        *settlement_lines,
-        {"account_code": mapping["revenue_account_code"], "credit": _amount(total - tax - tip), "memo": "POS geliri"},
-    ]
+    lines = [*settlement_lines]
+    if total > tax + tip:
+        lines.append({"account_code": mapping["revenue_account_code"], "credit": _amount(total - tax - tip), "memo": "POS geliri"})
     if tax:
         lines.append({"account_code": mapping["tax_account_code"], "credit": _amount(tax), "memo": "POS hesaplanan vergi"})
     if tip:
@@ -410,9 +409,9 @@ async def post_direct_pos_refund_to_gl(
             "credit": _amount(refunded),
             "memo": "POS iade tahsilat ters kaydı",
         })
-    lines = [
-        {"account_code": mapping["revenue_account_code"], "debit": _amount(refunded - refund_tax - refund_tip), "memo": "POS satış iadesi"},
-    ]
+    lines = []
+    if refunded > refund_tax + refund_tip:
+        lines.append({"account_code": mapping["revenue_account_code"], "debit": _amount(refunded - refund_tax - refund_tip), "memo": "POS satış iadesi"})
     if refund_tax:
         lines.append({"account_code": mapping["tax_account_code"], "debit": _amount(refund_tax), "memo": "POS iade vergi ters kaydı"})
     if refund_tip:

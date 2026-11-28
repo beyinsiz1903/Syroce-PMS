@@ -131,3 +131,24 @@ async def test_mapping_requires_active_separate_liability_and_audits_choice(monk
         assert result["mapping"]["tip_account_code"] == "335"
         assert result["mapping"]["enabled"] is True
         assert audit.await_args.kwargs["after_value"]["tip_account_code"] == "335"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refund", [False, True])
+async def test_tip_only_settlement_or_refund_has_no_zero_sales_line(monkeypatch, refund):
+    from shared_kernel.gl_posting import normalize_journal_lines
+
+    post = AsyncMock(return_value={"id": "journal"})
+    monkeypatch.setattr(bridge, "post_journal_entry", post)
+    db = database()
+    sale = {**SALE, "total_amount": 1.01, "tax_amount": 0, "payment_method": "cash", "payment_breakdown": []}
+    if refund:
+        await bridge.post_direct_pos_refund_to_gl(db, "hotel", original_transaction=sale, order={}, actor="cashier",
+            refund={"id": "refund", "order_id": "order", "transaction_date": "2026-10-30",
+                    "total_amount": -1.01, "tax_amount": 0, "tip_amount": -1.01})
+    else:
+        await bridge.post_direct_pos_to_gl(db, "hotel", transaction=sale, order={}, posted_to_folio=False, actor="cashier")
+    lines = post.await_args.kwargs["lines"]
+    assert {line["account_code"] for line in lines} == {"100", "335"}
+    _, debit, credit = normalize_journal_lines(lines)
+    assert debit == credit == 1.01
