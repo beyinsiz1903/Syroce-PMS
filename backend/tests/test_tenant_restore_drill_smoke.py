@@ -402,3 +402,16 @@ def test_atlas_hostname_via_standard_url_also_blocked(monkeypatch, tmp_path, cap
     assert "Atlas" in out
     assert "BLOCK" in out
     assert rc == 1
+
+
+@pytest.mark.parametrize("url", [
+    "mongodb://db.example.com:27017", "mongodb://127.0.0.1.example.com:27017",
+    "mongodb://localhost:27017,db.example.com:27017", "mongodb://db.internal:27017",
+    "mongodb+srv://localhost/database", "mongodb://user:password@db.example.com:27017",
+])
+def test_fixture_seed_refuses_nonloopback_before_constructing_client(url, monkeypatch):
+    def forbidden_client(*args, **kwargs):
+        pytest.fail("Remote seed must be refused before constructing a Mongo client")
+    monkeypatch.setattr(seed_mod, "AsyncIOMotorClient", forbidden_client)
+    with pytest.raises(SystemExit, match="loopback|Atlas"):
+        asyncio.run(seed_mod.seed(url, "disposable_fixture"))

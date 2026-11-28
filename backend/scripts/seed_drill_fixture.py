@@ -1,6 +1,6 @@
 """Seed fake multi-tenant fixture for tenant restore drill smoke test.
 
-Phase 2 supporting tool. Sandbox-only: refuses Atlas URLs.
+Phase 2 supporting tool. Sandbox-only: accepts a single loopback MongoDB host.
 
 Creates a small but realistic 3-tenant dataset across 7 collections so that
 mongodump → tenant-scoped restore → prune → validation can be exercised
@@ -27,6 +27,7 @@ import asyncio
 import json
 import os
 import sys
+from urllib.parse import urlsplit
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -58,9 +59,18 @@ COLLECTIONS = (
 async def seed(mongo_url: str, db_name: str) -> dict:
     if _is_atlas_url(mongo_url):
         raise SystemExit(
-            f"REFUSE: Atlas URL detected ({mongo_url[:40]}...). "
+            "REFUSE: Atlas URL detected. "
             "seed_drill_fixture is sandbox-only."
         )
+
+    try:
+        target = urlsplit(mongo_url)
+        local_only = (target.scheme == "mongodb" and "," not in target.netloc
+                      and target.hostname in {"localhost", "127.0.0.1", "::1"})
+    except (TypeError, ValueError):
+        local_only = False
+    if not local_only:
+        raise SystemExit("REFUSE: fixture seed accepts one loopback MongoDB host only")
 
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=3000)
     # Validate we can ping before destructive drop.
