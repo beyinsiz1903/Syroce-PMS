@@ -450,8 +450,10 @@ def build_plan(charges, payments, mapping, valuation, security=()):
             raise OperationalValuationError(str(exc)) from exc
     # An optional new mapping must not invalidate previously sealed days that
     # contain no adjustment. Include it only when this source batch uses it.
+    # Direct POS tips are posted separately, never by this folio-day plan.
     manifest = {"version": 1, "valuation": valuation, "mapping": {k: mapping[k] for k in sorted(mapping)
-                if k.endswith("_account_code") and (k != "adjustment_account_code" or adjustment_groups or full_comp_groups)},
+                if k.endswith("_account_code") and k != "tip_account_code"
+                and (k != "adjustment_account_code" or adjustment_groups or full_comp_groups)},
                 "sources": sorted(rows, key=lambda r: (r["kind"], r["id"]))}
     manifest["source_hash"] = digest(manifest)
     return {"lines": lines, "manifest": manifest, "charge_total_try": amount(charge_total), "payment_total_try": amount(payment_total),

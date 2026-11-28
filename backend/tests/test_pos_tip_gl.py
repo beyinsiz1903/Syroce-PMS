@@ -152,3 +152,18 @@ async def test_tip_only_settlement_or_refund_has_no_zero_sales_line(monkeypatch,
     assert {line["account_code"] for line in lines} == {"100", "335"}
     _, debit, credit = normalize_journal_lines(lines)
     assert debit == credit == 1.01
+
+
+def test_unused_direct_pos_tip_mapping_cannot_invalidate_sealed_night_sources():
+    from core.integrations import operational_gl_valuation as valuation
+
+    mapping = {key: value for key, value in bridge.DEFAULT_MAPPING.items() if key != "tip_account_code"}
+    rates = valuation.normalized_valuation("2026-10-30", {
+        "business_date": "2026-10-30", "base_currency": "TRY", "reference": "local test", "rates_to_try": {},
+    })
+    source = [{"id": "charge", "currency": "TRY", "total": 110, "tax_amount": 10}]
+    before = valuation.build_plan(source, [], mapping, rates)
+    for tip in (None, "335"):
+        after = valuation.build_plan(source, [], {**mapping, "tip_account_code": tip}, rates)
+        assert before["manifest"]["source_hash"] == after["manifest"]["source_hash"]
+        assert before["lines"] == after["lines"]
