@@ -929,6 +929,22 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
     if not user_doc or not user_doc.get("two_factor_enabled"):
         raise HTTPException(status_code=401, detail="2FA durumu bulunamadı")
 
+    # The account may have been suspended after the password step issued
+    # this challenge. Re-check authoritative state before any code redemption.
+    if user_doc.get("is_active") is False:
+        await db.audit_logs.insert_one(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": user_doc.get("tenant_id"),
+                "user_id": user_id,
+                "action": "login_2fa_failed",
+                "resource_type": "auth",
+                "details": "account_disabled",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
+        raise HTTPException(status_code=401, detail="Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
+
     # v47 (Bug CD): mass-revoke watermark also applies to in-flight
     # challenge tokens — otherwise a stolen challenge could be redeemed
     # for a fresh access_token after the victim changed their password,

@@ -59,7 +59,10 @@ jobs:
     vitest:
         name: Frontend Unit Tests + Coverage (Vitest)
         runs-on: ubuntu-24.04
-        timeout-minutes: 10
+        # The full 493-file suite takes about 9.5 minutes before dependency
+        # setup and coverage upload. Keep the complete gate within a bounded
+        # budget rather than cancelling successful tests at ten minutes.
+        timeout-minutes: 20
         steps:
             - uses: actions/checkout@v5
             - name: Set up Node.js
