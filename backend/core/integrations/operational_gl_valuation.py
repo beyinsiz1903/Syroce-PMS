@@ -51,7 +51,8 @@ def is_full_comp_source(source):
 
 def full_comp_net(source):
     """Use sealed list-price evidence, never reverse-engineer a tax rate."""
-    snapshot = source.get('complimentary_original_tax_snapshot')
+    from modules.pms_core.comp_tax_basis import concession_tax_basis
+    snapshot = concession_tax_basis(source)
     if (not isinstance(snapshot, dict)
             or any(snapshot.get(key) is None for key in ('net_amount', 'vat_amount', 'tax_amount'))
             or source.get('complimentary_original_amount') is None):

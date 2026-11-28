@@ -25,7 +25,8 @@ async def seed(db):
     for collection, source_id, gross in repair.SOURCES:
         await db[collection].insert_one({"id": source_id, "tenant_id": repair.TENANT,
             "business_date": "2026-11-12", "currency": "TRY", "total": 0, "amount": 0,
-            "is_complimentary": True, "complimentary_original_amount": gross, "vat_amount": 0, "tax_amount": 0})
+            "is_complimentary": True, "complimentary_original_amount": gross,
+            "complimentary_original_tax_snapshot": {"net_amount": None, "vat_amount": None, "tax_amount": None, "tax_evidence_status": "missing"}, "vat_amount": 0, "tax_amount": 0})
 
 
 def request(plan, reason="Kullanıcı onaylı yeni sentetik test tanımı, özgün vergi doğrulanmadı."):
@@ -109,7 +110,8 @@ async def test_audit_failure_rolls_back_both_sources_and_receipt(ledger_db, monk
     for collection, source_id, _ in repair.SOURCES:
         row = await ledger_db[collection].find_one({"id": source_id}, {"_id": 0})
         assert "demo_reconstruction" not in row
-        assert "complimentary_original_tax_snapshot" not in row
+        assert row["complimentary_original_tax_snapshot"]["net_amount"] is None
+        assert "synthetic_comp_tax_definition" not in row
     assert await ledger_db.demo_comp_reconstructions.count_documents({}) == 0
     assert (await ledger_db.night_audit_runs.find_one({"id": "night12"}))["gl_bridge_status"] == "posted"
 
@@ -143,6 +145,14 @@ async def test_report_and_excel_disclose_new_assumption_without_creating_revenue
     plan = await repair.preview(ledger_db, repair.TENANT)
     user = SimpleNamespace(id="o", name="O", tenant_id=repair.TENANT)
     await repair.apply(ledger_db, ledger_db.client, user, request(plan))
+    from core.integrations import operational_gl_valuation as valuation
+    from tests.test_operational_gl_source_valuation import MAPPING
+    charges, payments, security = await valuation.daily_sources(ledger_db, repair.TENANT, "2026-11-12")
+    gl = valuation.build_plan(charges, payments, {**MAPPING, "adjustment_account_code": "611"},
+        valuation.normalized_valuation("2026-11-12", {"business_date": "2026-11-12", "base_currency": "TRY", "rates_to_try": {}, "reference": "Explicit synthetic test definition"}), security)
+    assert gl["charge_total_try"] == gl["payment_total_try"] == 0
+    assert [(line["account_code"], line.get("debit", 0), line.get("credit", 0)) for line in gl["lines"]] == [("600", 0, 70.83), ("611", 70.83, 0)]
+    assert all(s["demo_reconstruction"]["historical_source_verified"] is False for s in gl["manifest"]["sources"])
     monkeypatch.setattr(folio, "db", ledger_db)
     day = "2026-11-12"
     report = await folio.revenue_by_category.__wrapped__(day, day, user, None)
@@ -184,3 +194,17 @@ def test_input_requires_exact_scope_confirmation_and_meaningful_reason():
     for change in ({"confirmation": "OTHER"}, {"reason": " " * 25}, {"tenant_id": "other"}, {"source_fingerprint": "x"}):
         with pytest.raises(ValidationError):
             DemoCompReconstructionIn(**{**body, **change})
+
+
+def test_new_test_definition_never_overrides_complete_historical_evidence():
+    from modules.pms_core.comp_tax_basis import concession_tax_basis
+    historical = {"net_amount": 10, "vat_amount": 15, "tax_amount": 0}
+    synthetic = {"net_amount": 20.83, "vat_amount": 4.17, "tax_amount": 0,
+                 "policy_id": repair.POLICY, "basis": "explicit_new_synthetic_test_definition", "historical_source_verified": False}
+    row = {"complimentary_original_tax_snapshot": historical, "synthetic_comp_tax_definition": synthetic,
+           "demo_reconstruction": {"policy_id": repair.POLICY, "historical_source_verified": False}}
+    assert concession_tax_basis(row) == historical
+    row["complimentary_original_tax_snapshot"] = {"net_amount": None, "vat_amount": None, "tax_amount": None}
+    assert concession_tax_basis(row) == synthetic
+    row["demo_reconstruction"] = {}
+    assert concession_tax_basis(row) == row["complimentary_original_tax_snapshot"]
