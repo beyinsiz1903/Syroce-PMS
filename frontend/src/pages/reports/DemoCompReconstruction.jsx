@@ -35,7 +35,7 @@ export default function DemoCompReconstruction({ sources = [], corrected = [], o
     {error && <p role="alert">{typeof error === 'string' ? error : 'Test düzeltmesi doğrulanamadı.'}</p>}
     {plan && <div className="mt-3 space-y-3">
       <p>{plan.notice}</p>
-      <p>Tahsilat, kaynağın tarihi ve işlenmiş tutar değişmez. Muhasebeye otomatik fiş gönderilmez.</p>
+      <p>Tahsilat, kaynağın tarihi ve işlenmiş tutar değişmez. Muhasebeye otomatik fiş gönderilmez; 12 Kasımın eski fişi korunur ve kaynak değerlemesi yeniden incelemeye alınır.</p>
       <ul>{plan.documents?.map(source => <li key={source.id}>{source.original_gross} TRY liste bedeli: {source.snapshot.net_amount} TRY net + {source.snapshot.vat_amount} TRY test vergisi.</li>)}</ul>
       {plan.already_applied ? <p role="status">Test düzeltmesi kayıtlı. Önceki sürümler ve düzeltme gerekçesi korunuyor.</p> : <>
         <label className="block">Düzeltme gerekçesi<textarea className="mt-1 block w-full rounded border bg-white p-2" value={reason} onChange={e => setReason(e.target.value)} /></label>
