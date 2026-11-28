@@ -138,8 +138,8 @@ def build_plan(
             "5) Emit drill report with timestamps, counts, and verdict."
         ),
         "validation_queries": [
-            'db.<col>.countDocuments({tenant_id: "<TENANT_ID>"}) > 0',
-            'db.<col>.countDocuments({tenant_id: {$ne: "<TENANT_ID>"}}) == 0',
+            'db.<col>.countDocuments({<tenant_key>: "<TENANT_ID>"}) > 0',
+            'db.<col>.countDocuments({<tenant_key>: {$exists: true, $ne: "<TENANT_ID>"}}) == 0',
             "db.bookings.aggregate([{$lookup:{from:'guests',localField:'guest_id',"
             "foreignField:'_id',as:'g'}},{$match:{g:{$size:0}}}]).toArray() == []",
         ],
@@ -211,7 +211,7 @@ def assess_risk(
 async def prune_cross_tenant(
     mongo_url: str, target_db: str, tenant_id: str, collections: list[str]
 ) -> dict[str, int]:
-    """Delete docs where tenant_id is set AND != target.
+    """Delete docs where the collection tenant key is set AND != target.
 
     Safety: requires `$exists: true` so docs missing the `tenant_id` field
     are NEVER deleted (architect review: defends against over-delete on
@@ -231,15 +231,16 @@ async def prune_cross_tenant(
         # BEFORE any mutation. Refuses to start prune if any collection
         # has multiple tenant_id BSON types or a type mismatching CLI input.
         for coll in collections:
+            tenant_key = classify_tenant_scope.TENANT_KEY_FIELDS.get(coll, "tenant_id")
             seen_types: set[type] = set()
             cursor = db[coll].find(
-                {"tenant_id": {"$exists": True}}, {"tenant_id": 1}
+                {tenant_key: {"$exists": True}}, {tenant_key: 1}
             ).limit(100)
             async for doc in cursor:
-                seen_types.add(type(doc["tenant_id"]))
+                seen_types.add(type(doc[tenant_key]))
                 if len(seen_types) > 1:
                     raise RuntimeError(
-                        f"heterogeneous tenant_id types in '{coll}': "
+                        f"heterogeneous tenant key types in '{coll}': "
                         f"{sorted(t.__name__ for t in seen_types)}. "
                         "Refusing to prune."
                     )
@@ -258,8 +259,9 @@ async def prune_cross_tenant(
         # perform delete_many. This guarantees no partial-mutation on
         # mismatch.
         for coll in collections:
+            tenant_key = classify_tenant_scope.TENANT_KEY_FIELDS.get(coll, "tenant_id")
             res = await db[coll].delete_many(
-                {"tenant_id": {"$exists": True, "$ne": tenant_id}}
+                {tenant_key: {"$exists": True, "$ne": tenant_id}}
             )
             deleted[coll] = res.deleted_count
     finally:
@@ -280,17 +282,18 @@ async def validate_restore(
     untagged_total = 0
     try:
         for coll in collections:
+            tenant_key = classify_tenant_scope.TENANT_KEY_FIELDS.get(coll, "tenant_id")
             target_count = await db[coll].count_documents(
-                {"tenant_id": tenant_id}
+                {tenant_key: tenant_id}
             )
             # Leak = explicit tenant_id present AND != target. Docs without
             # tenant_id are reported separately as `untagged` (not leaks,
             # but require operator review).
             leak_count = await db[coll].count_documents(
-                {"tenant_id": {"$exists": True, "$ne": tenant_id}}
+                {tenant_key: {"$exists": True, "$ne": tenant_id}}
             )
             untagged = await db[coll].count_documents(
-                {"tenant_id": {"$exists": False}}
+                {tenant_key: {"$exists": False}}
             )
             untagged_total += untagged
             per_coll[coll] = {
