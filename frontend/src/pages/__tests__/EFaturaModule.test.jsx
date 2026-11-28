@@ -141,4 +141,24 @@ describe('EFaturaModule POS closure integrity', () => {
     expect(click).toHaveBeenCalledOnce();
     expect(axios.post).not.toHaveBeenCalled();
   });
+
+  it('opens an older closure report without re-closing the historical business day', async () => {
+    const defaultGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation(url => url === '/pos/daily-closures'
+      ? Promise.resolve({ data: { closures: Array.from({ length: 8 }, (_, index) => ({
+        id: `closure-${index}`, closure_date: `2026-11-${String(13 - index).padStart(2, '0')}`,
+        transaction_count: 0, calculation_version: 'canonical_pos_ledger_v2',
+      })) } }) : defaultGet(url));
+    const click = vi.spyOn(window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<EFaturaModule />);
+
+    expect(await screen.findAllByRole('button', { name: /^report$/i })).toHaveLength(7);
+    fireEvent.click(screen.getByRole('button', { name: 'Son 8 kapanışı göster' }));
+    const reports = screen.getAllByRole('button', { name: /^report$/i });
+    expect(reports).toHaveLength(8);
+    fireEvent.click(reports[7]);
+    expect(click).toHaveBeenCalledOnce();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(confirmDialog).not.toHaveBeenCalled();
+  });
 });
