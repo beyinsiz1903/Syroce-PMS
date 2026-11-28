@@ -277,7 +277,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     }
   };
 
-  const bookingStatus = String(data?.booking?.status || '').toLowerCase();
+  const bookingStatus = String(data?.booking?.status || '').trim().toLowerCase();
+  const isCancelled = ['cancelled', 'canceled'].includes(bookingStatus);
   const readOnly = Boolean(data?.read_only || editLeaseBlocked);
   const isEarlyCheckout = isEarlyCheckoutDate(data?.booking?.check_out, data?.business_date);
   const canCheckIn = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
@@ -1111,9 +1112,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               {activeTab === 'general' && (
                 <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6" data-testid="reservation-workspace-overview">
                   <div className={`mb-3 grid gap-2 ${isExely ? '' : 'lg:grid-cols-2'}`}>
-                    <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><CheckCircle2 className="h-4 w-4" /></span>
-                      <div className="min-w-0"><p className="text-xs font-bold text-emerald-900">{booking?.status === 'checked_out' ? 'Konaklama tamamlandı' : booking?.status === 'checked_in' ? 'Konaklama devam ediyor' : 'Giriş bekleniyor'}</p><p className="truncate text-[11px] text-emerald-700">{stayNights} gece · {guestCount} misafir · Oda {room?.room_number || 'atanmadı'}</p></div>
+                    <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${isCancelled ? 'border-slate-200 bg-slate-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${isCancelled ? 'bg-slate-500' : 'bg-emerald-600'}`}>{isCancelled ? <X className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}</span>
+                      <div className="min-w-0"><p className={`text-xs font-bold ${isCancelled ? 'text-slate-900' : 'text-emerald-900'}`}>{isCancelled ? 'Rezervasyon iptal edildi' : bookingStatus === 'checked_out' ? 'Konaklama tamamlandı' : bookingStatus === 'checked_in' ? 'Konaklama devam ediyor' : 'Giriş bekleniyor'}</p><p className={`truncate text-[11px] ${isCancelled ? 'text-slate-700' : 'text-emerald-700'}`}>{stayNights} gece · {guestCount} misafir · Oda {room?.room_number || 'atanmadı'}</p></div>
                     </div>
                     {!isExely && <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${paymentNeedsReview ? 'border-amber-200 bg-amber-50/70' : hasReservationAmountDue ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`} data-testid="workspace-payment-overview">
                       <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${paymentNeedsReview ? 'bg-amber-600' : hasReservationAmountDue ? 'bg-rose-600' : 'bg-emerald-600'}`}>{paymentNeedsReview ? <AlertTriangle className="h-4 w-4" /> : hasReservationAmountDue ? <CreditCard className="h-4 w-4" /> : <Shield className="h-4 w-4" />}</span>
