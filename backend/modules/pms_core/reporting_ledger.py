@@ -74,6 +74,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         "complimentary_scope": 1,
         "complimentary_original_amount": 1,
         "complimentary_original_tax_snapshot": 1,
+        "synthetic_comp_tax_definition": 1,
         "quantity": 1,
         "unit_price": 1,
         "vat_amount": 1,

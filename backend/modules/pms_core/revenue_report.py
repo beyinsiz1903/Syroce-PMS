@@ -68,7 +68,8 @@ def charge_breakdown(row):
         and (row.get("complimentary_scope") == "full" or row.get("complimentary_original_amount") is not None) and total == 0)
     if full_comp_source and row.get("complimentary_original_amount") is not None:
         original_comp_gross = money(row["complimentary_original_amount"])
-    original_tax = row.get("complimentary_original_tax_snapshot")
+    from modules.pms_core.comp_tax_basis import concession_tax_basis
+    original_tax = concession_tax_basis(row)
     if (full_comp_source
             and isinstance(original_tax, dict)
             and original_tax.get("net_amount") is not None

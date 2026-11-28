@@ -78,7 +78,10 @@ async def preview(database, tenant_id, session=None):
         source_day = str((row or {}).get("business_date") or (row or {}).get("date") or (row or {}).get("charge_date") or "")[:10]
         if (not row or row.get("voided") or not row.get("is_complimentary") or row.get("currency") != "TRY"
             or row.get("total") != 0 or row.get("complimentary_original_amount") != gross
-            or row.get("complimentary_original_tax_snapshot") is not None or row.get("demo_reconstruction")
+            or row.get("synthetic_comp_tax_definition") is not None or row.get("demo_reconstruction")
+            or (row.get("complimentary_original_tax_snapshot") is not None
+                and (not isinstance(row["complimentary_original_tax_snapshot"], dict)
+                     or any(row["complimentary_original_tax_snapshot"].get(k) is not None for k in ("net_amount", "vat_amount", "tax_amount"))))
             or source_day != "2026-11-12"):
             raise HTTPException(409, "İncelenen sıfır bedelli test kaynağı değişti: " + source_id)
         net = (Decimal(gross) / Decimal("1.20")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -124,10 +127,10 @@ async def apply(database, client, user, data):
             meta = {"policy_id": POLICY, "basis": "demo_reconstruction", "historical_source_verified": False,
                     "notice": NOTICE, "before_hash": document["before_hash"], "reason": data.reason,
                     "applied_at": now, "applied_by": user.id, "definition_business_date": plan["business_date"]}
-            values = {"complimentary_original_tax_snapshot": document["snapshot"], "demo_reconstruction": meta}
+            values = {"synthetic_comp_tax_definition": document["snapshot"], "demo_reconstruction": meta}
             after_hashes[document["id"]] = fingerprint({**document["before"], **values})
             changed = await database[document["collection"]].update_one(
-                {"tenant_id": user.tenant_id, "id": document["id"], "complimentary_original_tax_snapshot": None},
+                {"tenant_id": user.tenant_id, "id": document["id"], "synthetic_comp_tax_definition": None},
                 {"$set": values}, session=session)
             if changed.modified_count != 1:
                 raise HTTPException(409, "Test kaynağı eşzamanlı değişti")
