@@ -33,6 +33,9 @@ from pathlib import Path
 
 _BACKEND_DEFAULT = Path(__file__).resolve().parents[1]
 
+# Fixed schemas whose tenant boundary is not the standard tenant_id field.
+TENANT_KEY_FIELDS = {"audit_chain_state": "_id"}
+
 
 # Lists curated by ChatGPT review (Faz 1, May 2026). Keep in sync with
 # docs/procedures/TENANT_RESTORE_DRILL.md "Tenant scope classification".
@@ -80,6 +83,9 @@ def discover_collections(root: Path) -> dict[str, list[Path]]:
             coll_files[m.group(1)].add(py)
         for m in _GET_COLL_RE.finditer(text):
             coll_files[m.group(1)].add(py)
+    audit_source = root / "core" / "audit_chain.py"
+    if audit_source.is_file():
+        coll_files["audit_chain_state"].add(audit_source)
     return {k: sorted(v) for k, v in coll_files.items()}
 
 
@@ -111,6 +117,8 @@ def classify(coll: str, files: list[Path]) -> str:
         return "GLOBAL_EXCLUDE"
     if coll in UNKNOWN_REVIEW_FORCED:
         return "UNKNOWN_REVIEW_REQUIRED"
+    if coll in TENANT_KEY_FIELDS:
+        return "TENANT_SCOPED"
     if has_tenant_id_query(coll, files):
         return "TENANT_SCOPED"
     return "UNKNOWN_REVIEW_REQUIRED"
@@ -130,6 +138,7 @@ def build_report(root: Path) -> dict:
             {
                 "name": coll,
                 "ref_count": len(files),
+                "tenant_key": TENANT_KEY_FIELDS.get(coll, "tenant_id"),
                 "ref_files": [str(f.relative_to(root.parent)) for f in files[:3]],
             }
         )
