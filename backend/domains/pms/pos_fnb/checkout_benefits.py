@@ -50,6 +50,10 @@ async def quote_checkout(db, tenant_id, order, options, session=None):
         raise HTTPException(422, "Puan negatif olamaz.")
     if full_comp and (coupon_code or points or money(options.get("tip_amount"))):
         raise HTTPException(422, "Tam ikramlı oda aktarımında kupon, puan veya bahşiş kullanılamaz.")
+    if options.get("post_to_folio") and money(options.get("tip_amount")):
+        # Folio allocation represents sales and service charges, not a tip
+        # liability. Do not confirm more room debt than the source can post.
+        raise HTTPException(422, "Bahşişli adisyon oda hesabına aktarılamaz. Bahşişi kaldırın veya nakit/kart ödeme seçin.")
     coupon, coupon_discount = None, 0.0
     if coupon_code:
         coupon = await db.pos_coupons.find_one({"tenant_id": tenant_id, "code": coupon_code}, {"_id": 0}, **kw)

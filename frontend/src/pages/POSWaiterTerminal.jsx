@@ -362,6 +362,10 @@ const POSWaiterTerminal = () => {
       return;
     }
     if (paymentMethod === 'room_charge') {
+      if (Number(tipAmount || 0) > 0) {
+        alertDialog({ message: 'Bahşişli adisyon oda hesabına aktarılamaz. Bahşişi kaldırın veya nakit/kart ödeme seçin.' });
+        return;
+      }
       if (!roomBooking) {
         alertDialog({
           message: 'Odaya yazmak için konaklayan bir misafir seçin.'

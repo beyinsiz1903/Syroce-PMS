@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { confirmDialog } from '@/lib/dialogs';
+import { alertDialog, confirmDialog } from '@/lib/dialogs';
 
 const axiosGet = vi.fn();
 const axiosPost = vi.fn();
@@ -24,7 +24,36 @@ describe('POS waiter menu regressions', () => {
     axiosGet.mockReset();
     axiosPost.mockReset();
     confirmDialog.mockClear();
+    alertDialog.mockClear();
     confirmDialog.mockResolvedValue(true);
+  });
+
+  it('rejects a tipped room transfer before creating, quoting or closing a check and retains the tip', async () => {
+    axiosGet.mockImplementation(url => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'o1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/o1') return Promise.resolve({ data: { tables: [{ id: 't1', table_number: '1', status: 'occupied', current_order_id: 'order1' }] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
+      if (url === '/frontdesk/inhouse') return Promise.resolve({ data: [{ id: 'booking-1', guest_name: 'Sentetik Misafir', room_number: '104' }] });
+      if (url === '/pos/v2/orders/order1') return Promise.resolve({ data: { order: {
+        id: 'order1', status: 'pending', payment_status: 'unpaid', grand_total: 110,
+        order_items: [{ item_name: 'Çorba', quantity: 1, total: 100, tax_rate: .1 }],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-o1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.click(await screen.findByTestId('toggle-split-payment'));
+    const tip = screen.getByRole('spinbutton', { name: 'Bahşiş' });
+    fireEvent.change(tip, { target: { value: '1.01' } });
+    fireEvent.focus(await screen.findByTestId('room-guest-search'));
+    fireEvent.click(await screen.findByTestId('inhouse-booking-1'));
+    fireEvent.click(screen.getByTestId('pay-room'));
+    expect(alertDialog).toHaveBeenCalledWith({ message: expect.stringContaining('Bahşişli adisyon oda hesabına aktarılamaz') });
+    expect(axiosPost).not.toHaveBeenCalled();
+    expect(tip).toHaveValue(1.01);
+    expect(screen.getByTestId('active-order-summary')).toBeInTheDocument();
   });
 
   it('partitions selected units into another free table without checkout or new kitchen submission', async () => {
