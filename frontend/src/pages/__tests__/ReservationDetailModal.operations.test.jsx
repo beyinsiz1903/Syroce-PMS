@@ -52,6 +52,16 @@ const detail = {
 };
 
 describe('ReservationDetailModal operation URLs', () => {
+  it.each(['cancelled', 'canceled'])('does not invite arrival for a %s reservation', async (status) => {
+    get.mockResolvedValue({ data: { ...detail, booking: { ...detail.booking, status }, read_only: true } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    const overview = await screen.findByTestId('reservation-workspace-overview');
+    expect(overview).toHaveTextContent('Rezervasyon iptal edildi');
+    expect(within(overview).queryByText('Giriş bekleniyor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('detects a checkout scheduled after the active PMS business date', () => {
     expect(isEarlyCheckoutDate('2026-09-27', '2026-09-26')).toBe(true);
     expect(isEarlyCheckoutDate('2026-09-26', '2026-09-26')).toBe(false);
