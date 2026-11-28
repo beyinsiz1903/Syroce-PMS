@@ -210,8 +210,8 @@ class TestMultiTenantDashboardIsolation:
             tasks.append(_read_dashboard(two_tenants["b"]["headers"], "B"))
 
         results = await asyncio.gather(*tasks)
-        errors = [(label, s) for label, s in results if s >= 500]
-        assert len(errors) == 0, f"Dashboard errors: {errors}"
+        errors = [(label, s) for label, s in results if s != 200]
+        assert len(errors) == 0, f"Dashboard reads must succeed: {errors}"
 
         a_ok = sum(1 for label, s in results if label == "A" and s == 200)
         b_ok = sum(1 for label, s in results if label == "B" and s == 200)
