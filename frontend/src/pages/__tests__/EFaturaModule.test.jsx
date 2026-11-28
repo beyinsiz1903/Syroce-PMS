@@ -153,7 +153,7 @@ describe('EFaturaModule POS closure integrity', () => {
     render(<EFaturaModule />);
 
     expect(await screen.findAllByRole('button', { name: /^report$/i })).toHaveLength(7);
-    fireEvent.click(screen.getByRole('button', { name: 'Tüm kapanışları göster (8)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Son 8 kapanışı göster' }));
     const reports = screen.getAllByRole('button', { name: /^report$/i });
     expect(reports).toHaveLength(8);
     fireEvent.click(reports[7]);

@@ -277,7 +277,7 @@ const EFaturaModule = () => {
             ))}
             {posClosures.length > 7 && (
               <Button variant="outline" onClick={() => setShowAllClosures(value => !value)}>
-                {showAllClosures ? 'Son 7 kapanışı göster' : `Tüm kapanışları göster (${posClosures.length})`}
+                {showAllClosures ? 'Son 7 kapanışı göster' : `Son ${posClosures.length} kapanışı göster`}
               </Button>
             )}
           </div>
