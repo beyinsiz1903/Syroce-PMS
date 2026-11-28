@@ -6,6 +6,7 @@ from copy import deepcopy
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from core import audit_chain
 from core.audit_chain import compute_record_hash
 from shared_kernel.gl_posting import compute_journal_entry_hash, verify_journal_entry_hash
 from tests.test_tenant_restore_drill_smoke import drill, seed_mod
@@ -63,6 +64,16 @@ async def test_financial_dump_restore_preserves_seals_indexes_and_tenant_boundar
         for name in ('gl_journal_entries', 'audit_logs', 'demo_comp_reconstructions'):
             indexes = await restored[name].index_information()
             assert any(index.get('unique') for key, index in indexes.items() if key != '_id_')
+        # Recovery must support the next real append, not merely retain old bytes.
+        monkeypatch.setattr(audit_chain, '_system_db', lambda: restored)
+        next_entry = await audit_chain.append_audit_log(restored,
+            {'id': 'post-restore', 'tenant_id': 'T1', 'action': 'recovery_verified',
+             'timestamp': '2026-11-28T00:01:00+00:00'}, require_chain=True)
+        assert next_entry['seq'] == 2
+        assert next_entry['prev_hash'] == audit['record_hash']
+        next_state = await restored.audit_chain_state.find_one({'_id': 'T1'})
+        assert next_state['seq'] == 2 and next_state['last_hash'] == next_entry['record_hash']
+        assert await restored.audit_chain_state.find_one({'_id': 'T2'}) is None
     finally:
         await client.drop_database(source)
         await client.drop_database(target)
