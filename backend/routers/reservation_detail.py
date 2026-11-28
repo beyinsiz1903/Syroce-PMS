@@ -4824,6 +4824,31 @@ class DemoAccountingReviewIn(DemoSourceRemediationIn):
     confirmation: Literal["REVIEW_SYNTHETIC_DEMO_ACCOUNTING_100001_ONLY"]
 
 
+class DemoCompReconstructionIn(DemoSourceRemediationIn):
+    confirmation: Literal["DEFINE_SYNTHETIC_COMP_25_60_ONLY"]
+
+
+@router.get("/demo-comp-reconstruction/preview")
+async def preview_demo_comp_reconstruction(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _enforce_perm(current_user, "manage_night_audit")
+    _ensure_hotel_context(current_user)
+    from modules.pms_core.demo_comp_reconstruction import preview, public_plan
+    return public_plan(await preview(db, current_user.tenant_id))
+
+
+@router.post("/demo-comp-reconstruction/apply")
+async def apply_demo_comp_reconstruction(data: DemoCompReconstructionIn, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _enforce_perm(current_user, "manage_night_audit")
+    _ensure_hotel_context(current_user)
+    from core.database import client
+    from modules.pms_core.demo_comp_reconstruction import apply
+    return await apply(db, client, current_user, data)
+
+
 class DemoPresentationArchiveIn(BaseModel):
     model_config = ConfigDict(extra='forbid')
     request_id: UUID

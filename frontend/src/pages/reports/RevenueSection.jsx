@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { validateReportDate } from '@/utils/reportExports';
 import './RevenueSection.css';
+import DemoCompReconstruction from './DemoCompReconstruction';
 
 const fields = [['subtotal', 'Ara toplam'], ['discount', 'İndirim'], ['net', 'Net (vergi hariç)'], ['vat', 'KDV'], ['city_tax', 'Konaklama vergisi'], ['other_tax', 'Diğer / ayrıştırılmamış vergi'], ['difference', 'Açıklanamayan fark'], ['total', 'Toplam (vergi dahil)']];
 const dayText = day => new Date(`${day}T12:00:00Z`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', timeZone: 'UTC' });
@@ -97,6 +98,8 @@ export default function RevenueSection({ reportDate, reportPeriod = 'monthly' })
     {error && <p role="alert" className="rounded border border-destructive p-3 text-destructive">{error}</p>}
     {!data && !loading && <p>Veri alınamadı.</p>}
     {data && <>
+      <DemoCompReconstruction sources={data.reconciliation?.concession_unknown_sources} corrected={data.reconciliation?.demo_comp_definition_sources} onApplied={() => setRevision(value => value + 1)} />
+      {data.reconciliation?.demo_comp_definition_sources?.length > 0 && <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{data.reconciliation.demo_comp_definition_sources.length} kayıtta kullanıcı onaylı yeni sentetik test tanımı (%20 KDV dahil) kullanıldı. Önceki sürümler korundu; özgün tarihî vergi doğrulanmış değildir.</p>}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <TotalCard label="Toplam işlenen tutar (vergi dahil)" values={data.totals_by_currency} field="total" />
         <TotalCard label="Net gelir (vergi hariç)" values={data.totals_by_currency} field="verified_net" />

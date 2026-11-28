@@ -141,6 +141,7 @@ def build_revenue_report(charges, first, last):
     issues, issue_count, unknown_count, reconstructed_count = [], 0, 0, 0
     unknown_sources = []
     concession_unknown_count, concession_sources = 0, []
+    demo_comp_sources = []
     for row in charges:
         if not is_revenue_charge(row):
             continue
@@ -159,6 +160,13 @@ def build_revenue_report(charges, first, last):
         dept[code] = dept.get(code, Decimal(0)) + values["total"]
         by_day = days.setdefault(day.isoformat(), {})
         by_day[code] = by_day.get(code, Decimal(0)) + values["total"]
+        meta = row.get("demo_reconstruction") or {}
+        if meta.get("policy_id") == "demo-comp-tax-reconstruction-20261128-v1":
+            demo_comp_sources.append({"source": row.get("report_source"), "id": str(row.get("id") or ""),
+                "date": day.isoformat(), "currency": code, "policy_id": meta["policy_id"],
+                "historical_source_verified": False, "before_hash": meta.get("before_hash"),
+                "applied_at": meta.get("applied_at"), "reason": meta.get("reason"),
+                "definition_business_date": meta.get("definition_business_date")})
         concession_unknown_count += values["concession_unknown"]
         if values["concession_unknown"] and len(concession_sources) < 100:
             concession_sources.append({"source": row.get("report_source"), "id": str(row.get("id") or ""),
@@ -203,6 +211,7 @@ def build_revenue_report(charges, first, last):
         "departments_by_currency": {dept: {code: rounded(value) for code, value in sorted(values.items())} for dept, values in departments.items()},
         "reconciliation": {"concession_unknown_count": concession_unknown_count,
             "concession_unknown_sources": concession_sources,
+            **({"demo_comp_definition_sources": demo_comp_sources} if demo_comp_sources else {}),
             "concession_unknown_sources_truncated": concession_unknown_count > len(concession_sources),
             "issue_count": issue_count, "tax_unknown_count": unknown_count, "issues": issues,
             "tax_unknown_sources": unknown_sources, "tax_unknown_sources_truncated": unknown_count > len(unknown_sources),
