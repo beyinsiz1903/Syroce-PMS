@@ -878,6 +878,7 @@ class OperationalMappingIn(BaseModel):
     security_deposit_account_code: str | None = Field(None, min_length=1, max_length=40)
     accommodation_tax_account_code: str | None = Field(None, min_length=1, max_length=40)
     adjustment_account_code: str | None = Field(None, min_length=1, max_length=40)
+    tip_account_code: str | None = Field(None, min_length=1, max_length=40)
 
 
 class OperationalValuationIn(BaseModel):
@@ -1992,6 +1993,12 @@ async def update_operational_gl_mapping(
     if missing:
         raise HTTPException(status_code=409, detail=f"Operasyonel köprü için eksik hesap kodları: {', '.join(missing)}")
     types = {row["code"]: row.get("type") for row in accounts}
+    tip = effective.get("tip_account_code")
+    if tip:
+        if types.get(tip) != "liability":
+            raise HTTPException(409, "Bahşiş eşlemesi aktif bir yükümlülük hesabı olmalıdır")
+        if tip in {value for key, value in effective.items() if key.endswith("_account_code") and key != "tip_account_code"}:
+            raise HTTPException(409, "Bahşiş hesabı gelir, vergi, güvence ve tahsilat hesaplarından ayrı olmalıdır")
     for key in ("security_deposit_account_code", "accommodation_tax_account_code"):
         code = effective.get(key)
         if code and types.get(code) != "liability":

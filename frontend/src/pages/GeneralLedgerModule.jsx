@@ -68,7 +68,7 @@ export function toOperationalMappingPayload(current = {}) {
   for (const [key, fallback] of Object.entries({ receivable: '120', revenue: '600', tax: '391', cash: '100', card: '108', bank: '102' })) {
     payload[`${key}_account_code`] = current[`${key}_account_code`]?.trim() || fallback;
   }
-  for (const key of ['security_deposit_account_code', 'accommodation_tax_account_code', 'adjustment_account_code']) {
+  for (const key of ['security_deposit_account_code', 'accommodation_tax_account_code', 'adjustment_account_code', 'tip_account_code']) {
     payload[key] = current[key]?.trim() || null;
   }
   return payload;
@@ -1959,14 +1959,15 @@ const GeneralLedgerModule = () => {
             />
           )}
           <Card className="mt-4">
-            <CardHeader><CardTitle>Güvence, Vergi ve İkram Hesapları</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Güvence, Vergi, İkram ve Bahşiş Hesapları</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-slate-600">Güvence gelir değildir; ikram/indirim tahsilat değildir. Ayrı hesaplar seçilmeden bu hareketler için kaynak değerlemesi tamamlanamaz. Vergi düzeltmesi ayrı mali belge akışındadır.</p>
+              <p className="text-sm text-slate-600">Güvence gelir değildir; ikram/indirim tahsilat değildir. Bahşişler satış gelirinden ayrı bir yükümlülük hesabına kaydedilir. Ayrı hesaplar seçilmeden bu hareketler için kaynak değerlemesi tamamlanamaz. Vergi düzeltmesi ayrı mali belge akışındadır.</p>
               <div className="grid md:grid-cols-3 gap-3">
                 {[
                   ['security_deposit_account_code', 'İade edilebilir güvence hesabı'],
                   ['accommodation_tax_account_code', 'Konaklama vergisi hesabı'],
                   ['adjustment_account_code', 'İkram/indirim muhasebe hesabı'],
+                  ['tip_account_code', 'Bahşiş yükümlülük hesabı'],
                 ].map(([key, label]) => (
                   <label key={key} className="space-y-1 text-sm">
                     <span>{label}</span>
