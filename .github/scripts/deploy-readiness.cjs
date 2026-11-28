@@ -1,6 +1,9 @@
 const REQUIRED = ['Syroce PMS CI/CD Pipeline', 'Frontend Quality Gates'];
 
-module.exports = async function gate({ github, context, core, sha, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), attempts = 30 }) {
+// Full backend coverage can outlast the frontend workflow by over ten
+// minutes. Allow up to thirty minutes for the same revision, retaining
+// failure, supersession and successful-check guards on every poll.
+module.exports = async function gate({ github, context, core, sha, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), attempts = 90 }) {
   const repo = { owner: context.repo.owner, repo: context.repo.repo };
   core.setOutput('ready', 'false');
   for (let attempt = 0; attempt < attempts; attempt++) {
